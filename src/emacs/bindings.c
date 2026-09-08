@@ -62,7 +62,6 @@ static const struct ck_binding_spec ck_global_bindings[] = {
     /* search */
     { "C-s",     CK_CMD_ISEARCH_FORWARD },
     { "C-r",     CK_CMD_ISEARCH_BACKWARD },
-    { "M-%",     CK_CMD_QUERY_REPLACE },
 
     /* files, buffers, windows, quit */
     { "C-x C-f", CK_CMD_FIND_FILE },
@@ -106,9 +105,9 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     { "C-x C-e", CK_CMD_EVAL_LAST_SEXP },
     { "C-c C-r", CK_CMD_EVAL_REGION },
     { "C-c C-e", CK_CMD_EVAL_EXPRESSION },
-    { "C-c C-b", CK_CMD_INTERRUPT },
     { "C-c C-d", CK_CMD_SHOW_ERRORS },
     { "C-x `",   CK_CMD_NEXT_ERROR },
+    { "C-x ~",   CK_CMD_PREVIOUS_ERROR },
 
     { NULL,      CK_CMD_NONE }
 };

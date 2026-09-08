@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static void ck_errorwin_jump(ck_app *app, int32_t row)
+void ck_errorwin_jump(ck_app *app, int32_t row)
 {
     ck_diag *d;
     ck_doc  *doc;
@@ -20,6 +20,7 @@ static void ck_errorwin_jump(ck_app *app, int32_t row)
     if (row < 0 || row >= app->diags.count)
         return;
 
+    app->error_row = row;
     d = &app->diags.items[row];
     if (d->file == NULL) {
         doc = ck_doc_active(app);
@@ -41,6 +42,11 @@ static void ck_errorwin_jump(ck_app *app, int32_t row)
     }
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
     ck_message(doc, "%s", d->text != NULL ? d->text : "");
+}
+
+int32_t ck_errorwin_current(ck_app *app)
+{
+    return app->error_row;
 }
 
 HOOKPROTONHNO(ck_errorwin_active_func, void, ULONG *params)
@@ -116,6 +122,8 @@ void ck_errorwin_fill(ck_app *app)
      * did not ask to go, so the list comes up with nothing selected. */
     set(app->errorlist, MUIA_List_Active, (IPTR)MUIV_List_Active_Off);
     set(app->errorlist, MUIA_List_Quiet, FALSE);
+    app->error_row = -1;   /* a fresh set of diagnostics starts before the
+                            * first one, so `C-x `' visits it */
 }
 
 void ck_errorwin_show(ck_app *app, const char *text)

@@ -178,6 +178,7 @@ typedef struct ck_app {
 
     Object *errorwin;
     Object *errorlist;
+    int32_t error_row;   /* the diagnostic next-error last visited, or -1 */
 
     int32_t quitting;
 } ck_app;
@@ -260,5 +261,14 @@ extern const struct MUI_Command ck_rexx_commands[];
 Object *ck_errorwin_create(ck_app *app);
 void    ck_errorwin_show(ck_app *app, const char *text);
 void    ck_errorwin_fill(ck_app *app);
+
+/* Jump to diagnostic ROW, opening its file if it is not already open.  One
+ * implementation for both ways in: clicking a row in the list, and
+ * `C-x `' walking the diagnostics from the keyboard. */
+void    ck_errorwin_jump(ck_app *app, int32_t row);
+
+/* Which diagnostic the error list has selected, or -1.  next-error walks
+ * from there, so the two stay in step. */
+int32_t ck_errorwin_current(ck_app *app);
 
 #endif /* CLAMACS_H */

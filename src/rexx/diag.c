@@ -218,7 +218,8 @@ static int32_t summary_line(const char *line, int32_t len,
 
 int32_t ck_diag_parse(ck_diaglist *list, const char *text)
 {
-    int32_t added = 0;
+    int32_t     added = 0;
+    int32_t     in_log = 0;
     const char *p = text;
 
     if (list == NULL || text == NULL)
@@ -233,7 +234,23 @@ int32_t ck_diag_parse(ck_diaglist *list, const char *text)
         if (len > 0 && p[len - 1] == '\r')
             len--;
 
-        if (len > 0) {
+        /* Everything after the `--- log ---' marker is what the command
+         * PRINTED, for a human to read -- and clamiga's own error reports in
+         * there begin with `ERROR: ', which the line parser would otherwise
+         * take for two more diagnostics on top of the two real ones.  The
+         * machine-readable rows all come before the marker; see cl-amiga's
+         * lib/dev-commands.lisp, %REPLY. */
+        if (len >= 11 && memcmp(p, "--- log ---", 11) == 0)
+            in_log = 1;
+
+        /* The truncation marker is the exception: %TRUNCATE appends it to
+         * the WHOLE reply after %REPLY has assembled it, so it lands after
+         * the log.  Miss it and the editor reports a clean result on a
+         * reply it only half received. */
+        if (len >= 12 && memcmp(p, "[truncated a", 12) == 0)
+            list->truncated = 1;
+
+        if (len > 0 && !in_log) {
             if (summary_line(p, len, &errors, &warnings)) {
                 list->errors       = errors;
                 list->warnings     = warnings;
@@ -241,7 +258,7 @@ int32_t ck_diag_parse(ck_diaglist *list, const char *text)
                 free(list->summary);
                 list->summary = ck_strndup(p, len);
             } else if (len >= 12 && memcmp(p, "[truncated a", 12) == 0) {
-                list->truncated = 1;
+                /* handled above */
             } else if (len >= 11 && memcmp(p, "; aborted -", 11) == 0) {
                 list->aborted = 1;
             } else if (ck_diag_parse_line(p, len, &d)) {

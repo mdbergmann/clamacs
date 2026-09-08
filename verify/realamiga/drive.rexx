@@ -221,5 +221,38 @@ IF POS('2 error(s)', DIAGS) > 0 THEN
 ELSE
     SAY 'FAIL load-buffer diagnostics were' DIAGS
 
+/* "selecting one jumps to the file and line" -- the other acceptance
+** criterion of the error list.  next-error shares its position and its jump
+** with the list, so driving the keyboard command exercises the same code a
+** mouse click would, which is the only way to reach it without a mouse. */
+'EVAL clamacs-next-error'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 6 THEN
+    SAY 'OK next-error jumped to the first error, CursorY' RESULT
+ELSE
+    SAY 'FAIL next-error CursorY=' RESULT
+
+'EVAL clamacs-next-error'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 8 THEN
+    SAY 'OK next-error jumped to the second error, CursorY' RESULT
+ELSE
+    SAY 'FAIL second next-error CursorY=' RESULT
+
+/* And walking off the end must say so rather than wrap or crash. */
+'EVAL clamacs-next-error'
+'STATUS'
+IF POS('No further', RESULT) > 0 THEN
+    SAY 'OK next-error stopped at the last diagnostic:' RESULT
+ELSE
+    SAY 'FAIL next-error past the end gave' RESULT
+
+'EVAL clamacs-previous-error'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 6 THEN
+    SAY 'OK previous-error went back to CursorY' RESULT
+ELSE
+    SAY 'FAIL previous-error CursorY=' RESULT
+
 SAY 'DRIVE-DONE'
 EXIT 0

@@ -50,6 +50,8 @@ all: $(TEST_BINS)
 
 test: $(TEST_BINS)
 	@fail=0; \
+	echo "=== tests/check-commands.sh ==="; \
+	tests/check-commands.sh || fail=1; \
 	for t in $(TEST_BINS); do \
 	    echo "=== $$t ==="; \
 	    $$t || fail=1; \

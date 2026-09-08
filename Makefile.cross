@@ -131,7 +131,10 @@ verify-amiga:
 	    for want in \
 	        'OK eval-last-sexp on (+ 1 2) echoed 3' \
 	        'OK the editor answered while a load was in flight' \
-	        'OK clamacs-load-buffer reported 2 error(s)'; do \
+	        'OK clamacs-load-buffer reported 2 error(s)' \
+	        'OK next-error jumped to the first error' \
+	        'OK next-error jumped to the second error' \
+	        'OK previous-error went back to'; do \
 	        if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	            echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	            exit 1; \

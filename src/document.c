@@ -1053,6 +1053,51 @@ static void ck_cmd_newline_and_indent(ck_doc *doc)
     ck_cmd_indent_line(doc);
 }
 
+/*
+ * Reindent every line of the region.  Bottom to top: reindenting a line
+ * changes the offsets of everything after it, but nothing before it, so
+ * working upwards means the line numbers gathered at the start stay valid.
+ */
+static void ck_cmd_indent_region(ck_doc *doc)
+{
+    int32_t point = ck_doc_cursor_index(doc);
+    LONG    y0 = 0, y1 = 0, y;
+
+    if (doc->mark < 0) {
+        ck_message(doc, "No mark set in this buffer");
+        ck_beep(doc);
+        return;
+    }
+
+    ck_index_to_xy(doc, (doc->mark < point) ? doc->mark : point, &y0, &y0);
+    {
+        LONG x = 0;
+        ck_index_to_xy(doc, (doc->mark < point) ? doc->mark : point, &x, &y0);
+        ck_index_to_xy(doc, (doc->mark < point) ? point : doc->mark, &x, &y1);
+    }
+
+    set(doc->text, MUIA_TextEditor_Quiet, TRUE);
+    for (y = y1; y >= y0; y--) {
+        ck_context ctx;
+        int32_t    line_start, column;
+
+        set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
+        set(doc->text, MUIA_TextEditor_CursorY, (IPTR)y);
+
+        if (!ck_doc_context(doc, &ctx))
+            continue;
+        line_start = ck_indent_line_start(ctx.buf, ctx.len, ctx.point);
+        column     = ck_indent_for_line(ctx.buf, ctx.len, line_start);
+        ck_context_free(&ctx);
+
+        if (column >= 0)
+            ck_reindent_line(doc, y, column);
+    }
+    set(doc->text, MUIA_TextEditor_Quiet, FALSE);
+
+    ck_message(doc, "Indented %ld line(s)", (long)(y1 - y0 + 1));
+}
+
 static void ck_cmd_eval_last_sexp(ck_doc *doc)
 {
     ck_context ctx;
@@ -1281,6 +1326,10 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         ck_cmd_newline_and_indent(doc);
         break;
 
+    case CK_CMD_INDENT_REGION:
+        ck_cmd_indent_region(doc);
+        break;
+
     /* --- clamiga -------------------------------------------------- */
     case CK_CMD_LOAD_BUFFER:
         ck_doc_save_and_load(doc);
@@ -1338,7 +1387,35 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
 
     case CK_CMD_SHOW_ERRORS:
         ck_errorwin_fill(app);
+        if (app->errorwin != NULL)
+            set(app->errorwin, MUIA_Window_Open, TRUE);
         break;
+
+    /* `C-x `' walks the diagnostics from the keyboard, and it shares both
+     * the position and the jump with the error list -- clicking a row and
+     * pressing the key are two ways into one place, not two features. */
+    case CK_CMD_NEXT_ERROR:
+    case CK_CMD_PREVIOUS_ERROR: {
+        int32_t row = ck_errorwin_current(app);
+        int32_t step = (command == CK_CMD_NEXT_ERROR) ? 1 : -1;
+
+        if (app->diags.count == 0) {
+            ck_message(doc, "No diagnostics");
+            ck_beep(doc);
+            break;
+        }
+        row += step;
+        if (row < 0 || row >= app->diags.count) {
+            ck_message(doc, "%s diagnostic",
+                       (step > 0) ? "No further" : "No previous");
+            ck_beep(doc);
+            break;
+        }
+        ck_errorwin_jump(app, row);
+        if (app->errorlist != NULL)
+            set(app->errorlist, MUIA_List_Active, (IPTR)row);
+        break;
+    }
 
     default:
         ck_message(doc, "%s is not implemented yet",

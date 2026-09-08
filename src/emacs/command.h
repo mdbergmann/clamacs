@@ -59,7 +59,6 @@
     /* search */                                                              \
     X(ISEARCH_FORWARD,          "isearch-forward")                            \
     X(ISEARCH_BACKWARD,         "isearch-backward")                           \
-    X(QUERY_REPLACE,            "query-replace")                              \
     /* files, buffers, windows */                                             \
     X(FIND_FILE,                "find-file")                                  \
     X(FIND_FILE_OTHER_WINDOW,   "find-file-other-window")                     \
@@ -69,10 +68,11 @@
     X(KILL_BUFFER,              "kill-buffer")                                \
     X(OTHER_WINDOW,             "other-window")                               \
     X(SAVE_BUFFERS_KILL_EMACS,  "save-buffers-kill-emacs")                    \
-    /* the minibuffer and the command loop itself */                          \
+    /* the command loop itself.  `C-u' is deliberately absent: the numeric
+     * argument is read by the key state machine before dispatch, so it never
+     * becomes a command and `M-x universal-argument' would be meaningless. */\
     X(EXECUTE_EXTENDED_COMMAND, "execute-extended-command")                   \
     X(KEYBOARD_QUIT,            "keyboard-quit")                              \
-    X(UNIVERSAL_ARGUMENT,       "universal-argument")                         \
     /* Lisp mode: structure */                                                \
     X(FORWARD_SEXP,             "forward-sexp")                               \
     X(BACKWARD_SEXP,            "backward-sexp")                              \
@@ -85,7 +85,8 @@
     X(INDENT_FOR_TAB_COMMAND,   "indent-for-tab-command")                     \
     X(NEWLINE_AND_INDENT,       "newline-and-indent")                         \
     X(INDENT_REGION,            "indent-region")                              \
-    /* Lisp mode: talking to clamiga */                                       \
+    /* Lisp mode: talking to clamiga.  No interrupt yet -- clamiga has no
+     * command for it until the phase-3 REPL thread exists. */               \
     X(LOAD_BUFFER,              "clamacs-load-buffer")                        \
     X(LOAD_FILE,                "clamacs-load-file")                          \
     X(COMPILE_FILE,             "clamacs-compile-file")                       \
@@ -93,7 +94,6 @@
     X(EVAL_LAST_SEXP,           "clamacs-eval-last-sexp")                     \
     X(EVAL_REGION,              "clamacs-eval-region")                        \
     X(EVAL_EXPRESSION,          "clamacs-eval-expression")                    \
-    X(INTERRUPT,                "clamacs-interrupt")                          \
     X(CONNECT,                  "clamacs-connect")                            \
     X(SHOW_ERRORS,              "clamacs-show-errors")                        \
     X(NEXT_ERROR,               "clamacs-next-error")                         \

@@ -110,6 +110,59 @@ TEST(full_reply)
     ASSERT_EQ_INT(list.count, 0);
 }
 
+TEST(the_log_section_is_not_parsed)
+{
+    /* The reply carries the diagnostics first, then the summary, then
+     * everything the command printed.  That last part contains clamiga's own
+     * error reports, which begin with `ERROR: ' -- and reading those as
+     * diagnostics doubles the list, so `C-x `' walks into rows that are not
+     * real and cannot be jumped to.  Found on the Amiga, not here; this test
+     * is what keeps it fixed. */
+    ck_diaglist list;
+    const char *reply =
+        "; loading Work:errors.lisp\n"
+        "Work:errors.lisp:7: ERROR: first deliberate error\n"
+        "Work:errors.lisp:9: ERROR: Undefined function: NO-SUCH-FUNCTION\n"
+        "2 error(s), 0 warning(s)\n"
+        "--- log ---\n"
+        "; Loading Work:errors.lisp\n"
+        "ERROR: SIMPLE-ERROR: first deliberate error\n"
+        "Backtrace:\n"
+        "  0: <anonymous> (Work:errors.lisp:7)\n"
+        "ERROR: Undefined function: NO-SUCH-FUNCTION\n"
+        "Backtrace:\n"
+        "  0: <anonymous> (Work:errors.lisp:9)\n";
+
+    ck_diag_init(&list);
+    ASSERT_EQ_INT(ck_diag_parse(&list, reply), 2);
+    ASSERT_EQ_INT(list.count, 2);
+    ASSERT_EQ_INT(list.errors, 2);
+    ASSERT_EQ_INT(list.items[0].line, 7);
+    ASSERT_EQ_INT(list.items[1].line, 9);
+    ck_diag_clear(&list);
+}
+
+TEST(truncation_is_seen_after_the_log)
+{
+    /* %TRUNCATE appends its marker to the assembled reply, so it arrives
+     * after the log section -- past the point where diagnostics stop being
+     * parsed.  It still has to register, or a half-received reply would be
+     * reported as a complete one. */
+    ck_diaglist list;
+    const char *reply =
+        "foo.lisp:1: ERROR: boom\n"
+        "1 error(s), 0 warning(s)\n"
+        "--- log ---\n"
+        "ERROR: chatter that is not a diagnostic\n"
+        "[truncated at 8192 characters]\n";
+
+    ck_diag_init(&list);
+    ASSERT_EQ_INT(ck_diag_parse(&list, reply), 1);
+    ASSERT_EQ_INT(list.count, 1);
+    ASSERT_EQ_INT(list.truncated, 1);
+    ck_diag_clear(&list);
+}
+
 TEST(clean_reply)
 {
     ck_diaglist list;
@@ -207,6 +260,8 @@ int main(void)
     RUN(message_containing_a_severity_word);
     RUN(non_diagnostic_lines);
     RUN(full_reply);
+    RUN(the_log_section_is_not_parsed);
+    RUN(truncation_is_seen_after_the_log);
     RUN(clean_reply);
     RUN(markers);
     RUN(crlf_and_missing_final_newline);
