@@ -203,9 +203,11 @@ MakeStaticHook(ck_rx_te_hook, ck_rx_te_func);
  * -- the reason it exists -- the unattended test can exercise the command
  * loop, which the ARexx commands otherwise walk straight past.
  *
- * It stops short of the raw-key decoder: turning an IDCMP_RAWKEY into a
- * ck_key needs a real keyboard, and that is the part still to confirm on
- * hardware (see the open question in specs/clamacs-ide.md).
+ * It stops short of the raw-key decoder and of MUI's event routing in front
+ * of it: KEY hands a ck_key to the layer below.  verify/realamiga/sendkey.c
+ * covers the rest by writing real key events to input.device -- the same
+ * spellings, one level deeper -- and is also how the Alt-as-Meta question is
+ * put to real hardware.
  */
 HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
 {

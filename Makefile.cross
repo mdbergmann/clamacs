@@ -45,6 +45,7 @@ LDLIBS  = -lamiga
 
 # The portable core, shared verbatim with the host test build.
 CORE_SRC = $(SRCDIR)/emacs/keymap.c \
+           $(SRCDIR)/emacs/rawkey.c \
            $(SRCDIR)/emacs/command.c \
            $(SRCDIR)/emacs/bindings.c \
            $(SRCDIR)/emacs/killring.c \
@@ -67,9 +68,15 @@ MUI_SRC  = $(SRCDIR)/main.c \
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
 ALL_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(ALL_SRC))
 
+# verify/realamiga/sendkey: the key-injection tool the unattended run uses
+# to put REAL key events through the editor.  Built with the same flags and
+# the portable key-spelling code, so `sendkey C-x C-q' means exactly what
+# `KEY C-x C-q' means -- one spelling, two depths.
+TOOL_OBJ = $(BUILDDIR)/emacs/keymap.o $(BUILDDIR)/emacs/rawkey.o
+
 .PHONY: amiga check-toolchain clean
 
-amiga: check-toolchain $(BUILDDIR)/clamacs
+amiga: check-toolchain $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
 
 check-toolchain:
 	@if [ ! -x "$(CC)" ]; then \
@@ -88,6 +95,10 @@ $(BUILDDIR)/clamacs: $(ALL_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 	@ls -l $@
 
+$(BUILDDIR)/sendkey: verify/realamiga/sendkey.c $(TOOL_OBJ)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(TOOL_OBJ) $(LDLIBS)
+
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
@@ -102,7 +113,7 @@ clean:
 # hook is borrowed from the cl-amiga checkout next door.
 .PHONY: test-amiga verify-amiga
 
-test-amiga: $(BUILDDIR)/clamacs
+test-amiga: $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
 	verify/realamiga/run-fs-uae.sh verify/realamiga/verify.fs-uae
 	@$(MAKE) --no-print-directory -f Makefile.cross verify-amiga
 
@@ -122,6 +133,8 @@ verify-amiga:
 	@# The Emacs layer, driven by keys rather than command names.  These go
 	@# through the keymaps -- prefix maps, the C-u reader, C-g, the kill
 	@# ring, the minibuffer -- which the ARexx commands walk straight past.
+	@# The `raw' lines are real IECLASS_RAWKEY events from sendkey, so they
+	@# also cover MUI's event routing and the decoder in front of the keymaps.
 	@for want in \
 	    'OK C-x is pending' \
 	    'OK C-g cancelled the prefix' \
@@ -130,7 +143,14 @@ verify-amiga:
 	    'OK C-w killed the first line' \
 	    'OK C-y yanked it back' \
 	    'OK M-x opened the minibuffer' \
-	    'OK TAB indented'; do \
+	    'OK TAB indented' \
+	    'OK raw <down> reached the class' \
+	    'OK raw C-n ran next-line' \
+	    'OK raw M-< (Alt as Meta) reached the top' \
+	    'OK raw ESC > acted as Meta' \
+	    'OK raw C-x C-q went through the prefix map' \
+	    'OK raw RET indented the new line' \
+	    'OK raw typing self-inserted'; do \
 	    if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	        echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	        exit 1; \

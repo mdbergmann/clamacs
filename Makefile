@@ -23,6 +23,7 @@ SRCDIR   = src
 # small and independent, and one link line beats a per-test dependency list
 # that would go stale.
 CORE_SRC = $(SRCDIR)/emacs/keymap.c \
+           $(SRCDIR)/emacs/rawkey.c \
            $(SRCDIR)/emacs/command.c \
            $(SRCDIR)/emacs/bindings.c \
            $(SRCDIR)/emacs/killring.c \
@@ -35,7 +36,7 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
 
 CORE_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(CORE_SRC))
 
-TESTS = keymap command bindings killring minihist token sexp indent diag queue
+TESTS = keymap rawkey command bindings killring minihist token sexp indent diag queue
 
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 

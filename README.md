@@ -14,12 +14,13 @@ drives it. See `CLAUDE.md` for the design and the phase plan, and
 ## Layout
 
 ```
-src/emacs/                 keymaps, command table, kill ring, minibuffer history
+src/emacs/                 keymaps, raw-key decoding rules, command table, kill ring, minibuffer history
 src/lisp/                  tokenizer, sexp scanner, indenter
 src/rexx/                  diagnostic parser, request queue, the rc ladder
 src/*.c                    the MUI half: custom classes, windows, ARexx, main
 tests/                     host unit tests for everything under emacs/ lisp/ rexx/
-verify/realamiga/          unattended FS-UAE run, driven through the ARexx port
+verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
+                           sendkey.c injects real key events through input.device
 docs/memory.md             what the editor costs on an 8 MB machine
 tools/setup-toolchain.sh   m68k-amigaos-gcc installer (copied from cl-amiga)
 tools/m68k-amigaos-gcc/    submodule: the cross toolchain sources (same pin as cl-amiga)
@@ -30,8 +31,9 @@ vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to rele
 
 ```
 make test                        # host unit tests for the portable core
-make -f Makefile.cross amiga     # cross-compile build/cross/clamacs
+make -f Makefile.cross amiga     # cross-compile build/cross/clamacs (and sendkey)
 make -f Makefile.cross test-amiga # unattended FS-UAE run, then check the log
+make -f Makefile.mos             # MorphOS: native build on the box, see the file's header
 ```
 
 `make test` builds only the half of the editor that takes no MUI and no OS
@@ -46,9 +48,9 @@ one; set `CLAMIGA_DIR` if it lives elsewhere.
 
 ## Requirements on the Amiga
 
-MUI 3.8 or newer (`muimaster.library` 19+) and `TextEditor.mcc` 15.x
-installed in `MUI:Libs/mui/`. Verified against MUI 3.8 and TextEditor.mcc
-15.56.
+MUI 3.8 or newer (`muimaster.library` 19+) and `TextEditor.mcc` 15.29 or
+newer installed in `MUI:Libs/mui/`; the editor checks both at startup.
+Verified against MUI 3.8 and TextEditor.mcc 15.56.
 
 `vendor/texteditor` is used for its headers, documentation and demo only —
 the editor subclasses the *installed* `TextEditor.mcc` at runtime and never
@@ -65,5 +67,6 @@ tools/setup-toolchain.sh                                   # download (macOS arm
 tools/setup-toolchain.sh --link ../cl-amiga/tools/m68k-amigaos-gcc/prefix   # reuse an existing install
 ```
 
-The MorphOS build needs the MorphOS SDK unpacked under `tools/mos-sdk/`
-(not redistributed, ignored by git).
+The MorphOS build is native: `make -f Makefile.mos` in a checkout on a
+MorphOS machine with the SDK's gcc (no PPC cross-compiler exists for the
+Mac). MorphOS ships `TextEditor.mcc`, so nothing else is needed there.

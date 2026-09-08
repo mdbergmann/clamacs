@@ -49,72 +49,98 @@ struct ck_text_data {
     ck_doc *doc;
     LONG    cmap[CK_NUM_PENS];
     int32_t pens_held;
+    struct MUI_EventHandlerNode ehnode;
+    int32_t eh_added;
 };
 
 struct ck_mini_data {
     ck_doc *doc;
+    struct MUI_EventHandlerNode ehnode;
+    int32_t eh_added;
 };
 
 /* ------------------------------------------------------------------ *
  * Raw key decoding
+ *
+ * The rules -- which qualifier is Meta, what the keymap may be told, which
+ * keys are recognised by code, what to refuse -- live in emacs/rawkey.c,
+ * where tests/test_rawkey.c can reach them.  This is the one OS call they
+ * are parameterised over.
  * ------------------------------------------------------------------ */
 
-ck_key ck_decode_rawkey(const struct IntuiMessage *imsg)
+static int32_t ck_maprawkey(void *ctx, uint16_t code, uint16_t qualifier,
+                            uint8_t *out, int32_t size)
 {
-    struct InputEvent ie;
-    UBYTE             buffer[8];
-    LONG              n;
-    uint32_t          mods = 0;
-    UWORD             qual, code;
+    const struct IntuiMessage *imsg = (const struct IntuiMessage *)ctx;
+    struct InputEvent          ie;
 
-    if (imsg == NULL || imsg->Class != IDCMP_RAWKEY)
-        return CK_KEY_NONE;
-
-    code = imsg->Code;
-    if ((code & IECODE_UP_PREFIX) != 0)
-        return CK_KEY_NONE;
-
-    qual = imsg->Qualifier;
-
-    /* Meta is Alt, either one.  The Amiga keys stay free for the OS and for
-     * MUI's menu shortcuts, which is why they are not tested here. */
-    if ((qual & IEQUALIFIER_CONTROL) != 0)
-        mods |= CK_MOD_CTRL;
-    if ((qual & (IEQUALIFIER_LALT | IEQUALIFIER_RALT)) != 0)
-        mods |= CK_MOD_META;
-    if ((qual & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) != 0)
-        mods |= CK_MOD_SHIFT;
-
-    /* The keys that have no character have to be recognised by raw code;
-     * MapRawKey would give nothing useful for them. */
-    switch (code) {
-    case 0x4C: return ck_key_make(CK_KEY_UP, mods);
-    case 0x4D: return ck_key_make(CK_KEY_DOWN, mods);
-    case 0x4E: return ck_key_make(CK_KEY_RIGHT, mods);
-    case 0x4F: return ck_key_make(CK_KEY_LEFT, mods);
-    case 0x5F: return ck_key_make(CK_KEY_HELP, mods);
-    default:   break;
-    }
-    if (code >= 0x50 && code <= 0x59)
-        return ck_key_make((uint16_t)(CK_KEY_F1 + (code - 0x50)), mods);
-
-    /* Shift and caps only: we want the BASE character, and add our own
-     * modifier bits on top.  Letting MapRawKey see Control would turn C-f
-     * into 0x06 and lose which letter it was -- and Alt would produce a
-     * dead-key accent instead of Meta. */
-    memset(&ie, 0, sizeof(ie));
+    memset(&ie, 0, sizeof ie);
     ie.ie_Class     = IECLASS_RAWKEY;
     ie.ie_Code      = code;
-    ie.ie_Qualifier = (UWORD)(qual & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT |
-                                      IEQUALIFIER_CAPSLOCK | IEQUALIFIER_NUMERICPAD));
+    ie.ie_Qualifier = qualifier;
+    /* For IDCMP_RAWKEY, IAddress points at the previous key codes the keymap
+     * needs for dead-key composition. */
     if (imsg->IAddress != NULL)
         ie.ie_EventAddress = (APTR)(*(ULONG *)imsg->IAddress);
 
-    n = MapRawKey(&ie, (STRPTR)buffer, (LONG)sizeof(buffer), NULL);
-    if (n != 1)
-        return CK_KEY_NONE;
+    return (int32_t)MapRawKey(&ie, (STRPTR)out, (LONG)size, NULL);
+}
 
-    return ck_key_make((uint16_t)buffer[0], mods);
+ck_key ck_decode_rawkey(const struct IntuiMessage *imsg)
+{
+    if (imsg == NULL || imsg->Class != IDCMP_RAWKEY)
+        return CK_KEY_NONE;
+    return ck_rawkey_decode(imsg->Code, imsg->Qualifier, ck_maprawkey,
+                            (void *)imsg);
+}
+
+/*
+ * Our own RAWKEY event handler node.
+ *
+ * The reason it exists rather than a plain MUIM_HandleEvent override: MUI
+ * delivers input by CoerceMethod on the class stored in a handler node's
+ * ehn_Class (mui.h: "MUIM_HandleEvent is invoked on exactly this class").
+ * TextEditor.mcc registers its node with ehn_Class = cl in its own Setup,
+ * and because the subclass reaches that code through DoSuperMethodA, `cl'
+ * there is the SUPERCLASS -- so every key is coerced straight to the class,
+ * and a MUIM_HandleEvent override on the subclass is never called (confirmed
+ * in FS-UAE: only the class's own self-insert ran).  Registering a node that
+ * names OUR class, at a higher priority than the class's 0, puts the Emacs
+ * layer first; when it does not consume the key it returns 0 and MUI's next
+ * handler -- the class's own node -- does the ordinary editing.
+ */
+static void ck_add_handler(struct MUI_EventHandlerNode *ehn, struct IClass *cl,
+                           Object *obj)
+{
+    ehn->ehn_Priority = 1;      /* above the class's 0: the Emacs layer first */
+    ehn->ehn_Flags    = MUI_EHF_GUIMODE;
+    ehn->ehn_Object   = obj;
+    ehn->ehn_Class    = cl;     /* our subclass: CoerceMethod comes back here */
+    ehn->ehn_Events   = IDCMP_RAWKEY;
+    DoMethod(_win(obj), MUIM_Window_AddEventHandler, (IPTR)ehn);
+}
+
+static void ck_rem_handler(struct MUI_EventHandlerNode *ehn, Object *obj)
+{
+    DoMethod(_win(obj), MUIM_Window_RemEventHandler, (IPTR)ehn);
+}
+
+/*
+ * Whether OBJ is the window's active object.  MUI delivers a RAWKEY to every
+ * registered handler regardless of focus -- the text object and the
+ * minibuffer both have one -- so each checks whether it is the active object
+ * and only the one with the focus acts, exactly as TextEditor.mcc does
+ * before its own self-insert.
+ */
+static int32_t ck_is_active(Object *obj)
+{
+    Object *win    = _win(obj);
+    IPTR    active = 0;
+
+    if (win == NULL)
+        return 0;
+    GetAttr(MUIA_Window_ActiveObject, win, &active);
+    return (Object *)active == obj;
 }
 
 /* ------------------------------------------------------------------ *
@@ -167,11 +193,19 @@ SDISPATCHER(ck_text_dispatcher)
         }
         data->pens_held = 1;
         set(obj, MUIA_TextEditor_ColorMap, (IPTR)data->cmap);
+
+        /* The Emacs layer's key handler, ahead of the class's own. */
+        ck_add_handler(&data->ehnode, cl, obj);
+        data->eh_added = 1;
         return TRUE;
     }
 
     case MUIM_Cleanup: {
         data = (struct ck_text_data *)INST_DATA(cl, obj);
+        if (data->eh_added) {
+            ck_rem_handler(&data->ehnode, obj);
+            data->eh_added = 0;
+        }
         if (data->pens_held) {
             struct ColorMap *cm = muiRenderInfo(obj)->mri_Screen->ViewPort.ColorMap;
             int32_t          i;
@@ -189,13 +223,38 @@ SDISPATCHER(ck_text_dispatcher)
     case MUIM_HandleEvent: {
         struct MUIP_HandleEvent *m = (struct MUIP_HandleEvent *)msg;
         data = (struct ck_text_data *)INST_DATA(cl, obj);
+
+        /* Invoked only through our own handler node, so it does not chain to
+         * the superclass: when the Emacs layer does not consume the key it
+         * returns 0 and MUI's next handler -- the class's node -- edits. */
         if (data->doc != NULL && m->imsg != NULL &&
-            m->imsg->Class == IDCMP_RAWKEY) {
+            m->imsg->Class == IDCMP_RAWKEY && ck_is_active(obj)) {
             ck_key key = ck_decode_rawkey(m->imsg);
             if (key != CK_KEY_NONE && ck_doc_handle_key(data->doc, key))
                 return MUI_EventHandlerRC_Eat;
         }
-        break;   /* not ours: the class gets it unchanged */
+        return 0;
+    }
+
+    /*
+     * The Emacs layer is the keyboard authority for the text object, but
+     * several of its keys are also MUI's built-in window controls, and MUI
+     * acts on those at the window level whether or not our handler ate the
+     * event -- so the focus is stolen before the Emacs binding runs.  The
+     * superclass already disables MUIKEY_GADGET_NEXT here so TAB reaches us;
+     * the rest have to be disabled too while the text object is active:
+     *   RET -> MUIKEY_PRESS (fire the default gadget)
+     *   ESC -> MUIKEY_GADGET_OFF / MUIKEY_WINDOW_CLOSE (deactivate / close)
+     *   TAB, Shift-TAB -> GADGET_NEXT / GADGET_PREV
+     * The minibuffer manages its own set in its GoActive, and the superclass
+     * restores 0 in GoInactive, so this scope is exactly "text has focus".
+     */
+    case MUIM_GoActive: {
+        IPTR result = DoSuperMethodA(cl, obj, (Msg)msg);
+        set(_win(obj), MUIA_Window_DisableKeys,
+            MUIKEYF_PRESS | MUIKEYF_GADGET_NEXT | MUIKEYF_GADGET_PREV |
+            MUIKEYF_GADGET_OFF | MUIKEYF_WINDOW_CLOSE);
+        return result;
     }
 
     default:
@@ -235,17 +294,50 @@ SDISPATCHER(ck_mini_dispatcher)
         break;
     }
 
+    case MUIM_Setup:
+        if (DoSuperMethodA(cl, obj, (Msg)msg) == 0)
+            return FALSE;
+        /* Same reason as the text class: MUIM_HandleEvent reaches a String
+         * subclass only through a handler node naming this class. */
+        data = (struct ck_mini_data *)INST_DATA(cl, obj);
+        ck_add_handler(&data->ehnode, cl, obj);
+        data->eh_added = 1;
+        return TRUE;
+
+    case MUIM_Cleanup:
+        data = (struct ck_mini_data *)INST_DATA(cl, obj);
+        if (data->eh_added) {
+            ck_rem_handler(&data->ehnode, obj);
+            data->eh_added = 0;
+        }
+        break;
+
     case MUIM_HandleEvent: {
         struct MUIP_HandleEvent *m = (struct MUIP_HandleEvent *)msg;
         data = (struct ck_mini_data *)INST_DATA(cl, obj);
         if (data->doc != NULL && m->imsg != NULL &&
-            m->imsg->Class == IDCMP_RAWKEY) {
+            m->imsg->Class == IDCMP_RAWKEY && ck_is_active(obj)) {
             ck_key key = ck_decode_rawkey(m->imsg);
             if (key != CK_KEY_NONE && ck_doc_minibuffer_key(data->doc, key))
                 return MUI_EventHandlerRC_Eat;
         }
-        break;
+        /* Not consumed: MUI's next handler -- the string gadget's own -- does
+         * the ordinary editing and cursor motion. */
+        return 0;
     }
+
+    /* TAB is MUI's cycle-chain key, handled by the window whether or not an
+     * object's handler ate it.  While the minibuffer has the focus TAB is
+     * ours (completion), so the window's handling of it is switched off for
+     * the duration -- the same thing TextEditor.mcc does for its own object
+     * in mGoActive/mGoInactive. */
+    case MUIM_GoActive:
+        set(_win(obj), MUIA_Window_DisableKeys, MUIKEYF_GADGET_NEXT);
+        break;
+
+    case MUIM_GoInactive:
+        set(_win(obj), MUIA_Window_DisableKeys, 0);
+        break;
 
     default:
         break;
@@ -258,13 +350,51 @@ SDISPATCHER(ck_mini_dispatcher)
  * Creation
  * ------------------------------------------------------------------ */
 
+/*
+ * The oldest TextEditor.mcc the phase-1 code works with.
+ * MUIM_TextEditor_SetBlock, which the colouring and the paren highlight rest
+ * on, arrived in 15.29 (vendor/texteditor/ChangeLog); ExportBlock's FullLines
+ * flag and the NoStyle export hook are older, and the success codes that
+ * 15.49 and 15.53 added to IndexToCursorXY/CursorXYToIndex are not relied
+ * on.  Verified against 15.56.
+ */
+#define CK_TEXTEDITOR_VMIN 15
+#define CK_TEXTEDITOR_RMIN 29
+
+/* YAM's way of asking an MCC its version: make a bare object of the class
+ * and read MUIA_Version/MUIA_Revision, which MUI answers with the module's
+ * library version.  Works before any window or application object exists,
+ * and loads the class, so a missing one fails here rather than later. */
+static int32_t ck_texteditor_version(LONG *version, LONG *revision)
+{
+    Object *probe = MUI_NewObject("TextEditor.mcc", TAG_DONE);
+    IPTR    v = 0, r = 0;
+
+    if (probe == NULL)
+        return 0;
+    GetAttr(MUIA_Version,  probe, &v);
+    GetAttr(MUIA_Revision, probe, &r);
+    MUI_DisposeObject(probe);
+
+    *version  = (LONG)v;
+    *revision = (LONG)r;
+    return 1;
+}
+
 int32_t ck_classes_create(ck_app *app)
 {
+    if (!ck_texteditor_version(&app->te_version, &app->te_revision))
+        return CK_CLASSES_MISSING;
+    if (app->te_version < CK_TEXTEDITOR_VMIN ||
+        (app->te_version == CK_TEXTEDITOR_VMIN &&
+         app->te_revision < CK_TEXTEDITOR_RMIN))
+        return CK_CLASSES_TOO_OLD;
+
     app->textclass = MUI_CreateCustomClass(NULL, "TextEditor.mcc", NULL,
                                            (int)sizeof(struct ck_text_data),
                                            ENTRY(ck_text_dispatcher));
     if (app->textclass == NULL)
-        return 0;
+        return CK_CLASSES_MISSING;
 
     app->miniclass = MUI_CreateCustomClass(NULL, MUIC_String, NULL,
                                            (int)sizeof(struct ck_mini_data),
@@ -272,9 +402,9 @@ int32_t ck_classes_create(ck_app *app)
     if (app->miniclass == NULL) {
         MUI_DeleteCustomClass(app->textclass);
         app->textclass = NULL;
-        return 0;
+        return CK_CLASSES_MISSING;
     }
-    return 1;
+    return CK_CLASSES_OK;
 }
 
 void ck_classes_free(ck_app *app)

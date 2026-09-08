@@ -77,6 +77,34 @@ list under "Answered during phase 1".
   code, so every hook returns `LONG 0` explicitly.
 - Never dispose a window from a notification hook: `ck_doc_close()` retires
   it and `ck_app_reap()` disposes of it from the input loop.
+- MUI hands a `RAWKEY` to **every** object registered for it, not only the
+  active one.  Both custom classes check `MUIA_Window_ActiveObject` first
+  (TextEditor.mcc does the same), else the text object eats the
+  minibuffer's TAB and C-g.
+- A bare `MUIM_HandleEvent` override on a TextEditor.mcc (or `String`)
+  subclass is **never called**: MUI coerces input to a handler node's
+  `ehn_Class`, which the class sets to `cl` in its own Setup -- the
+  superclass, once reached via `DoSuperMethodA`.  Each subclass registers
+  its **own** node (`ck_add_handler`) naming its own class at priority 1, so
+  the Emacs layer runs first and returns 0 (not the superclass) to let the
+  class's node edit.
+- `TAB`/`RET`/`ESC` are also MUI's `GADGET_NEXT`/`PRESS`/`GADGET_OFF`+
+  `WINDOW_CLOSE`, acted on at the window level regardless of the handler.
+  The text object disables them via `MUIA_Window_DisableKeys` in
+  `MUIM_GoActive` (the class already disables `GADGET_NEXT`); the minibuffer
+  keeps `TAB` for completion the same way.  Else `ESC` drops the focus and
+  `RET` fires the default gadget.
+- Synthetic key injection (`sendkey`) into the `String` minibuffer holds
+  focus for one key then MUI deactivates it, so raw `M-x <name> RET` is not
+  testable that way -- a harness limit, not an editor bug (the KEY leg and
+  host tests cover the minibuffer).  A modifier must be injected as a real
+  qualifier-key press bracketing the key, not just an `IEQUALIFIER` bit.
+- TextEditor.mcc floor is **15.29** (`SetBlock`).  `ck_classes_create()`
+  reads a bare object's `MUIA_Version` (YAM's method) and refuses below it.
+- The port's `KEY` command stops *above* the raw-key decoder.  Real key
+  events come from `verify/realamiga/sendkey` (built by `make -f
+  Makefile.cross amiga`), and `drive.rexx`'s raw-key leg is what verifies
+  Alt-as-Meta.  On a DOS command line `<` and `>` must be quoted.
 
 ## Phases
 
@@ -108,8 +136,12 @@ list under "Answered during phase 1".
   no LTO.
 - C89/C99 only. Sized integers (`uint32_t`, `int32_t`), no `size_t` or
   pointer-sized fields in anything that crosses the OS boundary.
-- MorphOS build: MorphOS SDK under `tools/mos-sdk/` (ignored), see
-  cl-amiga's `Makefile.mos` for the pattern.
+- MorphOS build: native on the box (`make -f Makefile.mos`, the SDK's gcc),
+  as cl-amiga does -- there is no PPC cross-compiler on the Mac.
+  `Makefile.mos` mirrors the TextEditor.mcc demo's MorphOS flags and leaves
+  `muistubs.c` out (its `&tag1` trick is m68k-only; the SDK supplies the
+  varargs entry points).  **Not yet compiled** as of 2026-09-08: the box
+  was off.  Its header and the spec's "Still open" list track that.
 
 ## Testing
 
@@ -117,5 +149,10 @@ list under "Answered during phase 1".
   pattern (watchdog, auto-quit). Integration tests need a clamiga binary in
   the emulated system — take it from `../cl-amiga/build/cross/`.
 - Real hardware: the `vamp` (Vampire, AmigaOS 3) and `mos` (MorphOS) MCP
-  servers, see cl-amiga's memory notes for the workflow.
+  servers, see cl-amiga's memory notes for the workflow.  When the MCP
+  config is stale, `~/Development/MySources/amimcp/server/amiga.py`
+  (`Amiga(host, token=...)`: `exec_command`, `write_file`, `arexx`,
+  `input_key`) drives a box directly.  The keyboard check there is
+  `drive.rexx`'s raw-key leg -- `sendkey` is a 68k CLI tool and runs on
+  both boxes; the spec's "Still open" list has the recipe.
 - LF line endings are forced by `.gitattributes`.

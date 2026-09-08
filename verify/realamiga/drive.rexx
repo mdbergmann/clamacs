@@ -143,8 +143,9 @@ ELSE
 ** Everything above went in through the ARexx commands, which walk straight
 ** past the keymaps.  These go through them: prefix maps, the C-u argument
 ** reader, C-g, the kill ring and the minibuffer all take part, exactly as
-** they would under a user's fingers.  (The raw-key decoder itself still
-** needs a real keyboard -- see the open question in the spec.)
+** they would under a user's fingers.  (These KEY-command tests still stop
+** above the raw-key decoder; the sendkey leg further down drives real
+** IECLASS_RAWKEY events through it.)
 ** ------------------------------------------------------------------ */
 
 'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
@@ -235,6 +236,118 @@ IF RC = 0 & RESULT = 4 THEN
     SAY 'OK TAB indented the (when ...) line to column' RESULT
 ELSE
     SAY 'FAIL TAB put the cursor at column' RESULT
+
+/* ------------------------------------------------------------------ *
+** Raw keys.  Everything above handed ck_keys to the layer BELOW the
+** decoder.  These are real IECLASS_RAWKEY events, written to input.device
+** by verify/realamiga/sendkey, so they take the whole path a keyboard
+** takes: Intuition, the active window, MUI's event handlers, the
+** ClamacsText MUIM_HandleEvent override, MapRawKey.  What they answer:
+** does Alt reach us as Meta under MUI 3.8; do keys reach the RIGHT object
+** (the minibuffer, while it is open); does what we do not bind still fall
+** through to the class.
+**
+** The `<' and `>' are quoted because the command line goes through the
+** DOS shell, where they would be redirections.
+** ------------------------------------------------------------------ */
+
+SENDKEY = 'Clamacs:build/amiga/sendkey'
+IF ~EXISTS(SENDKEY) THEN DO
+    SAY 'FAIL no sendkey tool at' SENDKEY '-- the raw-key leg could not run'
+END
+ELSE DO
+    /* OPEN activates the window; give Intuition a moment to make it so. */
+    'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+    'EVAL beginning-of-buffer'
+    CALL DELAY(25)
+
+    /* An unbound key falls through to the class: the arrow moves the
+    ** cursor.  This is also the smoke test -- if the events do not arrive
+    ** at all, everything below fails the same way, and sendkey's INFO line
+    ** names the window that got them instead. */
+    ADDRESS COMMAND SENDKEY '"<down>"'
+    CALL DELAY(10)
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = 1 THEN
+        SAY 'OK raw <down> reached the class, CursorY' RESULT
+    ELSE
+        SAY 'FAIL raw <down> CursorY=' RESULT
+
+    /* Control: the decoder must see C-n, not the 0x0E the keymap would
+    ** have made of it. */
+    ADDRESS COMMAND SENDKEY 'C-n'
+    CALL DELAY(10)
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = 2 THEN
+        SAY 'OK raw C-n ran next-line, CursorY' RESULT
+    ELSE
+        SAY 'FAIL raw C-n CursorY=' RESULT
+
+    /* Alt as Meta -- the spec's open question, answered here for MUI 3.8
+    ** under emulation.  M-< is Alt+Shift+comma: Shift goes to the keymap
+    ** and yields `<'; Alt must reach the decoder rather than MUI. */
+    'EVAL end-of-buffer'
+    'TE GETCURSOR LINE'
+    LASTY = RESULT
+    ADDRESS COMMAND SENDKEY '"M-<"'
+    CALL DELAY(10)
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = 0 THEN
+        SAY 'OK raw M-< (Alt as Meta) reached the top'
+    ELSE
+        SAY 'FAIL raw M-< CursorY=' RESULT
+
+    /* ESC as Meta: the same command by the other spelling. */
+    ADDRESS COMMAND SENDKEY 'ESC ">"'
+    CALL DELAY(10)
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = LASTY THEN
+        SAY 'OK raw ESC > acted as Meta, CursorY' RESULT
+    ELSE
+        SAY 'FAIL raw ESC > CursorY=' RESULT '(wanted' LASTY')'
+
+    /* A prefix key and an undefined completion, through the real path. */
+    ADDRESS COMMAND SENDKEY 'C-x C-q'
+    CALL DELAY(10)
+    'STATUS'
+    IF POS('undefined', RESULT) > 0 THEN
+        SAY 'OK raw C-x C-q went through the prefix map:' RESULT
+    ELSE
+        SAY 'FAIL raw C-x C-q gave' RESULT
+
+    /* The minibuffer is deliberately NOT driven by injected keys here.
+    ** MUI deactivates a programmatically-activated string gadget once the
+    ** injected input stream falls idle -- it holds the focus for a single
+    ** key -- so `sendkey' can neither type a name into it nor reliably land a
+    ** second key on it; a real keyboard streams keys without those gaps.
+    ** That is a harness limit, not an editor one: the minibuffer's command
+    ** loop, prompt, completion and history are exercised by the KEY leg above
+    ** (`M-x opened the minibuffer and C-g closed it') and by the host tests,
+    ** and raw typing into it is left for the hardware leg
+    ** (specs/clamacs-ide.md, "Still open"). */
+
+    /* Typing, in a buffer nothing else has touched.  RET after `(when x' is
+    ** newline-and-indent in Lisp mode; the text after it self-inserts
+    ** through the class, with Shift wherever the characters need it. */
+    'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
+    'EVAL end-of-buffer'
+    CALL DELAY(25)
+    ADDRESS COMMAND SENDKEY 'TEXT "(when x"'
+    ADDRESS COMMAND SENDKEY 'RET'
+    CALL DELAY(10)
+    'TE GETCURSOR COLUMN'
+    IF RC = 0 & RESULT = 2 THEN
+        SAY 'OK raw RET indented the new line to column' RESULT
+    ELSE
+        SAY 'FAIL raw RET left the cursor at column' RESULT
+    ADDRESS COMMAND SENDKEY 'TEXT "(foo Bar)"'
+    CALL DELAY(10)
+    'TE GETLINE'
+    IF POS('(foo Bar)', RESULT) > 0 THEN
+        SAY 'OK raw typing self-inserted:' RESULT
+    ELSE
+        SAY 'FAIL raw typing gave' RESULT
+END
 
 /* ------------------------------------------------------------------ *
 ** The point of the whole thing: driving a real clamiga.

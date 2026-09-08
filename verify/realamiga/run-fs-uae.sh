@@ -59,6 +59,14 @@ rm -f "$LOG"
 cp "$ROOT/build/cross/clamacs" "$ROOT/build/amiga/clamacs"
 cp "$HERE/boot-override" "$CLAMIGA/build/amiga/boot-override"
 
+# The key-injection tool rides along when it has been built.  drive.rexx
+# reports its absence as a failure of the raw-key leg rather than skipping
+# it: a run without real key events has not tested the decoder.
+rm -f "$ROOT/build/amiga/sendkey"
+if [ -f "$ROOT/build/cross/sendkey" ]; then
+	cp "$ROOT/build/cross/sendkey" "$ROOT/build/amiga/sendkey"
+fi
+
 report_log_state() {
 	if [ -f "$LOG" ]; then
 		echo "=== Watchdog: log is $(wc -c < "$LOG" | tr -d ' ') bytes; last lines: ==="

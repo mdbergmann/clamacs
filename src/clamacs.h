@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include "emacs/keymap.h"
+#include "emacs/rawkey.h"
 #include "emacs/command.h"
 #include "emacs/bindings.h"
 #include "emacs/killring.h"
@@ -51,6 +52,7 @@
 #include <proto/muimaster.h>
 
 #include <mui/TextEditor_mcc.h>
+#include "muiextra.h"   /* MUIM_GoActive/GoInactive, undocumented but stable */
 
 #include "SDI_compiler.h"
 #include "SDI_hook.h"
@@ -152,6 +154,10 @@ typedef struct ck_app {
     struct MUI_CustomClass *textclass;
     struct MUI_CustomClass *miniclass;
 
+    /* The installed TextEditor.mcc, as ck_classes_create() found it. */
+    LONG te_version;
+    LONG te_revision;
+
     ck_keymap  *global;
     ck_keymap  *lisp;
     ck_killring kill;
@@ -191,11 +197,19 @@ void    ck_beep(ck_doc *doc);
 
 /* ---- textclass.c ------------------------------------------------- */
 
+/* What ck_classes_create() found.  TOO_OLD leaves te_version/te_revision
+ * filled in so the message can say what was found. */
+enum {
+    CK_CLASSES_MISSING = 0,
+    CK_CLASSES_OK      = 1,
+    CK_CLASSES_TOO_OLD = -1
+};
+
 int32_t ck_classes_create(ck_app *app);
 void    ck_classes_free(ck_app *app);
 
-/* Decode an IDCMP_RAWKEY into a ck_key.  Exposed so both custom classes use
- * one decoder. */
+/* Decode an IDCMP_RAWKEY into a ck_key: the rules of emacs/rawkey.c over the
+ * real MapRawKey.  Exposed so both custom classes use one decoder. */
 ck_key ck_decode_rawkey(const struct IntuiMessage *imsg);
 
 /* ---- document.c -------------------------------------------------- */

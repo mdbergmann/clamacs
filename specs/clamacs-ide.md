@@ -84,10 +84,11 @@ The class is never built or forked; `vendor/texteditor` supplies the
 header (`mui/TextEditor_mcc.h`), `libraries/mui.h`, the muimaster protos
 and the SDI headers, so no MUI developer kit is needed.  The AmigaOS 3
 release bundles the class binaries from the amiga-mui release; MorphOS
-ships it.  The editor checks the class version at startup and refuses to
-run below the minimum the phase-1 code needs (`SetBlock`, `ExportBlock`,
-`CursorXYToIndex` are 15.x additions; pin the exact minimum when phase 1
-lands).
+ships it.  The editor checks the class version at startup -- a bare object's
+`MUIA_Version`/`MUIA_Revision`, YAM's method -- and refuses to run below
+**15.29**, the release that added `MUIM_TextEditor_SetBlock`, which the
+colouring and the paren highlight rest on; everything else phase 1 uses is
+older.  Verified against 15.56.
 
 ### Key handling
 
@@ -107,6 +108,17 @@ Facts from the 15.56 sources that shape the design:
   selection, Return, Tab, Backspace) still work.  A user's TextEditor
   preferences never override an Emacs binding because the subclass sees
   the key first.
+- MUI hands a `RAWKEY` event to **every** object that registered for the
+  class, not only to the active one, so both subclasses check
+  `MUIA_Window_ActiveObject` before acting -- as TextEditor.mcc itself does
+  -- and a key typed into the minibuffer is never taken by the text object
+  whose handler was registered first.  While the minibuffer has the focus
+  it also switches off MUI's cycle-chain TAB (`MUIA_Window_DisableKeys`),
+  so TAB completes.
+- The decoding rules (which qualifier is Meta, what the keymap may be
+  told, which keys are known by code, what is refused) are pure C in
+  `src/emacs/rawkey.c`, parameterised over the one OS call (`MapRawKey`),
+  and host-tested; `src/textclass.c` supplies the call.
 - **Meta** is Alt (left or right).  `ESC` acts as a Meta prefix as well,
   for keyboards and users where Alt is awkward.  **Control** is
   `IEQUALIFIER_CONTROL`.  The Amiga keys stay free for the OS and for MUI
@@ -376,11 +388,21 @@ inspector window with a parts list and a back button.
   (`verify/realamiga/run-fs-uae.sh`: boot, run a script, auto-quit,
   host-side watchdog).  A test boots clamiga with the port and clamacs,
   drives clamacs through its ARexx port (`OPEN`, `EVAL` of editor
-  commands, `GETFILE`), and checks results written to a log file.  The
-  clamiga binary comes from `../cl-amiga/build/cross/`.
+  commands, `GETFILE`, `KEY`), and checks results written to a log file.
+  The clamiga binary comes from `../cl-amiga/build/cross/`.
+- **Raw keys**: the port's `KEY` command stops above the decoder.
+  `verify/realamiga/sendkey` (a 68k CLI tool, built alongside the editor)
+  writes real `IECLASS_RAWKEY` events to `input.device`, spelled like the
+  editor's keys -- `sendkey C-x C-q`, `sendkey "M-<"`, `sendkey TEXT
+  "(foo Bar)"` -- so `drive.rexx`'s raw-key leg covers Intuition, MUI's
+  event routing, the `MUIM_HandleEvent` overrides and `MapRawKey` too.
+  Raw codes come from `MapANSI`, so it is right for the system's keymap.
 - **Real hardware** through the `vamp` (Vampire, AmigaOS 3) and `mos`
   (MorphOS) MCP servers for the things emulation does not show:
-  keyboard qualifiers, timing, memory on a small configuration.
+  keyboard qualifiers, timing, memory on a small configuration.  The
+  raw-key leg is the keyboard check there too: `sendkey` runs unchanged on
+  a real 68k Amiga and under MorphOS's 68k emulation, and `drive.rexx`
+  only needs the `Clamacs:` assign and a running RexxMast.
 
 ## Release
 
@@ -390,16 +412,96 @@ from the amiga-mui release with their LGPL notice.  Versions of clamacs and
 clamiga are independent; the editor records the oldest clamiga it works
 with and checks `VERSION` at connect time.
 
-## Open questions
+## Answered during phase 1
 
-- **Meta on Amiga keyboards**: Alt is the natural choice, but some MUI
-  setups use Alt in window shortcuts; confirm on real keyboards (Vampire,
-  MorphOS Pegasos/Mac) that `Alt+key` reaches `MUIM_HandleEvent` before
-  MUI's own handling in every case.
-- **Minimum TextEditor.mcc version**: pin it once phase 1 knows exactly
-  which methods it uses; check what MorphOS 3.x ships.
-- **Memory on 8 MB**: MUI plus TextEditor plus the editor has not been
-  measured; phase 1 records the number and decides whether an
-  `--lowmem` mode (no colouring, smaller undo) is needed.
+Each of these cost a debugging cycle in FS-UAE that the host tests could
+not have saved; CLAUDE.md carries the short list.
+
+- **MUI 3.8 is `muimaster.library` 19.**  The vendored `libraries/mui.h`
+  says `MUIMASTER_VMIN` is 20; opening with it refuses to run on exactly the
+  target.  The editor opens version 19.
+- **The editor's port is `CLAMACS.1` on the first instance**, not
+  `CLAMACS`: MUI numbers the port it builds from `MUIA_Application_Base`.
+  Clients scan the base name and `.1` .. `.9`, as they do for `CLAMIGA`.
+- **Export with `MUIV_TextEditor_ExportHook_NoStyle`.**  The `Plain` hook
+  writes `\033P[...]` colour escapes into the text, which breaks saved files
+  and desynchronises every offset from `MUIA_TextEditor_CursorIndex`.
+- **`SetBlock` marks the buffer changed.**  Colouring saves and restores
+  `MUIA_TextEditor_HasChanged` around anything that only paints.
+- **MUI takes an ARexx command hook's return value as the command's return
+  code**, so every hook returns `LONG 0` explicitly; declared `void`, the
+  code a macro saw was whatever was left in d0.
+- **Never dispose a window from a notification hook**: `ck_doc_close()`
+  retires it and `ck_app_reap()` disposes of it from the input loop.
+- **The context window must reach forward as well as back**, or
+  `end-of-defun` never moves and `C-c C-c` reads every defun as unbalanced.
+- **The diagnostic parser must stop at clamiga's `--- log ---` section**,
+  or the log lines become phantom error rows.
+- **MUI hands a `RAWKEY` to every registered object**, not only the active
+  one (see "Key handling").  Found by the raw-key leg; the `KEY` command
+  picks its receiver by `mini_state` and could not see it.
+- **A `MUIM_HandleEvent` override alone is never called on a TextEditor.mcc
+  subclass.**  MUI delivers input by `CoerceMethod` on the class named in an
+  event-handler node's `ehn_Class`, and the class registers its node with
+  `ehn_Class = cl` from its own `MUIM_Setup` -- which the subclass reaches
+  through `DoSuperMethodA`, so `cl` there is the *superclass*, and every key
+  is coerced straight to the class.  The subclass must register its **own**
+  handler node naming its own class, at a higher priority; then the Emacs
+  layer sees keys first and the class's node does the ordinary editing on
+  what it does not eat.  The same holds for the `String` minibuffer.
+- **Several Emacs keys are MUI's built-in window controls**, and MUI acts on
+  them at the window level whether or not the handler ate the event, stealing
+  the focus first: `TAB` is `MUIKEY_GADGET_NEXT`, `RET` is `MUIKEY_PRESS`,
+  `ESC` is `MUIKEY_GADGET_OFF`/`MUIKEY_WINDOW_CLOSE`.  The text object
+  disables them with `MUIA_Window_DisableKeys` while it has the focus (the
+  class already disables `GADGET_NEXT`); the minibuffer keeps `TAB` for
+  completion the same way.  Without this, `ESC` dropped the focus and `RET`
+  fired the default gadget instead of indenting.
+- **Minimum TextEditor.mcc: 15.29** (`SetBlock`), checked at startup;
+  verified against 15.56.  What MorphOS 3.x ships is still to be recorded
+  (below).
+- **Meta on Amiga keyboards, MUI 3.8 under emulation**: verified with real
+  `IECLASS_RAWKEY` events.  `Alt+Shift+,` arrives with
+  `IEQUALIFIER_LALT|LSHIFT` and decodes to `M-<` (`beginning-of-buffer`);
+  MUI does not take Alt for itself.  `ESC` as Meta works too once `ESC` is
+  kept from MUI's `GADGET_OFF`/`WINDOW_CLOSE` (above): `ESC >` runs `M->`.
+  Control (`C-n`), prefix sequences (`C-x C-q`), `RET` newline-and-indent
+  and self-insert (including shifted characters) all go through the whole
+  path -- Intuition, MUI's routing, the decoder, `MapRawKey`.  The `OK raw`
+  lines in `drive.rexx` are the record.  What remains is real keyboards,
+  below.
+- **Memory on 8 MB**: `docs/memory.md`.  The editor costs about 1.0 MB of
+  fast RAM with two documents open, so no `--lowmem` mode is needed.  The
+  editor *plus* a clamiga does not fit in 8 MB -- Workbench, MUI and
+  Picasso96 have taken 4.8 MB before either starts -- so 16 MB of
+  accelerator RAM is the verified floor for the whole IDE, and phases 3-4
+  inherit it.  The number to watch is the largest *contiguous* fast block.
+
+## Still open
+
+- **Meta on real keyboards**: whether a Vampire or Pegasos/Mac keyboard
+  driver, or a user's MUI and commodity setup, consumes Alt before the
+  window sees it.  Under FS-UAE it does not (above), but a real driver may
+  differ.  The check is the raw-key leg on the box: `Assign Clamacs:` to a
+  directory holding `build/amiga/clamacs`, `build/amiga/sendkey` and
+  `verify/realamiga/`, start RexxMast, `run Clamacs:build/amiga/clamacs
+  Clamacs:verify/realamiga/sample.lisp`, then `rx
+  Clamacs:verify/realamiga/drive.rexx`; the `OK raw M-< (Alt as Meta)` line
+  is the answer.  Both boxes (`vamp`, `mos`) were off when phase 1 closed.
+- **Raw typing into the minibuffer**: driving the `String` gadget with
+  *synthetic* key events (`input.device`) is a harness limit -- MUI holds a
+  programmatically-activated string for a single injected key and then
+  deactivates it, so `sendkey` can prove raw `M-x` opens the minibuffer and
+  raw `C-g` aborts it, but not `M-x <name> RET`.  A real keyboard streams
+  keys without the idle gaps injection leaves, so this needs the hardware
+  leg to confirm; the minibuffer's command loop, prompt, completion and
+  history are otherwise covered by the `KEY` leg and the host tests.
+- **MorphOS build**: `Makefile.mos` is written to the flags the
+  TextEditor.mcc demo's own MorphOS build uses (`-noixemul
+  -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been
+  compiled -- there is no PPC cross-compiler on the Mac and the box was
+  off.  `make -f Makefile.mos` in a checkout on the box is the step, then
+  the same `drive.rexx` (with `build/morphos/clamacs`), and the shipped
+  TextEditor.mcc version goes into the list above.
 - **Encoding beyond ISO-8859-1** is out of scope until clamiga's wide
   strings are in a release build.

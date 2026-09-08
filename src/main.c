@@ -152,6 +152,8 @@ static const char *ck_used_classes[] = { "TextEditor.mcc", NULL };
 
 static int32_t ck_app_create(ck_app *app)
 {
+    char note[128];
+
     memset(app, 0, sizeof(*app));
     app->next_id = 1;
 
@@ -168,11 +170,22 @@ static int32_t ck_app_create(ck_app *app)
 
     ck_note("keymaps built");
 
-    if (!ck_classes_create(app)) {
+    switch (ck_classes_create(app)) {
+    case CK_CLASSES_OK:
+        snprintf(note, sizeof note, "custom classes created (TextEditor.mcc %ld.%ld)",
+                 (long)app->te_version, (long)app->te_revision);
+        ck_note(note);
+        break;
+    case CK_CLASSES_TOO_OLD:
+        snprintf(note, sizeof note,
+                 "TextEditor.mcc %ld.%ld is too old -- clamacs needs 15.29 or newer",
+                 (long)app->te_version, (long)app->te_revision);
+        ck_fail(note);
+        return 0;
+    default:
         ck_fail("MUI_CreateCustomClass failed -- is TextEditor.mcc in MUI:Libs/mui/?");
         return 0;
     }
-    ck_note("custom classes created");
 
     if (!ck_rexx_open(app)) {
         ck_fail("cannot create the ARexx reply port");

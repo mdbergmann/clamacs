@@ -1,0 +1,86 @@
+# Clamacs Makefile for MorphOS (PPC) -- native build.
+#
+# Builds clamacs UNDER MorphOS FOR MorphOS with the MorphOS SDK's gcc, the way
+# cl-amiga's Makefile.mos does; there is no PPC cross-compiler on the Mac.
+# Run from a MorphOS shell (gg:bin/sh) in the checkout:
+#
+#     make -f Makefile.mos              # build/morphos/clamacs
+#     make -f Makefile.mos clean
+#
+# What differs from Makefile.cross, and why:
+#
+#   * No muistubs.c.  Its (struct TagItem *)&tag1 trick assumes m68k stack
+#     argument passing.  On PPC the varargs entry points -- MUI_NewObject,
+#     MUI_MakeObject, MUI_Request, MUI_AslRequestTags, SetAttrs, NewObject,
+#     DoMethod, SystemTags -- come from the MorphOS SDK, which is what the
+#     TextEditor.mcc demo's own MorphOS build relies on too
+#     (vendor/texteditor/demo/Makefile, `OS=mos': -noixemul
+#     -DNO_PPCINLINE_STDARG, no extra MUI library on the link line).
+#   * -DNO_PPCINLINE_STDARG mirrors that demo: the SDK's ppcinline varargs
+#     MACROS are turned off in favour of its functions.  The `XxxObject ...
+#     End' idiom cannot go through a macro -- Makefile.cross explains why
+#     under -DNO_INLINE_STDARG -- and the vendored ppcinline/muimaster.h
+#     defines none unless asked (USE_INLINE_STDARG), so the two agree.
+#   * -O2 is safe here: the miscompiles Makefile.cross avoids are m68k-gcc's.
+#   * The SDI headers (vendor/texteditor/include) pick their MorphOS
+#     dispatcher and hook trampolines from __MORPHOS__, and nothing in src/
+#     needs an #ifdef of its own.  MorphOS ships TextEditor.mcc, so the
+#     runtime dependency is the same as on AmigaOS 3.
+#
+# STATUS: written 2026-09-08 against the demo's flags; the first native build
+# is still to be done (the MorphOS box was off).  Until it has been, treat
+# this file as the plan for that build, not as a gate that has passed --
+# specs/clamacs-ide.md, "Answered during phase 1", tracks it.
+
+CC      = gcc
+
+CFLAGS  ?= -std=c99 -noixemul -Wall -O2 -DNO_PPCINLINE_STDARG
+LDFLAGS ?= -noixemul
+LDLIBS  ?=
+
+SRCDIR   = src
+BUILDDIR = build/morphos
+VENDINC  = vendor/texteditor/include
+
+# The portable core, shared verbatim with the host test build and with
+# Makefile.cross.
+CORE_SRC = $(SRCDIR)/emacs/keymap.c \
+           $(SRCDIR)/emacs/rawkey.c \
+           $(SRCDIR)/emacs/command.c \
+           $(SRCDIR)/emacs/bindings.c \
+           $(SRCDIR)/emacs/killring.c \
+           $(SRCDIR)/emacs/minihist.c \
+           $(SRCDIR)/lisp/token.c \
+           $(SRCDIR)/lisp/sexp.c \
+           $(SRCDIR)/lisp/indent.c \
+           $(SRCDIR)/rexx/diag.c \
+           $(SRCDIR)/rexx/queue.c
+
+# The MUI half, minus the m68k varargs stubs.
+MUI_SRC  = $(SRCDIR)/main.c \
+           $(SRCDIR)/textclass.c \
+           $(SRCDIR)/document.c \
+           $(SRCDIR)/rexxclient.c \
+           $(SRCDIR)/rexxport.c \
+           $(SRCDIR)/errorwin.c
+
+ALL_SRC = $(CORE_SRC) $(MUI_SRC)
+ALL_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(ALL_SRC))
+
+.PHONY: mos clean
+
+mos: $(BUILDDIR)/clamacs
+
+$(BUILDDIR)/clamacs: $(ALL_OBJ)
+	@mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	@ls -l $@
+
+$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(SRCDIR) -I$(VENDINC) -MMD -MP -c -o $@ $<
+
+-include $(ALL_OBJ:.o=.d)
+
+clean:
+	rm -rf $(BUILDDIR)
