@@ -54,6 +54,15 @@ void ck_beep(ck_doc *doc)
 
 /* ------------------------------------------------------------------ */
 
+/*
+ * MUI 3.8 -- the version installed on an ordinary AmigaOS 3 system, and the
+ * one the test image has -- is muimaster.library 19.  The header's
+ * MUIMASTER_VMIN and MUIMASTER_VLATEST are both 20, so opening with either
+ * of those refuses to run on exactly the target this editor is for.  19 is
+ * the real floor: TextEditor.mcc 15.x needs MUI 3.8 anyway.
+ */
+#define CK_MUIMASTER_VMIN 19
+
 static int32_t ck_open_libraries(void)
 {
     IntuitionBase = (struct IntuitionBase *)OpenLibrary((STRPTR)"intuition.library", 39);
@@ -61,7 +70,7 @@ static int32_t ck_open_libraries(void)
     KeymapBase    = OpenLibrary((STRPTR)"keymap.library", 37);
     AslBase       = OpenLibrary((STRPTR)"asl.library", 37);
     RexxSysBase   = (struct RxsLib *)OpenLibrary((STRPTR)"rexxsyslib.library", 36);
-    MUIMasterBase = OpenLibrary((STRPTR)MUIMASTER_NAME, MUIMASTER_VLATEST);
+    MUIMasterBase = OpenLibrary((STRPTR)MUIMASTER_NAME, CK_MUIMASTER_VMIN);
 
     return IntuitionBase != NULL && GfxBase != NULL && KeymapBase != NULL &&
            AslBase != NULL && RexxSysBase != NULL && MUIMasterBase != NULL;
@@ -84,9 +93,49 @@ static void ck_close_libraries(void)
     IntuitionBase = NULL;
 }
 
+/*
+ * Startup diagnostics.
+ *
+ * A process started with `run' has no output stream at all -- Output() is 0
+ * -- so a message written there goes nowhere, and a requester put up instead
+ * is a hang rather than a diagnostic when nobody is watching (which is
+ * exactly what an unattended FS-UAE run is).  Everything therefore also goes
+ * to PROGDIR:clamacs-startup.log, opened and closed per line so the file is
+ * complete even if the next step never returns.
+ */
+static void ck_log(const char *message)
+{
+    BPTR out = Output();
+    BPTR file;
+
+    if (out != (BPTR)0) {
+        FPuts(out, (STRPTR)"clamacs: ");
+        FPuts(out, (STRPTR)message);
+        FPuts(out, (STRPTR)"\n");
+        Flush(out);
+    }
+
+    file = Open((STRPTR)"PROGDIR:clamacs-startup.log", MODE_READWRITE);
+    if (file != (BPTR)0) {
+        Seek(file, 0, OFFSET_END);
+        FPuts(file, (STRPTR)message);
+        FPuts(file, (STRPTR)"\n");
+        Close(file);
+    }
+}
+
+static void ck_note(const char *message)
+{
+    ck_log(message);
+}
+
 static void ck_fail(const char *message)
 {
-    if (IntuitionBase != NULL) {
+    ck_log(message);
+
+    /* Only bother a user who is actually there. */
+    if (Output() == (BPTR)0 && IntuitionBase != NULL &&
+        FindTask(NULL) != NULL && ((struct Process *)FindTask(NULL))->pr_CLI == (BPTR)0) {
         struct EasyStruct es;
         es.es_StructSize   = sizeof es;
         es.es_Flags        = 0;
@@ -94,8 +143,6 @@ static void ck_fail(const char *message)
         es.es_TextFormat   = (STRPTR)"%s";
         es.es_GadgetFormat = (STRPTR)"OK";
         EasyRequestArgs(NULL, &es, NULL, (APTR)&message);
-    } else {
-        printf("clamacs: %s\n", message);
     }
 }
 
@@ -119,11 +166,19 @@ static int32_t ck_app_create(ck_app *app)
     if (app->global == NULL || app->lisp == NULL)
         return 0;
 
-    if (!ck_classes_create(app))
-        return 0;
+    ck_note("keymaps built");
 
-    if (!ck_rexx_open(app))
+    if (!ck_classes_create(app)) {
+        ck_fail("MUI_CreateCustomClass failed -- is TextEditor.mcc in MUI:Libs/mui/?");
         return 0;
+    }
+    ck_note("custom classes created");
+
+    if (!ck_rexx_open(app)) {
+        ck_fail("cannot create the ARexx reply port");
+        return 0;
+    }
+    ck_note("reply port created");
 
     app->app = ApplicationObject,
         MUIA_Application_Title,       (IPTR)"clamacs",
@@ -137,8 +192,11 @@ static int32_t ck_app_create(ck_app *app)
         MUIA_Application_Commands,    (IPTR)ck_rexx_commands,
     End;
 
-    if (app->app == NULL)
+    if (app->app == NULL) {
+        ck_fail("the MUI application object could not be created");
         return 0;
+    }
+    ck_note("application object created");
 
     ck_errorwin_create(app);
     return 1;
@@ -213,6 +271,7 @@ int main(int argc, char **argv)
     }
 
     ck_the_app = &app;
+    ck_note("libraries opened");
 
     if (!ck_app_create(&app)) {
         ck_fail("Cannot create the application.\n"
@@ -229,6 +288,7 @@ int main(int argc, char **argv)
                 opened++;
         }
     }
+    ck_note("documents opened");
     if (opened == 0 && ck_doc_new(&app, NULL) == NULL) {
         ck_fail("Cannot open a document window.");
         ck_app_destroy(&app);
@@ -236,6 +296,8 @@ int main(int argc, char **argv)
         ck_the_app = NULL;
         return RETURN_FAIL;
     }
+
+    ck_note("running; ARexx port CLAMACS");
 
     ck_app_run(&app);
 

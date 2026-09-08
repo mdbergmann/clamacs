@@ -59,6 +59,25 @@ Protocol facts the client must respect:
   `tests/test_dev_commands.sh`. **New commands are commits in cl-amiga**
   under its gates, never editor-side workarounds.
 
+## Phase 1 facts worth knowing before you touch the MUI layer
+
+Each of these cost a debugging cycle; `specs/clamacs-ide.md` has the full
+list under "Answered during phase 1".
+
+- MUI 3.8 is `muimaster.library` **19**.  The vendored `libraries/mui.h`
+  says `MUIMASTER_VMIN` is 20, which would refuse to run on the target.
+- The editor's ARexx port is `CLAMACS.1` on the first instance, not
+  `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
+- Export with `MUIV_TextEditor_ExportHook_NoStyle`.  The `Plain` hook writes
+  colour escapes into the text, which breaks saved files and desynchronises
+  every offset from `MUIA_TextEditor_CursorIndex`.
+- `SetBlock` marks the buffer changed; save and restore `HasChanged` around
+  anything that only paints.
+- MUI takes an ARexx command hook's **return value** as the command's return
+  code, so every hook returns `LONG 0` explicitly.
+- Never dispose a window from a notification hook: `ck_doc_close()` retires
+  it and `ck_app_reap()` disposes of it from the input loop.
+
 ## Phases
 
 1. **Editor MVP**: MUI app, TextEditor subclass with Emacs keys, minibuffer,

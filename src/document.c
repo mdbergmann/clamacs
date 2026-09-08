@@ -110,18 +110,19 @@ void ck_context_free(ck_context *ctx)
 }
 
 /*
- * Export a window of lines ending at the cursor's line, starting at a point
- * the sexp scanner can trust.  Its contract is that offset 0 is outside any
- * string and any comment, and a `(' in column 0 is the cheap way to
- * guarantee that: it is a defun start by definition.  If the window holds
- * none, the whole buffer from line 0 is used instead, where offset 0 is
- * trivially clean.
+ * Export a range of lines with a starting point the sexp scanner can trust.
+ * Its contract is that offset 0 is outside any string and any comment, and a
+ * `(' in column 0 is the cheap way to guarantee that: it is a defun start by
+ * definition.  If the range holds none, the caller falls back to the whole
+ * buffer, where offset 0 is trivially clean.
  */
-int32_t ck_doc_context(ck_doc *doc, ck_context *ctx)
+static int32_t ck_doc_context_range(ck_doc *doc, ck_context *ctx,
+                                    LONG y0, LONG y1)
 {
-    LONG    cy     = ck_get(doc->text, MUIA_TextEditor_CursorY);
     int32_t cursor = ck_doc_cursor_index(doc);
-    int32_t attempt;
+    LONG    idx    = 0;
+    STRPTR  raw;
+    int32_t skip = -1, i, n;
 
     ctx->raw   = NULL;
     ctx->buf   = NULL;
@@ -129,53 +130,96 @@ int32_t ck_doc_context(ck_doc *doc, ck_context *ctx)
     ctx->base  = 0;
     ctx->point = 0;
 
-    for (attempt = 0; attempt < 2; attempt++) {
-        LONG    y0  = (attempt == 0) ? (cy - CK_CONTEXT_LINES) : 0;
-        LONG    idx = 0;
-        STRPTR  raw;
-        int32_t skip = -1, i, n;
+    if (y0 < 0)
+        y0 = 0;
+    if (y1 < y0)
+        y1 = y0;
 
-        if (y0 < 0)
-            y0 = 0;
+    raw = ck_export_lines(doc, y0, y1);
+    if (raw == NULL)
+        return 0;
 
-        raw = ck_export_lines(doc, y0, cy);
-        if (raw == NULL)
-            return 0;
+    DoMethod(doc->text, MUIM_TextEditor_CursorXYToIndex,
+             (IPTR)0, (IPTR)y0, (IPTR)&idx);
 
-        DoMethod(doc->text, MUIM_TextEditor_CursorXYToIndex,
-                 (IPTR)0, (IPTR)y0, (IPTR)&idx);
+    n = (int32_t)strlen((const char *)raw);
 
-        n = (int32_t)strlen((const char *)raw);
-
-        if (y0 == 0) {
-            skip = 0;
-        } else if (raw[0] == '(') {
-            skip = 0;
-        } else {
-            for (i = 0; i + 1 < n; i++) {
-                if (raw[i] == '\n' && raw[i + 1] == '(') {
-                    skip = i + 1;
-                    break;
-                }
+    if (y0 == 0) {
+        skip = 0;
+    } else if (raw[0] == '(') {
+        skip = 0;
+    } else {
+        for (i = 0; i + 1 < n; i++) {
+            if (raw[i] == '\n' && raw[i + 1] == '(') {
+                skip = i + 1;
+                break;
             }
         }
-
-        if (skip >= 0) {
-            ctx->raw   = raw;
-            ctx->buf   = (const char *)raw + skip;
-            ctx->len   = n - skip;
-            ctx->base  = (int32_t)idx + skip;
-            ctx->point = cursor - ctx->base;
-            if (ctx->point < 0)
-                ctx->point = 0;
-            if (ctx->point > ctx->len)
-                ctx->point = ctx->len;
-            return 1;
-        }
-
-        FreeVec(raw);
     }
-    return 0;
+
+    if (skip < 0) {
+        FreeVec(raw);
+        return 0;
+    }
+
+    ctx->raw   = raw;
+    ctx->buf   = (const char *)raw + skip;
+    ctx->len   = n - skip;
+    ctx->base  = (int32_t)idx + skip;
+    ctx->point = cursor - ctx->base;
+    if (ctx->point < 0)
+        ctx->point = 0;
+    if (ctx->point > ctx->len)
+        ctx->point = ctx->len;
+    return 1;
+}
+
+static LONG ck_doc_last_line(ck_doc *doc)
+{
+    /* MUIA_TextEditor_Prop_Entries is the class's totallines, a 1-based
+     * count; the last line's 0-based index is one less.  ExportBlock leaves
+     * its stop line alone when asked for one past the end, which would
+     * silently truncate the export at the cursor -- so this clamp matters. */
+    LONG total = ck_get(doc->text, MUIA_TextEditor_Prop_Entries);
+    return (total > 0) ? total - 1 : 0;
+}
+
+/*
+ * The window around the cursor, for the things that run on every keystroke:
+ * colouring, paren matching, indentation, package tracking.  It reaches
+ * forward as well as back -- a paren typed at point can have its partner
+ * below, and an indenter that only ever saw the text above the cursor would
+ * still be right, but a forward scan that ran off the end of the buffer it
+ * was handed would not.
+ */
+int32_t ck_doc_context(ck_doc *doc, ck_context *ctx)
+{
+    LONG cy   = ck_get(doc->text, MUIA_TextEditor_CursorY);
+    LONG last = ck_doc_last_line(doc);
+    LONG y1   = cy + CK_CONTEXT_LINES;
+
+    if (y1 > last)
+        y1 = last;
+
+    if (ck_doc_context_range(doc, ctx, cy - CK_CONTEXT_LINES, y1))
+        return 1;
+
+    /* No `(' in column 0 in the window: fall back to the whole buffer, where
+     * offset 0 needs no proof. */
+    return ck_doc_context_range(doc, ctx, 0, last);
+}
+
+/*
+ * The whole buffer, for the structural commands -- end-of-defun, the sexp
+ * motions, and everything that hands a form to clamiga.  A window is wrong
+ * for these: a defun whose closing paren falls outside it reads as
+ * unbalanced, so `C-M-e' would not move and `C-c C-c' would refuse to
+ * evaluate.  These are single user actions, not per-keystroke work, so the
+ * full export is affordable.
+ */
+static int32_t ck_doc_context_full(ck_doc *doc, ck_context *ctx)
+{
+    return ck_doc_context_range(doc, ctx, 0, ck_doc_last_line(doc));
 }
 
 /* ------------------------------------------------------------------ *
@@ -259,6 +303,7 @@ void ck_doc_colour_all(ck_doc *doc)
     const char  *p;
     ck_tok_state state;
     LONG         y = 0;
+    LONG         was_changed;
 
     if (!doc->lisp_mode)
         return;
@@ -266,6 +311,12 @@ void ck_doc_colour_all(ck_doc *doc)
     text = ck_doc_export_all(doc);
     if (text == NULL)
         return;
+
+    /* SetBlock counts as an edit as far as the class is concerned, so
+     * colouring a freshly loaded file would mark it modified -- the status
+     * line would show a `*' on an untouched buffer and closing it would ask
+     * to save.  Colour is presentation, not content: restore the flag. */
+    was_changed = ck_get(doc->text, MUIA_TextEditor_HasChanged);
 
     ck_tok_state_init(&state);
     set(doc->text, MUIA_TextEditor_Quiet, TRUE);
@@ -282,6 +333,7 @@ void ck_doc_colour_all(ck_doc *doc)
     }
 
     set(doc->text, MUIA_TextEditor_Quiet, FALSE);
+    set(doc->text, MUIA_TextEditor_HasChanged, (IPTR)was_changed);
     FreeVec(text);
 }
 
@@ -291,11 +343,14 @@ void ck_doc_colour_line(ck_doc *doc, int32_t line)
     ck_tok_state state;
     const char  *p;
     LONG         y;
+    LONG         was_changed;
 
     if (!doc->lisp_mode)
         return;
     if (!ck_doc_context(doc, &ctx))
         return;
+
+    was_changed = ck_get(doc->text, MUIA_TextEditor_HasChanged);
 
     /* The context starts at a defun, where the tokenizer state is known to
      * be plain code -- so the carried state reaching the cursor's line is
@@ -322,6 +377,7 @@ void ck_doc_colour_line(ck_doc *doc, int32_t line)
         p = nl + 1;
     }
 
+    set(doc->text, MUIA_TextEditor_HasChanged, (IPTR)was_changed);
     ck_context_free(&ctx);
 }
 
@@ -334,9 +390,12 @@ void ck_doc_show_paren(ck_doc *doc)
     ck_context ctx;
     int32_t    partner;
     int32_t    probe;
+    LONG       was_changed;
 
     if (!doc->lisp_mode)
         return;
+
+    was_changed = ck_get(doc->text, MUIA_TextEditor_HasChanged);
 
     /* Take the previous highlight down first. */
     if (doc->paren_y >= 0) {
@@ -345,14 +404,17 @@ void ck_doc_show_paren(ck_doc *doc)
         doc->paren_x = doc->paren_y = -1;
     }
 
-    if (!ck_doc_context(doc, &ctx))
+    if (!ck_doc_context(doc, &ctx)) {
+        set(doc->text, MUIA_TextEditor_HasChanged, (IPTR)was_changed);
         return;
+    }
 
     /* Emacs highlights the partner of the paren BEFORE point, which is where
      * the cursor sits after typing a `)'. */
     probe = ctx.point - 1;
     if (probe < 0 || probe >= ctx.len) {
         ck_context_free(&ctx);
+        set(doc->text, MUIA_TextEditor_HasChanged, (IPTR)was_changed);
         return;
     }
 
@@ -366,6 +428,7 @@ void ck_doc_show_paren(ck_doc *doc)
     }
 
     ck_context_free(&ctx);
+    set(doc->text, MUIA_TextEditor_HasChanged, (IPTR)was_changed);
 }
 
 /* ------------------------------------------------------------------ *
@@ -678,7 +741,10 @@ static void ck_doc_track_package(ck_doc *doc)
     ck_context ctx;
     char       pkg[CK_PKG_MAX];
 
-    if (!ck_doc_context(doc, &ctx))
+    /* The whole buffer, not a window: `(in-package ...)' sits at the top of
+     * the file and the cursor is usually nowhere near it.  This runs when a
+     * document opens and before an eval, not on every keystroke. */
+    if (!ck_doc_context_full(doc, &ctx))
         return;
     if (ck_sexp_current_package(ctx.buf, ctx.len, ctx.point, pkg,
                                 (int32_t)sizeof pkg)) {
@@ -851,7 +917,7 @@ static void ck_cmd_sexp_move(ck_doc *doc, int16_t command, int32_t arg)
     int32_t    pos, target = -1, i;
     int32_t    times = (arg < 0) ? -arg : arg;
 
-    if (!ck_doc_context(doc, &ctx)) {
+    if (!ck_doc_context_full(doc, &ctx)) {
         ck_beep(doc);
         return;
     }
@@ -889,7 +955,7 @@ static void ck_cmd_kill_sexp(ck_doc *doc)
     int32_t    start, stop;
     STRPTR     text;
 
-    if (!ck_doc_context(doc, &ctx)) {
+    if (!ck_doc_context_full(doc, &ctx)) {
         ck_beep(doc);
         return;
     }
@@ -992,7 +1058,7 @@ static void ck_cmd_eval_last_sexp(ck_doc *doc)
     ck_context ctx;
     int32_t    start, stop = -1;
 
-    if (!ck_doc_context(doc, &ctx)) {
+    if (!ck_doc_context_full(doc, &ctx)) {
         ck_beep(doc);
         return;
     }
@@ -1015,7 +1081,7 @@ static void ck_cmd_eval_defun(ck_doc *doc)
     ck_context ctx;
     int32_t    start, stop;
 
-    if (!ck_doc_context(doc, &ctx)) {
+    if (!ck_doc_context_full(doc, &ctx)) {
         ck_beep(doc);
         return;
     }

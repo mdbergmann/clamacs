@@ -1,0 +1,40 @@
+# Clamacs verification config -- AmigaOS 3.1, A1200 / 68020, the documented
+# baseline.  Three volumes:
+#
+#   Workbench  cl-amiga's aos3 system, which already has MUI and
+#              TextEditor.mcc installed.  Shared rather than duplicated: one
+#              system image, maintained in one place.
+#   CLAmiga    cl-amiga itself.  Required, not optional: that system's
+#              S/user-startup ends with
+#                  execute CLAmiga:verify/realamiga/call-on-ustartup
+#              and that script is what honours the boot-override this
+#              harness drops.
+#   Clamacs    this repository.
+#
+# accuracy = 2 and no JIT: the point of the low-end config is that timing and
+# memory look like the machine the editor is meant to run on.
+
+[fs-uae]
+accuracy = 2
+jit_compiler = 0
+amiga_model = A1200
+bsdsocket_library = 1
+chip_memory = 2048
+cpu = 68020
+fast_memory = 8192
+zorro_iii_memory = 16384
+slow_memory = 0
+graphics_card = uaegfx
+graphics_memory = 2048
+hard_drive_0 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/verify/realamiga/aos3
+hard_drive_0_label = Workbench
+hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga
+hard_drive_1_label = CLAmiga
+hard_drive_2 = /Users/mbergmann/Development/MySources/amigasources/clamacs
+hard_drive_2_label = Clamacs
+joystick_port_1_mode = nothing
+keep_aspect = 1
+kickstart_file = /Users/mbergmann/Applications/Emu/Amiga/Kickstarts/amiga-os-310-a4000.rom
+video_sync = off
+window_height = 900
+window_width = 1100

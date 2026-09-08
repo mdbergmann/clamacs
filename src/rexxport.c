@@ -21,8 +21,14 @@
 #include <stdio.h>
 #include <string.h>
 
-/* MUI hands each command hook the parsed ReadArgs results as an array of
- * IPTRs, one per template item. */
+/*
+ * MUI hands each command hook the parsed ReadArgs results as an array of
+ * IPTRs, one per template item, and it uses the hook's RETURN VALUE as the
+ * command's ARexx return code.  Every hook here therefore returns LONG 0
+ * explicitly: declared void, the code a macro sees is whatever happened to
+ * be left in d0, which is how `TE GETCURSOR LINE' came back as rc 24 while
+ * the commands next to it came back as 0.
+ */
 
 static ck_doc *ck_rx_doc(void)
 {
@@ -37,7 +43,7 @@ static void ck_rx_result(const char *text)
         set(app->app, MUIA_Application_RexxString, (IPTR)(text != NULL ? text : ""));
 }
 
-HOOKPROTONHNO(ck_rx_open_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_open_func, LONG, IPTR *args)
 {
     ck_app     *app  = ck_app_current();
     const char *file = (const char *)args[0];
@@ -45,54 +51,69 @@ HOOKPROTONHNO(ck_rx_open_func, void, IPTR *args)
     ck_doc     *doc;
 
     if (app == NULL || file == NULL)
-        return;
+        return 0;
 
     doc = ck_doc_find_by_path(app, file);
     if (doc == NULL)
         doc = ck_doc_new(app, file);
     if (doc == NULL)
-        return;
+        return 0;
 
     set(doc->win, MUIA_Window_Activate, TRUE);
     if (line != NULL && *line > 0) {
         set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
         set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(*line - 1));
     }
+
+    return 0;
 }
 MakeStaticHook(ck_rx_open_hook, ck_rx_open_func);
 
-HOOKPROTONHNO(ck_rx_save_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_save_func, LONG, IPTR *args)
 {
     ck_doc *doc = ck_rx_doc();
     (void)args;
 
     if (doc == NULL || doc->path[0] == '\0')
-        return;
+        return 0;
     ck_doc_save_file(doc, doc->path);
+
+    return 0;
 }
 MakeStaticHook(ck_rx_save_hook, ck_rx_save_func);
 
-HOOKPROTONHNO(ck_rx_getfile_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_getfile_func, LONG, IPTR *args)
 {
     ck_doc *doc = ck_rx_doc();
     (void)args;
     ck_rx_result((doc != NULL) ? doc->path : "");
+
+    return 0;
 }
 MakeStaticHook(ck_rx_getfile_hook, ck_rx_getfile_func);
 
-HOOKPROTONHNO(ck_rx_gotoline_func, void, IPTR *args)
+/*
+ * LINE is 1-based here, unlike the class's own GOTOLINE (which sets
+ * MUIA_TextEditor_CursorY straight from its argument, and whose GETCURSOR
+ * reports that same 0-based number).  1-based is what `file:12:' in a
+ * diagnostic means and what the error list clicks through to, so it is the
+ * convention every line number crossing THIS port uses.
+ */
+HOOKPROTONHNO(ck_rx_gotoline_func, LONG, IPTR *args)
 {
     ck_doc     *doc  = ck_rx_doc();
     const LONG *line = (const LONG *)args[0];
 
     if (doc == NULL || line == NULL || *line <= 0)
-        return;
+        return 0;
     set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
     set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(*line - 1));
+
+    return 0;
 }
 MakeStaticHook(ck_rx_gotoline_hook, ck_rx_gotoline_func);
 
-HOOKPROTONHNO(ck_rx_eval_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_eval_func, LONG, IPTR *args)
 {
     ck_doc     *doc  = ck_rx_doc();
     const char *name = (const char *)args[0];
@@ -101,7 +122,7 @@ HOOKPROTONHNO(ck_rx_eval_func, void, IPTR *args)
     int32_t     n = 0;
 
     if (doc == NULL || name == NULL)
-        return;
+        return 0;
 
     /* A /F argument keeps trailing spaces; the command table does not. */
     while (name[n] != '\0' && n < (int32_t)sizeof trimmed - 1)
@@ -113,39 +134,45 @@ HOOKPROTONHNO(ck_rx_eval_func, void, IPTR *args)
     cmd = ck_command_lookup(trimmed);
     if (cmd == CK_CMD_NONE) {
         ck_rx_result("unknown command");
-        return;
+        return 0;
     }
     ck_doc_run_command(doc, cmd, 1);
     ck_rx_result("");
+
+    return 0;
 }
 MakeStaticHook(ck_rx_eval_hook, ck_rx_eval_func);
 
-HOOKPROTONHNO(ck_rx_insert_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_insert_func, LONG, IPTR *args)
 {
     ck_doc     *doc  = ck_rx_doc();
     const char *text = (const char *)args[0];
 
     if (doc == NULL || text == NULL)
-        return;
+        return 0;
     DoMethod(doc->text, MUIM_TextEditor_InsertText, (IPTR)text,
              (IPTR)MUIV_TextEditor_InsertText_Cursor);
+
+    return 0;
 }
 MakeStaticHook(ck_rx_insert_hook, ck_rx_insert_func);
 
-HOOKPROTONHNO(ck_rx_te_func, void, IPTR *args)
+HOOKPROTONHNO(ck_rx_te_func, LONG, IPTR *args)
 {
     ck_doc     *doc = ck_rx_doc();
     const char *cmd = (const char *)args[0];
     IPTR        r;
 
     if (doc == NULL || cmd == NULL)
-        return;
+        return 0;
 
     r = DoMethod(doc->text, MUIM_TextEditor_ARexxCmd, (IPTR)cmd);
     if (r != 0 && r != (IPTR)TRUE) {
         ck_rx_result((const char *)r);
         FreeVec((APTR)r);
     }
+
+    return 0;
 }
 MakeStaticHook(ck_rx_te_hook, ck_rx_te_func);
 

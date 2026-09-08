@@ -96,3 +96,31 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 
 clean:
 	rm -rf $(BUILDDIR)
+
+# Unattended FS-UAE run: boot AmigaOS 3, start clamacs, drive it through its
+# own ARexx port, quit.  See verify/realamiga/run-fs-uae.sh for how the boot
+# hook is borrowed from the cl-amiga checkout next door.
+.PHONY: test-amiga verify-amiga
+
+test-amiga: $(BUILDDIR)/clamacs
+	verify/realamiga/run-fs-uae.sh verify/realamiga/verify.fs-uae
+	@$(MAKE) --no-print-directory -f Makefile.cross verify-amiga
+
+verify-amiga:
+	@if [ ! -f build/amiga/clamacs-test.log ]; then \
+	    echo "No test results found. Run FS-UAE first."; exit 1; \
+	fi
+	@echo "=== clamacs on AmigaOS 3 ==="
+	@cat build/amiga/clamacs-test.log
+	@if grep -q '^FAIL' build/amiga/clamacs-test.log; then \
+	    echo "=== Amiga verification FAILED ==="; exit 1; \
+	fi
+	@if ! grep -q 'DRIVE-DONE' build/amiga/clamacs-test.log; then \
+	    echo "=== Amiga verification FAILED (the driver script did not finish) ==="; \
+	    exit 1; \
+	fi
+	@if ! grep -q '=== run end ===' build/amiga/clamacs-test.log; then \
+	    echo "=== Amiga verification FAILED (the boot script did not finish) ==="; \
+	    exit 1; \
+	fi
+	@echo "=== Amiga verification PASSED ==="

@@ -1,0 +1,34 @@
+; boot-override -- what the emulated system runs instead of cl-amiga's test
+; suite.  Consumed (copied to RAM: and deleted) by cl-amiga's
+; call-on-ustartup, so it can never hijack a later cl-amiga run.
+;
+; The editor is a GUI program, so the test drives it the way a user's macro
+; would: through its own ARexx port.  That needs ARexx running, which the
+; Workbench image does not start on its own.
+cd Clamacs:
+echo "=== run start ===" >build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+run >NIL: SYS:System/RexxMast
+SYS:Rexxc/WaitForPort REXX
+IF WARN
+  echo "FAIL RexxMast did not start" >>build/amiga/clamacs-test.log
+  SKIP done
+ENDIF
+echo "OK ARexx is running" >>build/amiga/clamacs-test.log
+stack 65000
+run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
+; drive.rexx does its own bounded wait for the port and reports what it
+; found if it is not there, which is more useful than WaitForPort's silent
+; ten-second give-up.
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+; With the editor STILL RUNNING: this is the reading that says what clamacs
+; costs.  Taking it after it exits would measure what it failed to give back.
+echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
+C:Wait 3
+echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+LAB done
+echo "=== run end ===" >>build/amiga/clamacs-test.log
+C:UAEquit
