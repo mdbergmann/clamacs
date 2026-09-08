@@ -1,0 +1,16 @@
+build/
+*.o
+*.d
+
+# FS-UAE per-file metadata written into a shared mount
+*.uaem
+
+.claude/settings.local.json
+
+# The cross toolchain install lives inside the submodule directory
+# (tools/setup-toolchain.sh puts it there, same layout as cl-amiga).
+/tools/m68k-amigaos-gcc/prefix
+
+# Non-redistributable SDKs dropped in locally.  The MorphOS SDK is needed
+# for the mos build only; MUI headers come from vendor/texteditor/include.
+/tools/mos-sdk/

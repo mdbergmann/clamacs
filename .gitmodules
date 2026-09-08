@@ -1,0 +1,7 @@
+[submodule "tools/m68k-amigaos-gcc"]
+	path = tools/m68k-amigaos-gcc
+	url = https://github.com/AmigaPorts/m68k-amigaos-gcc.git
+	ignore = untracked
+[submodule "vendor/texteditor"]
+	path = vendor/texteditor
+	url = https://github.com/amiga-mui/texteditor.git
