@@ -54,6 +54,7 @@ static ck_request *ck_request_new(ck_queue *q, const char *command,
     memcpy(r->command, command, n);
 
     r->kind   = kind;
+    r->origin = CK_REQ_NONE;
     r->flags  = flags;
     r->cookie = cookie;
     r->serial = q->next_serial++;

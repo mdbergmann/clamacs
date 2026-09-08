@@ -36,6 +36,10 @@ typedef enum {
 typedef struct ck_request {
     char              *command;  /* the exact ARexx command string */
     uint16_t           kind;     /* ck_req_kind */
+    uint16_t           origin;   /* for an automatic LASTRESULT: the kind of
+                                  * the command whose text it is fetching, so
+                                  * the continuation still knows what to do
+                                  * with the reply */
     uint16_t           flags;
     uint32_t           cookie;   /* the document (or window) the reply belongs
                                   * to, so a reply that arrives after its

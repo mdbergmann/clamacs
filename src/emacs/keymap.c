@@ -381,6 +381,19 @@ void ck_keystate_reset(ck_keystate *st)
     ck_keystate_reset_arg(st);
 }
 
+/* End a sequence, but KEEP the keys in it.  The echo area has to be able to
+ * say "C-x C-q is undefined", and by the time the caller hears about it the
+ * sequence is over -- so it is cleared at the start of the next key instead
+ * of here. */
+static void ck_keystate_end(ck_keystate *st)
+{
+    st->pending        = NULL;
+    st->pending_global = NULL;
+    st->in_prefix      = 0;
+    st->meta_pending   = 0;
+    ck_keystate_reset_arg(st);
+}
+
 static void ck_keystate_push(ck_keystate *st, ck_key key)
 {
     if (st->seqlen < CK_MAX_SEQ)
@@ -394,6 +407,11 @@ ck_keyresult ck_keystate_feed(ck_keystate *st, ck_key key, int16_t *command_out)
 
     if (st == NULL || key == CK_KEY_NONE)
         return CK_KEY_UNBOUND;
+
+    /* The previous sequence stays readable until the next key arrives, so
+     * the echo area can report it. */
+    if (!st->in_prefix)
+        st->seqlen = 0;
 
     /* ESC is a Meta prefix as well as Alt, for keyboards and users where Alt
      * is awkward or is eaten by the window manager. */
@@ -492,7 +510,7 @@ ck_keyresult ck_keystate_feed(ck_keystate *st, ck_key key, int16_t *command_out)
             ck_keystate_push(st, key);
             st->last_arg       = 1;
             st->last_arg_given = 0;
-            ck_keystate_reset(st);
+            ck_keystate_end(st);
             /* `C-x C-q' with nothing bound: the sequence is ours and it is
              * undefined.  The caller reports it; the key must not reach the
              * superclass, or C-x C-q would insert a `q'. */
@@ -517,7 +535,7 @@ ck_keyresult ck_keystate_feed(ck_keystate *st, ck_key key, int16_t *command_out)
      * here rather than trusting every caller to consume it. */
     st->last_arg       = st->arg_valid ? (st->arg_negative ? -st->arg : st->arg) : 1;
     st->last_arg_given = st->arg_valid;
-    ck_keystate_reset(st);
+    ck_keystate_end(st);
 
     if (command_out != NULL)
         *command_out = entry->command;

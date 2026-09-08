@@ -1,0 +1,98 @@
+# Clamacs cross-compilation Makefile -- AmigaOS 3, 68020+.
+#
+#   make -f Makefile.cross amiga
+#
+# Flags mirror cl-amiga's Makefile.cross so both repos use one compiler with
+# one set of settings.  Two of them are not preferences:
+#
+#   -Os      this gcc miscompiles flexible-array pointer arithmetic at -O2,
+#            and -flto has its own regressions.  Stay here.
+#   -DNO_INLINE_STDARG
+#            turns off inline/muimaster.h's stdarg MACROS for MUI_NewObject
+#            and friends.  They cannot work with the `XxxObject ... End'
+#            idiom -- nesting an object macro inside another macro's argument
+#            list does not preprocess, because the inner macro is not expanded
+#            while the outer call's arguments are being collected, so its
+#            parenthesis never balances.  src/muistubs.c supplies real
+#            varargs functions instead.
+#
+# MUI headers come from vendor/texteditor/include, which is why no MUI
+# developer kit is needed: that directory has libraries/mui.h, the muimaster
+# protos and inlines, mui/TextEditor_mcc.h and the SDI headers.
+
+TOOLCHAIN = $(CURDIR)/tools/m68k-amigaos-gcc/prefix
+CC        = $(TOOLCHAIN)/bin/m68k-amigaos-gcc
+
+BUILDDIR = build/cross
+SRCDIR   = src
+VENDINC  = vendor/texteditor/include
+
+CFLAGS  = -noixemul -mcpu=68020 -msoft-float -std=c99 -Wall -Os \
+          -fomit-frame-pointer -DNO_INLINE_STDARG -D__amigaos3__ \
+          -I$(SRCDIR) -I$(VENDINC)
+
+# STRIP=1 (default) drops the HUNK_SYMBOL blocks.  STRIP=0 keeps them so
+# MuForce / SegTracker hit reports name functions.
+STRIP ?= 1
+ifeq ($(STRIP),1)
+STRIPFLAGS = -s
+else
+STRIPFLAGS =
+endif
+
+LDFLAGS = -noixemul -mcpu=68020 -msoft-float $(STRIPFLAGS)
+LDLIBS  = -lamiga
+
+# The portable core, shared verbatim with the host test build.
+CORE_SRC = $(SRCDIR)/emacs/keymap.c \
+           $(SRCDIR)/emacs/command.c \
+           $(SRCDIR)/emacs/bindings.c \
+           $(SRCDIR)/emacs/killring.c \
+           $(SRCDIR)/emacs/minihist.c \
+           $(SRCDIR)/lisp/token.c \
+           $(SRCDIR)/lisp/sexp.c \
+           $(SRCDIR)/lisp/indent.c \
+           $(SRCDIR)/rexx/diag.c \
+           $(SRCDIR)/rexx/queue.c
+
+# The MUI half.
+MUI_SRC  = $(SRCDIR)/main.c \
+           $(SRCDIR)/textclass.c \
+           $(SRCDIR)/document.c \
+           $(SRCDIR)/rexxclient.c \
+           $(SRCDIR)/rexxport.c \
+           $(SRCDIR)/errorwin.c \
+           $(SRCDIR)/muistubs.c
+
+ALL_SRC = $(CORE_SRC) $(MUI_SRC)
+ALL_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(ALL_SRC))
+
+.PHONY: amiga check-toolchain clean
+
+amiga: check-toolchain $(BUILDDIR)/clamacs
+
+check-toolchain:
+	@if [ ! -x "$(CC)" ]; then \
+	    echo ""; \
+	    echo "  m68k-amigaos-gcc not found at:"; \
+	    echo "    $(CC)"; \
+	    echo ""; \
+	    echo "  Install it with:"; \
+	    echo "    ./tools/setup-toolchain.sh"; \
+	    echo ""; \
+	    exit 1; \
+	fi
+
+$(BUILDDIR)/clamacs: $(ALL_OBJ)
+	@mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+	@ls -l $@
+
+$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+-include $(ALL_OBJ:.o=.d)
+
+clean:
+	rm -rf $(BUILDDIR)

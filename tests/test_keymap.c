@@ -223,6 +223,15 @@ TEST(state_undefined_sequence_is_eaten)
      * superclass insert a `q' is not. */
     ASSERT_EQ_INT(feed(&f, "C-q", &cmd), CK_KEY_UNDEFINED);
     ASSERT(f.st.pending == NULL);
+
+    /* The sequence stays readable so the echo area can name it; the next
+     * key clears it. */
+    ck_keystate_describe(&f.st, buf, sizeof buf);
+    ASSERT_STR_EQ(buf, "C-x C-q ");
+
+    ASSERT_EQ_INT(feed(&f, "C-f", &cmd), CK_KEY_COMMAND);
+    ck_keystate_describe(&f.st, buf, sizeof buf);
+    ASSERT_STR_EQ(buf, "C-f ");
     fixture_free(&f);
 }
 
