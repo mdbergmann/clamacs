@@ -266,6 +266,14 @@ name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
 | `EVAL` | `FORM/F` | run an editor command by name (the `M-x` namespace) |
 | `INSERT` | `TEXT/F` | insert at point |
 | `TE` | `CMD/F` | pass-through to `MUIM_TextEditor_ARexxCmd` (`CURSOR`, `POSITION`, `GETLINE`, `GETCURSOR`, `MARK`, `TEXT`, ...) |
+| `STATUS` | | result: the echo area, so a macro can read what the editor just reported |
+| `KEY` | `KEYS/F` | feed a key sequence (`KEY C-x C-s`, `KEY C-u 4 C-f`) through the keymaps |
+
+`EVAL` and `KEY` are the two ways in, and the difference matters: `EVAL`
+runs a command directly, `KEY` goes through the keymaps, so prefix keys, the
+`C-u` argument reader, `C-g` and the minibuffer all take part.  The
+unattended test uses `KEY` to exercise the command loop, which the other
+commands walk straight past.
 
 This is what the shipped CygnusEd macro pattern needs to work against
 clamacs too, and what phase 3 extends with `OUTPUT` and `READLINE`.

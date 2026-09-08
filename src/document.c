@@ -978,53 +978,57 @@ static void ck_cmd_kill_sexp(ck_doc *doc)
     }
 }
 
-/* Replace the leading whitespace of the cursor's line with COLUMN spaces,
- * keeping the cursor at the same position in the text. */
+/*
+ * Replace the leading whitespace of line Y with COLUMN spaces.
+ *
+ * The cursor follows the text: a cursor that was inside the indentation ends
+ * up at the first non-blank character (which is what Emacs does, and is why
+ * pressing Tab at the start of an already-correct line still moves point),
+ * and one that was in the text keeps its position relative to it.
+ */
 static void ck_reindent_line(ck_doc *doc, LONG y, int32_t column)
 {
     STRPTR  line;
     int32_t old = 0, i;
     LONG    cx  = ck_get(doc->text, MUIA_TextEditor_CursorX);
+    LONG    new_cx;
     char    spaces[128];
 
     if (column < 0)
         return;
+    if (column > (int32_t)sizeof spaces - 1)
+        column = (int32_t)sizeof spaces - 1;
 
     line = ck_export_lines(doc, y, y);
     if (line == NULL)
         return;
-
     while (line[old] == ' ' || line[old] == '\t')
         old++;
     FreeVec(line);
 
-    if (old == column)
-        return;
-    if (column > (int32_t)sizeof spaces - 1)
-        column = (int32_t)sizeof spaces - 1;
+    if (old != column) {
+        for (i = 0; i < column; i++)
+            spaces[i] = ' ';
+        spaces[column] = '\0';
 
-    for (i = 0; i < column; i++)
-        spaces[i] = ' ';
-    spaces[column] = '\0';
-
-    /* Delete the old indentation, then insert the new one.  Marking the
-     * range and erasing it is one undo step rather than N backspaces. */
-    if (old > 0) {
-        DoMethod(doc->text, MUIM_TextEditor_MarkText,
-                 (IPTR)0, (IPTR)y, (IPTR)old, (IPTR)y);
-        ck_te(doc, "ERASE");
+        /* Mark the old indentation and erase it in one step: that is one
+         * undo entry rather than N backspaces, and ERASE leaves the
+         * clipboard alone, which a kill would not. */
+        if (old > 0) {
+            DoMethod(doc->text, MUIM_TextEditor_MarkText,
+                     (IPTR)0, (IPTR)y, (IPTR)old, (IPTR)y);
+            ck_te(doc, "ERASE");
+        }
+        set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
+        set(doc->text, MUIA_TextEditor_CursorY, (IPTR)y);
+        if (column > 0)
+            DoMethod(doc->text, MUIM_TextEditor_InsertText, (IPTR)spaces,
+                     (IPTR)MUIV_TextEditor_InsertText_Cursor);
     }
-    set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
-    set(doc->text, MUIA_TextEditor_CursorY, (IPTR)y);
-    if (column > 0)
-        DoMethod(doc->text, MUIM_TextEditor_InsertText, (IPTR)spaces,
-                 (IPTR)MUIV_TextEditor_InsertText_Cursor);
 
-    cx = cx - old + column;
-    if (cx < column)
-        cx = column;
-    set(doc->text, MUIA_TextEditor_CursorX, (IPTR)cx);
+    new_cx = (cx <= old) ? (LONG)column : (cx - old + column);
     set(doc->text, MUIA_TextEditor_CursorY, (IPTR)y);
+    set(doc->text, MUIA_TextEditor_CursorX, (IPTR)new_cx);
 }
 
 static void ck_cmd_indent_line(ck_doc *doc)

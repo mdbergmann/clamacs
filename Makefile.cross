@@ -119,6 +119,23 @@ verify-amiga:
 	    echo "=== Amiga verification FAILED (the driver script did not finish) ==="; \
 	    exit 1; \
 	fi
+	@# The Emacs layer, driven by keys rather than command names.  These go
+	@# through the keymaps -- prefix maps, the C-u reader, C-g, the kill
+	@# ring, the minibuffer -- which the ARexx commands walk straight past.
+	@for want in \
+	    'OK C-x is pending' \
+	    'OK C-g cancelled the prefix' \
+	    'OK C-x C-q reported' \
+	    'OK C-u 4 C-n moved four lines' \
+	    'OK C-w killed the first line' \
+	    'OK C-y yanked it back' \
+	    'OK M-x opened the minibuffer' \
+	    'OK TAB indented'; do \
+	    if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
+	        echo "=== Amiga verification FAILED (missing: $$want) ==="; \
+	        exit 1; \
+	    fi; \
+	done
 	@if ! grep -q '=== run end ===' build/amiga/clamacs-test.log; then \
 	    echo "=== Amiga verification FAILED (the boot script did not finish) ==="; \
 	    exit 1; \

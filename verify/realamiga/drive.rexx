@@ -138,6 +138,105 @@ ELSE
     SAY 'FAIL active document is' RESULT
 
 /* ------------------------------------------------------------------ *
+** The Emacs layer, driven by KEYS rather than by command names.
+**
+** Everything above went in through the ARexx commands, which walk straight
+** past the keymaps.  These go through them: prefix maps, the C-u argument
+** reader, C-g, the kill ring and the minibuffer all take part, exactly as
+** they would under a user's fingers.  (The raw-key decoder itself still
+** needs a real keyboard -- see the open question in the spec.)
+** ------------------------------------------------------------------ */
+
+'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+'EVAL beginning-of-buffer'
+
+/* A prefix key must leave the sequence pending and say so. */
+'KEY C-x'
+'STATUS'
+IF RESULT = 'C-x -' THEN
+    SAY 'OK C-x is pending and echoed as' RESULT
+ELSE
+    SAY 'FAIL C-x echoed' RESULT
+
+/* ... and C-g must abandon it. */
+'KEY C-g'
+'STATUS'
+IF RESULT = 'Quit' THEN
+    SAY 'OK C-g cancelled the prefix'
+ELSE
+    SAY 'FAIL C-g gave' RESULT
+
+/* An undefined sequence is ours: reported, and not passed to the class
+** (where the trailing key would have inserted itself). */
+'KEY C-x C-q'
+'STATUS'
+IF POS('undefined', RESULT) > 0 THEN
+    SAY 'OK C-x C-q reported:' RESULT
+ELSE
+    SAY 'FAIL C-x C-q gave' RESULT
+
+/* C-u 4 C-n moves four lines, not one. */
+'EVAL beginning-of-buffer'
+'KEY C-u 4 C-n'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 4 THEN
+    SAY 'OK C-u 4 C-n moved four lines, CursorY' RESULT
+ELSE
+    SAY 'FAIL C-u 4 C-n CursorY=' RESULT
+
+/* M-> and M-< are Meta keys through the same path. */
+'KEY M-<'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 0 THEN
+    SAY 'OK M-< reached the top'
+ELSE
+    SAY 'FAIL M-< CursorY=' RESULT
+
+/* The kill ring: C-SPC, move, C-w, then C-y puts it back.  None of this is
+** the class's -- the class has a clipboard, not a ring. */
+'EVAL beginning-of-buffer'
+'TE GETLINE'
+FIRSTLINE = RESULT
+'KEY C-SPC'
+'KEY C-n'
+'KEY C-w'
+'EVAL beginning-of-buffer'
+'TE GETLINE'
+IF RESULT ~= FIRSTLINE THEN
+    SAY 'OK C-w killed the first line'
+ELSE
+    SAY 'FAIL C-w did not change the buffer'
+
+'KEY C-y'
+'EVAL beginning-of-buffer'
+'TE GETLINE'
+IF RESULT = FIRSTLINE THEN
+    SAY 'OK C-y yanked it back:' RESULT
+ELSE
+    SAY 'FAIL C-y gave' RESULT
+
+/* M-x opens the minibuffer, and C-g closes it again. */
+'KEY M-x'
+'STATUS'
+'KEY C-g'
+'STATUS'
+IF RESULT = 'Quit' THEN
+    SAY 'OK M-x opened the minibuffer and C-g closed it'
+ELSE
+    SAY 'FAIL minibuffer C-g gave' RESULT
+
+/* Tab reindents through the Lisp indenter -- a Lisp-mode binding, so this
+** also proves the mode map is live in a .lisp buffer. */
+'GOTOLINE 6'
+'TE POSITION SOL'
+'KEY TAB'
+'TE GETCURSOR COLUMN'
+IF RC = 0 & RESULT = 4 THEN
+    SAY 'OK TAB indented the (when ...) line to column' RESULT
+ELSE
+    SAY 'FAIL TAB put the cursor at column' RESULT
+
+/* ------------------------------------------------------------------ *
 ** The point of the whole thing: driving a real clamiga.
 ** ------------------------------------------------------------------ */
 

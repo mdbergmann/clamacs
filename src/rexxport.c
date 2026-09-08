@@ -193,6 +193,62 @@ HOOKPROTONHNO(ck_rx_te_func, LONG, IPTR *args)
 }
 MakeStaticHook(ck_rx_te_hook, ck_rx_te_func);
 
+/*
+ * Feed a key sequence to the Emacs layer, spelled the way the editor spells
+ * it: `KEY C-x C-s', `KEY C-u 4 C-f', `KEY M-x'.
+ *
+ * This is the counterpart of EVAL.  EVAL runs a command directly; KEY goes
+ * through the keymaps, so prefix keys, the C-u argument reader, C-g and the
+ * minibuffer all take part.  A macro can therefore do what a user does, and
+ * -- the reason it exists -- the unattended test can exercise the command
+ * loop, which the ARexx commands otherwise walk straight past.
+ *
+ * It stops short of the raw-key decoder: turning an IDCMP_RAWKEY into a
+ * ck_key needs a real keyboard, and that is the part still to confirm on
+ * hardware (see the open question in specs/clamacs-ide.md).
+ */
+HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
+{
+    ck_doc     *doc = ck_rx_doc();
+    const char *seq = (const char *)args[0];
+    char        spelling[32];
+
+    if (doc == NULL || seq == NULL)
+        return 0;
+
+    for (;;) {
+        int32_t n = 0;
+        ck_key  key;
+
+        while (*seq == ' ' || *seq == '\t')
+            seq++;
+        if (*seq == '\0' || *seq == '\n')
+            break;
+
+        while (*seq != '\0' && *seq != ' ' && *seq != '\t' && *seq != '\n' &&
+               n < (int32_t)sizeof spelling - 1)
+            spelling[n++] = *seq++;
+        spelling[n] = '\0';
+
+        key = ck_key_from_string(spelling);
+        if (key == CK_KEY_NONE) {
+            ck_rx_result("unknown key");
+            return 0;
+        }
+
+        /* Whichever object has the focus decides, exactly as a keypress
+         * would: with the minibuffer open the keys belong to it. */
+        if (doc->mini_state != CK_MINI_IDLE)
+            ck_doc_minibuffer_key(doc, key);
+        else
+            ck_doc_handle_key(doc, key);
+    }
+
+    ck_rx_result("");
+    return 0;
+}
+MakeStaticHook(ck_rx_key_hook, ck_rx_key_func);
+
 const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"OPEN",     (char *)"FILE/A,LINE/N", 2, (struct Hook *)&ck_rx_open_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"SAVE",     (char *)"",              0, (struct Hook *)&ck_rx_save_hook,     { 0, 0, 0, 0, 0 } },
@@ -202,5 +258,6 @@ const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"INSERT",   (char *)"TEXT/F",        1, (struct Hook *)&ck_rx_insert_hook,   { 0, 0, 0, 0, 0 } },
     { (char *)"TE",       (char *)"CMD/F",         1, (struct Hook *)&ck_rx_te_hook,       { 0, 0, 0, 0, 0 } },
     { (char *)"STATUS",   (char *)"",              0, (struct Hook *)&ck_rx_status_hook,   { 0, 0, 0, 0, 0 } },
+    { (char *)"KEY",      (char *)"KEYS/F",        1, (struct Hook *)&ck_rx_key_hook,      { 0, 0, 0, 0, 0 } },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0, 0 } }
 };
