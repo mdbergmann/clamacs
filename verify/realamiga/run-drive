@@ -1,0 +1,55 @@
+; run-drive -- the phase-1 acceptance run on a REAL AmigaOS 3 machine.
+;
+; The FS-UAE harness runs boot-override from cl-amiga's boot hook; this is
+; the same sequence for a box that is already up, with RexxMast running and
+; these assigns in place:
+;
+;     Clamacs:            a drawer holding build/amiga/clamacs,
+;                         build/amiga/sendkey, verify/realamiga/ and
+;                         examples/arexx/ (the checkout's layout)
+;     Clamacs:clamiga/    a clamiga (0.9 or later) with its lib/ beside it;
+;                         absent, the integration leg is skipped
+;
+; Start it detached so the shell (or the box agent's command slot) stays
+; free, and wait for the sentinel:
+;
+;     Run >NIL: Execute Clamacs:verify/realamiga/run-drive
+;     ... until Clamacs:build/amiga/drive-done exists ...
+;     Type Clamacs:build/amiga/clamacs-test.log
+;
+; FAILAT 21 is not optional: the shipped macro ends with rc 10 when the file
+; it loads has errors -- which errors.lisp does, on purpose -- and Execute's
+; default threshold of 10 would stop the script right there, before the
+; memory reading and the quit.
+failat 21
+cd Clamacs:
+Delete >NIL: build/amiga/drive-done
+echo "=== run start ===" >build/amiga/clamacs-test.log
+date >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+stack 128000
+
+; clamiga first, with its development port open (see boot-override for
+; why the order matters on a small machine).  Its output goes to a file of
+; its own so a clamiga that dies on startup says why.
+IF EXISTS Clamacs:clamiga/clamiga
+  cd Clamacs:clamiga
+  run >Clamacs:build/amiga/clamiga.log clamiga --no-userinit --heap 2M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+  cd Clamacs:
+  C:Wait 15
+ELSE
+  echo "INFO no clamiga at Clamacs:clamiga/; the integration leg will be skipped" >>build/amiga/clamacs-test.log
+ENDIF
+
+run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
+echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
+C:Wait 3
+echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+echo "=== run end ===" >>build/amiga/clamacs-test.log
+echo "done" >build/amiga/drive-done

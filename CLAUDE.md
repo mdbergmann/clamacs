@@ -150,9 +150,14 @@ list under "Answered during phase 1".
   the emulated system — take it from `../cl-amiga/build/cross/`.
 - Real hardware: the `vamp` (Vampire, AmigaOS 3) and `mos` (MorphOS) MCP
   servers, see cl-amiga's memory notes for the workflow.  When the MCP
-  config is stale, `~/Development/MySources/amimcp/server/amiga.py`
-  (`Amiga(host, token=...)`: `exec_command`, `write_file`, `arexx`,
-  `input_key`) drives a box directly.  The keyboard check there is
-  `drive.rexx`'s raw-key leg -- `sendkey` is a 68k CLI tool and runs on
-  both boxes; the spec's "Still open" list has the recipe.
+  config is stale (or, as in this checkout, absent),
+  `~/Development/MySources/amimcp/server/amiga.py` (`Amiga(host,
+  token=...)`: `exec_command`, `write_file`, `arexx`, `input_script`)
+  drives a box directly.  `verify/realamiga/run-drive` is the whole
+  phase-1 run for a box that is up: `Assign Clamacs:` to a drawer with the
+  checkout's `build/amiga/`, `verify/realamiga/` and `examples/arexx/`,
+  a clamiga with its `lib/` under `Clamacs:clamiga/`, then `Run >NIL:
+  Execute Clamacs:verify/realamiga/run-drive` and wait for
+  `build/amiga/drive-done`.  Passed on the Vampire 2026-09-08, raw-key leg
+  included.
 - LF line endings are forced by `.gitattributes`.

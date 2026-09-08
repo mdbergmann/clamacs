@@ -476,26 +476,37 @@ not have saved; CLAUDE.md carries the short list.
   Picasso96 have taken 4.8 MB before either starts -- so 16 MB of
   accelerator RAM is the verified floor for the whole IDE, and phases 3-4
   inherit it.  The number to watch is the largest *contiguous* fast block.
+- **Real hardware (2026-09-08, Vampire: AmigaOS 3.2, muimaster.library
+  19.35, TextEditor.mcc 15.50, German keymap, MagicMenu and the user's other
+  commodities running)**: the whole `drive.rexx` run passes unchanged, the
+  raw-key leg and the integration leg against a clamiga 0.9 included.  So a
+  real input chain does not take Alt before the window sees it -- `OK raw
+  M-< (Alt as Meta) reached the top` and `OK raw ESC > acted as Meta` on
+  the box are the record -- and the phase-1 acceptance criteria hold on
+  hardware as well as under emulation.  `verify/realamiga/run-drive` is
+  the sequence for a box that is already up (it needs `FAILAT 21`: the
+  shipped macro returns 10 on `errors.lisp`, and Execute's default would
+  stop the script there).  Real-hardware readings of the editor's state
+  go through the port and answer for the *active* document, which a
+  hand on the mouse can change mid-run: check `GETFILE` first.
+- **Raw typing into the minibuffer works on real hardware.**  `M-x
+  end-of-buffer RET` as one stream of `IECLASS_RAWKEY` events with one- to
+  two-tick gaps (the box agent's input injection) ran `end-of-buffer`
+  through the minibuffer, and so did the name typed in a second burst half
+  a second after `M-x`.  The one-key deactivation is an FS-UAE artefact
+  (below), not something a keyboard does.
 
 ## Still open
 
-- **Meta on real keyboards**: whether a Vampire or Pegasos/Mac keyboard
-  driver, or a user's MUI and commodity setup, consumes Alt before the
-  window sees it.  Under FS-UAE it does not (above), but a real driver may
-  differ.  The check is the raw-key leg on the box: `Assign Clamacs:` to a
-  directory holding `build/amiga/clamacs`, `build/amiga/sendkey` and
-  `verify/realamiga/`, start RexxMast, `run Clamacs:build/amiga/clamacs
-  Clamacs:verify/realamiga/sample.lisp`, then `rx
-  Clamacs:verify/realamiga/drive.rexx`; the `OK raw M-< (Alt as Meta)` line
-  is the answer.  Both boxes (`vamp`, `mos`) were off when phase 1 closed.
-- **Raw typing into the minibuffer**: driving the `String` gadget with
-  *synthetic* key events (`input.device`) is a harness limit -- MUI holds a
+- **Raw typing into the minibuffer under FS-UAE**: driving the `String`
+  gadget with *synthetic* key events there is a harness limit -- MUI holds a
   programmatically-activated string for a single injected key and then
   deactivates it, so `sendkey` can prove raw `M-x` opens the minibuffer and
-  raw `C-g` aborts it, but not `M-x <name> RET`.  A real keyboard streams
-  keys without the idle gaps injection leaves, so this needs the hardware
-  leg to confirm; the minibuffer's command loop, prompt, completion and
-  history are otherwise covered by the `KEY` leg and the host tests.
+  raw `C-g` aborts it, but not `M-x <name> RET`.  On the Vampire the same
+  events type the whole name (above), so `drive.rexx` keeps its raw leg
+  short of the minibuffer to stay green under emulation; the minibuffer's
+  command loop, prompt, completion and history are covered by the `KEY`
+  leg, the host tests, and the hardware run.
 - **MorphOS build**: `Makefile.mos` is written to the flags the
   TextEditor.mcc demo's own MorphOS build uses (`-noixemul
   -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been
