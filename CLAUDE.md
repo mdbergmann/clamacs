@@ -4,6 +4,9 @@ Emacs-flavoured Common Lisp IDE for AmigaOS 3 (68020+) and MorphOS. Native C
 MUI application; drives a running `clamiga` (the CL-Amiga runtime, checked
 out beside this repo as `../cl-amiga`) over ARexx.
 
+The full design and phase plan is `specs/clamacs-ide.md`; this file is the
+short version.
+
 ## Architecture decisions (2026-09-08)
 
 - **Two processes.** The editor is native C, the Lisp lives in `clamiga`.

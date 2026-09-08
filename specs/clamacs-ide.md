@@ -1,0 +1,397 @@
+# Clamacs: an Emacs-flavoured Common Lisp IDE for AmigaOS 3 and MorphOS
+
+Status: PROPOSED
+Date: 2026-09-08
+
+## Goal
+
+A native editor for AmigaOS 3 (68020+) and MorphOS with Emacs key handling
+and a Lisp mode, that drives a running `clamiga` (the CL-Amiga runtime) the
+way SLIME drives a Lisp: load and compile the buffer with clickable
+diagnostics, evaluate forms, look up arglists and definitions, and — in
+later phases — a REPL, a debugger and an inspector, each in its own window,
+like a real IDE.  No Emacs, no TCP stack and no host machine involved:
+editor and Lisp are two Amiga processes talking over ARexx.
+
+## Non-goals
+
+- An editor written in Lisp.  Redisplay and buffer edits must not run as
+  bytecode on a 14 MHz 68020, a GC pause must not freeze the editor, and a
+  crash in either half must not take down the other.
+- Emacs Lisp compatibility, or a general-purpose extension language inside
+  the editor.  Extensibility is the editor's ARexx port plus Lisp on the
+  clamiga side.
+- Emacs-style split windows on one buffer (see Text area).
+- Non-Lisp language modes.  The design does not prevent them; nothing is
+  built for them.
+
+## Options considered
+
+| Option | Verdict |
+|--------|---------|
+| Port Lem (the Emacs in CL) | No. Lem is from-scratch CL on SBCL (native code); core depends on iterate, closer-mop, trivia, cl-ppcre, micros, inquisitor, babel, bordeaux-threads, yason, log4cl, dexador, cl-mustache, sb-concurrency; frontends need ncurses, SDL2 or webview. A 48 MB-heap Vampire/MorphOS project at best, not a 68020/8 MB one. |
+| Editor in Lisp inside clamiga, Emacs-split (C text core as builtins) | No. Gets REPL/debugger/inspector for free (in-process), but bytecode redisplay, FFI-crossing draw callbacks, GC pauses and shared crashes. The C text core is the same work as the standalone editor's. |
+| Port a C editor (mg, uEmacs, Femto) and embed clamiga as extension language | No. clamiga is not packaged as a library; the C parts of those editors are the easy fifth, and their line-list buffers and command loops would be stripped anyway. |
+| Own MUI custom class (gap buffer, redisplay) | Fallback only. Months to reach TextEditor.mcc's polish. |
+| Plain Intuition window | No. Scroll gadgets, GadTools menus, prefs and an ARexx port to write by hand; foreign on MorphOS. |
+| ReAction | No. AmigaOS 3.2/OS4 only, absent on MorphOS. |
+| **MUI application, private subclass of the installed `TextEditor.mcc`** | **Chosen.** One toolkit native on both targets; ARexx port for free; custom class is the hook for the text area; the class supplies rendering, undo/redo, clipboard, search, range styling and index/position mapping. |
+
+## Architecture
+
+```
+  +---------------------------+     ARexx     +-----------------------------+
+  | clamacs (C, MUI)          | ------------> | clamiga                     |
+  |  Application              |  port CLAMIGA |  AMIGA.AREXX handler thread |
+  |   document windows        |               |   EXT.DEV command layer     |
+  |    ClamacsText (subclass  | <------------ |   (lib/dev-commands.lisp)   |
+  |     of TextEditor.mcc)    |  port CLAMACS |                             |
+  |    minibuffer / status    |  (phase 3+)   |  REPL thread (phase 3)      |
+  |   error list window       |               |  nested debugger loop (4)   |
+  |   REPL window (3)         |               |                             |
+  |   debugger, inspector (4) |               |                             |
+  +---------------------------+               +-----------------------------+
+```
+
+Two processes.  The editor is the ARexx *client* for everything it asks
+the Lisp; the Lisp is the client of the editor's port when it has
+something to push (REPL output, read requests) from phase 3 on.
+
+Components of the editor:
+
+- **Application** — one MUI application object; owns the ARexx client
+  state, the editor's own ARexx port (`MUIA_Application_Commands`), the
+  keymap tables and the command table.
+- **Document window** — one per file: a `ClamacsText` object, a scrollbar
+  attached through `MUIA_TextEditor_Slider`, a status line (file, package,
+  line/column, arglist echo from phase 2), and the minibuffer (a `String`
+  object that becomes active when a command needs input).
+- **ClamacsText** — the private subclass of `TextEditor.mcc` carrying the
+  Emacs layer (see below).
+- **Error list window** — diagnostics of the last LOAD/COMPILE-FILE as a
+  `List`; selecting a row jumps to file and line.  Plain MUI `List`, no
+  extra MCC dependency.
+- **ARexx client** — asynchronous request/reply to clamiga's port.
+- **Later windows** — REPL (phase 3), debugger and inspector (phase 4).
+
+## The text area: subclass of TextEditor.mcc
+
+Created at runtime with
+`MUI_CreateCustomClass(NULL, "TextEditor.mcc", NULL, sizeof(struct Data),
+ENTRY(Dispatcher))`, using the SDI dispatcher macros from
+`vendor/texteditor/include` so the same source builds for 68k and MorphOS.
+The class is never built or forked; `vendor/texteditor` supplies the
+header (`mui/TextEditor_mcc.h`), `libraries/mui.h`, the muimaster protos
+and the SDI headers, so no MUI developer kit is needed.  The AmigaOS 3
+release bundles the class binaries from the amiga-mui release; MorphOS
+ships it.  The editor checks the class version at startup and refuses to
+run below the minimum the phase-1 code needs (`SetBlock`, `ExportBlock`,
+`CursorXYToIndex` are 15.x additions; pin the exact minimum when phase 1
+lands).
+
+### Key handling
+
+Facts from the 15.56 sources that shape the design:
+
+- The class resolves keys through a `struct te_key {code, qual, act}`
+  table terminated by `code == -1`, taken from the **user's TextEditor.mcc
+  preferences** (`MUICFG_TextEditor_Keybindings`) or the compiled-in
+  defaults.  `MUIA_TextEditor_KeyBindings` exists in the header but
+  **nothing in the class reads it** — the application cannot supply its
+  own table.
+- Therefore the Emacs layer owns its bindings by overriding
+  `MUIM_HandleEvent`: decode the `IDCMP_RAWKEY` event (raw code, qualifier,
+  `MapRawKey` for the vanilla character), run the keymap; if bound, execute
+  the command and return `MUI_EventHandlerRC_Eat`; otherwise
+  `DoSuperMethodA` so the class's own bindings (arrows, Home/End, mouse
+  selection, Return, Tab, Backspace) still work.  A user's TextEditor
+  preferences never override an Emacs binding because the subclass sees
+  the key first.
+- **Meta** is Alt (left or right).  `ESC` acts as a Meta prefix as well,
+  for keyboards and users where Alt is awkward.  **Control** is
+  `IEQUALIFIER_CONTROL`.  The Amiga keys stay free for the OS and for MUI
+  menu shortcuts.
+
+### Text access
+
+No direct line-access API exists, so structural editing works on exported
+text:
+
+| Need | Class facility |
+|------|----------------|
+| Lines around point (paren match, indentation, defun-at-point) | `MUIM_TextEditor_ExportBlock` with `MUIF_TextEditor_ExportBlock_FullLines` on a line range |
+| Whole buffer (save, load-buffer, eval-buffer) | `MUIM_TextEditor_ExportText` |
+| Insert at point / at a position | `MUIM_TextEditor_InsertText` |
+| Point as index and back | `MUIA_TextEditor_CursorX/Y`, `MUIA_TextEditor_CursorIndex`, `MUIM_TextEditor_CursorXYToIndex`, `MUIM_TextEditor_IndexToCursorXY` |
+| Region | `MUIM_TextEditor_MarkText`, `MUIM_TextEditor_BlockInfo`, `MUIA_TextEditor_AreaMarked` |
+| Syntax colouring | `MUIM_TextEditor_SetBlock` with `MUIF_TextEditor_SetBlock_Color` per token range |
+| Undo/redo, clipboard, search | class built-ins (`MUIA_TextEditor_UndoLevels`, `MUIM_TextEditor_Search`) |
+| Change notification | `MUIA_TextEditor_ContentsChanged`, `MUIA_TextEditor_HasChanged` |
+
+Exporting the lines around the cursor is cheap.  If profiling on a 68020
+shows export cost in paren matching or colouring, the fallback is a shadow
+copy of the text in the application, synchronised from
+`ContentsChanged`, not a fork of the class.
+
+One object is one text: same-buffer split views are not supported, and the
+editor does not emulate them.  Several documents, several windows.
+
+## Emacs layer
+
+- **Keymaps**: global map, Lisp-mode map, and prefix maps (`C-x`, `C-c`,
+  `M-`/`ESC`), each a sorted array of `{qualifier, code, binding}` where a
+  binding is a command or another map.  `C-g` cancels a prefix.  `C-u`
+  numeric arguments in phase 1 for the movement and kill commands only.
+- **Commands** are C functions registered by name in a command table, so
+  `M-x name` and the editor's ARexx port share one namespace.
+- **Minibuffer**: the window's `String` object, activated with a prompt,
+  with history and tab completion from a per-prompt completion source
+  (file names via the directory listing, command names, later symbol names
+  from clamiga).  The same line is the echo area.
+- **Kill ring** in the application (`C-k`, `C-w`, `M-w`, `C-y`, `M-y`),
+  distinct from the clipboard; `C-w`/`M-w` also copy to the clipboard so
+  other applications see the last kill.
+- **Mark and region**: `C-SPC` sets the mark; the region is shown through
+  the class's block marking so mouse selection and keyboard selection are
+  the same thing.
+- **Isearch** (`C-s`/`C-r`) over `MUIM_TextEditor_Search` with the
+  minibuffer showing the pattern.
+- **Files**: `C-x C-f`, `C-x C-s`, `C-x C-w`, `C-x b`, `C-x k`; ASL file
+  requester behind `C-x C-f` when the minibuffer entry is empty.  Files are
+  8-bit (ISO-8859-1), matching clamiga's narrow strings.
+
+Phase-1 key table (the bindings a user can rely on):
+
+| Keys | Command |
+|------|---------|
+| `C-f C-b C-n C-p C-a C-e M-f M-b M-< M-> C-v M-v` | movement |
+| `C-d M-d C-k C-w M-w C-y M-y` | delete, kill, yank |
+| `C-SPC C-x h` | mark, select all |
+| `C-/ C-_ C-x u` | undo |
+| `C-s C-r` | isearch |
+| `C-x C-f C-x C-s C-x C-w C-x b C-x k C-x C-c` | files, buffers, quit |
+| `C-x o C-x 2 (new window on another file)` | windows |
+| `M-x` | command by name |
+| `C-M-f C-M-b C-M-u C-M-d C-M-a C-M-e C-M-k M-(` | sexp commands (Lisp mode) |
+| `Tab` | reindent line |
+| `C-c C-k C-c C-c C-x C-e C-c C-r C-c C-l` | load buffer, eval defun, eval last sexp, eval region, load file |
+
+## Lisp mode
+
+- **Tokenizer** (pure C, host-testable): comments (`;`, `#| |#`), strings,
+  characters (`#\`), keywords (`:foo`), the defining-form heads
+  (`defun`, `defmacro`, `defvar`, `defclass`, ...), numbers, symbols.  Runs
+  over the changed line(s) after each edit and applies colours with
+  `SetBlock`; a multi-line construct (block comment, string) re-tokenizes
+  forward until the state matches the previous run.
+- **Sexp scanner** (pure C, host-testable): forward/backward sexp, up/down
+  list, beginning/end of defun, matching-paren search over an exported
+  window of lines that grows backwards until a column-0 `(` (defun start)
+  is found.  Paren match highlights the partner with a `SetBlock` colour
+  and clears it on the next cursor move.
+- **Indentation** (pure C, host-testable): `Return` inserts a newline and
+  indents; `Tab` reindents the current line.  Rules follow SLIME's
+  `cl-indent`: a built-in table maps operator symbols to a body-indent spec
+  (`defun` 2, `let` 1, `if` 2, `when`/`unless` 1, `loop` special, `lambda`
+  1, `flet`/`labels` 1 with binding bodies, `handler-case` 1, ...); unknown
+  operators align to the first argument, or one space past the paren when
+  the operator stands alone.  The table is data, so phase 2 can extend it
+  with `&body` positions asked from clamiga.
+- **Package tracking**: the nearest `(in-package ...)` above point gives
+  the package sent with each eval; the status line shows it.
+
+## ARexx client
+
+### Port discovery and launch
+
+Port `CLAMIGA`, else `CLAMIGA.1` .. `CLAMIGA.9` (a second instance), the
+same scan the shipped `clamiga.rexx` macro does.  If none exists and the
+user asked for a Lisp command, the editor offers to launch clamiga in its
+own console window (`SystemTags` with a `CON:` window, the command line
+from the editor's preferences, default `clamiga`) and waits up to a
+configurable time for the port to appear; the user's `S:.clamigarc` is
+expected to `(require "amiga/arexx") (amiga.arexx:start)`.
+
+### Asynchronous requests
+
+Every request is a `RexxMsg` built with `CreateRexxMsg`/`CreateArgstring`
+and sent with `PutMsg`; the editor **never** waits for the reply.  The
+reply port's signal bit is added to the `Wait()` mask of the MUI input
+loop (`MUIM_Application_NewInput`), and the reply is handled like any
+other event.  Rules:
+
+- One request in flight per clamiga port (the port serves one message at a
+  time).  Further requests queue in the editor, in order.
+- A request carries a continuation: the command that issued it, the
+  document, and what to do with the reply (fill the error list, insert the
+  values, show in the minibuffer).
+- A watchdog timer (via the MUI application's timer) reports a request that
+  has had no reply for a configurable time — it does not cancel it, since
+  the handler thread will reply eventually, and cancelling would desync the
+  one-in-flight rule.
+- Return codes are the ARexx severity ladder: 0 ok, 5 warnings, 10 errors,
+  20 unusable.  ARexx carries `RESULT` only with rc 0, so any non-zero rc
+  is followed by an automatic `LASTRESULT` request to fetch the text.
+- Replies are capped at 8 KB by clamiga, truncated on a line boundary; the
+  editor shows the marker line as-is.
+
+### Commands (existing in clamiga 0.9)
+
+| Command | Editor use |
+|---------|------------|
+| `PING` | port health check after connect / launch |
+| `VERSION` | shown in the status line; the editor refuses versions older than it knows |
+| `IN-PACKAGE <pkg>` | sent before an eval when the buffer's package changed since the last request |
+| `LOAD <file>` | `C-c C-k` after saving the buffer; `C-c C-l` for another file |
+| `COMPILE-FILE <file>` | `M-x compile-file` |
+| `EVAL <form>` | `C-c C-c`, `C-x C-e`, `C-c C-r` |
+| `LASTRESULT` | automatic after a non-zero rc |
+
+Diagnostics are parsed from the reply text one line at a time:
+`<file>:<line>: <SEVERITY>: <message>` rows go into the error list, the
+summary row (`N error(s), M warning(s)`) into the minibuffer.  Anything
+else is shown verbatim in the error list window's text pane.
+
+### The editor's own ARexx port
+
+`MUIA_Application_UseRexx` with a `MUIA_Application_Commands` table (port
+name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
+
+| Command | Template | Does |
+|---------|----------|------|
+| `OPEN` | `FILE/A,LINE/N` | open a file, optionally jump to a line |
+| `SAVE` | | save the active document |
+| `GETFILE` | | result: full path of the active document |
+| `GOTOLINE` | `LINE/N/A` | jump |
+| `EVAL` | `FORM/F` | run an editor command by name (the `M-x` namespace) |
+| `INSERT` | `TEXT/F` | insert at point |
+| `TE` | `CMD/F` | pass-through to `MUIM_TextEditor_ARexxCmd` (`CURSOR`, `POSITION`, `GETLINE`, `GETCURSOR`, `MARK`, `TEXT`, ...) |
+
+This is what the shipped CygnusEd macro pattern needs to work against
+clamacs too, and what phase 3 extends with `OUTPUT` and `READLINE`.
+
+## Phases
+
+### Phase 1 — editor MVP
+
+Deliverables: the MUI application, `ClamacsText`, the keymap and command
+engine, minibuffer, kill ring, isearch, file commands, Lisp mode
+(tokenizer, sexp scanner, indentation, paren match, package tracking), the
+ARexx client with the existing commands, the error list window, the
+editor's own port, launch-if-missing.
+
+Acceptance: edit and save a file on FS-UAE (68020 config) and on the
+Vampire; `C-c C-k` on a file with two errors shows both rows and selecting
+one jumps to the line; `C-x C-e` on `(+ 1 2)` echoes `3`; the CygnusEd
+macro rewritten for `CLAMACS` loads the current file; the editor stays
+responsive while clamiga compiles a large file; memory use measured on an
+8 MB configuration and recorded in `docs/`.
+
+No changes in cl-amiga are needed for phase 1.
+
+### Phase 2 — introspection
+
+cl-amiga side (`lib/dev-commands.lisp`, host-tested by
+`tests/test_dev_commands.sh`, Amiga end-to-end in
+`tests/amiga/arexx-tests.lisp`), all replies plain text, rc 0 unless the
+symbol or package does not exist (rc 10):
+
+| Command | Reply |
+|---------|-------|
+| `ARGLIST <symbol>` | the lambda list on one line, from `ext:function-arglist` |
+| `COMPLETE <prefix> [<package>]` | one candidate per line, exported symbols first, capped at 200 lines |
+| `DESCRIBE <symbol>` | `describe` output |
+| `APROPOS <string> [<package>]` | one symbol per line with a kind tag (`function`, `macro`, `variable`, `class`) |
+| `SOURCE-LOCATION <symbol>` | `<file>:<line>` from `ext:function-source-location`, rc 10 when unknown |
+| `MACROEXPAND <form>` and `MACROEXPAND-1 <form>` | the pretty-printed expansion |
+
+Plus docstring storage in the compiler (they are parsed and discarded
+today; `specs/documentation-introspection.md` in cl-amiga has the audit),
+so `DESCRIBE` shows documentation.
+
+Editor side: arglist of the operator at point in the status line
+(requested on a short idle timer, cached per symbol), `M-TAB`/`C-M-i`
+completion through the minibuffer, `M-.` jump to definition with `M-,` to
+return, `C-c C-d d` describe and `C-c C-d a` apropos in a text window,
+`C-c RET` macroexpand into a scratch window.
+
+### Phase 3 — REPL window
+
+Protocol (cl-amiga side):
+
+- `REPL-ATTACH <port>` — clamiga remembers the editor's port and starts a
+  dedicated REPL thread; `REPL-DETACH` stops it.
+- `REPL-EVAL <form>` — evaluated on the REPL thread with the standard
+  streams bound to a stream that sends `OUTPUT <text>` commands to the
+  editor's port as output is produced (flushed on newline and on a size
+  threshold); a read on standard input sends `READLINE <prompt>` and
+  blocks until the editor replies with the line.  The final reply carries
+  the printed values and the current package.
+- The port's handler thread stays free, so arglist and completion keep
+  working while a form runs.  `REPL-INTERRUPT` signals the REPL thread.
+
+Editor side: the REPL window is a `ClamacsText` in a mode with a prompt
+showing the package, history (`M-p`/`M-n`), multi-line input with paren
+balancing, values echoed after the output, `C-c C-z` from any document.
+Requires the editor never to block on a reply (already the rule) because
+clamiga calls the editor's port while the editor's `REPL-EVAL` is
+outstanding.
+
+Interim: until phase 3 lands, `M-x run-lisp` launches clamiga in a console
+window, which is a fully working REPL and debugger, just not a MUI window.
+
+### Phase 4 — debugger and inspector windows
+
+- `REPL-EVAL` gains a mode in which an unhandled error does not print and
+  return but replies at once with `DEBUGGER <level>`, the condition text
+  and the restart list, and parks the REPL thread in a nested command loop
+  that takes its next commands from the port: `BACKTRACE`, `FRAME <n>`
+  (locals), `FRAME-EVAL <n> <form>`, `RESTART <n>`, `ABORT`, `CONTINUE`.
+  clamiga's debugger already has first-class restarts and unwind-safe
+  recursion; the change is a pluggable input source.
+- `INSPECT <form>` replies with an object id, its printed form and its
+  numbered parts; `PART <n>` descends, `POP` returns — a non-interactive
+  face over the C inspector's navigation stack.
+
+Editor side: a debugger window (condition, restarts as buttons, backtrace
+list, frame locals) opened when a `DEBUGGER` reply arrives, and an
+inspector window with a parts list and a back button.
+
+## Testing
+
+- **Host unit tests** for every pure C module — keymap engine, tokenizer,
+  sexp scanner, indentation, diagnostic parser, request queue — compiled
+  with the host compiler against a small `test.h` in the style of
+  cl-amiga's, run by `make test`.  These modules take no MUI or OS types,
+  which is a design rule, not an accident.
+- **FS-UAE integration**: the cl-amiga harness pattern
+  (`verify/realamiga/run-fs-uae.sh`: boot, run a script, auto-quit,
+  host-side watchdog).  A test boots clamiga with the port and clamacs,
+  drives clamacs through its ARexx port (`OPEN`, `EVAL` of editor
+  commands, `GETFILE`), and checks results written to a log file.  The
+  clamiga binary comes from `../cl-amiga/build/cross/`.
+- **Real hardware** through the `vamp` (Vampire, AmigaOS 3) and `mos`
+  (MorphOS) MCP servers for the things emulation does not show:
+  keyboard qualifiers, timing, memory on a small configuration.
+
+## Release
+
+Two archives, `clamacs-aos3` and `clamacs-mos`, each with the binary, the
+docs, the ARexx examples, and for AmigaOS 3 the `TextEditor.mcc` binaries
+from the amiga-mui release with their LGPL notice.  Versions of clamacs and
+clamiga are independent; the editor records the oldest clamiga it works
+with and checks `VERSION` at connect time.
+
+## Open questions
+
+- **Meta on Amiga keyboards**: Alt is the natural choice, but some MUI
+  setups use Alt in window shortcuts; confirm on real keyboards (Vampire,
+  MorphOS Pegasos/Mac) that `Alt+key` reaches `MUIM_HandleEvent` before
+  MUI's own handling in every case.
+- **Minimum TextEditor.mcc version**: pin it once phase 1 knows exactly
+  which methods it uses; check what MorphOS 3.x ships.
+- **Memory on 8 MB**: MUI plus TextEditor plus the editor has not been
+  measured; phase 1 records the number and decides whether an
+  `--lowmem` mode (no colouring, smaller undo) is needed.
+- **Encoding beyond ISO-8859-1** is out of scope until clamiga's wide
+  strings are in a release build.
