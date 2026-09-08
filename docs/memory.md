@@ -45,10 +45,37 @@ Two things that reading does not say, and should not be mistaken for:
   resident until an expunge, not a leak in the editor — the next clamacs
   start reuses them.
 
+## The editor fits on 8 MB.  The editor *and* a Lisp do not.
+
+The same run tries to start a `clamiga` alongside the editor, and on this
+configuration it never gets far enough to open its ARexx port — with a 4 MB
+heap or a 2 MB one, started before clamacs or after.  The integration leg is
+skipped and the harness says so.
+
+That is not a clamacs bug and not a clamiga bug; it is arithmetic.  Of the
+8 MB fast RAM, Workbench, MUI and Picasso96 have taken 4.8 MB before either
+program starts, which leaves about 3.5 MB.  The editor's 1 MB leaves 2.5 MB
+in a largest contiguous block of about 1.4 MB, and a Lisp heap needs one
+contiguous block plus room for the 800 KB binary and its compilation of
+`lib/amiga/arexx.lisp` from source.
+
+So the honest statement of the target is:
+
+- **clamacs alone on a stock 8 MB A1200: yes.**  Editing, Lisp mode,
+  navigation and its own ARexx port all verified there.
+- **clamacs plus clamiga: needs more than 8 MB.**  The verified
+  configuration is `verify/realamiga/verify.fs-uae` — the same A1200/68020,
+  plus the 16 MB Zorro III block that stands for accelerator RAM.  That is
+  also the configuration cl-amiga's own suite uses, for the same reason.
+
+This is worth knowing before phase 3: the REPL, debugger and inspector
+windows all assume a clamiga on the same machine, so they inherit this
+floor rather than the editor's.
+
 ## Conclusion
 
-No `--lowmem` mode is needed for phase 1 on this configuration.  The figure
-to watch as later phases add windows is the largest *contiguous* fast block,
-which the run above shows falling from 3.4 MB to 2.5 MB: fragmentation, not
-exhaustion, is what a REPL and a debugger window are most likely to hit
-first on a machine this size.
+No `--lowmem` mode is needed for phase 1: the editor's own footprint is not
+the constraint.  The figure to watch as later phases add windows is the
+largest *contiguous* fast block, which the run above shows falling from
+3.4 MB to 1.4 MB with two documents open — fragmentation, not exhaustion, is
+what a REPL and a debugger window will hit first on a machine this size.

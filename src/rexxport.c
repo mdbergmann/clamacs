@@ -157,6 +157,23 @@ HOOKPROTONHNO(ck_rx_insert_func, LONG, IPTR *args)
 }
 MakeStaticHook(ck_rx_insert_hook, ck_rx_insert_func);
 
+/*
+ * The echo area, as text.  Everything the editor says back -- a diagnostic
+ * summary, the value of an evaluated form, an error message -- lands there,
+ * and a macro that has just asked for a LOAD needs to read it.  It is also
+ * how the unattended test observes an ASYNCHRONOUS result: issue the
+ * command, then poll STATUS until the reply has arrived.
+ */
+HOOKPROTONHNO(ck_rx_status_func, LONG, IPTR *args)
+{
+    ck_doc *doc = ck_rx_doc();
+    (void)args;
+    ck_rx_result((doc != NULL) ? doc->message : "");
+
+    return 0;
+}
+MakeStaticHook(ck_rx_status_hook, ck_rx_status_func);
+
 HOOKPROTONHNO(ck_rx_te_func, LONG, IPTR *args)
 {
     ck_doc     *doc = ck_rx_doc();
@@ -184,5 +201,6 @@ const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"EVAL",     (char *)"FORM/F",        1, (struct Hook *)&ck_rx_eval_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"INSERT",   (char *)"TEXT/F",        1, (struct Hook *)&ck_rx_insert_hook,   { 0, 0, 0, 0, 0 } },
     { (char *)"TE",       (char *)"CMD/F",         1, (struct Hook *)&ck_rx_te_hook,       { 0, 0, 0, 0, 0 } },
+    { (char *)"STATUS",   (char *)"",              0, (struct Hook *)&ck_rx_status_hook,   { 0, 0, 0, 0, 0 } },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0, 0 } }
 };

@@ -137,5 +137,89 @@ IF POS('sample2.lisp', RESULT) > 0 THEN
 ELSE
     SAY 'FAIL active document is' RESULT
 
+/* ------------------------------------------------------------------ *
+** The point of the whole thing: driving a real clamiga.
+** ------------------------------------------------------------------ */
+
+LISP = ''
+DO i = 1 TO 60 WHILE LISP = ''
+    IF SHOW('P', 'CLAMIGA') THEN
+        LISP = 'CLAMIGA'
+    ELSE DO n = 1 TO 9
+        IF SHOW('P', 'CLAMIGA.'n) THEN DO
+            LISP = 'CLAMIGA.'n
+            LEAVE n
+        END
+    END
+    IF LISP = '' THEN CALL DELAY(25)
+END
+
+IF LISP = '' THEN DO
+    SAY 'INFO no clamiga port -- skipping the integration leg'
+    SAY 'DRIVE-DONE'
+    EXIT 0
+END
+SAY 'OK clamiga ARexx port is' LISP
+
+/* C-x C-e: evaluate the last expression before point.  The spec's
+** acceptance criterion is literally "C-x C-e on (+ 1 2) echoes 3". */
+ADDRESS VALUE PORT
+'OPEN FILE Clamacs:verify/realamiga/eval.lisp'
+'EVAL end-of-buffer'
+'STATUS'
+BEFORE = RESULT
+'EVAL clamacs-eval-last-sexp'
+
+/* The client never blocks on a reply, so the answer arrives later -- poll
+** the echo area for it rather than assuming it is already there. */
+ANSWER = ''
+DO i = 1 TO 60
+    CALL DELAY(25)
+    'STATUS'
+    IF RESULT ~= BEFORE & RESULT ~= '' THEN DO
+        ANSWER = RESULT
+        LEAVE
+    END
+END
+
+IF ANSWER = '3' THEN
+    SAY 'OK eval-last-sexp on (+ 1 2) echoed' ANSWER
+ELSE
+    SAY 'FAIL eval-last-sexp echoed' ANSWER
+
+/* C-c C-k on a file with two errors.  The reply comes back with rc 10, so
+** ARexx drops RESULT and the editor has to fetch the text with LASTRESULT
+** on its own before it can report anything -- that whole round trip is
+** under test here, not just the load. */
+'OPEN FILE Clamacs:verify/realamiga/errors.lisp'
+'STATUS'
+BEFORE = RESULT
+'EVAL clamacs-load-buffer'
+
+/* And while that load is in flight, the editor must still answer.  This is
+** the "stays responsive while clamiga compiles" criterion: if the client
+** waited for its reply, this GETFILE would not come back until the load
+** finished. */
+'GETFILE'
+IF POS('errors.lisp', RESULT) > 0 THEN
+    SAY 'OK the editor answered while a load was in flight'
+ELSE
+    SAY 'FAIL editor did not answer during a load:' RESULT
+
+DIAGS = ''
+DO i = 1 TO 120
+    CALL DELAY(25)
+    'STATUS'
+    IF POS('error(s)', RESULT) > 0 THEN DO
+        DIAGS = RESULT
+        LEAVE
+    END
+END
+
+IF POS('2 error(s)', DIAGS) > 0 THEN
+    SAY 'OK clamacs-load-buffer reported' DIAGS
+ELSE
+    SAY 'FAIL load-buffer diagnostics were' DIAGS
+
 SAY 'DRIVE-DONE'
 EXIT 0

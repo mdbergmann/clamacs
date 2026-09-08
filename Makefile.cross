@@ -123,4 +123,25 @@ verify-amiga:
 	    echo "=== Amiga verification FAILED (the boot script did not finish) ==="; \
 	    exit 1; \
 	fi
+	@# The clamiga leg needs a clamiga that actually came up, which on a
+	@# small machine it may not (see docs/memory.md).  When it DID come up,
+	@# none of its results are optional -- including the shipped macro's
+	@# verdict, since without a Lisp the macro can only bail out.
+	@if grep -q 'clamiga ARexx port is' build/amiga/clamacs-test.log; then \
+	    for want in \
+	        'OK eval-last-sexp on (+ 1 2) echoed 3' \
+	        'OK the editor answered while a load was in flight' \
+	        'OK clamacs-load-buffer reported 2 error(s)'; do \
+	        if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
+	            echo "=== Amiga verification FAILED (missing: $$want) ==="; \
+	            exit 1; \
+	        fi; \
+	    done; \
+	    if ! grep -qE 'Loaded |Load failed:' build/amiga/clamacs-test.log; then \
+	        echo "=== Amiga verification FAILED (the shipped macro reached no verdict) ==="; \
+	        exit 1; \
+	    fi; \
+	else \
+	    echo "NOTE: clamiga did not come up -- the integration leg was skipped."; \
+	fi
 	@echo "=== Amiga verification PASSED ==="

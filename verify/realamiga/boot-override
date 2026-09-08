@@ -16,11 +16,35 @@ IF WARN
 ENDIF
 echo "OK ARexx is running" >>build/amiga/clamacs-test.log
 stack 65000
+
+; Start clamiga FIRST, with its development port open -- the same two lines
+; a user puts in S:.clamigarc, just without the interactive REPL.  Order
+; matters on a small machine: whoever asks first gets the large contiguous
+; block, and a Lisp heap needs one.  Run from the cl-amiga tree so
+; (require "amiga/arexx") finds its lib/.
+;
+; Its output goes to a file of its own: a clamiga that dies on startup says
+; why, and mixing that into the editor's log would bury it.
+IF EXISTS CLAmiga:build/cross/clamiga
+  cd CLAmiga:
+  run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 2M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+  cd Clamacs:
+  C:Wait 15
+ELSE
+  echo "INFO no clamiga binary; the integration leg will be skipped" >>build/amiga/clamacs-test.log
+ENDIF
+
 run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
 ; drive.rexx does its own bounded wait for the port and reports what it
 ; found if it is not there, which is more useful than WaitForPort's silent
 ; ten-second give-up.
 SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+; The shipped macro, run exactly as a user would run it.  It is one of the
+; phase-1 acceptance criteria, and running it here is the only way to know
+; the example in examples/ actually works.
+echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
+
 ; With the editor STILL RUNNING: this is the reading that says what clamacs
 ; costs.  Taking it after it exits would measure what it failed to give back.
 echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
