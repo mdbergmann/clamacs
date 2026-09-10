@@ -1,8 +1,14 @@
 # Clamacs
 
 Emacs-flavoured Common Lisp IDE for AmigaOS 3 (68020+) and MorphOS. Native C
-MUI application; drives a running `clamiga` (the CL-Amiga runtime, checked
-out beside this repo as `../cl-amiga`) over ARexx.
+MUI application; drives a running `clamiga` (the CL-Amiga runtime) over ARexx.
+clamiga is pinned as the `vendor/clamiga` submodule -- a full clone of
+cl-amiga (`https://github.com/mdbergmann/cl-amiga.git`), so a clamiga change
+needed for clamacs is made and built there, isolated from mainline clamiga.
+`git submodule update --init vendor/clamiga` after cloning. (The FS-UAE
+emulator assets -- the aos3 Workbench image and FS-UAE.app -- are NOT in that
+clone; they are not tracked in git and live in a cl-amiga checkout beside this
+repo; see Testing.)
 
 The full design and phase plan is `specs/clamacs-ide.md`; this file is the
 short version.
@@ -146,8 +152,14 @@ list under "Answered during phase 1".
 ## Testing
 
 - Unattended FS-UAE runs follow cl-amiga's `verify/realamiga/run-fs-uae.sh`
-  pattern (watchdog, auto-quit). Integration tests need a clamiga binary in
-  the emulated system — take it from `../cl-amiga/build/cross/`.
+  pattern (watchdog, auto-quit). The clamiga runtime is the `vendor/clamiga`
+  submodule: the `CLAmiga:` volume mounts it, and the integration leg reads
+  `vendor/clamiga/build/cross/clamiga` (build clamiga in the submodule first,
+  which needs its own `tools/m68k-amigaos-gcc` -- `git submodule update
+  --init` inside `vendor/clamiga`). The emulator assets it can't provide (the
+  aos3 Workbench with MUI + TextEditor.mcc, and FS-UAE.app) are not tracked in
+  git, so `run-fs-uae.sh` takes them from a cl-amiga checkout beside this repo
+  (`EMU_DIR`, default `../cl-amiga`); `CLAMIGA_DIR` overrides the submodule.
 - Real hardware: the `vamp` (Vampire, AmigaOS 3) and `mos` (MorphOS) MCP
   servers, see cl-amiga's memory notes for the workflow.  When the MCP
   config is stale (or, as in this checkout, absent),

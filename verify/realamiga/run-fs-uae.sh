@@ -22,7 +22,19 @@ set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-CLAMIGA="${CLAMIGA_DIR:-$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)}"
+
+# Two different dependencies used to be one shared cl-amiga checkout:
+#   EMU     the emulator assets -- the aos3 Workbench image (with MUI and
+#           TextEditor.mcc) and FS-UAE.app.  These are NOT tracked in git, so
+#           they are not in the vendor/clamiga submodule; they stay in a
+#           cl-amiga checkout beside this one (override with EMU_DIR).
+#   CLAMIGA the clamiga RUNTIME the editor drives -- the CLAmiga: volume, from
+#           which boot-override reads CLAmiga:build/cross/clamiga.  This is now
+#           the pinned vendor/clamiga submodule, so a clamiga change made for
+#           clamacs is isolated from mainline clamiga (override with CLAMIGA_DIR).
+# The .fs-uae config's hard_drive_1 must point at the same place as CLAMIGA.
+EMU="${EMU_DIR:-$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)}"
+CLAMIGA="${CLAMIGA_DIR:-$ROOT/vendor/clamiga}"
 
 CONFIG="${1:-$HERE/verify.fs-uae}"
 LOG="$ROOT/build/amiga/clamacs-test.log"
@@ -32,14 +44,21 @@ SENTINEL_GRACE="${SENTINEL_GRACE:-20}"
 STALL_TIMEOUT="${STALL_TIMEOUT:-300}"
 HARD_TIMEOUT="${HARD_TIMEOUT:-900}"
 
-if [ -z "$CLAMIGA" ] || [ ! -d "$CLAMIGA/verify/realamiga/aos3" ]; then
-	echo "cl-amiga checkout not found next to this repository."
-	echo "It supplies the Workbench image (with MUI and TextEditor.mcc) and"
-	echo "the boot hook this harness uses.  Set CLAMIGA_DIR to point at it."
+if [ -z "$EMU" ] || [ ! -d "$EMU/verify/realamiga/aos3" ]; then
+	echo "cl-amiga emulator assets not found beside this repository."
+	echo "The Workbench image (aos3) and FS-UAE.app are not tracked in git, so"
+	echo "they are not in the vendor/clamiga submodule.  Set EMU_DIR to a"
+	echo "cl-amiga checkout that has verify/realamiga/aos3."
 	exit 1
 fi
 
-FSUAE="$CLAMIGA/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
+if [ ! -d "$CLAMIGA/verify/realamiga" ]; then
+	echo "vendor/clamiga submodule is not checked out at $CLAMIGA."
+	echo "Run: git submodule update --init vendor/clamiga  (or set CLAMIGA_DIR)."
+	exit 1
+fi
+
+FSUAE="$EMU/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
 if [ ! -x "$FSUAE" ]; then
 	echo "FS-UAE not found at $FSUAE"
 	exit 1

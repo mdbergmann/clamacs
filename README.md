@@ -25,6 +25,8 @@ docs/memory.md             what the editor costs on an 8 MB machine
 tools/setup-toolchain.sh   m68k-amigaos-gcc installer (copied from cl-amiga)
 tools/m68k-amigaos-gcc/    submodule: the cross toolchain sources (same pin as cl-amiga)
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
+vendor/clamiga/            submodule: a pinned full clone of the clamiga runtime (cl-amiga),
+                           so clamiga changes for clamacs stay separate from mainline clamiga
 ```
 
 ## Building and testing
@@ -42,9 +44,13 @@ Lisp tokenizer, the sexp scanner, the indenter, the diagnostic parser and the
 request queue all run on the host, so a failing assertion costs a second
 instead of an emulator boot.
 
-The FS-UAE run borrows the Workbench image (which already has MUI and
-TextEditor.mcc) and the boot hook from a `cl-amiga` checkout next to this
-one; set `CLAMIGA_DIR` if it lives elsewhere.
+The FS-UAE run uses the clamiga runtime from the `vendor/clamiga` submodule
+(the `CLAmiga:` volume; the integration leg reads
+`vendor/clamiga/build/cross/clamiga`, so build clamiga in the submodule
+first). The Workbench image (with MUI and TextEditor.mcc) and `FS-UAE.app`
+are not tracked in git and so are not in that submodule; the run takes them
+from a `cl-amiga` checkout next to this one. Override with `EMU_DIR` (the
+emulator assets) and `CLAMIGA_DIR` (the clamiga runtime).
 
 ## Requirements on the Amiga
 

@@ -389,7 +389,9 @@ inspector window with a parts list and a back button.
   host-side watchdog).  A test boots clamiga with the port and clamacs,
   drives clamacs through its ARexx port (`OPEN`, `EVAL` of editor
   commands, `GETFILE`, `KEY`), and checks results written to a log file.
-  The clamiga binary comes from `../cl-amiga/build/cross/`.
+  The clamiga binary comes from the pinned `vendor/clamiga` submodule
+  (`vendor/clamiga/build/cross/`); the emulator assets (aos3, FS-UAE.app),
+  which are not in that clone, come from a cl-amiga checkout beside the repo.
 - **Raw keys**: the port's `KEY` command stops above the decoder.
   `verify/realamiga/sendkey` (a 68k CLI tool, built alongside the editor)
   writes real `IECLASS_RAWKEY` events to `input.device`, spelled like the

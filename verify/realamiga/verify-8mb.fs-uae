@@ -5,13 +5,15 @@
 # AmigaOS 3.1, A1200 / 68020, the documented baseline.  Three volumes:
 #
 #   Workbench  cl-amiga's aos3 system, which already has MUI and
-#              TextEditor.mcc installed.  Shared rather than duplicated: one
-#              system image, maintained in one place.
-#   CLAmiga    cl-amiga itself.  Required, not optional: that system's
-#              S/user-startup ends with
+#              TextEditor.mcc installed.  A local emulator asset (not tracked
+#              in git), so it lives in a cl-amiga checkout beside this repo,
+#              not in the vendor/clamiga submodule.
+#   CLAmiga    the pinned vendor/clamiga submodule -- the clamiga runtime the
+#              editor drives, isolated from mainline clamiga.  Required, not
+#              optional: that system's S/user-startup ends with
 #                  execute CLAmiga:verify/realamiga/call-on-ustartup
-#              and that script is what honours the boot-override this
-#              harness drops.
+#              and that script is what honours the boot-override this harness
+#              drops.
 #   Clamacs    this repository.
 #
 # accuracy = 2 and no JIT: the point of the low-end config is that timing and
@@ -30,7 +32,7 @@ graphics_card = uaegfx
 graphics_memory = 2048
 hard_drive_0 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/verify/realamiga/aos3
 hard_drive_0_label = Workbench
-hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga
+hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/clamacs/vendor/clamiga
 hard_drive_1_label = CLAmiga
 hard_drive_2 = /Users/mbergmann/Development/MySources/amigasources/clamacs
 hard_drive_2_label = Clamacs

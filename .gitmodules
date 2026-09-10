@@ -5,3 +5,12 @@
 [submodule "vendor/texteditor"]
 	path = vendor/texteditor
 	url = https://github.com/amiga-mui/texteditor.git
+[submodule "vendor/clamiga"]
+	path = vendor/clamiga
+	url = https://github.com/mdbergmann/cl-amiga.git
+	# A pinned, full clone of the clamiga runtime, so a clamiga change made for
+	# clamacs is isolated from mainline clamiga development.  It is built here
+	# (the integration leg reads vendor/clamiga/build/cross/clamiga), so its
+	# working tree goes dirty with build artifacts and rebuilt FASLs; ignore
+	# that for superproject status -- only the pinned commit is tracked.
+	ignore = dirty
