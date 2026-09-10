@@ -15,7 +15,12 @@ IF WARN
   SKIP done
 ENDIF
 echo "OK ARexx is running" >>build/amiga/clamacs-test.log
-stack 65000
+; 128 KB, cl-amiga's own baseline (verify/realamiga/call-on-ustartup there):
+; clamiga compiles the port's library from source whenever its FASL cache
+; is cold -- a fresh clone of the submodule makes it so -- and at 65000 the
+; reader's guard fires, cleanly but fatally, before the port ever opens.
+; run-drive has used 128000 on hardware from the start.
+stack 128000
 
 ; Start clamiga FIRST, with its development port open -- the same two lines
 ; a user puts in S:.clamigarc, just without the interactive REPL.  Order
@@ -25,9 +30,14 @@ stack 65000
 ;
 ; Its output goes to a file of its own: a clamiga that dies on startup says
 ; why, and mixing that into the editor's log would bury it.
+;
+; 8 MB of heap, as cl-amiga's own suite gives it: the port's library and the
+; phase-2 dev-commands are compiled from source at startup, and a 2 MB heap
+; spends that compile collecting garbage.  This configuration has the room;
+; on a plain 8 MB machine the leg is skipped anyway (docs/memory.md).
 IF EXISTS CLAmiga:build/cross/clamiga
   cd CLAmiga:
-  run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 2M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+  run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
   cd Clamacs:
   C:Wait 15
 ELSE
@@ -39,6 +49,16 @@ run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/
 ; found if it is not there, which is more useful than WaitForPort's silent
 ; ten-second give-up.
 SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+; What clamiga itself said, and whether it is still there.  When the
+; integration leg was skipped this is the only evidence of why: a clamiga
+; that is still compiling its library shows up in `status', one that died
+; does not, and one that failed says so in its log.
+echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS build/amiga/clamiga.log
+  type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
+ENDIF
+echo "=== status ===" >>build/amiga/clamacs-test.log
+status >>build/amiga/clamacs-test.log
 ; The shipped macro, run exactly as a user would run it.  It is one of the
 ; phase-1 acceptance criteria, and running it here is the only way to know
 ; the example in examples/ actually works.

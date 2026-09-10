@@ -274,6 +274,7 @@ name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
 | `OPEN` | `FILE/A,LINE/N` | open a file, optionally jump to a line |
 | `SAVE` | | save the active document |
 | `GETFILE` | | result: full path of the active document |
+| `GETNAME` | | result: the active window's name -- the file part of the path, or `*clamacs-description*` and the other phase-2 scratch windows, which have no file |
 | `GOTOLINE` | `LINE/N/A` | jump |
 | `EVAL` | `FORM/F` | run an editor command by name (the `M-x` namespace) |
 | `INSERT` | `TEXT/F` | insert at point |
@@ -283,9 +284,13 @@ name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
 
 `EVAL` and `KEY` are the two ways in, and the difference matters: `EVAL`
 runs a command directly, `KEY` goes through the keymaps, so prefix keys, the
-`C-u` argument reader, `C-g` and the minibuffer all take part.  The
-unattended test uses `KEY` to exercise the command loop, which the other
-commands walk straight past.
+`C-u` argument reader, `C-g` and the minibuffer all take part.  With the
+minibuffer open, `KEY` also does what its `String` gadget would do with the
+keys the Emacs layer leaves to it: a plain character types, `BS` deletes,
+`RET` accepts -- so `KEY M-x`, the name one key at a time, `KEY RET` runs a
+command by name, and the phase-2 prompts can be answered.  The unattended
+test uses `KEY` to exercise the command loop, which the other commands walk
+straight past.
 
 This is what the shipped CygnusEd macro pattern needs to work against
 clamacs too, and what phase 3 extends with `OUTPUT` and `READLINE`.
@@ -508,7 +513,16 @@ not have saved; CLAUDE.md carries the short list.
   events type the whole name (above), so `drive.rexx` keeps its raw leg
   short of the minibuffer to stay green under emulation; the minibuffer's
   command loop, prompt, completion and history are covered by the `KEY`
-  leg, the host tests, and the hardware run.
+  leg (which types into an open minibuffer and accepts it with `RET`: the
+  phase-2 describe, apropos and completion prompts are answered that way),
+  the host tests, and the hardware run.
+- **The phase-2 leg of `drive.rexx`** (intro.lisp: arglist from the idle
+  timer, `M-.`/`M-,`, `C-c RET`/`C-c M-m`, `C-c C-d d`, `C-c C-d a`,
+  `M-TAB`/`C-M-i` with the minibuffer hand-off) passes on FS-UAE
+  (2026-09-10, clamiga at 04a2a41: the idle timer had `(twice n)` cached,
+  the jump landed in the open window, the description carried the
+  docstring).  Its `OK` lines are in `verify-amiga`'s list.  Not yet run on
+  hardware; `run-drive` is the step there.
 - **MorphOS build**: `Makefile.mos` is written to the flags the
   TextEditor.mcc demo's own MorphOS build uses (`-noixemul
   -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been

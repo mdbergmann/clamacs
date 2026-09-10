@@ -1,4 +1,5 @@
-; run-drive -- the phase-1 acceptance run on a REAL AmigaOS 3 machine.
+; run-drive -- the acceptance run (drive.rexx: phases 1 and 2) on a REAL
+; AmigaOS 3 machine.
 ;
 ; The FS-UAE harness runs boot-override from cl-amiga's boot hook; this is
 ; the same sequence for a box that is already up, with RexxMast running and
@@ -7,7 +8,9 @@
 ;     Clamacs:            a drawer holding build/amiga/clamacs,
 ;                         build/amiga/sendkey, verify/realamiga/ and
 ;                         examples/arexx/ (the checkout's layout)
-;     Clamacs:clamiga/    a clamiga (0.9 or later) with its lib/ beside it;
+;     Clamacs:clamiga/    a clamiga with its lib/ beside it -- one with the
+;                         EXT.DEV introspection commands, i.e. built from
+;                         the vendor/clamiga submodule, for the phase-2 leg;
 ;                         absent, the integration leg is skipped
 ;
 ; Start it detached so the shell (or the box agent's command slot) stays
@@ -34,7 +37,7 @@ stack 128000
 ; its own so a clamiga that dies on startup says why.
 IF EXISTS Clamacs:clamiga/clamiga
   cd Clamacs:clamiga
-  run >Clamacs:build/amiga/clamiga.log clamiga --no-userinit --heap 2M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+  run >Clamacs:build/amiga/clamiga.log clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
   cd Clamacs:
   C:Wait 15
 ELSE
@@ -43,6 +46,14 @@ ENDIF
 
 run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
 SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+; clamiga's own output and the process list, so a skipped integration leg
+; can be explained from the log alone (see boot-override).
+echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS build/amiga/clamiga.log
+  type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
+ENDIF
+echo "=== status ===" >>build/amiga/clamacs-test.log
+status >>build/amiga/clamacs-test.log
 echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
 SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
 echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log

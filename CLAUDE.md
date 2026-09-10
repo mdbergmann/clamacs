@@ -102,9 +102,12 @@ list under "Answered during phase 1".
   `RET` fires the default gadget.
 - Synthetic key injection (`sendkey`) into the `String` minibuffer holds
   focus for one key then MUI deactivates it, so raw `M-x <name> RET` is not
-  testable that way -- a harness limit, not an editor bug (the KEY leg and
-  host tests cover the minibuffer).  A modifier must be injected as a real
-  qualifier-key press bracketing the key, not just an `IEQUALIFIER` bit.
+  testable that way -- a harness limit, not an editor bug.  The port's
+  `KEY` command types into an open minibuffer and `RET` accepts it (the
+  gadget's job, done above it), so `KEY M-x`, a name, `KEY RET` works from
+  a macro and the phase-2 prompts are driven that way in `drive.rexx`.  A
+  modifier must be injected as a real qualifier-key press bracketing the
+  key, not just an `IEQUALIFIER` bit.
 - TextEditor.mcc floor is **15.29** (`SetBlock`).  `ck_classes_create()`
   reads a bare object's `MUIA_Version` (YAM's method) and refuses below it.
 - The port's `KEY` command stops *above* the raw-key decoder.  Real key
@@ -160,6 +163,13 @@ list under "Answered during phase 1".
   aos3 Workbench with MUI + TextEditor.mcc, and FS-UAE.app) are not tracked in
   git, so `run-fs-uae.sh` takes them from a cl-amiga checkout beside this repo
   (`EMU_DIR`, default `../cl-amiga`); `CLAMIGA_DIR` overrides the submodule.
+  clamiga's FASL cache lives on that Workbench image (`S:cl-amiga/faslcache`)
+  and is validated by source mtime, so after a fresh clone or a re-pin of the
+  submodule the first run compiles the port's library from source: that needs
+  the `stack 128000` the boot scripts set (at 65000 the reader's guard fires
+  before the port opens, and the leg is silently skipped) and a minute or two
+  of startup.  When the leg is skipped, the log ends with `clamiga.log` and a
+  `status` process list that say whether clamiga was still compiling or dead.
 - Real hardware: the `vamp` (Vampire, AmigaOS 3) and `mos` (MorphOS) MCP
   servers, see cl-amiga's memory notes for the workflow.  When the MCP
   config is stale (or, as in this checkout, absent),

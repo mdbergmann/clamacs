@@ -174,7 +174,24 @@ verify-amiga:
 	        'OK clamacs-load-buffer reported 2 error(s)' \
 	        'OK next-error jumped to the first error' \
 	        'OK next-error jumped to the second error' \
-	        'OK previous-error went back to'; do \
+	        'OK previous-error went back to' \
+	        'OK intro.lisp loaded' \
+	        'OK the idle timer had the arglist ready' \
+	        'OK M-. jumped to the definition of twice' \
+	        'OK M-, returned to' \
+	        'OK C-c RET expanded once' \
+	        'OK C-c M-m expanded fully' \
+	        'OK C-c C-d d prompted' \
+	        'OK DESCRIBE opened' \
+	        'OK the description carries the docstring' \
+	        'OK C-c C-d a prompted' \
+	        'OK APROPOS opened' \
+	        'OK APROPOS tagged the function and the macro' \
+	        'OK M-TAB completed twice-a in place' \
+	        'OK C-M-i handed the candidates to the minibuffer' \
+	        'OK TAB listed them' \
+	        'OK TAB narrowed twice-a to one' \
+	        'OK RET put the completion in the buffer'; do \
 	        if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	            echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	            exit 1; \

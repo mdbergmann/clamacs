@@ -11,6 +11,7 @@
   (format t "CLAMIGA-PORT ~a~%" port)
   (finish-output))
 
-;; Long enough for the editor's tests, short enough that a run which loses
-;; its watchdog still ends.
-(sleep 180)
+;; Long enough for the editor's tests -- the phase-1 integration leg and the
+;; phase-2 leg after it, each waiting on replies half a second at a time --
+;; and short enough that a run which loses its watchdog still ends.
+(sleep 480)

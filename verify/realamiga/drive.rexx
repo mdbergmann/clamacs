@@ -1,4 +1,6 @@
-/* drive.rexx -- phase-1 smoke test, driven through clamacs's own ARexx port.
+/* drive.rexx -- the unattended acceptance run, driven through clamacs's own
+** ARexx port: the phase-1 editor and integration checks, then the phase-2
+** introspection leg against the same clamiga.
 **
 ** This is the shape specs/clamacs-ide.md asks for under Testing: a script
 ** that talks to the editor the way a user's macro would, so the run is
@@ -353,8 +355,12 @@ END
 ** The point of the whole thing: driving a real clamiga.
 ** ------------------------------------------------------------------ */
 
+/* clamiga was started before the editor, but it compiles the port's library
+** from source before the port exists, and on an emulated 14 MHz 68020 that
+** can outlast the editor leg above.  Two minutes of patience here is what
+** separates "slow" from "never came up". */
 LISP = ''
-DO i = 1 TO 60 WHILE LISP = ''
+DO i = 1 TO 240 WHILE LISP = ''
     IF SHOW('P', 'CLAMIGA') THEN
         LISP = 'CLAMIGA'
     ELSE DO n = 1 TO 9
@@ -466,5 +472,256 @@ IF RC = 0 & RESULT = 6 THEN
 ELSE
     SAY 'FAIL previous-error CursorY=' RESULT
 
+/* ------------------------------------------------------------------ *
+** Phase 2: introspection.  Six questions to clamiga -- ARGLIST, COMPLETE,
+** SOURCE-LOCATION, DESCRIBE, APROPOS, MACROEXPAND -- each asked the way a
+** user asks it (the SLIME keys, through the keymaps), and each answered
+** later, so every check waits for the answer to land where it belongs: the
+** echo area, the buffer, the cursor, or a scratch window.  intro.lisp holds
+** the definitions the answers are about; it is loaded first, since clamiga
+** can only describe what it has.  The WaitXxx procedures are at the end.
+** ------------------------------------------------------------------ */
+
+INTRO = 'Clamacs:verify/realamiga/intro.lisp'
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'EVAL clamacs-load-buffer'
+LOADED = WaitEcho('error(s)', 120)
+IF POS('0 error(s)', LOADED) = 1 THEN
+    SAY 'OK intro.lisp loaded:' LOADED
+ELSE
+    SAY 'FAIL intro.lisp load reported' LOADED
+
+/* The arglist in the status line comes from an idle timer: once the cursor
+** has rested inside `(twice 21)' for a moment, the editor asks ARGLIST
+** twice on its own and caches the answer.  The status line cannot be read
+** through the port, but the cache shows: `M-x clamacs-arglist' answers from
+** it at once, where a cold cache would have to ask clamiga and answer later.
+** An immediate echo is therefore the proof that the idle path ran. */
+'GOTOLINE 24'
+'TE POSITION SOL'
+'KEY C-u 8 C-f'
+CALL DELAY(150)
+'EVAL clamacs-arglist'
+'STATUS'
+ARGS = RESULT
+IF ARGS = '(twice n)' THEN
+    SAY 'OK the idle timer had the arglist ready:' ARGS
+ELSE DO
+    LATE = WaitEcho('(twice n)', 40)
+    IF LATE ~= '' THEN
+        SAY 'FAIL the arglist came only when asked for -- the idle timer had not cached it'
+    ELSE
+        SAY 'FAIL clamacs-arglist gave' ARGS
+END
+
+/* M-. on `twice' asks SOURCE-LOCATION and jumps to the DEFUN -- line 9 of
+** intro.lisp, CursorY 8 -- in the window that already shows the file, not
+** a second one.  M-, comes back to where the cursor was. */
+'TE POSITION SOL'
+'KEY C-f'
+'TE GETCURSOR LINE'
+FROM = RESULT
+'KEY M-.'
+LANDED = WaitCursor(FROM, 40)
+'GETFILE'
+IF LANDED = 8 & UPPER(RESULT) = UPPER(INTRO) THEN
+    SAY 'OK M-. jumped to the definition of twice, CursorY' LANDED
+ELSE
+    SAY 'FAIL M-. put the cursor at CursorY' LANDED 'in' RESULT
+'KEY M-,'
+'TE GETCURSOR LINE'
+IF RESULT = FROM THEN
+    SAY 'OK M-, returned to CursorY' RESULT
+ELSE
+    SAY 'FAIL M-, went to CursorY' RESULT '(wanted' FROM')'
+
+/* C-c RET macroexpands the form at point once, into a scratch window that
+** then has the focus; C-c M-m expands it all the way.  twice-of expands to
+** a with-twice, which expands to a let, so the two answers differ. */
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'GOTOLINE 22'
+'KEY C-c RET'
+LINE = WaitLine('(with-twice z 4 z)', 40)
+'GETNAME'
+IF LINE ~= '' & RESULT = '*clamacs-macroexpansion*' THEN
+    SAY 'OK C-c RET expanded once into' RESULT':' LINE
+ELSE
+    SAY 'FAIL C-c RET gave' LINE 'in window' RESULT
+
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'GOTOLINE 22'
+'KEY C-c M-m'
+LINE = WaitLine('(let ((z (twice 4))) z)', 40)
+IF LINE ~= '' THEN
+    SAY 'OK C-c M-m expanded fully:' LINE
+ELSE
+    SAY 'FAIL C-c M-m did not show the full expansion'
+
+/* C-c C-d d describes the symbol at point: the minibuffer opens with it
+** filled in, RET accepts (KEY types into the minibuffer as the gadget
+** would), and the description lands in a scratch window.  The docstring is
+** in it -- the compiler keeping docstrings was the cl-amiga half of this
+** phase. */
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'GOTOLINE 24'
+'KEY C-f'
+'KEY C-c C-d d'
+'STATUS'
+IF POS('Describe symbol', RESULT) > 0 THEN
+    SAY 'OK C-c C-d d prompted:' RESULT
+ELSE
+    SAY 'FAIL C-c C-d d gave' RESULT
+'KEY RET'
+LINE = WaitLine('is a SYMBOL', 40)
+'GETNAME'
+IF POS('TWICE', UPPER(LINE)) > 0 & RESULT = '*clamacs-description*' THEN
+    SAY 'OK DESCRIBE opened' RESULT':' LINE
+ELSE
+    SAY 'FAIL DESCRIBE gave' LINE 'in window' RESULT
+IF FindLine('Documentation: Twice N.', 12) THEN
+    SAY 'OK the description carries the docstring'
+ELSE
+    SAY 'FAIL no docstring in the description'
+
+/* C-c C-d a asks for a string, typed here key by key; the answer is one
+** line per matching symbol with what it names, in whatever order
+** APROPOS-LIST returns them.  The cursor is parked on the in-package line
+** first, so the wait cannot match `twice' in intro.lisp itself. */
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'GOTOLINE 7'
+'KEY C-c C-d a'
+'STATUS'
+IF POS('Apropos', RESULT) > 0 THEN
+    SAY 'OK C-c C-d a prompted:' RESULT
+ELSE
+    SAY 'FAIL C-c C-d a gave' RESULT
+'KEY t w i c e RET'
+LINE = WaitLine('twice', 40)
+'GETNAME'
+IF LINE ~= '' & RESULT = '*clamacs-apropos*' THEN
+    SAY 'OK APROPOS opened' RESULT':' LINE
+ELSE
+    SAY 'FAIL APROPOS gave' LINE 'in window' RESULT
+IF FindLine('twice function', 8) & FindLine('with-twice macro', 8) THEN
+    SAY 'OK APROPOS tagged the function and the macro'
+ELSE
+    SAY 'FAIL APROPOS did not list twice as a function and with-twice as a macro'
+
+/* Completion, in sample2.lisp so that nothing which gets saved changes.  A
+** prefix with one candidate is completed in place; one with several hands
+** over to the minibuffer, where TAB narrows and RET puts the choice in the
+** buffer.  M-TAB and C-M-i are the two spellings of the binding. */
+'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
+CALL DELAY(25)
+'EVAL end-of-buffer'
+'KEY RET'
+'INSERT twice-a'
+'KEY M-TAB'
+DONE = WaitEcho('Sole completion', 40)
+'TE GETLINE'
+IF DONE ~= '' & POS('twice-again', RESULT) > 0 THEN
+    SAY 'OK M-TAB completed twice-a in place:' RESULT
+ELSE
+    SAY 'FAIL M-TAB gave' DONE 'and the line' RESULT
+
+'KEY RET'
+'INSERT twic'
+'KEY C-M-i'
+PROMPTED = WaitEcho('Complete:', 40)
+IF PROMPTED ~= '' THEN
+    SAY 'OK C-M-i handed the candidates to the minibuffer'
+ELSE
+    SAY 'FAIL C-M-i on twic did not prompt'
+/* twice, twice-again and twice-of: intro.lisp defines all three. */
+'KEY TAB'
+'STATUS'
+IF POS('3 completions', RESULT) > 0 & POS('twice-again', RESULT) > 0 THEN
+    SAY 'OK TAB listed them:' RESULT
+ELSE
+    SAY 'FAIL TAB in the minibuffer gave' RESULT
+'KEY - a TAB'
+'STATUS'
+IF POS('Sole completion', RESULT) > 0 THEN
+    SAY 'OK TAB narrowed twice-a to one'
+ELSE
+    SAY 'FAIL narrowing gave' RESULT
+'KEY RET'
+'TE GETLINE'
+IF POS('twice-again', RESULT) > 0 THEN
+    SAY 'OK RET put the completion in the buffer:' RESULT
+ELSE
+    SAY 'FAIL after RET the line is' RESULT
+
+/* Leave the errors file active, as the phase-1 leg did: the shipped macro
+** runs next on whatever window is active, and its verdict on errors.lisp
+** is what verify-amiga expects. */
+'OPEN FILE Clamacs:verify/realamiga/errors.lisp'
+CALL DELAY(25)
+
 SAY 'DRIVE-DONE'
 EXIT 0
+
+/* ------------------------------------------------------------------ *
+** Waiting for an answer.  The editor never blocks on clamiga, so a command
+** that asks something returns before the answer exists; each of these polls
+** the port twice a second until what it waits for is there, or TICKS
+** half-seconds have passed.  A timeout returns '' (or 0), and the check
+** that follows reports what WAS there.
+** ------------------------------------------------------------------ */
+
+/* The echo area, once it contains NEEDLE. */
+WaitEcho: PROCEDURE EXPOSE PORT
+    PARSE ARG needle, ticks
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO ticks
+        'STATUS'
+        IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN RESULT
+        CALL DELAY(25)
+    END
+    RETURN ''
+
+/* The line under the cursor of the active window, once it contains NEEDLE.
+** A reply that fills a scratch window also activates it, and puts the
+** cursor on its first line. */
+WaitLine: PROCEDURE EXPOSE PORT
+    PARSE ARG needle, ticks
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO ticks
+        'TE GETLINE'
+        IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN RESULT
+        CALL DELAY(25)
+    END
+    RETURN ''
+
+/* The cursor line (0-based, as GETCURSOR reports it), once it is no longer
+** FROM. */
+WaitCursor: PROCEDURE EXPOSE PORT
+    PARSE ARG from, ticks
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO ticks
+        'TE GETCURSOR LINE'
+        IF RC = 0 & RESULT ~= from THEN RETURN RESULT
+        CALL DELAY(25)
+    END
+    RETURN ''
+
+/* Whether one of the first N lines of the active window contains NEEDLE.
+** Moves the cursor. */
+FindLine: PROCEDURE EXPOSE PORT
+    PARSE ARG needle, n
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO n
+        'GOTOLINE' i
+        'TE GETLINE'
+        IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN 1
+    END
+    RETURN 0

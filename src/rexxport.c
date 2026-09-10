@@ -6,11 +6,12 @@
  * chose MUI: an application-owned ARexx port for free, with ReadArgs
  * templates and result strings already handled.
  *
- * The command set is the phase-1 table from specs/clamacs-ide.md.  `EVAL'
- * runs an EDITOR command by name -- the same namespace `M-x' uses, which is
- * the point of having a command table at all -- and `TE' passes straight
- * through to MUIM_TextEditor_ARexxCmd, so the macros people already have for
- * CygnusEd-style editors keep working.
+ * The command set is the phase-1 table from specs/clamacs-ide.md, plus
+ * `GETNAME' from phase 2 (the scratch windows have no file for GETFILE to
+ * name).  `EVAL' runs an EDITOR command by name -- the same namespace `M-x'
+ * uses, which is the point of having a command table at all -- and `TE'
+ * passes straight through to MUIM_TextEditor_ARexxCmd, so the macros people
+ * already have for CygnusEd-style editors keep working.
  *
  * Phase 3 extends this table with OUTPUT and READLINE, which is how clamiga
  * pushes REPL output back at us.
@@ -34,6 +35,13 @@ static ck_doc *ck_rx_doc(void)
 {
     ck_app *app = ck_app_current();
     return (app != NULL) ? ck_doc_active(app) : NULL;
+}
+
+static LONG ck_rx_get(Object *obj, ULONG attr)
+{
+    IPTR value = 0;
+    GetAttr(attr, obj, &value);
+    return (LONG)value;
 }
 
 static void ck_rx_result(const char *text)
@@ -91,6 +99,23 @@ HOOKPROTONHNO(ck_rx_getfile_func, LONG, IPTR *args)
     return 0;
 }
 MakeStaticHook(ck_rx_getfile_hook, ck_rx_getfile_func);
+
+/*
+ * The active document's name: the file part of its path, or the name of a
+ * window that has no file -- `*clamacs-description*' and the other scratch
+ * windows phase 2 opens.  GETFILE is empty for those (a macro that wants
+ * to save must not be told a name it cannot write to), so this is how a
+ * macro learns which window it is talking to.
+ */
+HOOKPROTONHNO(ck_rx_getname_func, LONG, IPTR *args)
+{
+    ck_doc *doc = ck_rx_doc();
+    (void)args;
+    ck_rx_result((doc != NULL) ? doc->name : "");
+
+    return 0;
+}
+MakeStaticHook(ck_rx_getname_hook, ck_rx_getname_func);
 
 /*
  * LINE is 1-based here, unlike the class's own GOTOLINE (which sets
@@ -208,7 +233,49 @@ MakeStaticHook(ck_rx_te_hook, ck_rx_te_func);
  * covers the rest by writing real key events to input.device -- the same
  * spellings, one level deeper -- and is also how the Alt-as-Meta question is
  * put to real hardware.
+ *
+ * With the minibuffer open the keys belong to it, and the ones the Emacs
+ * layer does not take (C-g, TAB, M-p, M-n) are the String gadget's: from
+ * the keyboard it types them itself, but KEY is above the gadget, so
+ * ck_rx_mini_edit() does what it would -- a plain character self-inserts,
+ * BS deletes, RET acknowledges.  That is what lets a macro do `KEY M-x',
+ * type a name, `KEY RET', and what drives the phase-2 prompts in drive.rexx.
  */
+static void ck_rx_mini_edit(ck_doc *doc, ck_key key)
+{
+    uint16_t    code = CK_KEY_CODE(key);
+    const char *now;
+    char        text[CK_MINI_MAX];
+    int32_t     n;
+
+    if (CK_KEY_MODS(key) != 0)
+        return;
+    if (code == CK_KEY_RETURN) {
+        ck_doc_minibuffer_done(doc);
+        return;
+    }
+
+    now = (const char *)ck_rx_get(doc->mini, MUIA_String_Contents);
+    strncpy(text, now != NULL ? now : "", sizeof text - 1);
+    text[sizeof text - 1] = '\0';
+    n = (int32_t)strlen(text);
+
+    if (code == CK_KEY_BACKSPACE) {
+        if (n > 0)
+            text[n - 1] = '\0';
+    } else if (code >= CK_KEY_SPACE && code <= 0xFF && code != CK_KEY_DELETE) {
+        if (n >= (int32_t)sizeof text - 1)
+            return;
+        text[n]     = (char)code;
+        text[n + 1] = '\0';
+    } else {
+        return;
+    }
+    /* The contents notification runs, as it does for typing: an isearch
+     * prompt searches as the pattern grows. */
+    set(doc->mini, MUIA_String_Contents, (IPTR)text);
+}
+
 HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
 {
     ck_doc     *doc = ck_rx_doc();
@@ -240,10 +307,12 @@ HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
 
         /* Whichever object has the focus decides, exactly as a keypress
          * would: with the minibuffer open the keys belong to it. */
-        if (doc->mini_state != CK_MINI_IDLE)
-            ck_doc_minibuffer_key(doc, key);
-        else
+        if (doc->mini_state != CK_MINI_IDLE) {
+            if (!ck_doc_minibuffer_key(doc, key))
+                ck_rx_mini_edit(doc, key);
+        } else {
             ck_doc_handle_key(doc, key);
+        }
     }
 
     ck_rx_result("");
@@ -255,6 +324,7 @@ const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"OPEN",     (char *)"FILE/A,LINE/N", 2, (struct Hook *)&ck_rx_open_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"SAVE",     (char *)"",              0, (struct Hook *)&ck_rx_save_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"GETFILE",  (char *)"",              0, (struct Hook *)&ck_rx_getfile_hook,  { 0, 0, 0, 0, 0 } },
+    { (char *)"GETNAME",  (char *)"",              0, (struct Hook *)&ck_rx_getname_hook,  { 0, 0, 0, 0, 0 } },
     { (char *)"GOTOLINE", (char *)"LINE/N/A",      1, (struct Hook *)&ck_rx_gotoline_hook, { 0, 0, 0, 0, 0 } },
     { (char *)"EVAL",     (char *)"FORM/F",        1, (struct Hook *)&ck_rx_eval_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"INSERT",   (char *)"TEXT/F",        1, (struct Hook *)&ck_rx_insert_hook,   { 0, 0, 0, 0, 0 } },
