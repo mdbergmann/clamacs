@@ -42,7 +42,7 @@ TESTS = keymap rawkey command bindings killring minihist locstack token sexp ind
 
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 
-.PHONY: all test clean amiga mos $(patsubst %,test-%,$(TESTS))
+.PHONY: all test clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS))
 
 # Without this, make treats the core objects as intermediates of the pattern
 # rule that builds a test binary and deletes them after every run, so each
@@ -83,3 +83,13 @@ mos:
 
 clean:
 	rm -rf build/host
+
+# Activate the auto-review git hook for this clone.  Sets a RELATIVE
+# core.hooksPath (local to the clone, survives a repo move), so the tracked
+# githooks/pre-commit runs and delegates to scripts/review/pre-commit.sh.
+# Run once after cloning.  See scripts/review/README.md.
+install-hooks:
+	@git config core.hooksPath githooks
+	@chmod +x githooks/* scripts/review/*.sh 2>/dev/null || true
+	@echo "=> auto-review hook activated (core.hooksPath=githooks)"
+	@echo "   bypass one commit with 'git commit --no-verify'; disable with CLAUDE_AUTO_REVIEW=0"

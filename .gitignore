@@ -2,6 +2,10 @@ build/
 *.o
 *.d
 
+# Auto-review gate scratch: per-commit review logs, the staged diff and the
+# last test log (scripts/review/).
+.reviews/
+
 # FS-UAE per-file metadata written into a shared mount
 *.uaem
 
