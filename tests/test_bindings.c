@@ -162,6 +162,46 @@ TEST(spec_lisp_interaction_keys)
     check_table(t, 1);
 }
 
+TEST(spec_introspection_keys)
+{
+    /* Phase 2.  SLIME's keys where SLIME has them, and both spellings of
+     * each documentation key, since `C-c C-d d' and `C-c C-d C-d' are the
+     * same command under the same fingers. */
+    static const struct expectation t[] = {
+        { "M-TAB",       "complete-symbol" },
+        { "C-M-i",       "complete-symbol" },
+        { "M-.",         "clamacs-edit-definition" },
+        { "M-,",         "clamacs-pop-definition" },
+        { "C-c C-d d",   "clamacs-describe-symbol" },
+        { "C-c C-d C-d", "clamacs-describe-symbol" },
+        { "C-c C-d a",   "clamacs-apropos" },
+        { "C-c C-d C-a", "clamacs-apropos" },
+        { "C-c RET",     "clamacs-macroexpand-1" },
+        { "C-c C-m",     "clamacs-macroexpand-1" },
+        { "C-c M-m",     "clamacs-macroexpand" },
+        { "C-c ! l",     "clamacs-show-errors" },
+        { NULL,          NULL }
+    };
+    check_table(t, 1);
+}
+
+TEST(c_c_c_d_is_a_prefix_now)
+{
+    /* It was `clamacs-show-errors' in phase 1; a binding that silently
+     * turned back into a command would swallow the documentation keys. */
+    ck_keymap  *global = ck_bindings_global();
+    ck_keymap  *lisp   = ck_bindings_lisp();
+    ck_keystate st;
+    int16_t     cmd = CK_CMD_NONE;
+
+    ck_keystate_init(&st, global, lisp);
+    ASSERT_EQ_INT(ck_keystate_feed(&st, ck_key_from_string("C-c"), &cmd), CK_KEY_PREFIX);
+    ASSERT_EQ_INT(ck_keystate_feed(&st, ck_key_from_string("C-d"), &cmd), CK_KEY_PREFIX);
+
+    ck_keymap_free(global);
+    ck_keymap_free(lisp);
+}
+
 TEST(lisp_map_shadows_global_for_c_x_c_e)
 {
     /* C-x C-e is a Lisp-mode binding on a C-x prefix that the global map
@@ -267,6 +307,8 @@ int main(void)
     RUN(spec_file_and_window_keys);
     RUN(spec_sexp_keys_are_lisp_mode);
     RUN(spec_lisp_interaction_keys);
+    RUN(spec_introspection_keys);
+    RUN(c_c_c_d_is_a_prefix_now);
     RUN(lisp_map_shadows_global_for_c_x_c_e);
     RUN(lisp_prefix_does_not_hide_the_global_one);
     RUN(unbound_keys_reach_the_superclass);

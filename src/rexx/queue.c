@@ -53,8 +53,10 @@ static ck_request *ck_request_new(ck_queue *q, const char *command,
     }
     memcpy(r->command, command, n);
 
-    r->kind   = kind;
-    r->origin = CK_REQ_NONE;
+    r->context   = NULL;
+    r->kind      = kind;
+    r->origin    = CK_REQ_NONE;
+    r->origin_rc = 0;
     r->flags  = flags;
     r->cookie = cookie;
     r->serial = q->next_serial++;
@@ -131,7 +133,38 @@ void ck_queue_release(ck_request *req)
     if (req == NULL)
         return;
     free(req->command);
+    free(req->context);
     free(req);
+}
+
+int32_t ck_request_set_context(ck_request *req, const char *text)
+{
+    char  *copy;
+    size_t n;
+
+    if (req == NULL)
+        return -1;
+    free(req->context);
+    req->context = NULL;
+    if (text == NULL)
+        return 0;
+
+    n    = strlen(text) + 1;
+    copy = (char *)malloc(n);
+    if (copy == NULL)
+        return -1;
+    memcpy(copy, text, n);
+    req->context = copy;
+    return 0;
+}
+
+const char *ck_request_subject(const ck_request *req)
+{
+    if (req == NULL)
+        return "";
+    if (req->context != NULL)
+        return req->context;
+    return (req->command != NULL) ? req->command : "";
 }
 
 ck_request *ck_queue_inflight(const ck_queue *q)

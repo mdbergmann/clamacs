@@ -30,16 +30,35 @@ typedef enum {
     CK_REQ_LOAD,
     CK_REQ_COMPILE_FILE,
     CK_REQ_EVAL,
-    CK_REQ_LASTRESULT
+    CK_REQ_LASTRESULT,
+
+    /* Phase 2: introspection.  Each names where its reply goes. */
+    CK_REQ_ARGLIST,          /* the status line, quietly (the idle timer) */
+    CK_REQ_ARGLIST_ECHO,     /* the status line AND the echo area (M-x) */
+    CK_REQ_COMPLETE_BUFFER,  /* M-TAB: complete the symbol before point */
+    CK_REQ_COMPLETE_MINI,    /* TAB in a symbol prompt */
+    CK_REQ_DESCRIBE,         /* the description window */
+    CK_REQ_APROPOS,          /* the apropos window */
+    CK_REQ_SOURCE_LOCATION,  /* M-.: jump there */
+    CK_REQ_MACROEXPAND       /* the macroexpansion window */
 } ck_req_kind;
 
 typedef struct ck_request {
     char              *command;  /* the exact ARexx command string */
+    char              *context;  /* for an automatic LASTRESULT: the command
+                                  * string whose text it is fetching, so a
+                                  * continuation that reads its argument
+                                  * back out of the command (which symbol
+                                  * was asked about) still can */
     uint16_t           kind;     /* ck_req_kind */
     uint16_t           origin;   /* for an automatic LASTRESULT: the kind of
                                   * the command whose text it is fetching, so
                                   * the continuation still knows what to do
                                   * with the reply */
+    int32_t            origin_rc; /* and that command's own return code: a
+                                  * LASTRESULT always comes back 0, but a
+                                  * phase-2 continuation needs to tell a miss
+                                  * (rc 10) from an answer */
     uint16_t           flags;
     uint32_t           cookie;   /* the document (or window) the reply belongs
                                   * to, so a reply that arrives after its
@@ -85,6 +104,14 @@ ck_request *ck_queue_begin(ck_queue *q);
 ck_request *ck_queue_complete(ck_queue *q, int32_t rc);
 
 void ck_queue_release(ck_request *req);
+
+/* Attach a copy of TEXT as REQ's context (see the field).  Returns 0, or -1
+ * when out of memory, in which case the request has no context. */
+int32_t ck_request_set_context(ck_request *req, const char *text);
+
+/* The command string a reply answers: the request's own, or -- for an
+ * automatic LASTRESULT -- the one it stands in for. */
+const char *ck_request_subject(const ck_request *req);
 
 ck_request *ck_queue_inflight(const ck_queue *q);
 int32_t     ck_queue_depth(const ck_queue *q);

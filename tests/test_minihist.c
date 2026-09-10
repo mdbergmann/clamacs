@@ -139,6 +139,39 @@ TEST(completion_handles_no_candidates)
     ASSERT_EQ_INT(ck_complete(files, 0, "x", NULL, 0, common, sizeof common), 0);
 }
 
+TEST(strlist_from_a_reply)
+{
+    ck_strlist  l;
+    const char *hits[4];
+    char        common[32];
+
+    ck_strlist_init(&l);
+
+    /* COMPLETE answers one candidate per line; the last line may or may not
+     * end in a newline, and an Amiga reply can carry CR. */
+    ASSERT_EQ_INT(ck_strlist_set_lines(&l, "mapc\r\nmapcan\nmapcar"), 3);
+    ASSERT_STR_EQ(l.items[0], "mapc");
+    ASSERT_STR_EQ(l.items[1], "mapcan");
+    ASSERT_STR_EQ(l.items[2], "mapcar");
+
+    /* ... and the array is what ck_complete takes. */
+    ASSERT_EQ_INT(ck_complete((const char *const *)l.items, l.count, "mapca",
+                              hits, 4, common, sizeof common), 2);
+    ASSERT_STR_EQ(common, "mapca");
+    ASSERT_STR_EQ(hits[1], "mapcar");
+
+    /* Setting again replaces; blank lines are skipped; empty is empty. */
+    ASSERT_EQ_INT(ck_strlist_set_lines(&l, "\n\nonly\n\n"), 1);
+    ASSERT_STR_EQ(l.items[0], "only");
+    ASSERT_EQ_INT(ck_strlist_set_lines(&l, ""), 0);
+    ASSERT_EQ_INT(l.count, 0);
+    ASSERT_EQ_INT(ck_strlist_set_lines(&l, NULL), 0);
+
+    ck_strlist_clear(&l);
+    ASSERT_EQ_INT(l.count, 0);
+    ASSERT(l.items == NULL);
+}
+
 int main(void)
 {
     test_init();
@@ -151,5 +184,6 @@ int main(void)
     RUN(completion_respects_max);
     RUN(completion_truncates_into_a_short_buffer);
     RUN(completion_handles_no_candidates);
+    RUN(strlist_from_a_reply);
     REPORT();
 }

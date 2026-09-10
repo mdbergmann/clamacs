@@ -217,7 +217,7 @@ int32_t ck_doc_context(ck_doc *doc, ck_context *ctx)
  * evaluate.  These are single user actions, not per-keystroke work, so the
  * full export is affordable.
  */
-static int32_t ck_doc_context_full(ck_doc *doc, ck_context *ctx)
+int32_t ck_doc_context_full(ck_doc *doc, ck_context *ctx)
 {
     return ck_doc_context_range(doc, ctx, 0, ck_doc_last_line(doc));
 }
@@ -232,13 +232,29 @@ void ck_doc_update_status(ck_doc *doc)
     LONG y = ck_get(doc->text, MUIA_TextEditor_CursorY);
     LONG changed = ck_get(doc->text, MUIA_TextEditor_HasChanged);
 
-    snprintf(doc->statusline, sizeof doc->statusline, "%s%s  %s  %ld:%ld",
+    /* The arglist of the operator at point rides at the end, where a long
+     * one is cut by the window edge rather than pushing the line number
+     * out of sight (introspect.c fills it in). */
+    snprintf(doc->statusline, sizeof doc->statusline, "%s%s  %s  %ld:%ld%s%s",
              changed ? "*" : " ",
              doc->name[0] != '\0' ? doc->name : "(unnamed)",
              doc->package[0] != '\0' ? doc->package : "CL-USER",
-             (long)(y + 1), (long)(x + 1));
+             (long)(y + 1), (long)(x + 1),
+             doc->arglist[0] != '\0' ? "  " : "", doc->arglist);
 
     set(doc->status, MUIA_Text_Contents, (IPTR)doc->statusline);
+}
+
+/* The arglist shown belongs to a text that is gone: forget it, and let the
+ * idle tick look again from scratch. */
+static void ck_doc_forget_arglist(ck_doc *doc)
+{
+    doc->arglist[0]      = '\0';
+    doc->arglist_op[0]   = '\0';
+    doc->arglist_want[0] = '\0';
+    doc->arglist_index   = -1;
+    doc->idle_index      = -1;
+    doc->edit_serial++;
 }
 
 /* ------------------------------------------------------------------ *
@@ -545,7 +561,67 @@ int32_t ck_doc_load_file(ck_doc *doc, const char *path)
 
     set(doc->text, MUIA_TextEditor_HasChanged, FALSE);
     set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
+    ck_doc_forget_arglist(doc);
     return 1;
+}
+
+void ck_doc_replace(ck_doc *doc, int32_t start, int32_t stop, const char *text)
+{
+    if (stop > start) {
+        STRPTR old = ck_take_region(doc, start, stop, 1);
+        if (old != NULL)
+            FreeVec(old);
+    }
+    ck_doc_set_cursor_index(doc, start);
+    DoMethod(doc->text, MUIM_TextEditor_InsertText, (IPTR)text,
+             (IPTR)MUIV_TextEditor_InsertText_Cursor);
+}
+
+void ck_doc_goto_line(ck_doc *doc, int32_t line)
+{
+    set(doc->win, MUIA_Window_Activate, TRUE);
+    if (line > 0) {
+        set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
+        set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(line - 1));
+    }
+    set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
+}
+
+ck_doc *ck_doc_scratch(ck_app *app, const char *name, int32_t lisp_mode)
+{
+    ck_doc *doc;
+
+    for (doc = app->docs; doc != NULL; doc = doc->next) {
+        if (!doc->closing && doc->path[0] == '\0' && strcmp(doc->name, name) == 0)
+            return doc;
+    }
+
+    doc = ck_doc_new(app, NULL);
+    if (doc == NULL)
+        return NULL;
+
+    strncpy(doc->name, name, sizeof doc->name - 1);
+    doc->name[sizeof doc->name - 1] = '\0';
+    set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
+
+    if (doc->lisp_mode != lisp_mode) {
+        doc->lisp_mode = lisp_mode;
+        ck_keystate_init(&doc->keys, app->global, lisp_mode ? app->lisp : NULL);
+    }
+    return doc;
+}
+
+void ck_doc_set_text(ck_doc *doc, const char *text)
+{
+    set(doc->text, MUIA_TextEditor_Contents, (IPTR)(text != NULL ? text : ""));
+    /* A reply is not an edit: closing the window must not ask to save. */
+    set(doc->text, MUIA_TextEditor_HasChanged, FALSE);
+    ck_doc_forget_arglist(doc);
+    ck_doc_colour_all(doc);
+    ck_doc_set_cursor_index(doc, 0);
+    set(doc->win, MUIA_Window_Activate, TRUE);
+    set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
+    ck_doc_update_status(doc);
 }
 
 int32_t ck_doc_save_file(ck_doc *doc, const char *path)
@@ -621,6 +697,11 @@ void ck_doc_prompt(ck_doc *doc, const char *prompt, const char *initial,
     doc->mini_source  = source;
     doc->mini_arg     = arg;
 
+    /* The prompt IS what the echo area shows, so the port's STATUS reports
+     * it too -- that is how a macro sees that a prompt is open. */
+    strncpy(doc->message, prompt, sizeof doc->message - 1);
+    doc->message[sizeof doc->message - 1] = '\0';
+
     set(doc->prompt, MUIA_Text_Contents, (IPTR)prompt);
     set(doc->mini, MUIA_String_Contents, (IPTR)(initial != NULL ? initial : ""));
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->mini);
@@ -631,6 +712,7 @@ static void ck_mini_finish(ck_doc *doc)
     doc->mini_state   = CK_MINI_IDLE;
     doc->mini_command = CK_CMD_NONE;
     doc->mini_source  = CK_COMPLETE_NONE;
+    doc->message[0]   = '\0';
     set(doc->prompt, MUIA_Text_Contents, (IPTR)"");
     set(doc->mini, MUIA_String_Contents, (IPTR)"");
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
@@ -649,6 +731,7 @@ static ck_history *ck_doc_history(ck_doc *doc)
     switch (doc->mini_source) {
     case CK_COMPLETE_COMMAND: return &doc->app->hist_command;
     case CK_COMPLETE_FILE:    return &doc->app->hist_file;
+    case CK_COMPLETE_SYMBOL:  return &doc->app->hist_symbol;
     default:                  return &doc->app->hist_eval;
     }
 }
@@ -703,6 +786,11 @@ int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
 
         if (doc->mini_source == CK_COMPLETE_COMMAND) {
             n = ck_command_complete(text, hits, 16, common, (int32_t)sizeof common);
+        } else if (doc->mini_source == CK_COMPLETE_SYMBOL) {
+            /* Symbols come from clamiga, asynchronously; introspect.c
+             * completes from the candidates it has or asks for more. */
+            ck_intro_mini_complete(doc, text);
+            return 1;
         } else {
             ck_beep(doc);
             return 1;
@@ -754,16 +842,33 @@ static void ck_doc_track_package(ck_doc *doc)
     ck_context_free(&ctx);
 }
 
+void ck_doc_send_package(ck_doc *doc, int32_t track)
+{
+    ck_app     *app = doc->app;
+    const char *pkg;
+
+    if (track)
+        ck_doc_track_package(doc);
+
+    /* No (in-package ...) in the buffer means CL-USER, which is also where
+     * a fresh clamiga starts -- but not where it stays once another buffer
+     * has spoken, so it is said explicitly. */
+    pkg = (doc->package[0] != '\0') ? doc->package : "CL-USER";
+    if (Stricmp((STRPTR)pkg, (STRPTR)app->wire_package) == 0)
+        return;
+
+    if (ck_rexx_send(app, doc, CK_REQ_IN_PACKAGE, "IN-PACKAGE %s", pkg) >= 0) {
+        strncpy(app->wire_package, pkg, sizeof app->wire_package - 1);
+        app->wire_package[sizeof app->wire_package - 1] = '\0';
+    }
+}
+
 /* Send a form for evaluation, preceded by an IN-PACKAGE when the buffer's
- * package differs from what the last request set. */
+ * package differs from what the port was last told. */
 static void ck_doc_eval(ck_doc *doc, const char *form)
 {
-    ck_app *app = doc->app;
-
-    ck_doc_track_package(doc);
-    if (doc->package[0] != '\0')
-        ck_rexx_send(app, doc, CK_REQ_IN_PACKAGE, "IN-PACKAGE %s", doc->package);
-    ck_rexx_send(app, doc, CK_REQ_EVAL, "EVAL %s", form);
+    ck_doc_send_package(doc, 1);
+    ck_rexx_send_text(doc->app, doc, CK_REQ_EVAL, "EVAL ", form);
 }
 
 static void ck_doc_eval_region(ck_doc *doc, int32_t start, int32_t stop)
@@ -1421,6 +1526,16 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         break;
     }
 
+    /* --- introspection (phase 2), see introspect.c ---------------- */
+    case CK_CMD_COMPLETE_SYMBOL:  ck_intro_complete(doc); break;
+    case CK_CMD_ARGLIST:          ck_intro_arglist(doc, 1); break;
+    case CK_CMD_EDIT_DEFINITION:  ck_intro_edit_definition(doc); break;
+    case CK_CMD_POP_DEFINITION:   ck_intro_pop_definition(doc); break;
+    case CK_CMD_DESCRIBE_SYMBOL:  ck_intro_describe(doc); break;
+    case CK_CMD_APROPOS:          ck_intro_apropos(doc); break;
+    case CK_CMD_MACROEXPAND_1:    ck_intro_macroexpand(doc, 0); break;
+    case CK_CMD_MACROEXPAND:      ck_intro_macroexpand(doc, 1); break;
+
     default:
         ck_message(doc, "%s is not implemented yet",
                    ck_command_name(command) != NULL
@@ -1533,6 +1648,12 @@ void ck_doc_minibuffer_done(ck_doc *doc)
         break;
     }
 
+    /* introspection (phase 2) */
+    case CK_CMD_COMPLETE_SYMBOL: ck_intro_complete_done(doc, answer); break;
+    case CK_CMD_EDIT_DEFINITION: ck_intro_edit_definition_named(doc, answer); break;
+    case CK_CMD_DESCRIBE_SYMBOL: ck_intro_describe_named(doc, answer); break;
+    case CK_CMD_APROPOS:         ck_intro_apropos_named(doc, answer); break;
+
     default:
         break;
     }
@@ -1614,6 +1735,7 @@ MakeStaticHook(ck_cursor_hook, ck_cursor_func);
 HOOKPROTONHNO(ck_changed_func, void, ULONG *params)
 {
     ck_doc *doc = (ck_doc *)params[0];
+    doc->edit_serial++;
     ck_doc_colour_line(doc, (int32_t)ck_get(doc->text, MUIA_TextEditor_CursorY));
     ck_doc_update_status(doc);
 }
@@ -1654,6 +1776,9 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     doc->paren_y = -1;
     doc->last_command = CK_CMD_NONE;
     doc->mini_command = CK_CMD_NONE;
+    doc->arglist_index = -1;
+    doc->idle_index    = -1;
+    ck_strlist_init(&doc->completions);
     strcpy(doc->name, "(unnamed)");
     doc->lisp_mode = (path != NULL) ? ck_looks_like_lisp(path) : 1;
 
@@ -1807,6 +1932,7 @@ void ck_app_reap(ck_app *app)
             *link = doc->next;
             DoMethod(app->app, OM_REMMEMBER, (IPTR)doc->win);
             MUI_DisposeObject(doc->win);
+            ck_strlist_clear(&doc->completions);
             FreeVec(doc);
         } else {
             alive++;

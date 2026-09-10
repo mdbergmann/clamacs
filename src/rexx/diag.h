@@ -65,4 +65,13 @@ int32_t ck_diag_parse(ck_diaglist *list, const char *text);
  * strings the caller owns), 0 when it was something else. */
 int32_t ck_diag_parse_line(const char *line, int32_t len, ck_diag *out);
 
+/* A bare `file:line' -- what SOURCE-LOCATION answers.  Only the first line
+ * of TEXT is read.  The same right-hand split as a diagnostic's location:
+ * the last colon whose tail is all digits, so `Work:src/foo.lisp:12' keeps
+ * the path's own colons.  Returns 1 and fills FILE and *LINE (1-based, so
+ * a `:0' is not a location), 0 when TEXT is not one -- which is what an
+ * error reply looks like. */
+int32_t ck_diag_parse_location(const char *text, char *file, int32_t file_size,
+                               int32_t *line);
+
 #endif /* CLAMACS_DIAG_H */

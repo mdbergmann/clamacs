@@ -162,6 +162,11 @@ static int32_t ck_app_create(ck_app *app)
     ck_hist_init(&app->hist_command);
     ck_hist_init(&app->hist_search);
     ck_hist_init(&app->hist_eval);
+    ck_hist_init(&app->hist_symbol);
+
+    /* Phase 2 introspection state. */
+    ck_symcache_init(&app->arglists);
+    ck_locstack_init(&app->locations);
 
     app->global = ck_bindings_global();
     app->lisp   = ck_bindings_lisp();
@@ -241,6 +246,8 @@ static void ck_app_destroy(ck_app *app)
     ck_hist_clear(&app->hist_command);
     ck_hist_clear(&app->hist_search);
     ck_hist_clear(&app->hist_eval);
+    ck_hist_clear(&app->hist_symbol);
+    ck_symcache_clear(&app->arglists);
 }
 
 static void ck_app_run(ck_app *app)

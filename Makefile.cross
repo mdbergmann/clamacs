@@ -50,16 +50,19 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/emacs/bindings.c \
            $(SRCDIR)/emacs/killring.c \
            $(SRCDIR)/emacs/minihist.c \
+           $(SRCDIR)/emacs/locstack.c \
            $(SRCDIR)/lisp/token.c \
            $(SRCDIR)/lisp/sexp.c \
            $(SRCDIR)/lisp/indent.c \
            $(SRCDIR)/rexx/diag.c \
-           $(SRCDIR)/rexx/queue.c
+           $(SRCDIR)/rexx/queue.c \
+           $(SRCDIR)/rexx/symcache.c
 
 # The MUI half.
 MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/textclass.c \
            $(SRCDIR)/document.c \
+           $(SRCDIR)/introspect.c \
            $(SRCDIR)/rexxclient.c \
            $(SRCDIR)/rexxport.c \
            $(SRCDIR)/errorwin.c \

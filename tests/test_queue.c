@@ -231,6 +231,43 @@ TEST(clear_releases_the_inflight_request_too)
     ASSERT(ck_queue_inflight(&q) == NULL);
 }
 
+TEST(a_lastresult_remembers_what_it_stands_in_for)
+{
+    ck_queue    q;
+    ck_request *r;
+
+    ck_queue_init(&q);
+
+    /* ARGLIST foo fails with rc 10; the automatic LASTRESULT that fetches
+     * its text must still let the continuation see `foo'. */
+    ck_queue_push(&q, "ARGLIST foo", CK_REQ_ARGLIST, 1);
+    r = ck_queue_begin(&q);
+    ASSERT_STR_EQ(ck_request_subject(r), "ARGLIST foo");
+    r = ck_queue_complete(&q, CK_RC_ERROR);
+
+    ASSERT(ck_queue_push_front(&q, "LASTRESULT", CK_REQ_LASTRESULT, r->cookie,
+                               CK_REQF_AUTO_LASTRESULT) > 0);
+    q.head->origin = r->kind;
+    ASSERT_EQ_INT(ck_request_set_context(q.head, r->command), 0);
+    ck_queue_release(r);
+
+    r = ck_queue_begin(&q);
+    ASSERT_STR_EQ(r->command, "LASTRESULT");
+    ASSERT_STR_EQ(ck_request_subject(r), "ARGLIST foo");
+    ASSERT_EQ_INT(r->origin, CK_REQ_ARGLIST);
+    ck_queue_release(ck_queue_complete(&q, CK_RC_OK));
+
+    /* Without a context the subject is the command itself. */
+    ck_queue_push(&q, "PING", CK_REQ_PING, 1);
+    r = ck_queue_begin(&q);
+    ASSERT_STR_EQ(ck_request_subject(r), "PING");
+    ASSERT_EQ_INT(ck_request_set_context(r, NULL), 0);
+    ASSERT_STR_EQ(ck_request_subject(r), "PING");
+    ck_queue_release(ck_queue_complete(&q, CK_RC_OK));
+
+    ck_queue_clear(&q);
+}
+
 int main(void)
 {
     test_init();
@@ -245,5 +282,6 @@ int main(void)
     RUN(dropping_the_tail_keeps_the_queue_usable);
     RUN(dropping_everything);
     RUN(clear_releases_the_inflight_request_too);
+    RUN(a_lastresult_remembers_what_it_stands_in_for);
     REPORT();
 }

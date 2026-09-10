@@ -18,11 +18,13 @@
 #include "emacs/bindings.h"
 #include "emacs/killring.h"
 #include "emacs/minihist.h"
+#include "emacs/locstack.h"
 #include "lisp/token.h"
 #include "lisp/sexp.h"
 #include "lisp/indent.h"
 #include "rexx/diag.h"
 #include "rexx/queue.h"
+#include "rexx/symcache.h"
 
 /* ---- OS types start here ---------------------------------------- */
 
@@ -61,10 +63,26 @@
  * space, so it cannot collide with MUI's own. */
 #define CKA_Doc (TAG_USER | 0x0C1A0001)
 
+/* Private method: the idle tick, fired by the text object's own MUI timer
+ * input handler (MUIIHNF_TIMER).  It carries no parameters -- the handler
+ * finds its document from instance data -- so a plain method id is enough.
+ * ck_intro_idle() does the work; the guard against a moving cursor and an
+ * inactive window is there, so an idle tick on a background document is
+ * cheap. */
+#define CKM_IdleTick (TAG_USER | 0x0C1A0002)
+
 #define CK_PATH_MAX 256
 #define CK_PKG_MAX   64
 #define CK_MSG_MAX  512
 #define CK_MINI_MAX 512
+#define CK_SYM_MAX  128   /* a symbol name as the editor passes it around */
+#define CK_ARGLIST_MAX 256
+
+/* Private method: the idle tick that drives the arglist in the status line.
+ * textclass.c registers a MUI timer input handler per text object that
+ * invokes it; introspect.c answers it. */
+#define CKM_Idle (TAG_USER | 0x0C1A0100)
+#define CK_IDLE_MILLIS 250
 
 /* How many lines above the cursor get exported when a structural command
  * needs context.  The scanner needs a starting point outside any string or
@@ -98,7 +116,8 @@ typedef enum {
     CK_COMPLETE_NONE = 0,
     CK_COMPLETE_COMMAND,
     CK_COMPLETE_FILE,
-    CK_COMPLETE_BUFFER
+    CK_COMPLETE_BUFFER,
+    CK_COMPLETE_SYMBOL   /* symbol names, asked from clamiga (phase 2) */
 } ck_complete_source;
 
 typedef struct ck_doc {
@@ -147,6 +166,28 @@ typedef struct ck_doc {
      * `C-x k', from inside the MUIM_HandleEvent of the very text object
      * being freed. */
     int32_t  closing;
+
+    /* Phase 2: the arglist in the status line (introspect.c).  The idle
+     * tick compares the cursor with where it was a tick ago and with where
+     * the arglist was last worked out, so a resting cursor costs one export
+     * and a moving one costs nothing. */
+    char     arglist[CK_ARGLIST_MAX];  /* shown, "" for none */
+    char     arglist_op[CK_SYM_MAX];   /* the operator it is for */
+    char     arglist_want[CK_SYM_MAX]; /* the operator at point, last looked */
+    int32_t  arglist_index;            /* cursor index that arglist_want is for */
+    int32_t  arglist_serial;           /* edit serial ditto */
+    int32_t  arglist_inflight;         /* quiet ARGLIST requests on the wire */
+    int32_t  idle_index;               /* the cursor a tick ago */
+    int32_t  idle_ticks;
+    int32_t  edit_serial;              /* bumped on every content change */
+
+    /* Phase 2: symbol completion.  The candidates clamiga sent for
+     * completions_prefix, and the stretch of buffer `M-TAB' replaces. */
+    ck_strlist completions;
+    char       completions_prefix[CK_SYM_MAX];
+    int32_t    completions_capped;
+    int32_t    complete_start;
+    int32_t    complete_end;
 } ck_doc;
 
 typedef struct ck_app {
@@ -166,6 +207,7 @@ typedef struct ck_app {
     ck_history hist_command;
     ck_history hist_search;
     ck_history hist_eval;
+    ck_history hist_symbol;
 
     ck_doc  *docs;
     uint32_t next_id;
@@ -178,6 +220,15 @@ typedef struct ck_app {
     ck_queue        queue;
     ck_diaglist     diags;
     char            version[128];
+
+    /* The package clamiga's port was last told (IN-PACKAGE), so a request
+     * from a buffer in the same package does not repeat it.  Cleared when a
+     * port is (re)found, since a fresh clamiga starts in CL-USER. */
+    char            wire_package[CK_PKG_MAX];
+
+    /* Phase 2 */
+    ck_symcache     arglists;    /* what clamiga said about each operator */
+    ck_locstack     locations;   /* where `M-.' came from */
 
     /* the editor's own port name, as MUI registered it */
     const char *own_port;
@@ -229,11 +280,30 @@ int32_t ck_doc_handle_key(ck_doc *doc, ck_key key);
 void    ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg);
 
 int32_t ck_doc_context(ck_doc *doc, ck_context *ctx);
+int32_t ck_doc_context_full(ck_doc *doc, ck_context *ctx);
 void    ck_context_free(ck_context *ctx);
 
 int32_t ck_doc_cursor_index(ck_doc *doc);
 void    ck_doc_set_cursor_index(ck_doc *doc, int32_t index);
 STRPTR  ck_doc_export_all(ck_doc *doc);
+
+/* Replace [START,STOP) with TEXT and leave the cursor after it. */
+void    ck_doc_replace(ck_doc *doc, int32_t start, int32_t stop, const char *text);
+
+/* Activate the window and put the cursor at the start of LINE (1-based). */
+void    ck_doc_goto_line(ck_doc *doc, int32_t line);
+
+/* A window with no file behind it -- `*clamacs-description*' and the like.
+ * Reused when one of that NAME is open, else created; LISP_MODE says
+ * whether it gets the Lisp map and the colouring. */
+ck_doc *ck_doc_scratch(ck_app *app, const char *name, int32_t lisp_mode);
+void    ck_doc_set_text(ck_doc *doc, const char *text);
+
+/* Tell clamiga the buffer's package if it is not what the port was last
+ * told; with TRACK the buffer is re-read for its (in-package ...) first,
+ * which costs a full export -- the per-user-action commands do that, the
+ * idle timer does not. */
+void    ck_doc_send_package(ck_doc *doc, int32_t track);
 
 void    ck_doc_update_status(ck_doc *doc);
 void    ck_doc_colour_line(ck_doc *doc, int32_t line);
@@ -263,8 +333,52 @@ void    ck_rexx_handle_replies(ck_app *app);
 int32_t ck_rexx_find_port(ck_app *app);
 int32_t ck_rexx_launch(ck_app *app);
 
-/* Queue a command.  KIND says what the reply is for; DOC may be NULL. */
+/* Queue a command.  KIND says what the reply is for; DOC may be NULL.  When
+ * no port is known the user is offered to start clamiga first, so this is
+ * for things the user asked for. */
 int32_t ck_rexx_send(ck_app *app, ck_doc *doc, uint16_t kind, const char *fmt, ...);
+
+/* The same for PREFIX followed by TEXT of any length -- a whole defun for
+ * EVAL, a form for MACROEXPAND -- without a fixed-size format buffer in the
+ * way. */
+int32_t ck_rexx_send_text(ck_app *app, ck_doc *doc, uint16_t kind,
+                          const char *prefix, const char *text);
+
+/* Whether a request can go out without asking the user anything: a port is
+ * known, or one turns up on a scan.  The idle timer checks this first. */
+int32_t ck_rexx_ready(ck_app *app);
+
+/* ---- introspect.c (phase 2) -------------------------------------- */
+
+/* The idle tick, from the text object's timer input handler. */
+void    ck_intro_idle(ck_doc *doc);
+
+/* The arglist of the operator at point into the status line.  ECHO also
+ * puts it in the echo area (`M-x clamacs-arglist') and may ask the user to
+ * start clamiga; quiet calls never prompt.  Returns 1 when handled, 0 when
+ * it could not act now (no port, a request already out) and should be
+ * tried again. */
+int32_t ck_intro_arglist(ck_doc *doc, int32_t echo);
+
+void    ck_intro_complete(ck_doc *doc);                              /* M-TAB */
+int32_t ck_intro_mini_complete(ck_doc *doc, const char *text);       /* TAB in a symbol prompt */
+void    ck_intro_complete_done(ck_doc *doc, const char *answer);     /* RET in `Complete:' */
+
+void    ck_intro_edit_definition(ck_doc *doc);                       /* M-. */
+void    ck_intro_edit_definition_named(ck_doc *doc, const char *name);
+void    ck_intro_pop_definition(ck_doc *doc);                        /* M-, */
+
+void    ck_intro_describe(ck_doc *doc);                              /* C-c C-d d */
+void    ck_intro_describe_named(ck_doc *doc, const char *name);
+void    ck_intro_apropos(ck_doc *doc);                               /* C-c C-d a */
+void    ck_intro_apropos_named(ck_doc *doc, const char *text);
+void    ck_intro_macroexpand(ck_doc *doc, int32_t full);             /* C-c RET */
+
+/* The continuation for every phase-2 request kind.  SUBJECT is the command
+ * string the reply answers (ck_request_subject), DOC may be NULL when the
+ * window that asked has closed. */
+void    ck_intro_reply(ck_app *app, ck_doc *doc, uint16_t kind,
+                       const char *subject, int32_t rc, const char *text);
 
 /* ---- rexxport.c -------------------------------------------------- */
 

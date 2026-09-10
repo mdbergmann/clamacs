@@ -98,7 +98,18 @@
     X(SHOW_ERRORS,              "clamacs-show-errors")                        \
     X(NEXT_ERROR,               "clamacs-next-error")                         \
     X(PREVIOUS_ERROR,           "clamacs-previous-error")                     \
-    X(RUN_LISP,                 "run-lisp")
+    X(RUN_LISP,                 "run-lisp")                                   \
+    /* Lisp mode: introspection (phase 2).  `complete-symbol' keeps its Emacs
+     * name because it is the same key doing the same thing; the rest carry
+     * the editor's prefix, as the other clamiga commands do. */              \
+    X(COMPLETE_SYMBOL,          "complete-symbol")                            \
+    X(ARGLIST,                  "clamacs-arglist")                            \
+    X(EDIT_DEFINITION,          "clamacs-edit-definition")                    \
+    X(POP_DEFINITION,           "clamacs-pop-definition")                     \
+    X(DESCRIBE_SYMBOL,          "clamacs-describe-symbol")                    \
+    X(APROPOS,                  "clamacs-apropos")                            \
+    X(MACROEXPAND_1,            "clamacs-macroexpand-1")                      \
+    X(MACROEXPAND,              "clamacs-macroexpand")
 
 typedef enum {
     CK_CMD_NONE = -1,

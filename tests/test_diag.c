@@ -251,6 +251,37 @@ TEST(return_code_ladder)
     ASSERT_EQ_INT(ck_rc_needs_lastresult(CK_RC_FATAL), 1);
 }
 
+TEST(source_location)
+{
+    char    file[64];
+    int32_t line = -1;
+
+    /* SOURCE-LOCATION's reply: a path with its own colons, then the line. */
+    ASSERT_EQ_INT(ck_diag_parse_location("Work:src/foo.lisp:12", file, sizeof file, &line), 1);
+    ASSERT_STR_EQ(file, "Work:src/foo.lisp");
+    ASSERT_EQ_INT(line, 12);
+
+    /* Only the first line counts, and a trailing newline is not a digit. */
+    ASSERT_EQ_INT(ck_diag_parse_location("T:x.lisp:3\n[truncated]\n", file, sizeof file, &line), 1);
+    ASSERT_STR_EQ(file, "T:x.lisp");
+    ASSERT_EQ_INT(line, 3);
+
+    /* What an error reply looks like is not a location. */
+    ASSERT_EQ_INT(ck_diag_parse_location("ERROR: no source location recorded for foo",
+                                         file, sizeof file, &line), 0);
+    ASSERT_EQ_INT(ck_diag_parse_location("foo.lisp", file, sizeof file, &line), 0);
+    ASSERT_EQ_INT(ck_diag_parse_location("foo.lisp:0", file, sizeof file, &line), 0);
+    ASSERT_EQ_INT(ck_diag_parse_location(":12", file, sizeof file, &line), 0);
+    ASSERT_EQ_INT(ck_diag_parse_location("", file, sizeof file, &line), 0);
+    ASSERT_EQ_INT(ck_diag_parse_location(NULL, file, sizeof file, &line), 0);
+
+    /* A path longer than the buffer is cut, not overrun. */
+    ASSERT_EQ_INT(ck_diag_parse_location("Work:a/very/long/path/to/a/file.lisp:7",
+                                         file, 8, &line), 1);
+    ASSERT_STR_EQ(file, "Work:a/");
+    ASSERT_EQ_INT(line, 7);
+}
+
 int main(void)
 {
     test_init();
@@ -269,5 +300,6 @@ int main(void)
     RUN(many_diagnostics_grow_the_list);
     RUN(empty_and_null_input);
     RUN(return_code_ladder);
+    RUN(source_location);
     REPORT();
 }

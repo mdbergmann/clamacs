@@ -105,9 +105,24 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     { "C-x C-e", CK_CMD_EVAL_LAST_SEXP },
     { "C-c C-r", CK_CMD_EVAL_REGION },
     { "C-c C-e", CK_CMD_EVAL_EXPRESSION },
-    { "C-c C-d", CK_CMD_SHOW_ERRORS },
     { "C-x `",   CK_CMD_NEXT_ERROR },
     { "C-x ~",   CK_CMD_PREVIOUS_ERROR },
+    /* `C-c C-d' became the documentation prefix in phase 2 (SLIME's), so
+     * the error list moved to flycheck's `C-c ! l'. */
+    { "C-c ! l", CK_CMD_SHOW_ERRORS },
+
+    /* introspection (phase 2): SLIME's keys where SLIME has them */
+    { "M-TAB",       CK_CMD_COMPLETE_SYMBOL },
+    { "C-M-i",       CK_CMD_COMPLETE_SYMBOL },
+    { "M-.",         CK_CMD_EDIT_DEFINITION },
+    { "M-,",         CK_CMD_POP_DEFINITION },
+    { "C-c C-d d",   CK_CMD_DESCRIBE_SYMBOL },
+    { "C-c C-d C-d", CK_CMD_DESCRIBE_SYMBOL },
+    { "C-c C-d a",   CK_CMD_APROPOS },
+    { "C-c C-d C-a", CK_CMD_APROPOS },
+    { "C-c RET",     CK_CMD_MACROEXPAND_1 },
+    { "C-c C-m",     CK_CMD_MACROEXPAND_1 },
+    { "C-c M-m",     CK_CMD_MACROEXPAND },
 
     { NULL,      CK_CMD_NONE }
 };

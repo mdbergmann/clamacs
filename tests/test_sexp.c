@@ -263,6 +263,103 @@ TEST(character_literal_parens_are_not_parens)
     ASSERT_EQ_INT(ck_sexp_match_paren(b, n, 0), n - 1);
 }
 
+/* ------------------------------------------------------------------ *
+ * Phase 2: the operator and the symbol at point
+ * ------------------------------------------------------------------ */
+
+static int32_t op_at(const char *b, int32_t pos, const char *want)
+{
+    int32_t s = -1, e = -1;
+    if (!ck_sexp_operator_at_point(b, slen(b), pos, &s, &e))
+        return want == NULL;
+    if (want == NULL)
+        return 0;
+    return (e - s == slen(want)) && memcmp(b + s, want, (size_t)(e - s)) == 0;
+}
+
+TEST(operator_is_the_head_of_the_innermost_list)
+{
+    const char *b = "(defun foo (a b)\n  (let ((x 1))\n    (mapcar #'bar lst)))";
+
+    ASSERT(op_at(b, at(b, "lst)"), "mapcar"));
+    ASSERT(op_at(b, at(b, "lst)") + 3, "mapcar"));      /* just before the `)' */
+    ASSERT(op_at(b, at(b, "1))"), "x"));                 /* a binding: its head */
+    ASSERT(op_at(b, at(b, "(mapcar"), "let"));           /* between the forms */
+    ASSERT(op_at(b, at(b, "(let"), "defun"));
+    ASSERT(op_at(b, at(b, "b)"), "a"));                  /* the lambda list */
+}
+
+TEST(operator_skips_quoted_data)
+{
+    const char *b = "(member x '(a b))";
+    ASSERT(op_at(b, at(b, "b))"), "member"));
+
+    /* `#'' is a function, not data. */
+    b = "(mapcar #'(lambda (x) x) l)";
+    ASSERT(op_at(b, at(b, "x) l"), "lambda"));
+
+    /* Inside a backquote a comma is code again. */
+    b = "`(a ,(foo x) b)";
+    ASSERT(op_at(b, at(b, "x) b"), "foo"));
+    ASSERT(op_at(b, at(b, "b)"), NULL));                 /* data: nothing */
+
+    /* A quoted list's inner lists are data too. */
+    b = "(list '(a (b c)))";
+    ASSERT(op_at(b, at(b, "c)))"), "list"));
+}
+
+TEST(operator_needs_a_symbol_head)
+{
+    ASSERT(op_at("(list (1 2))", 10, "list"));           /* a number is no operator */
+    ASSERT(op_at("(getf p :a 1)", 11, "getf"));
+    ASSERT(op_at("(:a 1 :b 2)", 5, NULL));               /* a plist */
+    ASSERT(op_at("((lambda (x) x) 1)", 17, NULL));       /* a list in head position */
+    ASSERT(op_at("(f \"a b\")", 5, "f"));                /* inside a string */
+    ASSERT(op_at("foo bar", 4, NULL));                   /* no list at all */
+    ASSERT(op_at("", 0, NULL));
+}
+
+TEST(operator_being_typed_is_not_asked_about)
+{
+    const char *b = "(defu x)";
+    /* Inside the head: the user is still typing it. */
+    ASSERT(op_at(b, 3, NULL));
+    /* At its end it is complete as far as we can tell. */
+    ASSERT(op_at(b, 5, "defu"));
+    /* And a nested one while typing does not fall back to the outer. */
+    b = "(let ((x (fo";
+    ASSERT(op_at(b, 11, NULL));
+}
+
+static int32_t sym_at(const char *b, int32_t pos, const char *want)
+{
+    int32_t s = -1, e = -1;
+    if (!ck_sexp_symbol_at_point(b, slen(b), pos, &s, &e))
+        return want == NULL;
+    if (want == NULL)
+        return 0;
+    return (e - s == slen(want)) && memcmp(b + s, want, (size_t)(e - s)) == 0;
+}
+
+TEST(symbol_at_point)
+{
+    ASSERT(sym_at("foo bar", 0, "foo"));
+    ASSERT(sym_at("foo bar", 1, "foo"));
+    ASSERT(sym_at("foo bar", 3, "foo"));     /* just after it */
+    ASSERT(sym_at("foo bar", 4, "bar"));
+    ASSERT(sym_at("foo bar", 7, "bar"));     /* at the end of the buffer */
+    ASSERT(sym_at("foo  bar", 4, NULL));     /* between two spaces */
+    ASSERT(sym_at("(cl:mapcar f l)", 3, "cl:mapcar"));
+    ASSERT(sym_at("'foo", 2, "foo"));        /* the quote is not part of it */
+    ASSERT(sym_at("(f \"str\")", 5, "str")); /* inside a string, as Emacs */
+    ASSERT(sym_at(";; see frob\n", 8, "frob"));
+    ASSERT(sym_at("(foo)", 0, NULL));
+    ASSERT(sym_at("(foo)", 4, "foo"));       /* on the `)': the symbol before */
+    ASSERT(sym_at("", 0, NULL));
+    ASSERT(sym_at("*var*", 2, "*var*"));
+    ASSERT(sym_at("a-b.c/d", 3, "a-b.c/d"));
+}
+
 int main(void)
 {
     test_init();
@@ -287,5 +384,10 @@ int main(void)
     RUN(current_package_spellings);
     RUN(current_package_takes_the_nearest_one_above);
     RUN(character_literal_parens_are_not_parens);
+    RUN(operator_is_the_head_of_the_innermost_list);
+    RUN(operator_skips_quoted_data);
+    RUN(operator_needs_a_symbol_head);
+    RUN(operator_being_typed_is_not_asked_about);
+    RUN(symbol_at_point);
     REPORT();
 }

@@ -51,6 +51,8 @@ struct ck_text_data {
     int32_t pens_held;
     struct MUI_EventHandlerNode ehnode;
     int32_t eh_added;
+    struct MUI_InputHandlerNode ihtimer;   /* the arglist idle timer */
+    int32_t timer_added;
 };
 
 struct ck_mini_data {
@@ -197,11 +199,29 @@ SDISPATCHER(ck_text_dispatcher)
         /* The Emacs layer's key handler, ahead of the class's own. */
         ck_add_handler(&data->ehnode, cl, obj);
         data->eh_added = 1;
+
+        /* The arglist idle timer.  MUI fires CKM_IdleTick on this object
+         * every 3/10 s; ck_intro_idle() returns at once unless the cursor
+         * has come to rest in this (active) window, so a background document
+         * costs a comparison per tick.  Its own handler node, like the
+         * RAWKEY one, so its lifetime is exactly the object's. */
+        memset(&data->ihtimer, 0, sizeof data->ihtimer);
+        data->ihtimer.ihn_Flags  = MUIIHNF_TIMER | MUIIHNF_TIMER_SCALE100;
+        data->ihtimer.ihn_Millis  = 3;
+        data->ihtimer.ihn_Object  = obj;
+        data->ihtimer.ihn_Method  = CKM_IdleTick;
+        DoMethod(_app(obj), MUIM_Application_AddInputHandler, (IPTR)&data->ihtimer);
+        data->timer_added = 1;
         return TRUE;
     }
 
     case MUIM_Cleanup: {
         data = (struct ck_text_data *)INST_DATA(cl, obj);
+        if (data->timer_added) {
+            DoMethod(_app(obj), MUIM_Application_RemInputHandler,
+                     (IPTR)&data->ihtimer);
+            data->timer_added = 0;
+        }
         if (data->eh_added) {
             ck_rem_handler(&data->ehnode, obj);
             data->eh_added = 0;
@@ -233,6 +253,13 @@ SDISPATCHER(ck_text_dispatcher)
             if (key != CK_KEY_NONE && ck_doc_handle_key(data->doc, key))
                 return MUI_EventHandlerRC_Eat;
         }
+        return 0;
+    }
+
+    case CKM_IdleTick: {
+        data = (struct ck_text_data *)INST_DATA(cl, obj);
+        if (data->doc != NULL)
+            ck_intro_idle(data->doc);
         return 0;
     }
 

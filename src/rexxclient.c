@@ -16,6 +16,7 @@
 #include "clamacs.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 
@@ -191,39 +192,93 @@ static void ck_rexx_pump(ck_app *app)
     app->inflight_msg = rm;
 }
 
+/*
+ * Make sure a port is known before queuing a command.  When DOC is given and
+ * none is, the spec's launch-if-missing offers to start clamiga; a quiet
+ * caller (DOC NULL) just fails.  Returns 1 when a command may be queued.
+ */
+static int32_t ck_rexx_connect(ck_app *app, ck_doc *doc)
+{
+    if (app->connected || ck_rexx_find_port(app))
+        return 1;
+
+    if (doc != NULL) {
+        if (MUI_Request(app->app, doc->win, 0, "clamacs", "_Start|_Cancel",
+                        "No clamiga ARexx port was found.\n"
+                        "Start clamiga in its own console window?") != 1)
+            return 0;
+    }
+    if (!ck_rexx_launch(app)) {
+        if (doc != NULL)
+            ck_message(doc, "Cannot start clamiga");
+        return 0;
+    }
+    return 1;
+}
+
+/* Whether a request can go out without asking the user anything: a port is
+ * known, or one turns up on a scan.  The idle arglist lookup checks this so
+ * a resting cursor never pops the launch requester. */
+int32_t ck_rexx_ready(ck_app *app)
+{
+    return app->connected || ck_rexx_find_port(app);
+}
+
+static int32_t ck_rexx_queue(ck_app *app, ck_doc *doc, uint16_t kind,
+                             const char *command)
+{
+    int32_t serial = ck_queue_push(&app->queue, command, kind,
+                                   (doc != NULL) ? doc->id : 0);
+    if (serial < 0)
+        return -1;
+    ck_rexx_pump(app);
+    return serial;
+}
+
 int32_t ck_rexx_send(ck_app *app, ck_doc *doc, uint16_t kind,
                      const char *fmt, ...)
 {
     char    command[CK_MSG_MAX];
     va_list args;
-    int32_t serial;
 
-    if (!app->connected && !ck_rexx_find_port(app)) {
-        /* The spec's launch-if-missing: the user asked for something Lisp,
-         * so offer to start the Lisp. */
-        if (doc != NULL) {
-            if (MUI_Request(app->app, doc->win, 0, "clamacs", "_Start|_Cancel",
-                            "No clamiga ARexx port was found.\n"
-                            "Start clamiga in its own console window?") != 1)
-                return -1;
-        }
-        if (!ck_rexx_launch(app)) {
-            if (doc != NULL)
-                ck_message(doc, "Cannot start clamiga");
-            return -1;
-        }
-    }
+    if (!ck_rexx_connect(app, doc))
+        return -1;
 
     va_start(args, fmt);
     vsnprintf(command, sizeof command, fmt, args);
     va_end(args);
 
-    serial = ck_queue_push(&app->queue, command, kind,
-                           (doc != NULL) ? doc->id : 0);
-    if (serial < 0)
+    return ck_rexx_queue(app, doc, kind, command);
+}
+
+/*
+ * PREFIX followed by TEXT of any length -- a whole defun for EVAL, a form for
+ * MACROEXPAND -- with no fixed-size format buffer and no vsnprintf, so the
+ * text is passed through verbatim (a `%' in the form is not a directive).
+ */
+int32_t ck_rexx_send_text(ck_app *app, ck_doc *doc, uint16_t kind,
+                          const char *prefix, const char *text)
+{
+    char   *command;
+    size_t  plen, tlen;
+    int32_t serial;
+
+    if (!ck_rexx_connect(app, doc))
         return -1;
 
-    ck_rexx_pump(app);
+    if (prefix == NULL) prefix = "";
+    if (text == NULL)   text   = "";
+    plen = strlen(prefix);
+    tlen = strlen(text);
+
+    command = (char *)malloc(plen + tlen + 1);
+    if (command == NULL)
+        return -1;
+    memcpy(command, prefix, plen);
+    memcpy(command + plen, text, tlen + 1);
+
+    serial = ck_rexx_queue(app, doc, kind, command);
+    free(command);
     return serial;
 }
 
@@ -282,13 +337,19 @@ static void ck_rexx_diagnostics(ck_app *app, ck_doc *doc, const char *text)
 static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
                              const char *text)
 {
-    ck_doc  *doc  = ck_doc_by_id(app, req->cookie);
-    uint16_t kind = req->kind;
+    ck_doc  *doc     = ck_doc_by_id(app, req->cookie);
+    uint16_t kind    = req->kind;
+    int32_t  orig_rc = rc;
 
     /* An automatic LASTRESULT carries the text of the command that failed,
-     * so it is handled as if it were that command's own reply. */
-    if (kind == CK_REQ_LASTRESULT && (req->flags & CK_REQF_AUTO_LASTRESULT))
-        kind = req->origin;
+     * so it is handled as if it were that command's own reply.  For the
+     * phase-2 kinds the ORIGINAL return code matters -- an unknown symbol is
+     * a miss, not an arglist -- and the LASTRESULT itself always comes back
+     * 0, so the real rc is carried alongside the origin. */
+    if (kind == CK_REQ_LASTRESULT && (req->flags & CK_REQF_AUTO_LASTRESULT)) {
+        kind    = req->origin;
+        orig_rc = req->origin_rc;
+    }
 
     switch (kind) {
     case CK_REQ_PING:
@@ -327,6 +388,20 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
         break;
     }
 
+    /* --- phase 2: introspection.  Each reply has its continuation in
+     * introspect.c; SUBJECT is the command it answers (the failing command
+     * for a LASTRESULT), from which the handler recovers the symbol. */
+    case CK_REQ_ARGLIST:
+    case CK_REQ_ARGLIST_ECHO:
+    case CK_REQ_COMPLETE_BUFFER:
+    case CK_REQ_COMPLETE_MINI:
+    case CK_REQ_DESCRIBE:
+    case CK_REQ_APROPOS:
+    case CK_REQ_SOURCE_LOCATION:
+    case CK_REQ_MACROEXPAND:
+        ck_intro_reply(app, doc, kind, ck_request_subject(req), orig_rc, text);
+        break;
+
     case CK_REQ_LASTRESULT:
     default:
         if (doc != NULL && text != NULL)
@@ -362,7 +437,12 @@ void ck_rexx_handle_replies(ck_app *app)
                                         CK_REQ_LASTRESULT, req->cookie,
                                         CK_REQF_AUTO_LASTRESULT) >= 0 &&
                     app->queue.head != NULL) {
-                    app->queue.head->origin = req->kind;
+                    app->queue.head->origin    = req->kind;
+                    app->queue.head->origin_rc = rc;
+                    /* Carry the failing command forward, so a phase-2 reply
+                     * still knows which symbol it was about. */
+                    ck_request_set_context(app->queue.head,
+                                           ck_request_subject(req));
                 }
             } else {
                 ck_rexx_dispatch(app, req, rc, text);

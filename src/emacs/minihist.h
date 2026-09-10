@@ -55,4 +55,19 @@ int32_t ck_complete(const char *const *cands, int32_t ncands,
                     const char *prefix, const char **out, int32_t max,
                     char *common, int32_t common_size);
 
+/* A candidate list that came from clamiga: COMPLETE answers one symbol per
+ * line, and this turns that reply into the array ck_complete() takes. */
+typedef struct {
+    char   **items;
+    int32_t  count;
+    int32_t  cap;
+} ck_strlist;
+
+void ck_strlist_init(ck_strlist *list);
+void ck_strlist_clear(ck_strlist *list);
+
+/* Replace the list with the non-empty lines of TEXT (CR/LF stripped).
+ * Returns the count, or -1 when out of memory (the list is then empty). */
+int32_t ck_strlist_set_lines(ck_strlist *list, const char *text);
+
 #endif /* CLAMACS_MINIHIST_H */

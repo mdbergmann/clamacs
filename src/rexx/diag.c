@@ -165,6 +165,42 @@ int32_t ck_diag_parse_line(const char *line, int32_t len, ck_diag *out)
     return 1;
 }
 
+int32_t ck_diag_parse_location(const char *text, char *file, int32_t file_size,
+                               int32_t *line)
+{
+    int32_t len, colon = -1, i, n;
+
+    if (file != NULL && file_size > 0)
+        file[0] = '\0';
+    if (line != NULL)
+        *line = 0;
+    if (text == NULL || file == NULL || file_size <= 1 || line == NULL)
+        return 0;
+
+    len = 0;
+    while (text[len] != '\0' && text[len] != '\n')
+        len++;
+    while (len > 0 && (text[len - 1] == '\r' || text[len - 1] == ' '))
+        len--;
+
+    for (i = len - 1; i >= 0; i--) {
+        if (text[i] == ':') { colon = i; break; }
+    }
+    if (colon <= 0 || !all_digits(text + colon + 1, len - colon - 1))
+        return 0;
+
+    n = to_int(text + colon + 1, len - colon - 1);
+    if (n <= 0)
+        return 0;
+
+    if (colon > file_size - 1)
+        colon = file_size - 1;
+    memcpy(file, text, (size_t)colon);
+    file[colon] = '\0';
+    *line = n;
+    return 1;
+}
+
 static int32_t diag_append(ck_diaglist *list, const ck_diag *d)
 {
     if (list->count == list->cap) {

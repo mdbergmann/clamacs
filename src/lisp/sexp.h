@@ -88,4 +88,31 @@ int32_t ck_sexp_last_sexp(const char *buf, int32_t len, int32_t pos, int32_t *en
 int32_t ck_sexp_current_package(const char *buf, int32_t len, int32_t pos,
                                 char *out, int32_t out_size);
 
+/* ------------------------------------------------------------------ *
+ * Phase 2: what to ask clamiga about
+ * ------------------------------------------------------------------ */
+
+/* The operator whose arglist the status line should show: the head symbol
+ * of the innermost list enclosing POS that is CODE.  Bounds go to *START and
+ * *END; returns 1 when there is one.
+ *
+ * Lists that are data are transparent -- `(member x '(a b|))' answers
+ * MEMBER, not A -- which is decided by the prefix in front of the open
+ * paren: `'', `` ` '' and `#' make data, `,' and `,@' make code again inside
+ * a backquote, and `#'' is a function, so `#'(lambda ...)' answers LAMBDA.
+ * A head that cannot name an operator (a number, a keyword, a character, a
+ * nested list) leaves the list without one.  While POS sits INSIDE the head
+ * atom the user is still typing it, and nothing is answered rather than a
+ * request per keystroke. */
+int32_t ck_sexp_operator_at_point(const char *buf, int32_t len, int32_t pos,
+                                  int32_t *start, int32_t *end);
+
+/* The symbol under or just before POS, by the rule Emacs's `symbol-at-point'
+ * uses: the run of symbol characters containing POS, or the one ending at it.
+ * Character-based rather than token-based on purpose, so it also answers
+ * inside a comment or a string, where `M-.' is still useful.  Returns 1 and
+ * the bounds, or 0. */
+int32_t ck_sexp_symbol_at_point(const char *buf, int32_t len, int32_t pos,
+                                int32_t *start, int32_t *end);
+
 #endif /* CLAMACS_SEXP_H */

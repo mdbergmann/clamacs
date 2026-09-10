@@ -89,6 +89,67 @@ void ck_hist_reset(ck_history *hist)
     hist->cursor = 0;
 }
 
+void ck_strlist_init(ck_strlist *list)
+{
+    memset(list, 0, sizeof(*list));
+}
+
+void ck_strlist_clear(ck_strlist *list)
+{
+    int32_t i;
+
+    for (i = 0; i < list->count; i++)
+        free(list->items[i]);
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+}
+
+static int32_t strlist_add(ck_strlist *list, const char *s, int32_t n)
+{
+    char *copy;
+
+    if (list->count == list->cap) {
+        int32_t cap = (list->cap == 0) ? 16 : list->cap * 2;
+        char  **grown = (char **)realloc(list->items, (size_t)cap * sizeof(char *));
+        if (grown == NULL)
+            return -1;
+        list->items = grown;
+        list->cap   = cap;
+    }
+    copy = (char *)malloc((size_t)n + 1);
+    if (copy == NULL)
+        return -1;
+    memcpy(copy, s, (size_t)n);
+    copy[n] = '\0';
+    list->items[list->count++] = copy;
+    return 0;
+}
+
+int32_t ck_strlist_set_lines(ck_strlist *list, const char *text)
+{
+    const char *p = text;
+
+    ck_strlist_clear(list);
+    if (text == NULL)
+        return 0;
+
+    while (*p != '\0') {
+        const char *nl  = strchr(p, '\n');
+        int32_t     len = (nl != NULL) ? (int32_t)(nl - p) : (int32_t)strlen(p);
+
+        while (len > 0 && (p[len - 1] == '\r' || p[len - 1] == ' '))
+            len--;
+        if (len > 0 && strlist_add(list, p, len) != 0) {
+            ck_strlist_clear(list);
+            return -1;
+        }
+        if (nl == NULL)
+            break;
+        p = nl + 1;
+    }
+    return list->count;
+}
+
 int32_t ck_complete(const char *const *cands, int32_t ncands,
                     const char *prefix, const char **out, int32_t max,
                     char *common, int32_t common_size)

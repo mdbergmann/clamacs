@@ -570,3 +570,176 @@ int32_t ck_sexp_current_package(const char *buf, int32_t len, int32_t pos,
 
     return found;
 }
+
+/* ------------------------------------------------------------------ *
+ * Phase 2: what to ask clamiga about
+ * ------------------------------------------------------------------ */
+
+/* Whether the atom at [S,E) could name an operator.  Numbers, keywords and
+ * character literals cannot, and asking clamiga about `1' or `:key' would
+ * only fill the arglist cache with misses. */
+static int32_t sx_operator_like(const char *buf, int32_t s, int32_t e)
+{
+    char c = buf[s];
+
+    if (e <= s)
+        return 0;
+    if (c >= '0' && c <= '9')
+        return 0;
+    if (c == '#' || c == ':')
+        return 0;
+    if ((c == '+' || c == '-' || c == '.') && e - s > 1 &&
+        buf[s + 1] >= '0' && buf[s + 1] <= '9')
+        return 0;
+    return 1;
+}
+
+int32_t ck_sexp_operator_at_point(const char *buf, int32_t len, int32_t pos,
+                                  int32_t *start, int32_t *end)
+{
+    ck_sx_token t;
+    int32_t     p = 0;
+    int32_t     depth = 0;
+    int32_t     head_start[CK_SX_MAX_DEPTH + 1];
+    int32_t     head_end[CK_SX_MAX_DEPTH + 1];
+    uint8_t     data[CK_SX_MAX_DEPTH + 1];       /* the list is quoted data */
+    uint8_t     want_head[CK_SX_MAX_DEPTH + 1];  /* the next atom is the head */
+    char        prefix[2];
+    int32_t     prefix_len = 0;
+    int32_t     prefix_end = -1;   /* where the prefix run ends; the open
+                                    * paren it applies to starts there */
+
+    if (buf == NULL || len <= 0 || pos < 0)
+        return 0;
+    if (pos > len)
+        pos = len;
+
+    data[0]       = 0;
+    want_head[0]  = 0;
+    head_start[0] = -1;
+    head_end[0]   = -1;
+
+    while (ck_sx_next(buf, len, &p, &t) != CK_SX_EOF) {
+        if (t.kind == CK_SX_COMMENT)
+            continue;
+        if (t.start >= pos)
+            break;
+        if (t.end > pos) {
+            /* POS is inside this token.  Inside the head atom the operator
+             * is still being typed. */
+            if (t.kind == CK_SX_ATOM && depth > 0 && want_head[depth])
+                return 0;
+            break;
+        }
+
+        if (t.kind == CK_SX_QUOTE) {
+            if (prefix_end != t.start)
+                prefix_len = 0;
+            if (prefix_len < 2)
+                prefix[prefix_len++] = buf[t.start];
+            prefix_end = t.end;
+            continue;
+        }
+
+        switch (t.kind) {
+        case CK_SX_OPEN: {
+            uint8_t is_data;
+
+            if (depth >= CK_SX_MAX_DEPTH)
+                return 0;
+            if (prefix_end == t.start && prefix_len > 0) {
+                if (prefix[0] == ',')
+                    is_data = 0;
+                else if (prefix_len == 2 && prefix[0] == '#' && prefix[1] == '\'')
+                    is_data = 0;
+                else
+                    is_data = 1;
+            } else {
+                is_data = data[depth];
+            }
+            /* A list in head position -- ((lambda ...) x) -- takes the
+             * slot: the atoms after it are arguments, not the operator. */
+            if (depth > 0)
+                want_head[depth] = 0;
+            depth++;
+            data[depth]       = is_data;
+            want_head[depth]  = 1;
+            head_start[depth] = -1;
+            head_end[depth]   = -1;
+            break;
+        }
+
+        case CK_SX_CLOSE:
+            if (depth > 0)
+                depth--;
+            break;
+
+        case CK_SX_ATOM:
+            if (depth > 0 && want_head[depth]) {
+                if (!data[depth] && sx_operator_like(buf, t.start, t.end)) {
+                    head_start[depth] = t.start;
+                    head_end[depth]   = t.end;
+                }
+                want_head[depth] = 0;
+            }
+            break;
+
+        case CK_SX_STRING:
+            if (depth > 0)
+                want_head[depth] = 0;
+            break;
+
+        default:
+            break;
+        }
+
+        prefix_len = 0;
+        prefix_end = -1;
+    }
+
+    /* The innermost enclosing list that has an operator. */
+    while (depth > 0) {
+        if (head_start[depth] >= 0) {
+            if (start != NULL)
+                *start = head_start[depth];
+            if (end != NULL)
+                *end = head_end[depth];
+            return 1;
+        }
+        depth--;
+    }
+    return 0;
+}
+
+static int32_t sx_is_symbol_char(char c)
+{
+    return c != '\0' && !sx_is_terminating(c);
+}
+
+int32_t ck_sexp_symbol_at_point(const char *buf, int32_t len, int32_t pos,
+                                int32_t *start, int32_t *end)
+{
+    int32_t s, e;
+
+    if (buf == NULL || len <= 0 || pos < 0 || pos > len)
+        return 0;
+
+    if (pos < len && sx_is_symbol_char(buf[pos]))
+        s = pos;
+    else if (pos > 0 && sx_is_symbol_char(buf[pos - 1]))
+        s = pos - 1;
+    else
+        return 0;
+
+    while (s > 0 && sx_is_symbol_char(buf[s - 1]))
+        s--;
+    e = s;
+    while (e < len && sx_is_symbol_char(buf[e]))
+        e++;
+
+    if (start != NULL)
+        *start = s;
+    if (end != NULL)
+        *end = e;
+    return 1;
+}
