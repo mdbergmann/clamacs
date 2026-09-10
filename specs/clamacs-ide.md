@@ -496,6 +496,19 @@ not have saved; CLAUDE.md carries the short list.
   stop the script there).  Real-hardware readings of the editor's state
   go through the port and answer for the *active* document, which a
   hand on the mouse can change mid-run: check `GETFILE` first.
+- **A clamiga that never opens its port under FS-UAE is a cold FASL cache
+  plus a small stack** (found 2026-09-10, the first run after pinning the
+  submodule).  clamiga's cache lives on the Workbench image
+  (`S:cl-amiga/faslcache/<version>-fasl<N>/`) and is validated by source
+  mtime, so a fresh clone or a re-pin of `vendor/clamiga` makes every
+  entry stale and the port's library -- `lib/amiga/arexx.lisp`,
+  `lib/dev-commands.lisp` and their requires -- is compiled from source at
+  startup.  That compile needs cl-amiga's baseline `stack 128000`; at the
+  65000 `boot-override` had, the reader's guard fired ("C stack
+  exhausted") before the port opened, and the harness reported a clean
+  skip.  `boot-override` now matches `run-drive` (128000, `--heap 8M`),
+  both scripts append `clamiga.log` and a `status` process list to the
+  test log, and `drive.rexx` waits two minutes for the port.
 - **Raw typing into the minibuffer works on real hardware.**  `M-x
   end-of-buffer RET` as one stream of `IECLASS_RAWKEY` events with one- to
   two-tick gaps (the box agent's input injection) ran `end-of-buffer`
