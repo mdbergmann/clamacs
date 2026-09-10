@@ -49,6 +49,12 @@ its own thread, so it answers while the REPL is busy. Commands today:
 `PING`, `VERSION`, `LOAD <file>`, `COMPILE-FILE <file>`, `EVAL <form>`,
 `IN-PACKAGE <pkg>`, `LASTRESULT`; a string starting with `(` is evaluated.
 Diagnostics come back as `file:line: ERROR: message` lines plus a summary.
+Phase 2 added `ARGLIST`, `COMPLETE`, `DESCRIBE`, `APROPOS`,
+`SOURCE-LOCATION`, `MACROEXPAND[-1]`; phase 3 (cl-amiga half, 2026-09-10)
+added `REPL-ATTACH <port>`, `REPL-EVAL`, `REPL-INPUT`, `REPL-INTERRUPT`,
+`REPL-DETACH`, with clamiga's REPL thread sending `OUTPUT`, `READLINE` and
+`RESULT <rc> <pkg>` commands *to the editor's port* -- see the spec's
+phase 3 section for why the editor never holds a reply.
 
 Protocol facts the client must respect:
 

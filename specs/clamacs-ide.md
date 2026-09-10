@@ -342,25 +342,50 @@ return, `C-c C-d d` describe and `C-c C-d a` apropos in a text window,
 
 ### Phase 3 — REPL window
 
-Protocol (cl-amiga side):
+Protocol (cl-amiga side, `lib/dev-repl.lisp`, loaded on first use because
+it needs gray-streams and so CLOS; landed 2026-09-10):
 
 - `REPL-ATTACH <port>` — clamiga remembers the editor's port and starts a
-  dedicated REPL thread; `REPL-DETACH` stops it.
-- `REPL-EVAL <form>` — evaluated on the REPL thread with the standard
-  streams bound to a stream that sends `OUTPUT <text>` commands to the
-  editor's port as output is produced (flushed on newline and on a size
-  threshold); a read on standard input sends `READLINE <prompt>` and
-  blocks until the editor replies with the line.  The final reply carries
-  the printed values and the current package.
+  dedicated REPL thread; the reply is the current package's shortest name
+  (`CL-USER`), for the prompt.  `REPL-DETACH` stops the thread.
+- `REPL-EVAL <forms>` — queued for the REPL thread and **replied to at
+  once** with rc 0 and no text; rc 10 while a form is still running.  The
+  thread evaluates the forms with the standard streams bound to a stream
+  that sends `OUTPUT <text>` to the editor's port as output is produced
+  (flushed on newline, at 1 KB, and before the result).  A read on
+  standard input sends `READLINE`; the editor answers with a command of
+  its own, `REPL-INPUT <line>`, and the thread parks on a condition
+  variable in between.  When the forms are done the thread sends `RESULT
+  <rc> <package>` followed by a newline and the printed values of the last
+  form, one per line (`; No values`), or `ERROR: <text>` with rc 10.
 - The port's handler thread stays free, so arglist and completion keep
-  working while a form runs.  `REPL-INTERRUPT` signals the REPL thread.
+  working while a form runs.  `REPL-INTERRUPT` interrupts the REPL thread
+  (`mp:interrupt-thread`, delivered at a VM safepoint, so a tight loop is
+  reached); the form ends with `RESULT 10 ... ERROR: Interrupted`.
+- The listener's `*`, `+`, `/` and friends are kept.  `IN-PACKAGE` at
+  either end reaches the other: the editor's sets the package the next
+  form runs in, a form's `(in-package ...)` comes back in `RESULT` and
+  moves `*command-package*`.
+- A failing send to the editor's port (the editor is gone) stops the REPL
+  thread instead of killing it; `REPL-ATTACH` starts a fresh one.
+
+Why the reply to `READLINE` is not the line, and why `REPL-EVAL`'s reply
+carries no values: MUI answers an application's ARexx command the moment
+the command hook returns, so the editor cannot hold either reply until
+the user has typed.  Everything the editor has to wait for comes back as
+a command from clamiga.
 
 Editor side: the REPL window is a `ClamacsText` in a mode with a prompt
 showing the package, history (`M-p`/`M-n`), multi-line input with paren
 balancing, values echoed after the output, `C-c C-z` from any document.
-Requires the editor never to block on a reply (already the rule) because
-clamiga calls the editor's port while the editor's `REPL-EVAL` is
-outstanding.
+The editor's port gains `OUTPUT`, `READLINE` and `RESULT` as MUI rexx
+commands; each returns immediately (`OUTPUT` inserts, `READLINE` arms the
+input line, `RESULT` prints the values and a new prompt).  Requires the
+editor never to block on a reply (already the rule) because clamiga calls
+the editor's port while a `REPL-EVAL` is running.  Open point for the
+editor half: whether MUI's `ReadArgs` parse of a `TEXT/F` template keeps
+the leading blanks of an indented output line; if not, `OUTPUT` takes its
+text from the raw argument string after the verb.
 
 Interim: until phase 3 lands, `M-x run-lisp` launches clamiga in a console
 window, which is a fully working REPL and debugger, just not a MUI window.
