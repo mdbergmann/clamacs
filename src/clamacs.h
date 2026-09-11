@@ -253,13 +253,11 @@ typedef struct ck_app {
      * lags on MUI 4: a window opened by a port command reports inactive for
      * a while, and its predecessor active, so ck_doc_active() cannot ask. */
     ck_doc  *active_doc;
-    /* The last ck_doc_activate() request MUI has not reported back yet.
-     * While it is outstanding, a report for a *different* window is a
-     * late one for an earlier request (MUI 4 delivers them seconds
-     * later, in order) and must not override it; a report for this same
-     * window is accepted at once and clears the field, so a genuine
-     * click on another window right after (AmigaOS 3, no lag) is not
-     * mistaken for a late report too. */
+    /* The last ck_doc_activate() request, outranking every activation
+     * report for CK_ACTIVATE_PENDING_TICKS after activate_stamp: MUI 4
+     * delivers Intuition's reports seconds late and more than one request
+     * behind, so no report -- not even one for this window -- says the
+     * lag is over (ck_activate_func explains). */
     ck_doc  *activate_pending;
     uint32_t activate_stamp;    /* when, in ck_ticks_now() ticks */
 

@@ -1940,11 +1940,20 @@ HOOKPROTONHNO(ck_activate_func, void, ULONG *params)
 
     if (doc->closing)
         return;
-    if (app->activate_pending != NULL && app->activate_pending != doc &&
-        !app->activate_pending->closing &&
+    /* Time-based on purpose, and a report for the requested window does
+     * NOT end the wait: MUI 4's reports run more than one request behind,
+     * so the requested window's own report can arrive before the late
+     * one for the window the previous request activated -- clearing the
+     * field on the matching report let that late one through, and `C-c
+     * C-d d' after `OPEN' described a symbol of the macroexpansion window
+     * (MorphOS, 2026-09-11).  The price on AmigaOS 3, whose reports are
+     * timely, is that a click on another document within three seconds
+     * of an editor-initiated activation does not redirect the port, the
+     * debugger and the messages until the window has passed; the keys go
+     * to the clicked window regardless. */
+    if (app->activate_pending != NULL && !app->activate_pending->closing &&
         ck_ticks_now() - app->activate_stamp < CK_ACTIVATE_PENDING_TICKS)
-        return;      /* a late report for a window other than the one
-                       * requested: the request stands */
+        return;                         /* a late report: the request stands */
     app->activate_pending = NULL;
     app->active_doc       = doc;
 }
