@@ -14,6 +14,12 @@
 OPTIONS RESULTS
 OPTIONS FAILAT 21
 
+/* `RX drive.rexx HARDWARE' (what run-drive says) enables the leg that only a
+** real input chain can pass: keys into an ACTIVE minibuffer String.  Under
+** FS-UAE MUI deactivates a programmatically activated String after one
+** injected key, so that leg is skipped there rather than failed. */
+PARSE UPPER ARG MODE .
+
 /* MUI's startup on an emulated 14 MHz 68020 is not instant: the class
 ** scan, the config load and the first window layout all happen before the
 ** application object exists, and the port comes with it.  Wait for it
@@ -317,16 +323,90 @@ ELSE DO
     ELSE
         SAY 'FAIL raw C-x C-q gave' RESULT
 
-    /* The minibuffer is deliberately NOT driven by injected keys here.
-    ** MUI deactivates a programmatically-activated string gadget once the
+    /* The minibuffer is NOT driven by injected keys under FS-UAE.  MUI
+    ** there deactivates a programmatically-activated string gadget once the
     ** injected input stream falls idle -- it holds the focus for a single
     ** key -- so `sendkey' can neither type a name into it nor reliably land a
     ** second key on it; a real keyboard streams keys without those gaps.
     ** That is a harness limit, not an editor one: the minibuffer's command
     ** loop, prompt, completion and history are exercised by the KEY leg above
-    ** (`M-x opened the minibuffer and C-g closed it') and by the host tests,
-    ** and raw typing into it is left for the hardware leg
-    ** (specs/clamacs-ide.md, "Still open"). */
+    ** (`M-x opened the minibuffer and C-g closed it') and by the host tests.
+    ** On real hardware (run-drive passes HARDWARE) the String stays active
+    ** and the leg below drives it, which is the only way to see the keys an
+    ** ACTIVE String would otherwise keep: TAB, C-g, Alt-x (the
+    ** MUIA_String_EditHook in ClamacsMini, specs/clamacs-ide.md). */
+    IF MODE = 'HARDWARE' THEN DO
+        'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+        'EVAL beginning-of-buffer'
+        CALL DELAY(25)
+
+        /* TAB inside the active minibuffer completes instead of cycling
+        ** the focus: the sole completion of `end-of-b' is reported, and
+        ** RET then runs it. */
+        ADDRESS COMMAND SENDKEY 'M-x'
+        CALL DELAY(10)
+        ADDRESS COMMAND SENDKEY 'TEXT "end-of-b"'
+        ADDRESS COMMAND SENDKEY 'TAB'
+        CALL DELAY(10)
+        'STATUS'
+        IF POS('completion', RESULT) > 0 THEN
+            SAY 'OK raw TAB completed inside the active minibuffer:' RESULT
+        ELSE
+            SAY 'FAIL raw TAB in the active minibuffer gave' RESULT
+        ADDRESS COMMAND SENDKEY 'RET'
+        CALL DELAY(10)
+        'TE GETCURSOR LINE'
+        IF RC = 0 & RESULT > 0 THEN
+            SAY 'OK raw RET ran the completed command, CursorY' RESULT
+        ELSE
+            SAY 'FAIL raw RET after the completion left CursorY=' RESULT
+
+        /* Alt-x while a prompt is open: neither a stray `×' in the input nor
+        ** a lost key -- it is reported undefined, and the prompt stays. */
+        ADDRESS COMMAND SENDKEY 'M-x'
+        CALL DELAY(10)
+        ADDRESS COMMAND SENDKEY 'M-x'
+        CALL DELAY(10)
+        'STATUS'
+        IF POS('undefined', RESULT) > 0 THEN
+            SAY 'OK raw M-x inside the active minibuffer is undefined:' RESULT
+        ELSE
+            SAY 'FAIL raw M-x inside the active minibuffer gave' RESULT
+
+        /* C-g from the active minibuffer aborts the prompt. */
+        ADDRESS COMMAND SENDKEY 'C-g'
+        CALL DELAY(10)
+        'STATUS'
+        IF RESULT = 'Quit' THEN
+            SAY 'OK raw C-g aborted the active minibuffer'
+        ELSE
+            SAY 'FAIL raw C-g in the active minibuffer gave' RESULT
+
+        /* Isearch: the pattern is typed into the active String, C-s searches
+        ** again from there, and C-g abandons the search.  `sample' is in
+        ** the docstring and again in `*sample*' further down. */
+        'EVAL beginning-of-buffer'
+        ADDRESS COMMAND SENDKEY 'C-s'
+        CALL DELAY(10)
+        ADDRESS COMMAND SENDKEY 'TEXT "sample"'
+        CALL DELAY(10)
+        'TE GETCURSOR LINE'
+        FIRSTHIT = RESULT
+        ADDRESS COMMAND SENDKEY 'C-s'
+        CALL DELAY(10)
+        'TE GETCURSOR LINE'
+        IF RC = 0 & RESULT > FIRSTHIT THEN
+            SAY 'OK raw C-s searched again from the active minibuffer, CursorY' RESULT
+        ELSE
+            SAY 'FAIL raw C-s in isearch left CursorY=' RESULT '(first hit' FIRSTHIT')'
+        ADDRESS COMMAND SENDKEY 'C-g'
+        CALL DELAY(10)
+        'STATUS'
+        IF RESULT = 'Quit' THEN
+            SAY 'OK raw C-g abandoned isearch from the active minibuffer'
+        ELSE
+            SAY 'FAIL raw C-g in isearch gave' RESULT
+    END
 
     /* Typing, in a buffer nothing else has touched.  RET after `(when x' is
     ** newline-and-indent in Lisp mode; the text after it self-inserts

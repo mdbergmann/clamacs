@@ -45,7 +45,9 @@ ELSE
 ENDIF
 
 run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
-SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx >>build/amiga/clamacs-test.log
+; HARDWARE enables the leg that drives keys into the ACTIVE minibuffer,
+; which FS-UAE cannot (it deactivates the String after one injected key).
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx HARDWARE >>build/amiga/clamacs-test.log
 ; clamiga's own output and the process list, so a skipped integration leg
 ; can be explained from the log alone (see boot-override).
 echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log

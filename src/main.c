@@ -43,7 +43,7 @@ void ck_message(ck_doc *doc, const char *fmt, ...)
     vsnprintf(doc->message, sizeof doc->message, fmt, args);
     va_end(args);
 
-    set(doc->prompt, MUIA_Text_Contents, (IPTR)doc->message);
+    ck_doc_echo(doc);
 }
 
 void ck_beep(ck_doc *doc)

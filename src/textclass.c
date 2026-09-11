@@ -19,7 +19,14 @@
  *
  * ClamacsMini does the same for the minibuffer's String object, which needs
  * Tab (completion), C-g (abort) and M-p/M-n (history) taken out of the
- * string gadget's hands.
+ * string gadget's hands.  It needs two hooks for that, not one: the handler
+ * node is what MUI asks while the String is NOT active (the port's KEY
+ * command, FS-UAE's one-key deactivation), but an ACTIVE MUI 3.8 String
+ * edits its keys before the window's handler list is consulted, through an
+ * Intuition-style string edit hook -- so on a real keyboard TAB moved the
+ * focus and C-g typed nothing (Vampire, 2026-09-11).  MUIA_String_EditHook
+ * is called ahead of the class's own edit hook, and that is where the
+ * minibuffer's keys are taken now; see ck_mini_edit_func().
  */
 
 #include "clamacs.h"
@@ -57,8 +64,14 @@ struct ck_text_data {
 
 struct ck_mini_data {
     ck_doc *doc;
+    Object *self;
     struct MUI_EventHandlerNode ehnode;
     int32_t eh_added;
+    struct Hook edithook;    /* MUIA_String_EditHook; h_Data is this struct */
+    /* The key the edit hook last took, so the handler node -- if MUI goes
+     * on to consult it for the same event -- does not act on it twice. */
+    ck_key  hook_key;
+    int32_t hook_taken;
 };
 
 /* ------------------------------------------------------------------ *
@@ -295,6 +308,82 @@ SDISPATCHER(ck_text_dispatcher)
  * ClamacsMini
  * ------------------------------------------------------------------ */
 
+/*
+ * The string edit hook: MUI calls it "as if it was a real string edit hook
+ * in a real string gadget" (MUI_String.doc), with the SGWork in A2 and the
+ * command word in A1, BEFORE the class's own edit hook, and it ignores the
+ * result.  That last point shapes what the hook can do.  It cannot tell
+ * MUI "handled, stop here": the class's hook runs on the same SGWork next,
+ * so a key we take has to be made invisible to it -- the event's code is
+ * turned into a key release and the mapped character cleared, and a string
+ * gadget does nothing with those.  And the action itself is deferred with
+ * MUIM_Application_PushMethod rather than run here: the class's hook may
+ * still write its work buffer back to the gadget after us, which would
+ * undo a completion or a history item set from inside this call.  What
+ * the hook does here is decide, exactly as the handler node decides, and
+ * ck_doc_minibuffer_binds() is the one list both consult.
+ *
+ * Meta plus a character that the minibuffer does not bind is taken too:
+ * left to the gadget, Alt-x goes through the keymap with Alt as a dead-key
+ * qualifier and types a stray character (`x' gave `×' on the Vampire).
+ * The deferred method reports it undefined, as the text object does.
+ */
+
+/* The keymap lookup on the SGWork's InputEvent.  The dead-key history
+ * (ie_EventAddress) is dropped: none of the keys the minibuffer binds is a
+ * composed character, and a key the hook does not take goes to the class
+ * with the event untouched. */
+static int32_t ck_maprawkey_ie(void *ctx, uint16_t code, uint16_t qualifier,
+                               uint8_t *out, int32_t size)
+{
+    struct InputEvent ie = *(const struct InputEvent *)ctx;
+
+    ie.ie_NextEvent    = NULL;
+    ie.ie_Class        = IECLASS_RAWKEY;
+    ie.ie_Code         = code;
+    ie.ie_Qualifier    = qualifier;
+    ie.ie_EventAddress = NULL;
+    return (int32_t)MapRawKey(&ie, (STRPTR)out, (LONG)size, NULL);
+}
+
+static int32_t ck_mini_meta_char(ck_key key)
+{
+    uint16_t code = CK_KEY_CODE(key);
+    return (CK_KEY_MODS(key) & CK_MOD_META) != 0 && code >= 0x20 && code <= 0xFF;
+}
+
+HOOKPROTO(ck_mini_edit_func, ULONG, struct SGWork *sgw, ULONG *msg)
+{
+    struct ck_mini_data *data = (struct ck_mini_data *)hook->h_Data;
+    struct InputEvent   *ie;
+    ck_key               key;
+
+    if (msg == NULL || msg[0] != SGH_KEY || sgw == NULL || sgw->IEvent == NULL ||
+        data == NULL || data->doc == NULL)
+        return 0;
+
+    ie  = sgw->IEvent;
+    key = ck_rawkey_decode(ie->ie_Code, ie->ie_Qualifier, ck_maprawkey_ie, ie);
+    if (key == CK_KEY_NONE)
+        return 0;
+    if (!ck_doc_minibuffer_binds(data->doc, key) && !ck_mini_meta_char(key))
+        return 0;
+
+    data->hook_key   = key;
+    data->hook_taken = 1;
+
+    /* Make the key a no-op for the class's hook: a release of no key, with
+     * no qualifier and no character. */
+    ie->ie_Code      = (UWORD)(CK_RAW_UP_PREFIX | 0x7F);
+    ie->ie_Qualifier = 0;
+    sgw->Code        = 0;
+
+    DoMethod(_app(data->self), MUIM_Application_PushMethod, (IPTR)data->self,
+             2, CKM_MiniKey, (IPTR)key);
+    return 0;
+}
+MakeStaticHook(ck_mini_edit_hook, ck_mini_edit_func);
+
 SDISPATCHER(ck_mini_dispatcher)
 {
     struct ck_mini_data *data;
@@ -304,8 +393,13 @@ SDISPATCHER(ck_mini_dispatcher)
         Object *self = (Object *)DoSuperMethodA(cl, obj, (Msg)msg);
         if (self != NULL) {
             data = (struct ck_mini_data *)INST_DATA(cl, self);
-            data->doc = (ck_doc *)GetTagData(CKA_Doc, 0,
-                                             ((struct opSet *)msg)->ops_AttrList);
+            data->doc  = (ck_doc *)GetTagData(CKA_Doc, 0,
+                                              ((struct opSet *)msg)->ops_AttrList);
+            data->self = self;
+            /* One hook per object, since it must find its instance data:
+             * the static hook supplies the entry, h_Data the data. */
+            InitHook(&data->edithook, ck_mini_edit_hook, data);
+            set(self, MUIA_String_EditHook, (IPTR)&data->edithook);
         }
         return (IPTR)self;
     }
@@ -345,11 +439,35 @@ SDISPATCHER(ck_mini_dispatcher)
         if (data->doc != NULL && m->imsg != NULL &&
             m->imsg->Class == IDCMP_RAWKEY && ck_is_active(obj)) {
             ck_key key = ck_decode_rawkey(m->imsg);
+            /* An active String edits its keys through the edit hook before
+             * the handler list is consulted, so when the hook has just taken
+             * this key the node is seeing the same event again.  The flag
+             * is cleared here whatever the key: if it is a different one the
+             * String ate the earlier event and MUI never came this way. */
+            if (data->hook_taken) {
+                data->hook_taken = 0;
+                if (key == data->hook_key)
+                    return MUI_EventHandlerRC_Eat;
+            }
             if (key != CK_KEY_NONE && ck_doc_minibuffer_key(data->doc, key))
                 return MUI_EventHandlerRC_Eat;
         }
         /* Not consumed: MUI's next handler -- the string gadget's own -- does
          * the ordinary editing and cursor motion. */
+        return 0;
+    }
+
+    /* A key the edit hook took, now that the String's own key handling is
+     * over and the contents may be changed safely. */
+    case CKM_MiniKey: {
+        ck_key key = (ck_key)((struct CKP_MiniKey *)msg)->key;
+        data = (struct ck_mini_data *)INST_DATA(cl, obj);
+        if (data->doc != NULL && !ck_doc_minibuffer_key(data->doc, key) &&
+            data->doc->mini_state != CK_MINI_IDLE) {
+            char spelling[32];
+            ck_message(data->doc, "%s is undefined",
+                       ck_key_to_string(key, spelling, (int32_t)sizeof spelling));
+        }
         return 0;
     }
 
@@ -363,6 +481,8 @@ SDISPATCHER(ck_mini_dispatcher)
         break;
 
     case MUIM_GoInactive:
+        data = (struct ck_mini_data *)INST_DATA(cl, obj);
+        data->hook_taken = 0;
         set(_win(obj), MUIA_Window_DisableKeys, 0);
         break;
 

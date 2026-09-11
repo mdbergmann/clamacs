@@ -159,7 +159,19 @@ editor does not emulate them.  Several documents, several windows.
 - **Minibuffer**: the window's `String` object, activated with a prompt,
   with history and tab completion from a per-prompt completion source
   (file names via the directory listing, command names, later symbol names
-  from clamiga).  The same line is the echo area.
+  from clamiga).  The same line is the echo area, Emacs-style: a MUI page
+  group whose page 0 is a full-width `Text` for messages and page 1 the
+  prompt label (`MUIA_Text_SetMin`, weight 0, so it takes exactly its
+  text) beside the `String`.  Opening a prompt flips to page 1, closing it
+  flips back, so a message never competes with a prompt for width (until
+  2026-09-11 both shared one row, the label at weight 30, and every
+  message was cut at a quarter of the window).  A message that arrives
+  while a prompt is open takes the label's place, as `[No match]` does
+  after TAB; the port's `STATUS` reports the message either way.  Because
+  MUI measures a `Text` object only at layout, a changed label goes
+  through `MUIM_Group_InitChange`/`ExitChange` on its row; isearch keeps
+  the pattern in the input and only the state (`I-search: `, `Failing
+  I-search: `) in the label, so typing does not relayout.
 - **Kill ring** in the application (`C-k`, `C-w`, `M-w`, `C-y`, `M-y`),
   distinct from the clipboard; `C-w`/`M-w` also copy to the clipboard so
   other applications see the last kill.
@@ -583,6 +595,53 @@ not have saved; CLAUDE.md carries the short list.
   through the minibuffer, and so did the name typed in a second burst half
   a second after `M-x`.  The one-key deactivation is an FS-UAE artefact
   (below), not something a keyboard does.
+- **A relayout deactivates the `String`** (2026-09-11, the echo-area page
+  group, Vampire).  `MUIM_Group_ExitChange` on the prompt row -- needed
+  because a `Text` object with `MUIA_Text_SetMin` is measured only at
+  layout -- brings the minibuffer's `String` back inactive while the
+  window still names it as the active object, so every key typed after
+  `Failing I-search: ` replaced `I-search: ` was lost.  The row is relaid
+  only when the label text changes, and the `String` is then re-activated
+  by setting `MUIA_Window_ActiveObject` to `None` and back.
+- **A page switch repaints only what the new page's objects cover.**  A
+  `Text` object is as tall as its font, not its page, so with the message
+  page shown the hidden prompt row's frame and old input stayed on
+  screen around it.  Both `Text` objects grow to the row's height
+  (`MUIA_Text_SetVMax` FALSE) and the row has no spacing, so their
+  background fill covers the other page.
+
+- **An ACTIVE `String` edits its keys before the window's handler list
+  is asked** (2026-09-11, Vampire; found while checking the echo area and
+  present in every earlier build).  With the minibuffer's `String` active
+  on a real keyboard, raw `TAB` moved the focus to the text object instead
+  of completing, raw `C-g` during isearch did not abort, and `Alt-x` typed
+  `×` (the keymap's dead-key result) into the input; raw `C-g` at an
+  `M-x` prompt only "worked" because the preceding `TAB` had already
+  moved the focus to the text object, whose handler aborts the
+  minibuffer.  The mini class's handler node -- which works for the
+  port's `KEY` and for the deactivated string under FS-UAE -- is never
+  asked while the `String` is active: MUI 3.8's `String` edits through an
+  Intuition-style string edit hook ahead of the handler list, whatever
+  the node's priority.  The fix is `MUIA_String_EditHook` on the mini
+  object (`ck_mini_edit_func` in `src/textclass.c`), which MUI calls
+  before the class's own hook with the `SGWork`.  Two properties of that
+  hook shape the code: MUI ignores its result and runs the class's hook
+  on the same `SGWork` next, so a key the editor takes is made invisible
+  by rewriting the event to a key release with no qualifier and clearing
+  the mapped character; and the class's hook may still write its work
+  buffer back afterwards, so the action (completion, history, abort) is
+  not run inside the hook but pushed with
+  `MUIM_Application_PushMethod` as `CKM_MiniKey` and run from the input
+  loop.  `ck_doc_minibuffer_binds()` is the one list of minibuffer keys
+  that both the hook and the node consult; a `hook_taken` flag keeps the
+  node from acting on the same event should MUI go on to consult it.
+  `Meta` plus a character the minibuffer does not bind is taken too and
+  reported undefined, so `Alt-x` no longer types a stray character.
+  `drive.rexx` grew a hardware-only leg for this (run-drive passes
+  `HARDWARE`; FS-UAE cannot keep the `String` active): raw `M-x end-of-b
+  TAB RET`, `M-x` inside the prompt, `C-g`, and `C-s ... C-s C-g` in
+  isearch -- six `OK` lines, all green on the Vampire the same day (76
+  `OK`, 0 `FAIL` for the whole run).
 
 ## Still open
 

@@ -36,6 +36,7 @@
 #include <dos/dos.h>
 #include <dos/dostags.h>
 #include <intuition/intuition.h>
+#include <intuition/sghooks.h>    /* SGWork, SGH_KEY: the minibuffer's edit hook */
 #include <libraries/asl.h>
 #include <libraries/iffparse.h>   /* MAKE_ID */
 #include <libraries/mui.h>
@@ -71,6 +72,16 @@
  * inactive window is there, so an idle tick on a background document is
  * cheap. */
 #define CKM_IdleTick (TAG_USER | 0x0C1A0002)
+
+/* Private method: a minibuffer key the String's edit hook took, to be run
+ * from the input loop.  The hook runs inside the String's own key handling,
+ * where a change to MUIA_String_Contents (completion, history) could be
+ * overwritten by the class's edit hook writing its work buffer back, so the
+ * hook only records the key and pushes this method with it
+ * (MUIM_Application_PushMethod); the mini class runs ck_doc_minibuffer_key()
+ * when it arrives.  See textclass.c, ClamacsMini. */
+#define CKM_MiniKey (TAG_USER | 0x0C1A0003)
+struct CKP_MiniKey { ULONG MethodID; ULONG key; };
 
 #define CK_PATH_MAX 256
 #define CK_PKG_MAX   64
@@ -130,8 +141,15 @@ typedef struct ck_doc {
     Object *text;
     Object *slider;
     Object *status;   /* file, package, line:column */
-    Object *prompt;   /* the echo area: messages and minibuffer prompts */
-    Object *mini;     /* the minibuffer input line */
+    /* The echo area is one line that shows EITHER a message OR a prompt
+     * beside the minibuffer input, as in Emacs: a page group whose page 0
+     * is the message line and page 1 the prompt + input row.  The message
+     * page gets the whole width; the prompt is sized to its text. */
+    Object *echo;     /* the page group */
+    Object *msgline;  /* page 0: messages, full width */
+    Object *miniline; /* page 1: prompt beside the input */
+    Object *prompt;   /* the prompt label on page 1 */
+    Object *mini;     /* the minibuffer input line on page 1 */
 
     char path[CK_PATH_MAX];    /* "" for a buffer that has no file yet */
     char name[CK_PATH_MAX];    /* the file part, shown in the title */
@@ -141,7 +159,8 @@ typedef struct ck_doc {
      * strings behind the status line and the echo area have to outlive the
      * call that sets them. */
     char statusline[CK_MSG_MAX];
-    char message[CK_MSG_MAX];
+    char message[CK_MSG_MAX];  /* what the echo area says; the port's STATUS */
+    char label[CK_MSG_MAX];    /* the prompt object's text */
 
     ck_keystate keys;
 
@@ -348,6 +367,12 @@ void    ck_doc_prompt(ck_doc *doc, const char *prompt, const char *initial,
 void    ck_doc_minibuffer_done(ck_doc *doc);
 void    ck_doc_minibuffer_abort(ck_doc *doc);
 int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key);
+/* Whether ck_doc_minibuffer_key() would take KEY, without acting on it:
+ * what the String's edit hook asks before it takes a key away from the
+ * gadget and defers it. */
+int32_t ck_doc_minibuffer_binds(const ck_doc *doc, ck_key key);
+/* Show doc->message in the echo area (ck_message() formats and calls it). */
+void    ck_doc_echo(ck_doc *doc);
 
 int32_t ck_doc_load_file(ck_doc *doc, const char *path);
 int32_t ck_doc_save_file(ck_doc *doc, const char *path);

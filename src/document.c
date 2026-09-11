@@ -716,6 +716,65 @@ static int32_t ck_ask_file(ck_doc *doc, const char *title, int32_t save,
  * The minibuffer
  * ------------------------------------------------------------------ */
 
+/* The prompt label is sized to its text (MUIA_Text_SetMin), and MUI measures
+ * a Text object only when its group is laid out, so a new prompt text needs
+ * the row relaid: MUIM_Group_InitChange/ExitChange is how a group is
+ * changed under an open window.  Unchanged text is left alone, so isearch
+ * does not relayout on every keystroke. */
+static void ck_doc_set_label(ck_doc *doc, const char *text)
+{
+    if (strcmp(doc->label, text) == 0)
+        return;
+
+    strncpy(doc->label, text, sizeof doc->label - 1);
+    doc->label[sizeof doc->label - 1] = '\0';
+
+    if (DoMethod(doc->miniline, MUIM_Group_InitChange)) {
+        set(doc->prompt, MUIA_Text_Contents, (IPTR)doc->label);
+        DoMethod(doc->miniline, MUIM_Group_ExitChange);
+        /* The relayout re-shows the row's objects and the String comes
+         * back inactive -- the window still names it as the active object,
+         * so it must be taken away and given back for the keys to reach
+         * it again (Vampire, MUI 3.8, 2026-09-11: without this, every key
+         * after `Failing I-search: ' appeared was lost). */
+        if (doc->mini_state != CK_MINI_IDLE) {
+            set(doc->win, MUIA_Window_ActiveObject, MUIV_Window_ActiveObject_None);
+            set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->mini);
+        }
+    } else {
+        set(doc->prompt, MUIA_Text_Contents, (IPTR)doc->label);
+    }
+}
+
+void ck_doc_echo(ck_doc *doc)
+{
+    /* With the minibuffer idle the echo area is the message line.  While a
+     * prompt is open the message takes the prompt's place beside the input
+     * ("[No match]" after TAB), which is as close as one line gets to
+     * Emacs's minibuffer-message. */
+    if (doc->mini_state == CK_MINI_IDLE)
+        set(doc->msgline, MUIA_Text_Contents, (IPTR)doc->message);
+    else
+        ck_doc_set_label(doc, doc->message);
+}
+
+/* Open the minibuffer: the echo area flips to the prompt + input page,
+ * the label is relaid for the new prompt, and the input gets the focus.
+ * The page is switched before the label is set so that the row being
+ * relaid is the one on show. */
+static void ck_mini_open(ck_doc *doc, const char *prompt, const char *initial)
+{
+    /* The prompt IS what the echo area shows, so the port's STATUS reports
+     * it too -- that is how a macro sees that a prompt is open. */
+    strncpy(doc->message, prompt, sizeof doc->message - 1);
+    doc->message[sizeof doc->message - 1] = '\0';
+
+    set(doc->echo, MUIA_Group_ActivePage, 1);
+    ck_doc_set_label(doc, prompt);
+    set(doc->mini, MUIA_String_Contents, (IPTR)(initial != NULL ? initial : ""));
+    set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->mini);
+}
+
 void ck_doc_prompt(ck_doc *doc, const char *prompt, const char *initial,
                    int16_t command, uint16_t source, int32_t arg)
 {
@@ -724,14 +783,7 @@ void ck_doc_prompt(ck_doc *doc, const char *prompt, const char *initial,
     doc->mini_source  = source;
     doc->mini_arg     = arg;
 
-    /* The prompt IS what the echo area shows, so the port's STATUS reports
-     * it too -- that is how a macro sees that a prompt is open. */
-    strncpy(doc->message, prompt, sizeof doc->message - 1);
-    doc->message[sizeof doc->message - 1] = '\0';
-
-    set(doc->prompt, MUIA_Text_Contents, (IPTR)prompt);
-    set(doc->mini, MUIA_String_Contents, (IPTR)(initial != NULL ? initial : ""));
-    set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->mini);
+    ck_mini_open(doc, prompt, initial);
 }
 
 static void ck_mini_finish(ck_doc *doc)
@@ -740,9 +792,14 @@ static void ck_mini_finish(ck_doc *doc)
     doc->mini_command = CK_CMD_NONE;
     doc->mini_source  = CK_COMPLETE_NONE;
     doc->message[0]   = '\0';
-    set(doc->prompt, MUIA_Text_Contents, (IPTR)"");
-    set(doc->mini, MUIA_String_Contents, (IPTR)"");
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
+    set(doc->echo, MUIA_Group_ActivePage, 0);
+    set(doc->msgline, MUIA_Text_Contents, (IPTR)doc->message);
+    set(doc->mini, MUIA_String_Contents, (IPTR)"");
+    /* The label is cleared on the hidden page without a relayout; the next
+     * prompt relays it once it is on show again. */
+    doc->label[0] = '\0';
+    set(doc->prompt, MUIA_Text_Contents, (IPTR)doc->label);
 }
 
 void ck_doc_minibuffer_abort(ck_doc *doc)
@@ -775,18 +832,42 @@ static void ck_isearch_step(ck_doc *doc, const char *pattern, int32_t again)
     if (again)
         flags |= MUIF_TextEditor_Search_Next;
 
-    if (!DoMethod(doc->text, MUIM_TextEditor_Search, (IPTR)pattern, (IPTR)flags))
-        ck_message(doc, "Failing I-search: %s", pattern);
-    else
-        ck_message(doc, "%sI-search: %s",
-                   doc->isearch_back ? "Reverse " : "", pattern);
+    /* The pattern is in the input beside the label, so the label carries
+     * only the state; the port's STATUS still reports the whole line. */
+    if (!DoMethod(doc->text, MUIM_TextEditor_Search, (IPTR)pattern, (IPTR)flags)) {
+        snprintf(doc->message, sizeof doc->message, "Failing I-search: %s", pattern);
+        ck_doc_set_label(doc, "Failing I-search: ");
+    } else {
+        snprintf(doc->message, sizeof doc->message, "%sI-search: %s",
+                 doc->isearch_back ? "Reverse " : "", pattern);
+        ck_doc_set_label(doc, doc->isearch_back ? "Reverse I-search: " : "I-search: ");
+    }
+}
+
+/* The keys the minibuffer takes away from the string gadget: C-g whenever
+ * it is open; C-s/C-r in isearch; TAB and the history keys at a prompt.
+ * This is the one place that list lives -- ck_doc_minibuffer_key() acts on
+ * exactly these, and the mini class's edit hook (textclass.c) asks it
+ * before taking a key out of the active String's hands. */
+int32_t ck_doc_minibuffer_binds(const ck_doc *doc, ck_key key)
+{
+    if (doc->mini_state == CK_MINI_IDLE)
+        return 0;
+    if (key == ck_key_make('g', CK_MOD_CTRL))
+        return 1;
+    if (doc->mini_state == CK_MINI_ISEARCH)
+        return key == ck_key_make('s', CK_MOD_CTRL) ||
+               key == ck_key_make('r', CK_MOD_CTRL);
+    return key == ck_key_make(CK_KEY_TAB, 0) ||
+           key == ck_key_make('p', CK_MOD_META) ||
+           key == ck_key_make('n', CK_MOD_META);
 }
 
 /* Return non-zero when the key belongs to the minibuffer and must not reach
  * the string gadget. */
 int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
 {
-    if (doc->mini_state == CK_MINI_IDLE)
+    if (!ck_doc_minibuffer_binds(doc, key))
         return 0;
 
     if (key == ck_key_make('g', CK_MOD_CTRL)) {
@@ -795,14 +876,11 @@ int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
     }
 
     if (doc->mini_state == CK_MINI_ISEARCH) {
-        if (key == ck_key_make('s', CK_MOD_CTRL) ||
-            key == ck_key_make('r', CK_MOD_CTRL)) {
-            doc->isearch_back = (key == ck_key_make('r', CK_MOD_CTRL));
-            ck_isearch_step(doc, (const char *)ck_get(doc->mini,
-                                                      MUIA_String_Contents), 1);
-            return 1;
-        }
-        return 0;
+        /* C-s or C-r: search again, in that direction. */
+        doc->isearch_back = (key == ck_key_make('r', CK_MOD_CTRL));
+        ck_isearch_step(doc, (const char *)ck_get(doc->mini,
+                                                  MUIA_String_Contents), 1);
+        return 1;
     }
 
     if (key == ck_key_make(CK_KEY_TAB, 0)) {
@@ -835,16 +913,14 @@ int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
         return 1;
     }
 
-    if (key == ck_key_make('p', CK_MOD_META) ||
-        key == ck_key_make('n', CK_MOD_META)) {
+    /* M-p / M-n: the history. */
+    {
         ck_history *hist = ck_doc_history(doc);
         const char *item = (key == ck_key_make('p', CK_MOD_META))
                                ? ck_hist_prev(hist) : ck_hist_next(hist);
         set(doc->mini, MUIA_String_Contents, (IPTR)(item != NULL ? item : ""));
-        return 1;
     }
-
-    return 0;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1376,10 +1452,7 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         doc->isearch_back   = (command == CK_CMD_ISEARCH_BACKWARD);
         doc->mini_source    = CK_COMPLETE_NONE;
         doc->mini_command   = command;
-        set(doc->prompt, MUIA_Text_Contents,
-            (IPTR)(doc->isearch_back ? "Reverse I-search: " : "I-search: "));
-        set(doc->mini, MUIA_String_Contents, (IPTR)"");
-        set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->mini);
+        ck_mini_open(doc, doc->isearch_back ? "Reverse I-search: " : "I-search: ", "");
         break;
 
     /* --- files and buffers --------------------------------------- */
@@ -1872,19 +1945,37 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
                 MUIA_Text_SetMin,   FALSE,
                 MUIA_Frame,         MUIV_Frame_Text,
             End,
-            Child, HGroup,
-                MUIA_Group_Spacing, 2,
-                Child, doc->prompt = TextObject,
+            /* The echo area: a message line, or the prompt beside the
+             * minibuffer input, one at a time (see the ck_doc fields). */
+            /* A page switch repaints only what the new page's objects
+             * cover, so both Text objects are let grow to the row's full
+             * height (SetVMax FALSE) and the row has no spacing: else the
+             * hidden page's frame stays on screen around them. */
+            Child, doc->echo = PageGroup,
+                Child, doc->msgline = TextObject,
                     MUIA_Text_Contents, (IPTR)"",
                     MUIA_Text_SetMin,   FALSE,
-                    MUIA_Weight,        30,
+                    MUIA_Text_SetVMax,  FALSE,
                 End,
-                Child, doc->mini = NewObject(app->miniclass->mcc_Class, NULL,
-                    MUIA_Frame,        MUIV_Frame_String,
-                    MUIA_String_MaxLen, CK_MINI_MAX,
-                    MUIA_CycleChain,   TRUE,
-                    CKA_Doc,           (IPTR)doc,
-                TAG_DONE),
+                Child, doc->miniline = HGroup,
+                    MUIA_Group_Spacing, 0,
+                    /* Sized to its text and given no share of the spare
+                     * width, so the input gets everything the prompt does
+                     * not need; ck_doc_set_label() relays the row when the
+                     * text changes. */
+                    Child, doc->prompt = TextObject,
+                        MUIA_Text_Contents, (IPTR)"",
+                        MUIA_Text_SetMin,   TRUE,
+                        MUIA_Text_SetVMax,  FALSE,
+                        MUIA_Weight,        0,
+                    End,
+                    Child, doc->mini = NewObject(app->miniclass->mcc_Class, NULL,
+                        MUIA_Frame,        MUIV_Frame_String,
+                        MUIA_String_MaxLen, CK_MINI_MAX,
+                        MUIA_CycleChain,   TRUE,
+                        CKA_Doc,           (IPTR)doc,
+                    TAG_DONE),
+                End,
             End,
         End,
     End;

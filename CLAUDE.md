@@ -129,6 +129,22 @@ list under "Answered during phase 1".
 - The port's `INSERT` bypasses the Emacs layer, so in the REPL window a
   macro must `EVAL end-of-buffer` before `INSERT`, or the text lands in
   the transcript wherever a `GOTOLINE` left the cursor.
+- The echo area is a page group (message line / prompt + input), see the
+  spec's Emacs-layer section.  `MUIM_Group_ExitChange` on the prompt row
+  leaves the `String` inactive: `ck_doc_set_label()` re-activates it.  A
+  page switch repaints only what the new page's objects cover, so the
+  `Text` objects fill the row (`MUIA_Text_SetVMax` FALSE).
+- An ACTIVE MUI `String` edits its keys through its string edit hook
+  *before* the window's handler list is consulted, so the mini class's
+  handler node never sees `TAB`, `C-g` or `Alt-x` on a real keyboard.
+  The mini object therefore also sets `MUIA_String_EditHook`.  MUI
+  ignores that hook's result and runs the class's own hook next on the
+  same `SGWork`, so a taken key is rewritten into a key release, and the
+  action is deferred with `MUIM_Application_PushMethod` (`CKM_MiniKey`)
+  because the class's hook may write its work buffer back over a
+  `MUIA_String_Contents` change.  `ck_doc_minibuffer_binds()` is the one
+  list of minibuffer keys.  Only hardware shows any of this: `run-drive`
+  passes `HARDWARE` to `drive.rexx` for that leg.
 
 ## Phases
 
