@@ -126,6 +126,7 @@ void ck_debug_entered(ck_app *app, int32_t level, const char *text)
 
     if (doc != NULL)
         ck_message(doc, "Debugger level %ld: %s", (long)level, app->dbg_condition);
+    ck_menu_update(app);
 
     /* The frames come separately, and frame 0's locals once they are in. */
     ck_rexx_send(app, doc, CK_REQ_DBG_BACKTRACE, "BACKTRACE");
@@ -137,6 +138,7 @@ void ck_debug_left(ck_app *app)
     app->dbg_frame = -1;
     if (app->debugwin != NULL)
         set(app->debugwin, MUIA_Window_Open, FALSE);
+    ck_menu_update(app);
 }
 
 /* ------------------------------------------------------------------ *

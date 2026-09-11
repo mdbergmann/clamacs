@@ -325,6 +325,45 @@ HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
 MakeStaticHook(ck_rx_key_hook, ck_rx_key_func);
 
 /*
+ * MENU <command-name> [STATE]: the menu strip, from a macro.  Without STATE
+ * it picks the item that runs the command, the way the mouse would -- on
+ * the active document, and only when the item is enabled -- and answers
+ * "" (ran), "disabled" or "no such menu item".  With STATE it only reports
+ * "enabled" or "disabled".  What this tests is what a click cannot be made
+ * to: that the item exists, that its enable state follows the editor's,
+ * and that picking it runs the same command `EVAL' would.  (MUI's own menu
+ * handling, from IDCMP_MENUPICK to MUIA_Application_MenuAction, is MUI's.)
+ */
+HOOKPROTONHNO(ck_rx_menu_func, LONG, IPTR *args)
+{
+    ck_app     *app   = ck_app_current();
+    const char *name  = (const char *)args[0];
+    LONG        state = (LONG)args[1];
+    int32_t     i;
+
+    if (app == NULL || name == NULL)
+        return 0;
+
+    i = ck_menu_find(name);
+    if (i < 0) {
+        ck_rx_result("no such menu item");
+        return 0;
+    }
+    if (state) {
+        ck_rx_result(ck_menu_is_enabled(i) ? "enabled" : "disabled");
+        return 0;
+    }
+    if (!ck_menu_is_enabled(i)) {
+        ck_rx_result("disabled");
+        return 0;
+    }
+    ck_menu_pick(app, i);
+    ck_rx_result("");
+    return 0;
+}
+MakeStaticHook(ck_rx_menu_hook, ck_rx_menu_func);
+
+/*
  * OUTPUT, READLINE, RESULT and (phase 4) DEBUGGER from clamiga's REPL
  * thread.  The hook gets the
  * RexxMsg itself (a1) and its return value is the message's rc; the text is
@@ -367,5 +406,6 @@ const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"TE",       (char *)"CMD/F",         1, (struct Hook *)&ck_rx_te_hook,       { 0, 0, 0, 0, 0 } },
     { (char *)"STATUS",   (char *)"",              0, (struct Hook *)&ck_rx_status_hook,   { 0, 0, 0, 0, 0 } },
     { (char *)"KEY",      (char *)"KEYS/F",        1, (struct Hook *)&ck_rx_key_hook,      { 0, 0, 0, 0, 0 } },
+    { (char *)"MENU",     (char *)"NAME/A,STATE/S", 2, (struct Hook *)&ck_rx_menu_hook,     { 0, 0, 0, 0, 0 } },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0, 0 } }
 };

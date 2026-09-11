@@ -185,6 +185,17 @@ list under "Answered during phase 1".
    `src/jit/runtime.c`, pinned by `tests/amiga/dev-repl-tests.lisp`) --
    when a restart "does nothing" on the Amiga but works on the host, run
    that test file straight on the box before blaming the editor.
+5. **Menu strip** (2026-09-11): one application-wide
+   `MUIA_Application_Menustrip` built from the host-tested table in
+   `src/emacs/menudef.c`; an item carries its command id in
+   `MUIA_UserData` and the `MUIA_Application_MenuAction` hook runs it
+   through `ck_doc_run_command()` on the active document, so the menu is
+   a third entrance to the command table, never a second implementation.
+   Enable state is polled by `ck_menu_update()` (called after commands,
+   edits, activations, replies and `DEBUGGER` messages; only changed
+   items are set).  The port's `MENU <name> [STATE]` drives and inspects
+   it for `drive.rexx`.  Add a command to the menu by adding a row to
+   the table; `tests/test_menudef.c` checks the key shown really runs it.
 
 ## Build and toolchain
 

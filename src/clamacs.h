@@ -19,6 +19,7 @@
 #include "emacs/killring.h"
 #include "emacs/minihist.h"
 #include "emacs/locstack.h"
+#include "emacs/menudef.h"
 #include "lisp/token.h"
 #include "lisp/sexp.h"
 #include "lisp/indent.h"
@@ -319,6 +320,10 @@ typedef struct ck_app {
     char    insp_object[CK_MSG_MAX];
     char    insp_title[96];
 
+    /* The menu strip (menu.c), shared by every window; NULL when it could
+     * not be built, in which case the editor runs without menus. */
+    Object *menustrip;
+
     int32_t quitting;
 } ck_app;
 
@@ -535,6 +540,32 @@ extern const struct MUI_Command ck_rexx_commands[];
 /* MUIA_Application_RexxHook: the commands clamiga's REPL thread sends
  * (OUTPUT, READLINE, RESULT), taken raw from the RexxMsg. */
 extern struct Hook ck_rexx_repl_hook;
+
+/* ---- menu.c ------------------------------------------------------ */
+
+/* Build the strip from src/emacs/menudef.c.  Created BEFORE the application
+ * object, which takes it at creation (MUIA_Application_Menustrip is
+ * init-only) and disposes of it. */
+Object *ck_menu_create(ck_app *app);
+
+/* Once the application object exists: react to picks, set the initial
+ * enable state. */
+void    ck_menu_attach(ck_app *app);
+
+/* Bring every item's MUIA_Menuitem_Enabled in step with the application
+ * state.  Only items whose state changed are touched, so this is called
+ * wherever the state can move -- after a command, an edit, an activation,
+ * a reply, a debugger message. */
+void    ck_menu_update(ck_app *app);
+
+/* Run the item at table index I as a pick would: on the active document.
+ * Returns 1 when there was such an item. */
+int32_t ck_menu_pick(ck_app *app, int32_t i);
+
+/* The port's `MENU': the table index of the item for a command name, or
+ * -1; and whether that item is currently enabled. */
+int32_t ck_menu_find(const char *command);
+int32_t ck_menu_is_enabled(int32_t i);
 
 /* ---- errorwin.c -------------------------------------------------- */
 

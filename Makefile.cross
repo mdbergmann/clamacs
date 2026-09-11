@@ -51,6 +51,7 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/emacs/killring.c \
            $(SRCDIR)/emacs/minihist.c \
            $(SRCDIR)/emacs/locstack.c \
+           $(SRCDIR)/emacs/menudef.c \
            $(SRCDIR)/lisp/token.c \
            $(SRCDIR)/lisp/sexp.c \
            $(SRCDIR)/lisp/indent.c \
@@ -71,6 +72,7 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/errorwin.c \
            $(SRCDIR)/debugwin.c \
            $(SRCDIR)/inspectwin.c \
+           $(SRCDIR)/menu.c \
            $(SRCDIR)/muistubs.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
@@ -144,6 +146,15 @@ verify-amiga:
 	@# The `raw' lines are real IECLASS_RAWKEY events from sendkey, so they
 	@# also cover MUI's event routing and the decoder in front of the keymaps.
 	@for want in \
+	    'OK the menu strip has Open' \
+	    'OK forward-char is not a menu item' \
+	    'OK Save is dimmed for a clean buffer' \
+	    'OK the first edit enabled Save' \
+	    'OK the menu saved the buffer' \
+	    'OK Save dimmed after the menu saved' \
+	    'OK Close Buffer closed it' \
+	    'OK the menu ran beginning-of-defun' \
+	    'OK Clear Transcript is dimmed outside the REPL' \
 	    'OK C-x is pending' \
 	    'OK C-g cancelled the prefix' \
 	    'OK C-x C-q reported' \
@@ -175,8 +186,11 @@ verify-amiga:
 	@if grep -q 'clamiga ARexx port is' build/amiga/clamacs-test.log; then \
 	    for want in \
 	        'OK eval-last-sexp on (+ 1 2) echoed 3' \
+	        'OK the Clamiga menu woke up with the port' \
+	        'OK Start clamiga is dimmed while connected' \
 	        'OK the editor answered while a load was in flight' \
 	        'OK clamacs-load-buffer reported 2 error(s)' \
+	        'OK Next Error woke up with the diagnostics' \
 	        'OK next-error jumped to the first error' \
 	        'OK next-error jumped to the second error' \
 	        'OK previous-error went back to' \
@@ -198,6 +212,7 @@ verify-amiga:
 	        'OK TAB narrowed twice-a to one' \
 	        'OK RET put the completion in the buffer' \
 	        'OK C-c C-z opened *clamacs-repl*' \
+	        'OK Clear Transcript is live in the REPL window' \
 	        'OK the REPL prompt arrived' \
 	        'OK RET evaluated (+ 1 2) at the prompt' \
 	        'OK a new prompt followed the value' \
@@ -213,6 +228,8 @@ verify-amiga:
 	        'OK the port answered ARGLIST while the REPL ran a form' \
 	        'OK C-c C-z raised the REPL again' \
 	        'OK an error at the prompt opened the debugger' \
+	        'OK the Debugger item woke up with the debugger' \
+	        'OK the Debugger item dimmed with the restart' \
 	        'OK RET at the prompt is refused while debugging' \
 	        'OK clamacs-debugger-eval prompted' \
 	        'OK the frame eval saw the locals by name' \

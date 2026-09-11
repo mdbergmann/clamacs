@@ -6,8 +6,9 @@ editor with Emacs key handling that talks to a running
 port — load, compile, evaluate, a REPL, a debugger and an inspector in
 their own windows.
 
-**Status:** phases 1 to 4 run on AmigaOS 3 — the editor with Lisp mode and
-its own ARexx port, introspection (arglist, completion, jump to
+**Status:** phases 1 to 4 run on AmigaOS 3 (MUI 3.8) and MorphOS (MUI 4) —
+the editor with Lisp mode, a menu strip and its own ARexx port,
+introspection (arglist, completion, jump to
 definition, describe, apropos, macroexpand) asked from clamiga, a REPL
 window (`C-c C-z`) fed by a REPL thread in clamiga that streams output,
 asks the editor for `read-line` input and can be interrupted, a debugger
@@ -20,7 +21,7 @@ design and the phase plan, and `specs/clamacs-ide.md` for the full one.
 ## Layout
 
 ```
-src/emacs/                 keymaps, raw-key decoding rules, command table, kill ring, minibuffer history
+src/emacs/                 keymaps, raw-key decoding rules, command table, menu table, kill ring, minibuffer history
 src/lisp/                  tokenizer, sexp scanner, indenter
 src/rexx/                  diagnostic parser, request queue, the rc ladder, the REPL thread's messages
 src/*.c                    the MUI half: custom classes, windows, ARexx, introspection, the REPL, main

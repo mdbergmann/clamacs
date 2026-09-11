@@ -96,12 +96,14 @@ int32_t ck_rexx_find_port(ck_app *app)
             strncpy(app->clamiga_port, name, sizeof app->clamiga_port - 1);
             app->clamiga_port[sizeof app->clamiga_port - 1] = '\0';
             app->connected = 1;
+            ck_menu_update(app);
             return 1;
         }
         Permit();
     }
 
     app->connected = 0;
+    ck_menu_update(app);
     return 0;
 }
 
@@ -196,6 +198,7 @@ static void ck_rexx_pump(ck_app *app)
         app->connected = 0;
         ck_queue_release(ck_queue_complete(&app->queue, CK_RC_FATAL));
         ck_repl_disconnected(app);
+        ck_menu_update(app);
         doc = ck_doc_active(app);
         if (doc != NULL)
             ck_message(doc, "clamiga is not running (port %s is gone)",
@@ -533,4 +536,6 @@ void ck_rexx_handle_replies(ck_app *app)
     }
 
     ck_rexx_pump(app);
+    /* A reply may have filled the error list or pushed a location. */
+    ck_menu_update(app);
 }

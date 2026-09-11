@@ -147,6 +147,80 @@ ELSE
     SAY 'FAIL active document is' RESULT
 
 /* ------------------------------------------------------------------ *
+** The menu strip.  MENU <command> picks the item the way the mouse
+** would (on the active document, only while it is enabled); MENU
+** <command> STATE reports whether it is enabled.  What is under test is
+** the editor's side of the menu: that the items exist, that the enable
+** state follows the buffer, and that a pick runs the command.  MUI's own
+** path from IDCMP_MENUPICK to MUIA_Application_MenuAction is MUI's.
+** ------------------------------------------------------------------ */
+
+'MENU find-file STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK the menu strip has Open'
+ELSE
+    SAY 'FAIL MENU find-file STATE gave' RESULT
+
+/* Cursor motion is deliberately not in the menu. */
+'MENU forward-char STATE'
+IF RESULT = 'no such menu item' THEN
+    SAY 'OK forward-char is not a menu item'
+ELSE
+    SAY 'FAIL MENU forward-char STATE gave' RESULT
+
+/* Save follows the buffer: dimmed while it is clean, enabled by the first
+** edit, dimmed again once the menu has saved it.  A file in RAM: so the
+** fixtures are not written to. */
+'OPEN FILE RAM:clamacs-menu-test.lisp'
+'MENU save-buffer STATE'
+IF RESULT = 'disabled' THEN
+    SAY 'OK Save is dimmed for a clean buffer'
+ELSE
+    SAY 'FAIL Save on a clean buffer is' RESULT
+'INSERT (defun menu-test () 42)'
+'MENU save-buffer STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK the first edit enabled Save'
+ELSE
+    SAY 'FAIL Save after an edit is' RESULT
+'MENU save-buffer'
+IF RC = 0 & RESULT = '' & EXISTS('RAM:clamacs-menu-test.lisp') THEN
+    SAY 'OK the menu saved the buffer'
+ELSE
+    SAY 'FAIL MENU save-buffer rc=' RC 'result=' RESULT 'exists=' EXISTS('RAM:clamacs-menu-test.lisp')
+'MENU save-buffer STATE'
+IF RESULT = 'disabled' THEN
+    SAY 'OK Save dimmed after the menu saved'
+ELSE
+    SAY 'FAIL Save after the save is' RESULT
+
+/* Close Buffer from the menu; the saved buffer goes without a question. */
+'MENU kill-buffer'
+'GETFILE'
+IF POS('clamacs-menu-test', RESULT) = 0 THEN
+    SAY 'OK Close Buffer closed it; the active document is now' RESULT
+ELSE
+    SAY 'FAIL Close Buffer left' RESULT 'active'
+
+/* A pick runs the command on the active document: the same defun the
+** EVAL check above found from line 6. */
+'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+'GOTOLINE 6'
+'MENU beginning-of-defun'
+'TE GETCURSOR LINE'
+IF RC = 0 & RESULT = 2 THEN
+    SAY 'OK the menu ran beginning-of-defun, CursorY' RESULT
+ELSE
+    SAY 'FAIL the menu pick left CursorY=' RESULT
+
+/* The REPL window's own items are dimmed in a file buffer. */
+'MENU clamacs-repl-clear STATE'
+IF RESULT = 'disabled' THEN
+    SAY 'OK Clear Transcript is dimmed outside the REPL'
+ELSE
+    SAY 'FAIL Clear Transcript in a file buffer is' RESULT
+
+/* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.
 **
 ** Everything above went in through the ARexx commands, which walk straight
@@ -486,6 +560,19 @@ IF ANSWER = '3' THEN
 ELSE
     SAY 'FAIL eval-last-sexp echoed' ANSWER
 
+/* That request found the port, so the Clamiga menu is live now and Start
+** clamiga is not. */
+'MENU clamacs-eval-defun STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK the Clamiga menu woke up with the port'
+ELSE
+    SAY 'FAIL Eval Defun with a port is' RESULT
+'MENU run-lisp STATE'
+IF RESULT = 'disabled' THEN
+    SAY 'OK Start clamiga is dimmed while connected'
+ELSE
+    SAY 'FAIL Start clamiga while connected is' RESULT
+
 /* C-c C-k on a file with two errors.  The reply comes back with rc 10, so
 ** ARexx drops RESULT and the editor has to fetch the text with LASTRESULT
 ** on its own before it can report anything -- that whole round trip is
@@ -519,6 +606,13 @@ IF POS('2 error(s)', DIAGS) > 0 THEN
     SAY 'OK clamacs-load-buffer reported' DIAGS
 ELSE
     SAY 'FAIL load-buffer diagnostics were' DIAGS
+
+/* The reply filled the error list, which is what enables Next Error. */
+'MENU clamacs-next-error STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK Next Error woke up with the diagnostics'
+ELSE
+    SAY 'FAIL Next Error with two diagnostics is' RESULT
 
 /* "selecting one jumps to the file and line" -- the other acceptance
 ** criterion of the error list.  next-error shares its position and its jump
@@ -755,8 +849,14 @@ ELSE
 CALL DELAY(25)
 'KEY C-c C-z'
 'GETNAME'
-IF RESULT = '*clamacs-repl*' THEN
+IF RESULT = '*clamacs-repl*' THEN DO
     SAY 'OK C-c C-z opened' RESULT
+    'MENU clamacs-repl-clear STATE'
+    IF RESULT = 'enabled' THEN
+        SAY 'OK Clear Transcript is live in the REPL window'
+    ELSE
+        SAY 'FAIL Clear Transcript in the REPL window is' RESULT
+END
 ELSE
     SAY 'FAIL C-c C-z gave window' RESULT
 
@@ -943,6 +1043,13 @@ ELSE DO
     'STATUS'
     SAY 'FAIL no debugger for (dbg-fn 3 4); the echo area says' RESULT
 END
+
+/* The Windows menu's Debugger item follows the DEBUGGER messages. */
+'MENU clamacs-debugger STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK the Debugger item woke up with the debugger'
+ELSE
+    SAY 'FAIL the Debugger item while debugging is' RESULT
 CALL LispView 'level 1'
 
 /* The transcript is closed while the form is parked. */
@@ -1003,8 +1110,14 @@ CALL LispView 'after the abort'
 'KEY 0'
 'KEY RET'
 LINE = WaitLine('CL-USER> ', 40)
-IF LINE ~= '' THEN
+IF LINE ~= '' THEN DO
     SAY 'OK RESTART 0 returned to the prompt'
+    'MENU clamacs-debugger STATE'
+    IF RESULT = 'disabled' THEN
+        SAY 'OK the Debugger item dimmed with the restart'
+    ELSE
+        SAY 'FAIL the Debugger item after the restart is' RESULT
+END
 ELSE DO
     'STATUS'
     SAY 'FAIL no prompt after RESTART 0; the echo area says' RESULT

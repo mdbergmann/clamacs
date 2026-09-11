@@ -589,6 +589,7 @@ int32_t ck_doc_load_file(ck_doc *doc, const char *path)
     set(doc->text, MUIA_TextEditor_HasChanged, FALSE);
     set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
     ck_doc_forget_arglist(doc);
+    ck_menu_update(doc->app);
     return 1;
 }
 
@@ -682,6 +683,7 @@ int32_t ck_doc_save_file(ck_doc *doc, const char *path)
         set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
     }
     set(doc->text, MUIA_TextEditor_HasChanged, FALSE);
+    ck_menu_update(doc->app);
     return 1;
 }
 
@@ -1688,6 +1690,7 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
 
     doc->last_command = command;
     ck_doc_update_status(doc);
+    ck_menu_update(app);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1904,6 +1907,8 @@ HOOKPROTONHNO(ck_changed_func, void, ULONG *params)
     doc->edit_serial++;
     ck_doc_colour_line(doc, (int32_t)ck_get(doc->text, MUIA_TextEditor_CursorY));
     ck_doc_update_status(doc);
+    /* The first edit after a save is what enables Save in the menu. */
+    ck_menu_update(doc->app);
 }
 MakeStaticHook(ck_changed_hook, ck_changed_func);
 
@@ -1956,6 +1961,7 @@ HOOKPROTONHNO(ck_activate_func, void, ULONG *params)
         return;                         /* a late report: the request stands */
     app->activate_pending = NULL;
     app->active_doc       = doc;
+    ck_menu_update(app);
 }
 MakeStaticHook(ck_activate_hook, ck_activate_func);
 
@@ -1965,6 +1971,7 @@ void ck_doc_activate(ck_doc *doc)
     doc->app->activate_pending = doc;
     doc->app->activate_stamp   = ck_ticks_now();
     set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_menu_update(doc->app);
 }
 
 /* ------------------------------------------------------------------ *
@@ -2118,6 +2125,7 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     ck_doc_track_package(doc);
     ck_doc_colour_all(doc);
     ck_doc_update_status(doc);
+    ck_menu_update(app);
     return doc;
 }
 
@@ -2169,6 +2177,7 @@ void ck_doc_close(ck_doc *doc, int32_t ask)
         app->active_doc = NULL;
     if (app->activate_pending == doc)
         app->activate_pending = NULL;
+    ck_menu_update(app);
 }
 
 void ck_app_reap(ck_app *app)

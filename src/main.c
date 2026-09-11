@@ -208,6 +208,12 @@ static int32_t ck_app_create(ck_app *app)
     }
     ck_note("reply port created");
 
+    /* The menu strip goes in at creation; without one the editor still
+     * runs, keys and port intact. */
+    app->menustrip = ck_menu_create(app);
+    ck_note(app->menustrip != NULL ? "menu strip built"
+                                   : "menu strip could not be built -- running without menus");
+
     app->app = ApplicationObject,
         MUIA_Application_Title,       (IPTR)"clamacs",
         MUIA_Application_Version,     (IPTR)"$VER: clamacs 0.1 (" __DATE__ ")",
@@ -220,10 +226,18 @@ static int32_t ck_app_create(ck_app *app)
         MUIA_Application_Commands,    (IPTR)ck_rexx_commands,
         /* What clamiga's REPL thread sends (phase 3), raw. */
         MUIA_Application_RexxHook,    (IPTR)&ck_rexx_repl_hook,
+        /* TAG_IGNORE when there is no strip: MUI would take NULL as one. */
+        app->menustrip != NULL ? MUIA_Application_Menustrip : TAG_IGNORE,
+                                      (IPTR)app->menustrip,
     End;
 
     if (app->app == NULL) {
         ck_fail("the MUI application object could not be created");
+        /* The strip is only the application's child once that exists. */
+        if (app->menustrip != NULL) {
+            MUI_DisposeObject(app->menustrip);
+            app->menustrip = NULL;
+        }
         return 0;
     }
     ck_note("application object created");
@@ -231,6 +245,7 @@ static int32_t ck_app_create(ck_app *app)
     ck_errorwin_create(app);
     ck_debugwin_create(app);
     ck_inspectwin_create(app);
+    ck_menu_attach(app);
     return 1;
 }
 

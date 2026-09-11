@@ -29,6 +29,7 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/emacs/killring.c \
            $(SRCDIR)/emacs/minihist.c \
            $(SRCDIR)/emacs/locstack.c \
+           $(SRCDIR)/emacs/menudef.c \
            $(SRCDIR)/lisp/token.c \
            $(SRCDIR)/lisp/sexp.c \
            $(SRCDIR)/lisp/indent.c \
@@ -40,7 +41,7 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
 
 CORE_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(CORE_SRC))
 
-TESTS = keymap rawkey command bindings killring minihist locstack token sexp indent diag queue symcache replmsg dbgmsg
+TESTS = keymap rawkey command bindings killring minihist locstack menudef token sexp indent diag queue symcache replmsg dbgmsg
 
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 

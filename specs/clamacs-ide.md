@@ -205,6 +205,42 @@ Phase 3 adds `C-c C-z` (the REPL window, from any document), `C-c C-b`
 `RET` (send when the form is complete, else newline-and-indent), `M-p`/`M-n`
 (input history), `C-c C-c` (interrupt) and `C-c M-o` (clear).
 
+### The menu strip
+
+One strip for the whole application (`MUIA_Application_Menustrip`), so
+every window shows it, built from `src/emacs/menudef.c` -- a table of
+`{title, key shown, command id, enable rule}` that is data and
+host-tested: `tests/test_menudef.c` checks that every item names a real
+command, that the key in its shortcut column really runs that command
+through the real keymaps, and that the enable rules answer as documented.
+An item carries its command id in `MUIA_UserData`, and the one
+`MUIA_Application_MenuAction` hook runs it through `ck_doc_run_command()`
+on the active document -- the menu is a third entrance to the command
+table beside the keys and the port, never a second implementation.  The
+key is shown as a `MUIA_Menuitem_CommandString`, which MUI displays and
+does not act on; the Amiga keys stay free.
+
+What is in it: Project (open, save, save as, next/close buffer, about,
+quit), Edit (undo/redo, cut/copy/paste, select all, search, go to line,
+`M-x`), Lisp (indentation, defun motion, the phase-2 introspection),
+Clamiga (connect, start clamiga, load/compile, the evals, interrupt, the
+error list) and Windows (REPL, inspector, debugger, the REPL's own
+commands, other window).  Cursor and word motion and the kill commands
+are left out on purpose.  Four commands have no key at all and were
+reachable only through `M-x` before: `clamacs-connect`, `run-lisp`,
+`clamacs-compile-file` and `clamacs-arglist`.
+
+Enable state is polled, not notified: `ck_menu_update()` computes the
+flags (buffer changed, has a file, port known, REPL window active,
+debugger parked, diagnostics present, a place to pop back to), asks
+menudef which items should be enabled and sets only those whose state
+changed; it is called wherever the state can move -- after a command,
+an edit (`MUIA_TextEditor_ContentsChanged`), an activation, a reply, a
+`DEBUGGER` message.  The port's `MENU <command> [STATE]` picks an item
+as the mouse would, or reports its state, so `drive.rexx` checks that
+Save follows the buffer, the Clamiga menu follows the port, Next Error
+follows the diagnostics and the Debugger item follows the debugger.
+
 ## Lisp mode
 
 - **Tokenizer** (pure C, host-testable): comments (`;`, `#| |#`), strings,
@@ -298,6 +334,7 @@ name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
 | `TE` | `CMD/F` | pass-through to `MUIM_TextEditor_ARexxCmd` (`CURSOR`, `POSITION`, `GETLINE`, `GETCURSOR`, `MARK`, `TEXT`, ...) |
 | `STATUS` | | result: the echo area, so a macro can read what the editor just reported |
 | `KEY` | `KEYS/F` | feed a key sequence (`KEY C-x C-s`, `KEY C-u 4 C-f`) through the keymaps |
+| `MENU` | `NAME/A,STATE/S` | pick the menu item that runs command NAME as the mouse would (only while enabled; result `""`, `disabled` or `no such menu item`); with `STATE`, result `enabled`/`disabled` without picking |
 
 `EVAL` and `KEY` are the two ways in, and the difference matters: `EVAL`
 runs a command directly, `KEY` goes through the keymaps, so prefix keys, the
