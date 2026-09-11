@@ -42,7 +42,7 @@ LOG="$ROOT/build/amiga/clamacs-test.log"
 POLL="${POLL:-5}"
 SENTINEL_GRACE="${SENTINEL_GRACE:-20}"
 STALL_TIMEOUT="${STALL_TIMEOUT:-300}"
-HARD_TIMEOUT="${HARD_TIMEOUT:-900}"
+HARD_TIMEOUT="${HARD_TIMEOUT:-1200}"
 
 if [ -z "$EMU" ] || [ ! -d "$EMU/verify/realamiga/aos3" ]; then
 	echo "cl-amiga emulator assets not found beside this repository."

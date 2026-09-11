@@ -75,6 +75,28 @@ STRPTR ck_doc_export_all(ck_doc *doc)
     return (STRPTR)DoMethod(doc->text, MUIM_TextEditor_ExportText);
 }
 
+/* The class has no attribute for the text's length, but POSITION EOF
+ * followed by a read of the cursor index answers it; the cursor is put
+ * back afterwards, so this is a query and not a move. */
+int32_t ck_doc_end_index(ck_doc *doc)
+{
+    int32_t was = ck_doc_cursor_index(doc);
+    int32_t end;
+
+    DoMethod(doc->text, MUIM_TextEditor_ARexxCmd, (IPTR)"POSITION EOF");
+    end = ck_doc_cursor_index(doc);
+    if (end != was)
+        set(doc->text, MUIA_TextEditor_CursorIndex, (IPTR)was);
+    return end;
+}
+
+void ck_doc_insert_at(ck_doc *doc, int32_t index, const char *text)
+{
+    ck_doc_set_cursor_index(doc, index);
+    DoMethod(doc->text, MUIM_TextEditor_InsertText, (IPTR)(text != NULL ? text : ""),
+             (IPTR)MUIV_TextEditor_InsertText_Cursor);
+}
+
 static STRPTR ck_export_lines(ck_doc *doc, LONG y0, LONG y1)
 {
     return (STRPTR)DoMethod(doc->text, MUIM_TextEditor_ExportBlock,
@@ -519,6 +541,11 @@ static void ck_basename(const char *path, char *out, int32_t size)
     }
     strncpy(out, base, (size_t)size - 1);
     out[size - 1] = '\0';
+}
+
+STRPTR ck_doc_text_range(ck_doc *doc, int32_t start, int32_t stop)
+{
+    return ck_take_region(doc, start, stop, 0);
 }
 
 int32_t ck_doc_load_file(ck_doc *doc, const char *path)
@@ -1260,6 +1287,13 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
 {
     ck_app *app = doc->app;
 
+    /* In the REPL window the transcript is read-only; repl.c decides. */
+    if (doc->repl_mode && !ck_repl_allow_command(doc, command)) {
+        doc->last_command = command;
+        ck_doc_update_status(doc);
+        return;
+    }
+
     switch (command) {
     /* --- motion, delegated to the class ------------------------- */
     case CK_CMD_FORWARD_CHAR:       ck_te_repeat(doc, arg < 0 ? "CURSOR LEFT" : "CURSOR RIGHT", arg); break;
@@ -1385,6 +1419,9 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     }
 
     case CK_CMD_SAVE_BUFFERS_KILL_EMACS:
+        /* Stop clamiga's REPL thread on the way out; ck_rexx_close() waits
+         * for that one reply. */
+        ck_repl_quit(app);
         app->quitting = 1;
         DoMethod(app->app, MUIM_Application_ReturnID,
                  (IPTR)MUIV_Application_ReturnID_Quit);
@@ -1535,6 +1572,26 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     case CK_CMD_APROPOS:          ck_intro_apropos(doc); break;
     case CK_CMD_MACROEXPAND_1:    ck_intro_macroexpand(doc, 0); break;
     case CK_CMD_MACROEXPAND:      ck_intro_macroexpand(doc, 1); break;
+
+    /* --- the REPL window (phase 3), see repl.c ------------------- */
+    case CK_CMD_REPL:                ck_repl_switch(doc); break;
+    case CK_CMD_INTERRUPT:           ck_repl_interrupt(doc); break;
+    case CK_CMD_REPL_RETURN:
+    case CK_CMD_REPL_PREVIOUS_INPUT:
+    case CK_CMD_REPL_NEXT_INPUT:
+    case CK_CMD_REPL_CLEAR:
+        if (!doc->repl_mode) {
+            ck_message(doc, "Not in the REPL window (C-c C-z goes there)");
+            ck_beep(doc);
+            break;
+        }
+        if (command == CK_CMD_REPL_RETURN)
+            ck_repl_return(doc);
+        else if (command == CK_CMD_REPL_CLEAR)
+            ck_repl_clear(doc);
+        else
+            ck_repl_history(doc, command == CK_CMD_REPL_PREVIOUS_INPUT);
+        break;
 
     default:
         ck_message(doc, "%s is not implemented yet",
@@ -1697,8 +1754,11 @@ int32_t ck_doc_handle_key(ck_doc *doc, ck_key key)
     case CK_KEY_UNBOUND:
     default:
         /* Not ours.  The class gets the key, and ordinary typing clears
-         * whatever the echo area was showing. */
+         * whatever the echo area was showing.  In the REPL window a key
+         * that would edit the transcript is redirected or swallowed. */
         doc->last_command = CK_CMD_NONE;
+        if (doc->repl_mode && ck_repl_unbound_key(doc, key))
+            return 1;
         return 0;
     }
 }
@@ -1887,7 +1947,12 @@ void ck_doc_close(ck_doc *doc, int32_t ask)
     if (doc->closing)
         return;
 
-    if (ask && ck_get(doc->text, MUIA_TextEditor_HasChanged)) {
+    /* A transcript is not a file: the REPL window never asks to save, and
+     * closing it stops clamiga's REPL thread. */
+    if (doc->repl_mode)
+        ck_repl_closed(doc);
+
+    if (ask && !doc->repl_mode && ck_get(doc->text, MUIA_TextEditor_HasChanged)) {
         /* MUI_Request answers 1 for the first gadget, 2 for the second and 0
          * for the rightmost (the cancel position). */
         LONG answer = MUI_Request(app->app, doc->win, 0, "clamacs",

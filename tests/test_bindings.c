@@ -17,11 +17,15 @@ struct expectation {
     const char *command;
 };
 
-static void check_table(const struct expectation *table, int32_t use_lisp_map)
+/* USE_LOCAL_MAP: 0 for the global map alone, 1 for the Lisp map over it,
+ * 2 for the REPL window's map over it. */
+static void check_table(const struct expectation *table, int32_t use_local_map)
 {
     ck_keymap *global = ck_bindings_global();
-    ck_keymap *lisp   = use_lisp_map ? ck_bindings_lisp() : NULL;
+    ck_keymap *lisp   = (use_local_map == 1) ? ck_bindings_lisp()
+                      : (use_local_map == 2) ? ck_bindings_repl() : NULL;
     int32_t    i;
+    int32_t    use_lisp_map = use_local_map != 0;
 
     ASSERT(global != NULL);
     if (use_lisp_map)
@@ -185,6 +189,42 @@ TEST(spec_introspection_keys)
     check_table(t, 1);
 }
 
+TEST(spec_repl_keys)
+{
+    /* Phase 3.  In the REPL window RET sends, M-p/M-n walk the history,
+     * `C-c C-c' interrupts (SLIME's listener key); the Lisp map's other
+     * bindings stay -- TAB still indents, `M-.' still jumps -- and the
+     * global `C-c C-z' raises the REPL from any document. */
+    static const struct expectation repl[] = {
+        { "RET",     "clamacs-repl-return" },
+        { "M-p",     "clamacs-repl-previous-input" },
+        { "M-n",     "clamacs-repl-next-input" },
+        { "C-c C-c", "clamacs-interrupt" },
+        { "C-c C-b", "clamacs-interrupt" },
+        { "C-c M-o", "clamacs-repl-clear" },
+        { "C-c C-z", "clamacs-repl" },
+        { "TAB",     "indent-for-tab-command" },
+        { "M-.",     "clamacs-edit-definition" },
+        { "C-c C-d d", "clamacs-describe-symbol" },
+        { "C-x C-f", "find-file" },
+        { NULL,      NULL }
+    };
+    static const struct expectation lisp[] = {
+        { "C-c C-z", "clamacs-repl" },
+        { "C-c C-b", "clamacs-interrupt" },
+        { "C-c C-c", "clamacs-eval-defun" },   /* unchanged in a source buffer */
+        { "RET",     "newline-and-indent" },
+        { NULL,      NULL }
+    };
+    static const struct expectation global[] = {
+        { "C-c C-z", "clamacs-repl" },
+        { NULL,      NULL }
+    };
+    check_table(repl, 2);
+    check_table(lisp, 1);
+    check_table(global, 0);
+}
+
 TEST(c_c_c_d_is_a_prefix_now)
 {
     /* It was `clamacs-show-errors' in phase 1; a binding that silently
@@ -271,13 +311,14 @@ TEST(every_binding_names_a_real_command)
 {
     /* A binding to an id outside the table would be a silent no-op at
      * runtime; catch it here instead. */
-    ck_keymap *maps[2];
+    ck_keymap *maps[3];
     int32_t    m;
 
     maps[0] = ck_bindings_global();
     maps[1] = ck_bindings_lisp();
+    maps[2] = ck_bindings_repl();
 
-    for (m = 0; m < 2; m++) {
+    for (m = 0; m < 3; m++) {
         int32_t i;
         for (i = 0; i < maps[m]->count; i++) {
             const ck_keyentry *e = &maps[m]->entries[i];
@@ -296,6 +337,7 @@ TEST(every_binding_names_a_real_command)
 
     ck_keymap_free(maps[0]);
     ck_keymap_free(maps[1]);
+    ck_keymap_free(maps[2]);
 }
 
 int main(void)
@@ -308,6 +350,7 @@ int main(void)
     RUN(spec_sexp_keys_are_lisp_mode);
     RUN(spec_lisp_interaction_keys);
     RUN(spec_introspection_keys);
+    RUN(spec_repl_keys);
     RUN(c_c_c_d_is_a_prefix_now);
     RUN(lisp_map_shadows_global_for_c_x_c_e);
     RUN(lisp_prefix_does_not_hide_the_global_one);

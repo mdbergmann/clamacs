@@ -56,13 +56,15 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/lisp/indent.c \
            $(SRCDIR)/rexx/diag.c \
            $(SRCDIR)/rexx/queue.c \
-           $(SRCDIR)/rexx/symcache.c
+           $(SRCDIR)/rexx/symcache.c \
+           $(SRCDIR)/rexx/replmsg.c
 
 # The MUI half, minus the m68k varargs stubs.
 MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/textclass.c \
            $(SRCDIR)/document.c \
            $(SRCDIR)/introspect.c \
+           $(SRCDIR)/repl.c \
            $(SRCDIR)/rexxclient.c \
            $(SRCDIR)/rexxport.c \
            $(SRCDIR)/errorwin.c

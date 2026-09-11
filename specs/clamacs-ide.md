@@ -188,6 +188,11 @@ Phase-1 key table (the bindings a user can rely on):
 | `Tab` | reindent line |
 | `C-c C-k C-c C-c C-x C-e C-c C-r C-c C-l` | load buffer, eval defun, eval last sexp, eval region, load file |
 
+Phase 3 adds `C-c C-z` (the REPL window, from any document), `C-c C-b`
+(interrupt the running form, from a Lisp buffer) and, in the REPL window,
+`RET` (send when the form is complete, else newline-and-indent), `M-p`/`M-n`
+(input history), `C-c C-c` (interrupt) and `C-c M-o` (clear).
+
 ## Lisp mode
 
 - **Tokenizer** (pure C, host-testable): comments (`;`, `#| |#`), strings,
@@ -293,7 +298,11 @@ test uses `KEY` to exercise the command loop, which the other commands walk
 straight past.
 
 This is what the shipped CygnusEd macro pattern needs to work against
-clamacs too, and what phase 3 extends with `OUTPUT` and `READLINE`.
+clamacs too.  Phase 3 adds the three commands clamiga's REPL thread sends
+the other way -- `OUTPUT <text>`, `READLINE`, `RESULT <rc> <pkg>` -- but not
+to this table: they come in through `MUIA_Application_RexxHook`, which MUI
+calls with the raw `RexxMsg` for any command it cannot map, so no ReadArgs
+template stands between the wire and the text (see phase 3).
 
 ## Phases
 
@@ -375,20 +384,54 @@ the command hook returns, so the editor cannot hold either reply until
 the user has typed.  Everything the editor has to wait for comes back as
 a command from clamiga.
 
-Editor side: the REPL window is a `ClamacsText` in a mode with a prompt
-showing the package, history (`M-p`/`M-n`), multi-line input with paren
-balancing, values echoed after the output, `C-c C-z` from any document.
-The editor's port gains `OUTPUT`, `READLINE` and `RESULT` as MUI rexx
-commands; each returns immediately (`OUTPUT` inserts, `READLINE` arms the
-input line, `RESULT` prints the values and a new prompt).  Requires the
-editor never to block on a reply (already the rule) because clamiga calls
-the editor's port while a `REPL-EVAL` is running.  Open point for the
-editor half: whether MUI's `ReadArgs` parse of a `TEXT/F` template keeps
-the leading blanks of an indented output line; if not, `OUTPUT` takes its
-text from the raw argument string after the verb.
+Editor side (`src/repl.c`, landed 2026-09-10): the REPL window is a
+`ClamacsText` named `*clamacs-repl*` under the REPL keymap -- the Lisp map
+with `RET`, `M-p`/`M-n`, `C-c C-c` and `C-c M-o` rebound.  `C-c C-z` from
+any document opens or raises it and, when no REPL thread is attached,
+sends `REPL-ATTACH <own port>`; the editor finds its own port among
+`CLAMACS`, `CLAMACS.1`, ... by the port's owning task, since MUI numbers
+it and offers no attribute with the result.  The reply's package makes
+the first prompt.
 
-Interim: until phase 3 lands, `M-x run-lisp` launches clamiga in a console
-window, which is a fully working REPL and debugger, just not a MUI window.
+The bookkeeping is two document indices: `input_start`, where the input
+begins (after the prompt, or right after the last output while a
+`READLINE` is outstanding; -1 while a form runs, when there is no input
+and output is appended), and `prompt_start`, so output that arrives while
+a prompt is showing goes above it.  The transcript is read-only by way of
+the Emacs layer: a self-insert with the cursor in the transcript lands in
+the input instead, Backspace at the input's start is swallowed, the
+editing commands are refused while a form runs, and undo is off in this
+window (an undo step could take back an `OUTPUT` insert).  `RET` sends
+the input with `REPL-EVAL` when `ck_sexp_input_complete` says the parens,
+strings, `#|` comments and quote prefixes balance, else it is
+newline-and-indent, so a defun is typed across lines at the prompt; a
+blank input is a fresh prompt.  Before each form the REPL sends its own
+`IN-PACKAGE` if a buffer eval moved the port's package in between, and
+each `RESULT`'s package moves both the prompt and the editor's idea of the
+port's package.  `C-c C-c` (and `C-c C-b` in a source buffer, or `M-x
+clamacs-interrupt`) sends `REPL-INTERRUPT`.  Closing the window and
+quitting send `REPL-DETACH`; the quit path waits for that one reply so
+clamiga's thread is stopped rather than left sending to a vanished port.
+When clamiga's port goes away the window says so and prompts again;
+`C-c C-z` re-attaches.
+
+The three inbound commands do not go through the `MUIA_Application_
+Commands` table.  MUI calls `MUIA_Application_RexxHook` with the raw
+`RexxMsg` for any command it cannot map, and that is where they are
+parsed (`src/rexx/replmsg.c`, host-tested), so the open point above is
+answered by not asking ReadArgs at all: a chunk that starts with blanks,
+holds a lone quote or ends in a newline arrives as printed.  Each hook
+returns at once, since the REPL thread is waiting on that reply.
+
+Verified on FS-UAE and on the Vampire (2026-09-11, MUI 3.8, TextEditor.mcc
+15.50, clamiga 0.9 at b7aeca5) by the phase-3 leg of `drive.rexx`: the prompt after
+`C-c C-z`, `(+ 1 2)` answered on the next line, two `princ`s streamed
+line by line before the value, `READ-LINE` answered from the input line,
+`(loop)` interrupted by `C-c C-c`, `IN-PACKAGE` moving the prompt and
+back, `M-p`/`M-n`, and an `ARGLIST` answered while the REPL slept.
+
+`M-x run-lisp` stays: it launches clamiga in a console window, which is
+still the way to get its debugger until phase 4.
 
 ### Phase 4 — debugger and inspector windows
 
@@ -561,6 +604,19 @@ not have saved; CLAUDE.md carries the short list.
   the jump landed in the open window, the description carried the
   docstring).  Its `OK` lines are in `verify-amiga`'s list.  Not yet run on
   hardware; `run-drive` is the step there.
+- **The phase-3 leg of `drive.rexx`** (the REPL window against clamiga at
+  b7aeca5) passes on FS-UAE and on the Vampire (2026-09-11, 70 `OK`, no
+  `FAIL`, via `run-drive`); its `OK` lines are in `verify-amiga`'s list.
+  Two things it does not cover: output
+  arriving while a prompt is showing (only a thread other than the REPL's
+  can print then) and a transcript long enough to matter on a 68020 --
+  every insert costs a few cursor moves and each move a paren-match scan
+  over the context window, which is fine for a session and unmeasured for
+  a long one.  And one edge on the quit path: `ck_rexx_close()` waits for
+  the `REPL-DETACH` reply without serving the editor's own port, so a REPL
+  thread caught mid-`OUTPUT` at that moment waits for a reply that comes
+  only when MUI disposes of the port; clamiga's `REPL-DETACH` gives up on
+  the thread after five seconds and answers rc 10, and the editor exits.
 - **MorphOS build**: `Makefile.mos` is written to the flags the
   TextEditor.mcc demo's own MorphOS build uses (`-noixemul
   -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been

@@ -360,6 +360,36 @@ TEST(symbol_at_point)
     ASSERT(sym_at("a-b.c/d", 3, "a-b.c/d"));
 }
 
+TEST(input_complete_for_the_repl)
+{
+    /* Complete: RET sends these. */
+    ASSERT_EQ_INT(ck_sexp_input_complete("(+ 1 2)", 7), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("42", 2), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("\"a string\"", 10), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(a) (b)", 7), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("'(a b)", 6), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("#'car", 5), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(list #\\( #\\))", 15), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(a) ; comment (", 15), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("#| note |# 1", 12), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(\"a\\\"b\")", 9), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete("", 0), 1);
+    ASSERT_EQ_INT(ck_sexp_input_complete(NULL, 0), 1);
+
+    /* Incomplete: RET inserts a newline and waits for more. */
+    ASSERT_EQ_INT(ck_sexp_input_complete("(defun foo (x)", 14), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(defun foo (x)\n  (* x", 22), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("\"open string", 12), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(princ \"a)\"", 10), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("#| still a comment", 18), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("'", 1), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("(a) '", 5), 0);
+    ASSERT_EQ_INT(ck_sexp_input_complete("\"a\\\"", 4), 0);   /* the quote is escaped */
+
+    /* Too many closers: complete, so READ can complain. */
+    ASSERT_EQ_INT(ck_sexp_input_complete("(a))", 4), 1);
+}
+
 int main(void)
 {
     test_init();
@@ -389,5 +419,6 @@ int main(void)
     RUN(operator_needs_a_symbol_head);
     RUN(operator_being_typed_is_not_asked_about);
     RUN(symbol_at_point);
+    RUN(input_complete_for_the_repl);
     REPORT();
 }

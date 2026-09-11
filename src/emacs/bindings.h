@@ -19,4 +19,8 @@ ck_keymap *ck_bindings_global(void);
 /* Build the Lisp-mode map. */
 ck_keymap *ck_bindings_lisp(void);
 
+/* Build the REPL window's map (phase 3): the Lisp map with RET, the input
+ * history and the interrupt rebound for a listener. */
+ck_keymap *ck_bindings_repl(void);
+
 #endif /* CLAMACS_BINDINGS_H */

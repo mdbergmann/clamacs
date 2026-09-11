@@ -85,8 +85,7 @@
     X(INDENT_FOR_TAB_COMMAND,   "indent-for-tab-command")                     \
     X(NEWLINE_AND_INDENT,       "newline-and-indent")                         \
     X(INDENT_REGION,            "indent-region")                              \
-    /* Lisp mode: talking to clamiga.  No interrupt yet -- clamiga has no
-     * command for it until the phase-3 REPL thread exists. */               \
+    /* Lisp mode: talking to clamiga */                                       \
     X(LOAD_BUFFER,              "clamacs-load-buffer")                        \
     X(LOAD_FILE,                "clamacs-load-file")                          \
     X(COMPILE_FILE,             "clamacs-compile-file")                       \
@@ -109,7 +108,16 @@
     X(DESCRIBE_SYMBOL,          "clamacs-describe-symbol")                    \
     X(APROPOS,                  "clamacs-apropos")                            \
     X(MACROEXPAND_1,            "clamacs-macroexpand-1")                      \
-    X(MACROEXPAND,              "clamacs-macroexpand")
+    X(MACROEXPAND,              "clamacs-macroexpand")                        \
+    /* The REPL window (phase 3).  `clamacs-repl' opens or raises it from
+     * any document; the `clamacs-repl-*' commands act in it; the interrupt
+     * reaches clamiga's REPL thread from anywhere. */                        \
+    X(REPL,                     "clamacs-repl")                               \
+    X(REPL_RETURN,              "clamacs-repl-return")                        \
+    X(REPL_PREVIOUS_INPUT,      "clamacs-repl-previous-input")                \
+    X(REPL_NEXT_INPUT,          "clamacs-repl-next-input")                    \
+    X(REPL_CLEAR,               "clamacs-repl-clear")                         \
+    X(INTERRUPT,                "clamacs-interrupt")
 
 typedef enum {
     CK_CMD_NONE = -1,

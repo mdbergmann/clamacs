@@ -25,6 +25,7 @@
 #include "rexx/diag.h"
 #include "rexx/queue.h"
 #include "rexx/symcache.h"
+#include "rexx/replmsg.h"
 
 /* ---- OS types start here ---------------------------------------- */
 
@@ -188,6 +189,19 @@ typedef struct ck_doc {
     int32_t    completions_capped;
     int32_t    complete_start;
     int32_t    complete_end;
+
+    /* Phase 3: the REPL window (repl.c).  The transcript above the prompt
+     * is history, the text from input_start to the end is the input being
+     * typed; while a form runs there is no input region at all
+     * (input_start -1) and output is appended.  A READLINE arms an input
+     * region without a prompt. */
+    int32_t  repl_mode;
+    int32_t  prompt_start;   /* where the prompt begins, or -1 */
+    int32_t  input_start;    /* where the input begins, or -1 */
+    int32_t  repl_busy;      /* REPL-EVAL sent, RESULT not yet in */
+    int32_t  repl_reading;   /* a READLINE is outstanding */
+    int32_t  repl_bol;       /* the transcript ends with a newline */
+    char     repl_saved[CK_MINI_MAX];  /* the input M-p walked away from */
 } ck_doc;
 
 typedef struct ck_app {
@@ -201,6 +215,7 @@ typedef struct ck_app {
 
     ck_keymap  *global;
     ck_keymap  *lisp;
+    ck_keymap  *repl_map;
     ck_killring kill;
 
     ck_history hist_file;
@@ -208,6 +223,7 @@ typedef struct ck_app {
     ck_history hist_search;
     ck_history hist_eval;
     ck_history hist_symbol;
+    ck_history hist_repl;
 
     ck_doc  *docs;
     uint32_t next_id;
@@ -230,8 +246,14 @@ typedef struct ck_app {
     ck_symcache     arglists;    /* what clamiga said about each operator */
     ck_locstack     locations;   /* where `M-.' came from */
 
-    /* the editor's own port name, as MUI registered it */
-    const char *own_port;
+    /* Phase 3: the REPL window and clamiga's REPL thread.  The editor's own
+     * port name is what REPL-ATTACH tells clamiga to send to; MUI numbers
+     * it (CLAMACS.1 on the first instance), so it is looked up, not
+     * assumed. */
+    ck_doc  *repl;               /* the *clamacs-repl* window, or NULL */
+    int32_t  repl_attached;      /* clamiga's REPL thread sends to us */
+    int32_t  repl_attaching;     /* a REPL-ATTACH is on the wire */
+    char     own_port[32];
 
     Object *errorwin;
     Object *errorlist;
@@ -286,6 +308,15 @@ void    ck_context_free(ck_context *ctx);
 int32_t ck_doc_cursor_index(ck_doc *doc);
 void    ck_doc_set_cursor_index(ck_doc *doc, int32_t index);
 STRPTR  ck_doc_export_all(ck_doc *doc);
+
+/* The index one past the last byte; the cursor is left where it was. */
+int32_t ck_doc_end_index(ck_doc *doc);
+
+/* The text of [START,STOP), AllocVec'd (the caller frees), or NULL. */
+STRPTR  ck_doc_text_range(ck_doc *doc, int32_t start, int32_t stop);
+
+/* Insert TEXT at INDEX and leave the cursor after it. */
+void    ck_doc_insert_at(ck_doc *doc, int32_t index, const char *text);
 
 /* Replace [START,STOP) with TEXT and leave the cursor after it. */
 void    ck_doc_replace(ck_doc *doc, int32_t start, int32_t stop, const char *text);
@@ -348,6 +379,11 @@ int32_t ck_rexx_send_text(ck_app *app, ck_doc *doc, uint16_t kind,
  * known, or one turns up on a scan.  The idle timer checks this first. */
 int32_t ck_rexx_ready(ck_app *app);
 
+/* The editor's own ARexx port -- the one MUI opened for this application,
+ * found among CLAMACS, CLAMACS.1, ... by its owning task.  NULL when it
+ * cannot be found. */
+const char *ck_rexx_own_port(ck_app *app);
+
 /* ---- introspect.c (phase 2) -------------------------------------- */
 
 /* The idle tick, from the text object's timer input handler. */
@@ -380,9 +416,50 @@ void    ck_intro_macroexpand(ck_doc *doc, int32_t full);             /* C-c RET 
 void    ck_intro_reply(ck_app *app, ck_doc *doc, uint16_t kind,
                        const char *subject, int32_t rc, const char *text);
 
+/* ---- repl.c (phase 3) -------------------------------------------- */
+
+/* `C-c C-z': open or raise the REPL window, attaching clamiga's REPL
+ * thread to the editor's port when it is not attached yet.  FROM is the
+ * document the user was in (for messages). */
+void    ck_repl_switch(ck_doc *from);
+
+/* The commands bound in the REPL window. */
+void    ck_repl_return(ck_doc *doc);                  /* RET */
+void    ck_repl_history(ck_doc *doc, int32_t back);   /* M-p / M-n */
+void    ck_repl_clear(ck_doc *doc);                   /* C-c M-o */
+void    ck_repl_interrupt(ck_doc *doc);               /* C-c C-c, from anywhere */
+
+/* The transcript is read-only: these keep editing inside the input.  The
+ * first answers for a key the keymaps did not bind (self-insert, BS, DEL)
+ * and returns 1 when the key must be swallowed; the second runs before a
+ * bound command and returns 0 when the command must not run. */
+int32_t ck_repl_unbound_key(ck_doc *doc, ck_key key);
+int32_t ck_repl_allow_command(ck_doc *doc, int16_t command);
+
+/* What clamiga's REPL thread sends to the editor's port (rexxport.c hands
+ * them over after ck_replmsg_parse). */
+void    ck_repl_output(ck_app *app, const char *text);
+void    ck_repl_readline(ck_app *app);
+void    ck_repl_result(ck_app *app, int32_t rc, const char *package,
+                       const char *values);
+
+/* The continuation for the CK_REQ_REPL_* request kinds. */
+void    ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
+                      const char *text);
+
+/* Housekeeping: the REPL window is closing; clamiga's port went away; the
+ * editor is quitting (detaches, so the REPL thread stops). */
+void    ck_repl_closed(ck_doc *doc);
+void    ck_repl_disconnected(ck_app *app);
+void    ck_repl_quit(ck_app *app);
+
 /* ---- rexxport.c -------------------------------------------------- */
 
 extern const struct MUI_Command ck_rexx_commands[];
+
+/* MUIA_Application_RexxHook: the commands clamiga's REPL thread sends
+ * (OUTPUT, READLINE, RESULT), taken raw from the RexxMsg. */
+extern struct Hook ck_rexx_repl_hook;
 
 /* ---- errorwin.c -------------------------------------------------- */
 

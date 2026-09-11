@@ -11,7 +11,9 @@
   (format t "CLAMIGA-PORT ~a~%" port)
   (finish-output))
 
-;; Long enough for the editor's tests -- the phase-1 integration leg and the
-;; phase-2 leg after it, each waiting on replies half a second at a time --
-;; and short enough that a run which loses its watchdog still ends.
-(sleep 480)
+;; Long enough for the editor's tests -- the phase-1 integration leg, the
+;; phase-2 leg and the phase-3 REPL leg after it (whose first REPL-ATTACH
+;; compiles dev-repl and the gray streams from source on a cold FASL
+;; cache), each waiting on replies half a second at a time -- and short
+;; enough that a run which loses its watchdog still ends.
+(sleep 900)

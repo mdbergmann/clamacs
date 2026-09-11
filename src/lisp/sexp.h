@@ -115,4 +115,16 @@ int32_t ck_sexp_operator_at_point(const char *buf, int32_t len, int32_t pos,
 int32_t ck_sexp_symbol_at_point(const char *buf, int32_t len, int32_t pos,
                                 int32_t *start, int32_t *end);
 
+/* ------------------------------------------------------------------ *
+ * Phase 3: the REPL window
+ * ------------------------------------------------------------------ */
+
+/* Whether BUF holds only complete forms: no list, string, `#|' comment or
+ * quote prefix still open at the end.  RET in the REPL sends the input when
+ * this says so and inserts a newline otherwise, which is what lets a defun
+ * be typed across several lines at the prompt.  A surplus `)' counts as
+ * complete -- READ would signal on it, not wait, and sending it is how the
+ * user finds out.  Empty input is complete. */
+int32_t ck_sexp_input_complete(const char *buf, int32_t len);
+
 #endif /* CLAMACS_SEXP_H */

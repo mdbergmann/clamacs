@@ -50,11 +50,14 @@ its own thread, so it answers while the REPL is busy. Commands today:
 `IN-PACKAGE <pkg>`, `LASTRESULT`; a string starting with `(` is evaluated.
 Diagnostics come back as `file:line: ERROR: message` lines plus a summary.
 Phase 2 added `ARGLIST`, `COMPLETE`, `DESCRIBE`, `APROPOS`,
-`SOURCE-LOCATION`, `MACROEXPAND[-1]`; phase 3 (cl-amiga half, 2026-09-10)
+`SOURCE-LOCATION`, `MACROEXPAND[-1]`; phase 3 (2026-09-10, both halves)
 added `REPL-ATTACH <port>`, `REPL-EVAL`, `REPL-INPUT`, `REPL-INTERRUPT`,
 `REPL-DETACH`, with clamiga's REPL thread sending `OUTPUT`, `READLINE` and
 `RESULT <rc> <pkg>` commands *to the editor's port* -- see the spec's
-phase 3 section for why the editor never holds a reply.
+phase 3 section for why the editor never holds a reply.  On the editor
+side those three arrive through `MUIA_Application_RexxHook` (the raw
+`RexxMsg`, no ReadArgs), parsed by `src/rexx/replmsg.c` and acted on by
+`src/repl.c`.
 
 Protocol facts the client must respect:
 
@@ -120,6 +123,12 @@ list under "Answered during phase 1".
   events come from `verify/realamiga/sendkey` (built by `make -f
   Makefile.cross amiga`), and `drive.rexx`'s raw-key leg is what verifies
   Alt-as-Meta.  On a DOS command line `<` and `>` must be quoted.
+- The editor's own port name is not an attribute: `ck_rexx_own_port()`
+  scans `CLAMACS`, `CLAMACS.1`, ... for the port whose `mp_SigTask` is
+  this task.  `REPL-ATTACH` needs it.
+- The port's `INSERT` bypasses the Emacs layer, so in the REPL window a
+  macro must `EVAL end-of-buffer` before `INSERT`, or the text lands in
+  the transcript wherever a `GOTOLINE` left the cursor.
 
 ## Phases
 
@@ -133,9 +142,10 @@ list under "Answered during phase 1".
    `APROPOS`, `SOURCE-LOCATION`, `MACROEXPAND` as EXT.DEV commands, plus
    docstring storage in the compiler. Editor: arglist in the status line,
    completion, jump to definition, describe window.
-3. **REPL window**: output streamed to the editor's port during EVAL, read
-   requests the other way, a dedicated REPL thread in clamiga so the port
-   stays responsive.
+3. **REPL window** (done 2026-09-10): output streamed to the editor's
+   port during EVAL, read requests the other way, a dedicated REPL thread
+   in clamiga so the port stays responsive.  `C-c C-z` opens
+   `*clamacs-repl*`; `src/repl.c` is the editor half.
 4. **Debugger and inspector windows**: nested command loop on the REPL
    thread, an EVAL mode that does not catch, `BACKTRACE`/`FRAME`/`RESTART`,
    `INSPECT`/`PART`.
@@ -186,6 +196,9 @@ list under "Answered during phase 1".
   checkout's `build/amiga/`, `verify/realamiga/` and `examples/arexx/`,
   a clamiga with its `lib/` under `Clamacs:clamiga/`, then `Run >NIL:
   Execute Clamacs:verify/realamiga/run-drive` and wait for
-  `build/amiga/drive-done`.  Passed on the Vampire 2026-09-08, raw-key leg
-  included.
+  `build/amiga/drive-done`.  Passed on the Vampire 2026-09-08 (phase 1,
+  raw-key leg included) and 2026-09-11 (phases 1-3, 70 `OK`).  The
+  `Clamacs:` assign and the box's DHCP address do not survive a reboot:
+  re-assign, and scan the LAN for the agent port if the old address is
+  silent.
 - LF line endings are forced by `.gitattributes`.

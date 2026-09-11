@@ -743,3 +743,92 @@ int32_t ck_sexp_symbol_at_point(const char *buf, int32_t len, int32_t pos,
         *end = e;
     return 1;
 }
+
+/* ------------------------------------------------------------------ *
+ * Phase 3: is the REPL's input a complete form yet?
+ * ------------------------------------------------------------------ */
+
+/* Whether a string token that reaches the end of the buffer was closed.
+ * ck_sx_next ends an unterminated string at LEN too, so the walk has to be
+ * repeated with the closing quote as the question. */
+static int32_t sx_string_closed(const char *buf, const ck_sx_token *tok)
+{
+    int32_t p = tok->start + 1;
+
+    while (p < tok->end) {
+        if (buf[p] == '\\') {
+            p += 2;
+            continue;
+        }
+        if (buf[p] == '"')
+            return 1;
+        p++;
+    }
+    return 0;
+}
+
+/* The same for a `#| ... |#' comment: closed when its nesting returns to
+ * zero before the token ends. */
+static int32_t sx_block_comment_closed(const char *buf, const ck_sx_token *tok)
+{
+    int32_t p = tok->start, depth = 0;
+
+    while (p + 1 < tok->end) {
+        if (buf[p] == '#' && buf[p + 1] == '|') {
+            depth++;
+            p += 2;
+            continue;
+        }
+        if (buf[p] == '|' && buf[p + 1] == '#') {
+            depth--;
+            p += 2;
+            if (depth == 0)
+                return 1;
+            continue;
+        }
+        p++;
+    }
+    return 0;
+}
+
+int32_t ck_sexp_input_complete(const char *buf, int32_t len)
+{
+    ck_sx_token t;
+    int32_t     p = 0, depth = 0;
+    uint8_t     last = CK_SX_EOF;
+
+    if (buf == NULL || len <= 0)
+        return 1;
+
+    while (ck_sx_next(buf, len, &p, &t) != CK_SX_EOF) {
+        switch (t.kind) {
+        case CK_SX_OPEN:
+            depth++;
+            break;
+        case CK_SX_CLOSE:
+            /* One `)' too many: READ would signal, not wait.  Sending it is
+             * how the user finds out. */
+            if (depth > 0)
+                depth--;
+            break;
+        case CK_SX_STRING:
+            if (t.end >= len && !sx_string_closed(buf, &t))
+                return 0;
+            break;
+        case CK_SX_COMMENT:
+            if (t.end >= len && buf[t.start] == '#' &&
+                !sx_block_comment_closed(buf, &t))
+                return 0;
+            break;
+        default:
+            break;
+        }
+        if (t.kind != CK_SX_COMMENT)
+            last = t.kind;
+    }
+
+    /* A quote with nothing after it is waiting for its form. */
+    if (last == CK_SX_QUOTE)
+        return 0;
+    return depth == 0;
+}

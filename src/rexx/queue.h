@@ -40,7 +40,16 @@ typedef enum {
     CK_REQ_DESCRIBE,         /* the description window */
     CK_REQ_APROPOS,          /* the apropos window */
     CK_REQ_SOURCE_LOCATION,  /* M-.: jump there */
-    CK_REQ_MACROEXPAND       /* the macroexpansion window */
+    CK_REQ_MACROEXPAND,      /* the macroexpansion window */
+
+    /* Phase 3: the REPL window.  These replies say only whether clamiga
+     * took the command; what the user waits for (output, a read request,
+     * the values) arrives later as commands at the editor's own port. */
+    CK_REQ_REPL_ATTACH,      /* the reply is the prompt's package */
+    CK_REQ_REPL_EVAL,        /* rc 10 means the REPL was busy */
+    CK_REQ_REPL_INPUT,       /* the answer to a READLINE */
+    CK_REQ_REPL_INTERRUPT,
+    CK_REQ_REPL_DETACH
 } ck_req_kind;
 
 typedef struct ck_request {

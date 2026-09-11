@@ -1,6 +1,6 @@
 /* drive.rexx -- the unattended acceptance run, driven through clamacs's own
 ** ARexx port: the phase-1 editor and integration checks, then the phase-2
-** introspection leg against the same clamiga.
+** introspection leg and the phase-3 REPL leg against the same clamiga.
 **
 ** This is the shape specs/clamacs-ide.md asks for under Testing: a script
 ** that talks to the editor the way a user's macro would, so the run is
@@ -657,6 +657,185 @@ IF POS('twice-again', RESULT) > 0 THEN
 ELSE
     SAY 'FAIL after RET the line is' RESULT
 
+/* ------------------------------------------------------------------ *
+** Phase 3: the REPL window.  C-c C-z opens *clamacs-repl* and attaches
+** clamiga's REPL thread to the editor's own port; from then on the
+** conversation is two-way -- the editor sends REPL-EVAL and gets OUTPUT,
+** READLINE and RESULT back as commands at its port -- so every check here
+** waits for text to land in the transcript.  The cursor is parked at the
+** prompt by every RESULT, so after RET at prompt line P the value is on
+** line P+1 (0-based) and the next prompt on P+2, and a check reads those
+** lines by number, then goes back to the end before typing again: INSERT
+** goes through the port, below the Emacs layer that keeps typing inside
+** the input.
+** ------------------------------------------------------------------ */
+
+'OPEN FILE' INTRO
+CALL DELAY(25)
+'KEY C-c C-z'
+'GETNAME'
+IF RESULT = '*clamacs-repl*' THEN
+    SAY 'OK C-c C-z opened' RESULT
+ELSE
+    SAY 'FAIL C-c C-z gave window' RESULT
+
+/* The first attach loads dev-repl in clamiga -- gray streams and CLOS,
+** compiled from source when the FASL cache is cold -- so the prompt can
+** be minutes away on an emulated 68020. */
+LINE = WaitLine('CL-USER> ', 360)
+IF GetLine() = 'CL-USER> ' THEN
+    SAY 'OK the REPL prompt arrived:' GetLine()
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no REPL prompt; the cursor line is' GetLine() 'and the echo area says' RESULT
+END
+
+/* RET sends the input and the value comes back on the next line. */
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (+ 1 2)'
+'KEY RET'
+Y = WaitCursorAt(P + 2, 40)
+'GOTOLINE' P + 2
+L = GetLine()
+IF Y ~= '' & L = 3 THEN
+    SAY 'OK RET evaluated (+ 1 2) at the prompt:' L
+ELSE
+    SAY 'FAIL the line after (+ 1 2) is' L '(cursor' Y')'
+'GOTOLINE' P + 3
+L = GetLine()
+IF L = 'CL-USER> ' THEN
+    SAY 'OK a new prompt followed the value'
+ELSE
+    SAY 'FAIL after the value came' L
+'EVAL end-of-buffer'
+
+/* Output is streamed as it is printed -- two OUTPUT commands, one per
+** line -- and the value follows it.  Symbols rather than strings, so no
+** quote has to travel through the port's ReadArgs template. */
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (progn (princ ''hello) (terpri) (princ ''there) 42)'
+'KEY RET'
+Y = WaitCursorAt(P + 4, 40)
+'GOTOLINE' P + 2
+L1 = GetLine()
+'GOTOLINE' P + 3
+L2 = GetLine()
+'GOTOLINE' P + 4
+L3 = GetLine()
+IF Y ~= '' & L1 = 'HELLO' & L2 = 'THERE' & L3 = 42 THEN
+    SAY 'OK output was streamed line by line before the value:' L1 L2 L3
+ELSE
+    SAY 'FAIL streamed output gave' L1 '/' L2 '/' L3 '(cursor' Y')'
+'EVAL end-of-buffer'
+
+/* READ-LINE asks the editor: READLINE arms an input line, RET answers it
+** with REPL-INPUT, and the form's first value is the line typed (its
+** second, missing-newline-p, is printed on the line after, so the wait is
+** for the cursor to get past the typed line rather than for an exact
+** line). */
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (read-line)'
+'KEY RET'
+ASKED = WaitEcho('reading a line', 40)
+IF ASKED ~= '' THEN
+    SAY 'OK READLINE armed the input:' ASKED
+ELSE
+    SAY 'FAIL READLINE did not arm the input'
+'INSERT abc'
+'KEY RET'
+Y = WaitCursorPast(P + 2, 40)
+'GOTOLINE' P + 3
+L = GetLine()
+IF Y ~= '' & POS('"abc"', L) > 0 THEN
+    SAY 'OK RET answered READ-LINE and the value came back:' L
+ELSE
+    SAY 'FAIL after the READ-LINE answer came' L '(cursor' Y')'
+'EVAL end-of-buffer'
+
+/* C-c C-c interrupts a running form: REPL-INTERRUPT reaches the REPL
+** thread at a safepoint inside the tight loop and the form ends with
+** RESULT 10 and `ERROR: Interrupted'. */
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (loop)'
+'KEY RET'
+CALL DELAY(50)
+'KEY C-c C-c'
+Y = WaitCursorAt(P + 2, 60)
+'GOTOLINE' P + 2
+L = GetLine()
+IF Y ~= '' & POS('Interrupted', L) > 0 THEN
+    SAY 'OK C-c C-c interrupted (loop):' L
+ELSE
+    SAY 'FAIL the interrupt gave' L '(cursor' Y')'
+'EVAL end-of-buffer'
+
+/* IN-PACKAGE at the prompt moves the prompt, and back. */
+'INSERT (in-package :ext.dev)'
+'KEY RET'
+LINE = WaitLine('EXT.DEV> ', 40)
+IF LINE ~= '' THEN
+    SAY 'OK the prompt followed IN-PACKAGE:' LINE
+ELSE
+    SAY 'FAIL the prompt did not change package'
+'INSERT (in-package :cl-user)'
+'KEY RET'
+LINE = WaitLine('CL-USER> ', 40)
+IF LINE ~= '' THEN
+    SAY 'OK and back to' LINE
+ELSE
+    SAY 'FAIL the prompt did not come back to CL-USER'
+
+/* M-p / M-n walk the input history at the prompt. */
+'KEY M-p'
+L = GetLine()
+IF POS('(in-package :cl-user)', L) > 0 THEN
+    SAY 'OK M-p brought back the last input:' L
+ELSE
+    SAY 'FAIL M-p gave' L
+'KEY M-p'
+L = GetLine()
+IF POS('(in-package :ext.dev)', L) > 0 THEN
+    SAY 'OK a second M-p went one further back'
+ELSE
+    SAY 'FAIL the second M-p gave' L
+'KEY M-n'
+'KEY M-n'
+L = GetLine()
+IF L = 'CL-USER> ' THEN
+    SAY 'OK M-n came back to the empty input'
+ELSE
+    SAY 'FAIL M-n left' L
+
+/* The port's handler thread stays free while a form runs: an ARGLIST
+** asked from a source buffer during (sleep 6) is answered inside it.
+** twice-again has not been asked about before, so the answer has to come
+** from clamiga, not the cache; the call is typed at the end of intro.lisp
+** (not saved) because the file holds no call to it. */
+'INSERT (sleep 6)'
+'KEY RET'
+'OPEN FILE' INTRO
+CALL DELAY(10)
+'EVAL end-of-buffer'
+'KEY RET'
+'INSERT (twice-again 1'
+'EVAL clamacs-arglist'
+ARGS = WaitEcho('(twice-again n)', 8)
+IF ARGS ~= '' THEN
+    SAY 'OK the port answered ARGLIST while the REPL ran a form:' ARGS
+ELSE
+    SAY 'FAIL no ARGLIST answer while the REPL was busy'
+'KEY C-c C-z'
+'GETNAME'
+LINE = WaitLine('CL-USER> ', 40)
+IF RESULT = '*clamacs-repl*' & LINE ~= '' THEN
+    SAY 'OK C-c C-z raised the REPL again and (sleep 6) finished'
+ELSE
+    SAY 'FAIL back in' RESULT 'the cursor line is' LINE
+
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp
 ** is what verify-amiga expects. */
@@ -709,6 +888,44 @@ WaitCursor: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT ~= from THEN RETURN RESULT
+        CALL DELAY(25)
+    END
+    RETURN ''
+
+/* The cursor line as text.  The class's GETLINE keeps the line's newline
+** on it, which is invisible in a POS() check and fatal to an `=' one. */
+GetLine: PROCEDURE EXPOSE PORT
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    'TE GETLINE'
+    IF RC ~= 0 THEN RETURN ''
+    line = RESULT
+    IF RIGHT(line, 1) == '0A'x THEN line = LEFT(line, LENGTH(line) - 1)
+    RETURN line
+
+/* The cursor line, once it is past Y (0-based): a RESULT has arrived
+** whose number of value lines is not fixed in advance. */
+WaitCursorPast: PROCEDURE EXPOSE PORT
+    PARSE ARG y, ticks
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO ticks
+        'TE GETCURSOR LINE'
+        IF RC = 0 & RESULT > y THEN RETURN RESULT
+        CALL DELAY(25)
+    END
+    RETURN ''
+
+/* The cursor line, once it is exactly Y (0-based).  Every RESULT parks the
+** cursor at the new prompt, so this is how the REPL leg knows a form is
+** done. */
+WaitCursorAt: PROCEDURE EXPOSE PORT
+    PARSE ARG y, ticks
+    OPTIONS RESULTS
+    ADDRESS VALUE PORT
+    DO i = 1 TO ticks
+        'TE GETCURSOR LINE'
+        IF RC = 0 & RESULT = y THEN RETURN RESULT
         CALL DELAY(25)
     END
     RETURN ''

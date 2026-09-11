@@ -13,8 +13,12 @@
  * passes straight through to MUIM_TextEditor_ARexxCmd, so the macros people
  * already have for CygnusEd-style editors keep working.
  *
- * Phase 3 extends this table with OUTPUT and READLINE, which is how clamiga
- * pushes REPL output back at us.
+ * Phase 3 adds the three commands clamiga's REPL thread sends the OTHER way
+ * -- OUTPUT, READLINE, RESULT -- but not to this table: they come in through
+ * MUIA_Application_RexxHook (ck_rexx_repl_hook, at the end), which MUI calls
+ * with the raw RexxMsg for any command it cannot map.  That keeps ReadArgs
+ * out of the way, so a chunk of output that starts with blanks, holds a lone
+ * quote or ends in a newline arrives exactly as printed.
  */
 
 #include "clamacs.h"
@@ -319,6 +323,36 @@ HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
     return 0;
 }
 MakeStaticHook(ck_rx_key_hook, ck_rx_key_func);
+
+/*
+ * OUTPUT, READLINE and RESULT from clamiga's REPL thread.  The hook gets the
+ * RexxMsg itself (a1) and its return value is the message's rc; the text is
+ * rm_Args[0], the command as sent.  Each returns at once -- the REPL thread
+ * is waiting on this reply, and the editor never holds one -- after handing
+ * the parsed message to repl.c.  Anything else is what it always was, an
+ * unknown command.
+ */
+HOOKPROTONH(ck_rx_repl_func, LONG, Object *obj, struct RexxMsg *rm)
+{
+    ck_app     *app = ck_app_current();
+    const char *raw = (rm != NULL && rm->rm_Args[0] != 0) ? (const char *)rm->rm_Args[0] : NULL;
+    ck_replmsg  msg;
+    (void)obj;
+
+    if (app == NULL || !ck_replmsg_parse(raw, &msg)) {
+        ck_rx_result("unknown command");
+        return 0;
+    }
+
+    switch (msg.kind) {
+    case CK_REPLMSG_OUTPUT:   ck_repl_output(app, msg.text); break;
+    case CK_REPLMSG_READLINE: ck_repl_readline(app); break;
+    case CK_REPLMSG_RESULT:   ck_repl_result(app, msg.rc, msg.package, msg.text); break;
+    default: break;
+    }
+    return 0;
+}
+MakeHook(ck_rexx_repl_hook, ck_rx_repl_func);
 
 const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"OPEN",     (char *)"FILE/A,LINE/N", 2, (struct Hook *)&ck_rx_open_hook,     { 0, 0, 0, 0, 0 } },

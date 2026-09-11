@@ -56,13 +56,15 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/lisp/indent.c \
            $(SRCDIR)/rexx/diag.c \
            $(SRCDIR)/rexx/queue.c \
-           $(SRCDIR)/rexx/symcache.c
+           $(SRCDIR)/rexx/symcache.c \
+           $(SRCDIR)/rexx/replmsg.c
 
 # The MUI half.
 MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/textclass.c \
            $(SRCDIR)/document.c \
            $(SRCDIR)/introspect.c \
+           $(SRCDIR)/repl.c \
            $(SRCDIR)/rexxclient.c \
            $(SRCDIR)/rexxport.c \
            $(SRCDIR)/errorwin.c \
@@ -191,7 +193,22 @@ verify-amiga:
 	        'OK C-M-i handed the candidates to the minibuffer' \
 	        'OK TAB listed them' \
 	        'OK TAB narrowed twice-a to one' \
-	        'OK RET put the completion in the buffer'; do \
+	        'OK RET put the completion in the buffer' \
+	        'OK C-c C-z opened *clamacs-repl*' \
+	        'OK the REPL prompt arrived' \
+	        'OK RET evaluated (+ 1 2) at the prompt' \
+	        'OK a new prompt followed the value' \
+	        'OK output was streamed line by line before the value' \
+	        'OK READLINE armed the input' \
+	        'OK RET answered READ-LINE and the value came back' \
+	        'OK C-c C-c interrupted (loop)' \
+	        'OK the prompt followed IN-PACKAGE' \
+	        'OK and back to CL-USER' \
+	        'OK M-p brought back the last input' \
+	        'OK a second M-p went one further back' \
+	        'OK M-n came back to the empty input' \
+	        'OK the port answered ARGLIST while the REPL ran a form' \
+	        'OK C-c C-z raised the REPL again'; do \
 	        if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	            echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	            exit 1; \

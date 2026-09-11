@@ -77,6 +77,9 @@ static const struct ck_binding_spec ck_global_bindings[] = {
     { "M-x",     CK_CMD_EXECUTE_EXTENDED_COMMAND },
     { "C-g",     CK_CMD_KEYBOARD_QUIT },
 
+    /* the REPL window (phase 3), reachable from any document as in SLIME */
+    { "C-c C-z", CK_CMD_REPL },
+
     { NULL,      CK_CMD_NONE }
 };
 
@@ -124,23 +127,48 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     { "C-c C-m",     CK_CMD_MACROEXPAND_1 },
     { "C-c M-m",     CK_CMD_MACROEXPAND },
 
+    /* the REPL thread (phase 3): SLIME's interrupt key in a source buffer */
+    { "C-c C-b",     CK_CMD_INTERRUPT },
+
     { NULL,      CK_CMD_NONE }
 };
+
+/* Laid over the Lisp map for the REPL window.  RET sends the input (or, for
+ * an unfinished form, does what it does in a source buffer); `C-c C-c' is
+ * the interrupt here, as in SLIME's listener, since there is no defun to
+ * evaluate; M-p/M-n walk the input history the way the minibuffer's do. */
+static const struct ck_binding_spec ck_repl_bindings[] = {
+    { "RET",     CK_CMD_REPL_RETURN },
+    { "M-p",     CK_CMD_REPL_PREVIOUS_INPUT },
+    { "M-n",     CK_CMD_REPL_NEXT_INPUT },
+    { "C-c C-c", CK_CMD_INTERRUPT },
+    { "C-c C-b", CK_CMD_INTERRUPT },
+    { "C-c M-o", CK_CMD_REPL_CLEAR },
+
+    { NULL,      CK_CMD_NONE }
+};
+
+static int32_t ck_bindings_add(ck_keymap *map, const struct ck_binding_spec *specs)
+{
+    int32_t i;
+
+    for (i = 0; specs[i].keys != NULL; i++) {
+        if (ck_keymap_bind_seq(map, specs[i].keys, specs[i].command) != 0)
+            return -1;
+    }
+    return 0;
+}
 
 static ck_keymap *ck_bindings_build(const char *name,
                                     const struct ck_binding_spec *specs)
 {
     ck_keymap *map = ck_keymap_new(name);
-    int32_t    i;
 
     if (map == NULL)
         return NULL;
-
-    for (i = 0; specs[i].keys != NULL; i++) {
-        if (ck_keymap_bind_seq(map, specs[i].keys, specs[i].command) != 0) {
-            ck_keymap_free(map);
-            return NULL;
-        }
+    if (ck_bindings_add(map, specs) != 0) {
+        ck_keymap_free(map);
+        return NULL;
     }
     return map;
 }
@@ -153,4 +181,18 @@ ck_keymap *ck_bindings_global(void)
 ck_keymap *ck_bindings_lisp(void)
 {
     return ck_bindings_build("lisp", ck_lisp_bindings);
+}
+
+ck_keymap *ck_bindings_repl(void)
+{
+    ck_keymap *map = ck_bindings_build("repl", ck_lisp_bindings);
+
+    if (map == NULL)
+        return NULL;
+    /* Rebinding replaces: RET and `C-c C-c' take their listener meanings. */
+    if (ck_bindings_add(map, ck_repl_bindings) != 0) {
+        ck_keymap_free(map);
+        return NULL;
+    }
+    return map;
 }

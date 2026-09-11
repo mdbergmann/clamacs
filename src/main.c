@@ -163,14 +163,16 @@ static int32_t ck_app_create(ck_app *app)
     ck_hist_init(&app->hist_search);
     ck_hist_init(&app->hist_eval);
     ck_hist_init(&app->hist_symbol);
+    ck_hist_init(&app->hist_repl);
 
     /* Phase 2 introspection state. */
     ck_symcache_init(&app->arglists);
     ck_locstack_init(&app->locations);
 
-    app->global = ck_bindings_global();
-    app->lisp   = ck_bindings_lisp();
-    if (app->global == NULL || app->lisp == NULL)
+    app->global   = ck_bindings_global();
+    app->lisp     = ck_bindings_lisp();
+    app->repl_map = ck_bindings_repl();
+    if (app->global == NULL || app->lisp == NULL || app->repl_map == NULL)
         return 0;
 
     ck_note("keymaps built");
@@ -208,6 +210,8 @@ static int32_t ck_app_create(ck_app *app)
         MUIA_Application_UsedClasses, (IPTR)ck_used_classes,
         MUIA_Application_UseRexx,     TRUE,
         MUIA_Application_Commands,    (IPTR)ck_rexx_commands,
+        /* What clamiga's REPL thread sends (phase 3), raw. */
+        MUIA_Application_RexxHook,    (IPTR)&ck_rexx_repl_hook,
     End;
 
     if (app->app == NULL) {
@@ -241,12 +245,14 @@ static void ck_app_destroy(ck_app *app)
 
     ck_keymap_free(app->global);
     ck_keymap_free(app->lisp);
+    ck_keymap_free(app->repl_map);
     ck_kill_clear(&app->kill);
     ck_hist_clear(&app->hist_file);
     ck_hist_clear(&app->hist_command);
     ck_hist_clear(&app->hist_search);
     ck_hist_clear(&app->hist_eval);
     ck_hist_clear(&app->hist_symbol);
+    ck_hist_clear(&app->hist_repl);
     ck_symcache_clear(&app->arglists);
 }
 

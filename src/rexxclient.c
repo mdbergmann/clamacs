@@ -20,6 +20,8 @@
 #include <string.h>
 #include <stdarg.h>
 
+static void ck_rexx_pump(ck_app *app);
+
 int32_t ck_rexx_open(ck_app *app)
 {
     app->reply = CreateMsgPort();
@@ -34,18 +36,29 @@ void ck_rexx_close(ck_app *app)
 {
     /* A message still on the wire will be replied to whatever we do, so wait
      * for it rather than leaving clamiga's handler thread writing into a
-     * port that no longer exists. */
-    while (app->inflight_msg != NULL) {
-        struct RexxMsg *rm;
-        WaitPort(app->reply);
-        while ((rm = (struct RexxMsg *)GetMsg(app->reply)) != NULL) {
-            if (rm->rm_Result2 != 0)
-                DeleteArgstring((STRPTR)rm->rm_Result2);
-            if (rm->rm_Args[0] != 0)
-                DeleteArgstring((STRPTR)rm->rm_Args[0]);
-            DeleteRexxMsg(rm);
-            app->inflight_msg = NULL;
+     * port that no longer exists.  A REPL-DETACH queued behind it (the
+     * editor is quitting with a REPL attached) goes out too, so clamiga's
+     * REPL thread is stopped rather than left sending to a port that is
+     * about to vanish; everything else queued is dropped. */
+    for (;;) {
+        while (app->inflight_msg != NULL) {
+            struct RexxMsg *rm;
+            WaitPort(app->reply);
+            while ((rm = (struct RexxMsg *)GetMsg(app->reply)) != NULL) {
+                ck_queue_release(ck_queue_complete(&app->queue, (int32_t)rm->rm_Result1));
+                if (rm->rm_Result2 != 0)
+                    DeleteArgstring((STRPTR)rm->rm_Result2);
+                if (rm->rm_Args[0] != 0)
+                    DeleteArgstring((STRPTR)rm->rm_Args[0]);
+                DeleteRexxMsg(rm);
+                app->inflight_msg = NULL;
+            }
         }
+        if (app->queue.head == NULL || app->queue.head->kind != CK_REQ_REPL_DETACH)
+            break;
+        ck_rexx_pump(app);
+        if (app->inflight_msg == NULL)
+            break;
     }
 
     ck_queue_clear(&app->queue);
@@ -182,6 +195,7 @@ static void ck_rexx_pump(ck_app *app)
         DeleteRexxMsg(rm);
         app->connected = 0;
         ck_queue_release(ck_queue_complete(&app->queue, CK_RC_FATAL));
+        ck_repl_disconnected(app);
         doc = ck_doc_active(app);
         if (doc != NULL)
             ck_message(doc, "clamiga is not running (port %s is gone)",
@@ -222,6 +236,44 @@ static int32_t ck_rexx_connect(ck_app *app, ck_doc *doc)
 int32_t ck_rexx_ready(ck_app *app)
 {
     return app->connected || ck_rexx_find_port(app);
+}
+
+/*
+ * The editor's own port.  MUI builds it from MUIA_Application_Base and
+ * numbers it -- the first instance is CLAMACS.1 on MUI 3.8 -- and offers no
+ * attribute with the result, so the candidates are scanned for the one this
+ * task owns: MUI created the port in the application's context, so its
+ * mp_SigTask is us and not a second clamacs.
+ */
+const char *ck_rexx_own_port(ck_app *app)
+{
+    struct Task *me = FindTask(NULL);
+    char         name[32];
+    int32_t      i, found = 0;
+
+    if (app->own_port[0] != '\0')
+        return app->own_port;
+
+    for (i = 0; i <= 9 && !found; i++) {
+        struct MsgPort *port;
+
+        if (i == 0)
+            strcpy(name, "CLAMACS");
+        else
+            snprintf(name, sizeof name, "CLAMACS.%ld", (long)i);
+
+        Forbid();
+        port = FindPort((STRPTR)name);
+        if (port != NULL && port->mp_SigTask == me)
+            found = 1;
+        Permit();
+    }
+
+    if (!found)
+        return NULL;
+    strncpy(app->own_port, name, sizeof app->own_port - 1);
+    app->own_port[sizeof app->own_port - 1] = '\0';
+    return app->own_port;
 }
 
 static int32_t ck_rexx_queue(ck_app *app, ck_doc *doc, uint16_t kind,
@@ -400,6 +452,17 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
     case CK_REQ_SOURCE_LOCATION:
     case CK_REQ_MACROEXPAND:
         ck_intro_reply(app, doc, kind, ck_request_subject(req), orig_rc, text);
+        break;
+
+    /* --- phase 3: the REPL.  These replies only say whether clamiga took
+     * the command; the output, the read requests and the values come in
+     * through the editor's own port (rexxport.c -> repl.c). */
+    case CK_REQ_REPL_ATTACH:
+    case CK_REQ_REPL_EVAL:
+    case CK_REQ_REPL_INPUT:
+    case CK_REQ_REPL_INTERRUPT:
+    case CK_REQ_REPL_DETACH:
+        ck_repl_reply(app, doc, kind, orig_rc, text);
         break;
 
     case CK_REQ_LASTRESULT:
