@@ -58,6 +58,15 @@ if [ ! -d "$CLAMIGA/verify/realamiga" ]; then
 	exit 1
 fi
 
+# FS-UAE keeps Amiga-side metadata for a file the emulated system wrote --
+# protection bits and the AMIGA date of the write -- in a `.uaem' file
+# beside it, and shows THAT date to the Amiga from then on.  The fixtures
+# the run saves (clamacs-load-buffer saves before it loads) get one, so a
+# fixture edited on the host afterwards still looks as old as its last
+# save, and clamiga's FASL cache (validated by source mtime) serves the
+# previous contents.  Dropping them makes the Amiga see the host's mtime.
+rm -f "$HERE"/*.uaem
+
 FSUAE="$EMU/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
 if [ ! -x "$FSUAE" ]; then
 	echo "FS-UAE not found at $FSUAE"

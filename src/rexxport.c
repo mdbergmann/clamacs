@@ -325,7 +325,8 @@ HOOKPROTONHNO(ck_rx_key_func, LONG, IPTR *args)
 MakeStaticHook(ck_rx_key_hook, ck_rx_key_func);
 
 /*
- * OUTPUT, READLINE and RESULT from clamiga's REPL thread.  The hook gets the
+ * OUTPUT, READLINE, RESULT and (phase 4) DEBUGGER from clamiga's REPL
+ * thread.  The hook gets the
  * RexxMsg itself (a1) and its return value is the message's rc; the text is
  * rm_Args[0], the command as sent.  Each returns at once -- the REPL thread
  * is waiting on this reply, and the editor never holds one -- after handing
@@ -348,6 +349,7 @@ HOOKPROTONH(ck_rx_repl_func, LONG, Object *obj, struct RexxMsg *rm)
     case CK_REPLMSG_OUTPUT:   ck_repl_output(app, msg.text); break;
     case CK_REPLMSG_READLINE: ck_repl_readline(app); break;
     case CK_REPLMSG_RESULT:   ck_repl_result(app, msg.rc, msg.package, msg.text); break;
+    case CK_REPLMSG_DEBUGGER: ck_repl_debugger(app, msg.rc, msg.package, msg.text); break;
     default: break;
     }
     return 0;

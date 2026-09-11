@@ -221,6 +221,8 @@ static int32_t ck_app_create(ck_app *app)
     ck_note("application object created");
 
     ck_errorwin_create(app);
+    ck_debugwin_create(app);
+    ck_inspectwin_create(app);
     return 1;
 }
 

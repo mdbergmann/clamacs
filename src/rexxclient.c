@@ -465,6 +465,18 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
         ck_repl_reply(app, doc, kind, orig_rc, text);
         break;
 
+    /* --- phase 4: the debugger and inspector windows. */
+    case CK_REQ_DBG_BACKTRACE:
+    case CK_REQ_DBG_FRAME:
+    case CK_REQ_DBG_FRAME_EVAL:
+    case CK_REQ_DBG_RESTART:
+        ck_debug_reply(app, doc, kind, orig_rc, text);
+        break;
+
+    case CK_REQ_INSPECT:
+        ck_inspect_reply(app, doc, orig_rc, text);
+        break;
+
     case CK_REQ_LASTRESULT:
     default:
         if (doc != NULL && text != NULL)

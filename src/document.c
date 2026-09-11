@@ -1666,6 +1666,18 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
             ck_repl_history(doc, command == CK_CMD_REPL_PREVIOUS_INPUT);
         break;
 
+    /* --- the debugger and inspector windows (phase 4), see debugwin.c
+     * and inspectwin.c.  -1 means "prompt for the number". ---------- */
+    case CK_CMD_INSPECT:            ck_inspect_prompt(doc); break;
+    case CK_CMD_INSPECTOR_PART:     ck_inspect_part(doc, -1); break;
+    case CK_CMD_INSPECTOR_POP:      ck_inspect_pop(doc); break;
+    case CK_CMD_DEBUGGER:           ck_debug_show(doc); break;
+    case CK_CMD_DEBUGGER_ABORT:     ck_debug_abort(doc); break;
+    case CK_CMD_DEBUGGER_CONTINUE:  ck_debug_continue(doc); break;
+    case CK_CMD_DEBUGGER_RESTART:   ck_debug_restart(doc, -1); break;
+    case CK_CMD_DEBUGGER_FRAME:     ck_debug_frame(doc, -1); break;
+    case CK_CMD_DEBUGGER_EVAL:      ck_debug_eval(doc, NULL); break;
+
     default:
         ck_message(doc, "%s is not implemented yet",
                    ck_command_name(command) != NULL
@@ -1783,6 +1795,27 @@ void ck_doc_minibuffer_done(ck_doc *doc)
     case CK_CMD_EDIT_DEFINITION: ck_intro_edit_definition_named(doc, answer); break;
     case CK_CMD_DESCRIBE_SYMBOL: ck_intro_describe_named(doc, answer); break;
     case CK_CMD_APROPOS:         ck_intro_apropos_named(doc, answer); break;
+
+    /* the debugger and the inspector (phase 4) */
+    case CK_CMD_INSPECT:         ck_inspect_form(doc, answer); break;
+    case CK_CMD_DEBUGGER_EVAL:   ck_debug_eval(doc, answer); break;
+    case CK_CMD_INSPECTOR_PART:
+    case CK_CMD_DEBUGGER_RESTART:
+    case CK_CMD_DEBUGGER_FRAME: {
+        long n = -1;
+        if (answer[0] == '\0' || sscanf(answer, "%ld", &n) != 1 || n < 0) {
+            ck_message(doc, "Not a number: %s", answer);
+            ck_beep(doc);
+            break;
+        }
+        if (command == CK_CMD_INSPECTOR_PART)
+            ck_inspect_part(doc, (int32_t)n);
+        else if (command == CK_CMD_DEBUGGER_RESTART)
+            ck_debug_restart(doc, (int32_t)n);
+        else
+            ck_debug_frame(doc, (int32_t)n);
+        break;
+    }
 
     default:
         break;

@@ -57,7 +57,8 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/rexx/diag.c \
            $(SRCDIR)/rexx/queue.c \
            $(SRCDIR)/rexx/symcache.c \
-           $(SRCDIR)/rexx/replmsg.c
+           $(SRCDIR)/rexx/replmsg.c \
+           $(SRCDIR)/rexx/dbgmsg.c
 
 # The MUI half.
 MUI_SRC  = $(SRCDIR)/main.c \
@@ -68,6 +69,8 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/rexxclient.c \
            $(SRCDIR)/rexxport.c \
            $(SRCDIR)/errorwin.c \
+           $(SRCDIR)/debugwin.c \
+           $(SRCDIR)/inspectwin.c \
            $(SRCDIR)/muistubs.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
@@ -208,7 +211,21 @@ verify-amiga:
 	        'OK a second M-p went one further back' \
 	        'OK M-n came back to the empty input' \
 	        'OK the port answered ARGLIST while the REPL ran a form' \
-	        'OK C-c C-z raised the REPL again'; do \
+	        'OK C-c C-z raised the REPL again' \
+	        'OK an error at the prompt opened the debugger' \
+	        'OK RET at the prompt is refused while debugging' \
+	        'OK clamacs-debugger-eval prompted' \
+	        'OK the frame eval saw the locals by name' \
+	        'OK an error in the frame eval nested the debugger' \
+	        'OK ABORT returned to level 1' \
+	        'OK RESTART 0 returned to the prompt' \
+	        'OK the transcript says the form was aborted' \
+	        'OK CERROR opened the debugger' \
+	        'OK CONTINUE let the form finish' \
+	        'OK C-c I prompted' \
+	        'OK the inspector showed the object' \
+	        'OK part 1 descended into the cdr' \
+	        'OK Back came up to the list again'; do \
 	        if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	            echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	            exit 1; \

@@ -311,10 +311,11 @@ straight past.
 
 This is what the shipped CygnusEd macro pattern needs to work against
 clamacs too.  Phase 3 adds the three commands clamiga's REPL thread sends
-the other way -- `OUTPUT <text>`, `READLINE`, `RESULT <rc> <pkg>` -- but not
-to this table: they come in through `MUIA_Application_RexxHook`, which MUI
-calls with the raw `RexxMsg` for any command it cannot map, so no ReadArgs
-template stands between the wire and the text (see phase 3).
+the other way -- `OUTPUT <text>`, `READLINE`, `RESULT <rc> <pkg>` -- and
+phase 4 a fourth, `DEBUGGER <level> <pkg>`, but not to this table: they
+come in through `MUIA_Application_RexxHook`, which MUI calls with the raw
+`RexxMsg` for any command it cannot map, so no ReadArgs template stands
+between the wire and the text (see phase 3).
 
 ## Phases
 
@@ -442,25 +443,114 @@ line by line before the value, `READ-LINE` answered from the input line,
 `(loop)` interrupted by `C-c C-c`, `IN-PACKAGE` moving the prompt and
 back, `M-p`/`M-n`, and an `ARGLIST` answered while the REPL slept.
 
-`M-x run-lisp` stays: it launches clamiga in a console window, which is
-still the way to get its debugger until phase 4.
+`M-x run-lisp` stays: it launches clamiga in a console window, which was
+the way to get its debugger until phase 4.
 
 ### Phase 4 — debugger and inspector windows
 
-- `REPL-EVAL` gains a mode in which an unhandled error does not print and
-  return but replies at once with `DEBUGGER <level>`, the condition text
-  and the restart list, and parks the REPL thread in a nested command loop
-  that takes its next commands from the port: `BACKTRACE`, `FRAME <n>`
-  (locals), `FRAME-EVAL <n> <form>`, `RESTART <n>`, `ABORT`, `CONTINUE`.
-  clamiga's debugger already has first-class restarts and unwind-safe
-  recursion; the change is a pluggable input source.
-- `INSPECT <form>` replies with an object id, its printed form and its
-  numbered parts; `PART <n>` descends, `POP` returns — a non-interactive
-  face over the C inspector's navigation stack.
+Protocol (cl-amiga side, `lib/dev-repl.lisp` for the debugger,
+`lib/dev-commands.lisp` for the inspector, plus one builtin
+`ext:inspect-parts`; landed 2026-09-11):
 
-Editor side: a debugger window (condition, restarts as buttons, backtrace
-list, frame locals) opened when a `DEBUGGER` reply arrives, and an
-inspector window with a parts list and a back button.
+- `REPL-ATTACH <port> DEBUG` asks for the mode.  With it, an unhandled
+  error in a form does not end the form: the REPL thread's `handler-bind`
+  handler runs on the erring stack -- clamiga runs handlers before it
+  unwinds, for runtime errors too, so the frames, their locals and the
+  restarts are all still there -- and the thread sends `DEBUGGER <level>
+  <pkg>`, the condition (`<type>: <report>`) and one restart per line
+  (`<n>: <NAME> <report>`) to the editor's port, then parks on the same
+  condition variable `READLINE` uses, taking its next steps from the port.
+  Without `DEBUG` (a phase-3 editor) nothing changes.
+- `BACKTRACE` answers from a snapshot taken on entry, with the REPL's own
+  frames left out and the rest renumbered from 0: `<n>: <name>
+  <file>:<line>`; `RESTARTS` repeats the level, the condition and the
+  restart list for a macro that missed the announcement.  On the m68k
+  build a function the JIT compiled natively pushes no VM frame of its
+  own, so a `DEBUG` attach turns the JIT's per-call shadow frames on
+  (`clamiga::%jit-set-frames`, a few percent on call-heavy code; such a
+  frame shows the arguments, not the `let`-bound locals) and a detach
+  puts them back.
+  `FRAME <n>` hands a job to the parked thread and waits
+  a moment for its answer (`<name> = <value>` per local; the names are
+  the compiler's placeholders, `ARG0`, `LOCAL3`): frame numbers count from
+  the top of a stack that has grown by the loop's own frames since the
+  snapshot, so the difference in depth is the shift.  `FRAME-EVAL <n>
+  <forms>` is replied to at once, like `REPL-EVAL`: the thread binds the
+  frame's locals under their placeholder names with `progv` and prints the
+  values as the REPL prints them, so they arrive as `OUTPUT`; an error in
+  there is a nested level with an `ABORT` back to the level below.
+  `RESTART <n>` invokes restart `n` of the current level interactively
+  (one that asks reads through `READLINE`); `ABORT` and `CONTINUE` are the
+  innermost restart of that name.  Every REPL form runs under a
+  `restart-case` with an `ABORT` ("Return to the REPL"), so a level can
+  always be left; leaving one re-announces the level below, `DEBUGGER 0`
+  once none is left, and `RESULT` follows when the form is done (`;
+  Aborted` as its value).  `REPL-INTERRUPT` while parked ends the form as
+  it would a running one (the interrupt goes in as a job too, since the
+  thread sits in `condition-wait`, not at a safepoint), and `REPL-DETACH`
+  lets the thread go through the same `ABORT`.
+- `INSPECT <form>` evaluates the form on the port's handler thread -- with
+  `*`, `**`, `***` bound to the REPL thread's, which keeps them in
+  `ext.dev::*repl-stars*` for that -- and answers a header `<TYPE> <depth>
+  <count>`, the object on one line, then `<n>: <label> = <value>` per part
+  (at most `*max-inspect-parts*`, 200, each printed bounded and on one
+  line).  `PART <n>` descends, `POP` comes back; the navigation stack is
+  per connection and a fresh `INSPECT` starts it over.  The parts come
+  from `ext:inspect-parts`, a new builtin over the C inspector's component
+  enumeration (`(label . value)` pairs, with a limit), since the C
+  inspector's loop reads stdin and no port command can.
+
+Editor side (`src/debugwin.c`, `src/inspectwin.c`, the parsing in
+`src/rexx/dbgmsg.c` and `DEBUGGER` in `src/rexx/replmsg.c`, both
+host-tested): the REPL attaches with `DEBUG`.  A `DEBUGGER <level>`
+message arrives through the same `MUIA_Application_RexxHook` as the other
+three, and `ck_debug_entered()` fills the debugger window -- the condition
+line, the restarts list (double-click or the Invoke button invokes one; a
+`CONTINUE` restart enables the Continue button, Abort is always there),
+the backtrace list (selecting a frame asks `FRAME <n>` for the locals list
+below it, double-click opens the frame's source at its line), and a
+string line that sends `FRAME-EVAL` in the selected frame -- and asks
+`BACKTRACE`, whose reply selects frame 0.  The window opens without taking
+the focus, since it arrives while the user may be typing; `M-x
+clamacs-debugger` raises it.  `DEBUGGER 0`, a `RESULT`, closing the REPL
+window and losing clamiga's port all close it.  While a level is active
+the REPL's transcript is closed (`RET` says so) and the echo area tracks
+the steps; the last one after any announcement is `Debugger level N,
+frame 0: <first local>`, which is what `drive.rexx` polls for.  The
+window's buttons exist as commands too, prompting for their number:
+`clamacs-debugger-abort`, `-continue`, `-restart`, `-frame`, `-eval`, so
+`M-x` and the port drive the debugger without a mouse.
+
+`C-c I` (`clamacs-inspect`) prompts for a form, sends `INSPECT` with the
+buffer's package, and the inspector window shows the object and the parts
+list; double-click (or the Inspect-part button, or `M-x
+clamacs-inspector-part`) sends `PART <n>` by the row's own number, Back
+(`M-x clamacs-inspector-pop`) sends `POP` and is disabled at depth 1.  The
+window title names the type; a capped list ends with a `... N more` row.
+
+Verified on FS-UAE (2026-09-11, clamiga at the phase-4 commit) by the
+phase-4 leg of `drive.rexx`: `(dbg-fn 3 4)` at the prompt opening the
+debugger with `ARG0 = 3` in frame 0, `RET` refused meanwhile, a frame eval
+of `(list arg0 arg1)` printing `(3 4)` into the transcript, a nested
+level from an error in a frame eval, `RESTART 0` ending the form with `;
+Aborted`, `cerror` opening the debugger, and `C-c I` on `(list 1 (list 2
+3))` with a `PART 1` and a `POP`, `ABORT` back from level 2 to level 1,
+and `CONTINUE` on the `cerror` finishing the form with `:WENT-ON`.  The
+last two needed a fix in clamiga's JIT (the answered list, below) and
+passed on the Vampire the same day.  cl-amiga's own `tests/test_dev_commands.sh`
+(host) and `tests/amiga/arexx-tests.lisp` cover the protocol from the
+other side.
+
+Not covered yet: a frame's locals have no names (the compiler keeps
+placeholders), so the locals list and the frame eval speak of `ARG0` and
+`LOCAL3`, and a function the m68k JIT compiled natively shows its
+arguments only; inspecting a local from the debugger (SLIME's `i` in sldb) would
+need a command that evaluates in the REPL thread's frame, which `INSPECT`
+on the handler thread cannot; CLOS instances inspect as the structs they
+are underneath; and `C-x C-e` / `C-c C-c` from a source buffer still go
+through `EVAL` on the handler thread, which catches errors into
+diagnostics as in phase 1 -- only forms typed at the REPL reach the
+debugger.
 
 ## Testing
 
@@ -589,6 +679,58 @@ not have saved; CLAUDE.md carries the short list.
   skip.  `boot-override` now matches `run-drive` (128000, `--heap 8M`),
   both scripts append `clamiga.log` and a `status` process list to the
   test log, and `drive.rexx` waits two minutes for the port.
+- **A fixture edited on the host can still load its old contents under
+  FS-UAE** (2026-09-11, the first phase-4 run: `Undefined function:
+  DBG-FN` for a defun that was plainly in `intro.lisp`).  FS-UAE keeps
+  the Amiga-side metadata of a file the emulated system wrote -- the
+  protection bits and the *Amiga* date of the write -- in a `.uaem` file
+  beside it, and shows that date to the Amiga from then on.
+  `clamacs-load-buffer` saves before it loads, so the fixtures the run
+  loads get one, and the next host edit does not move the date the
+  Amiga sees; clamiga's FASL cache, validated by source mtime, then
+  serves the previous contents.  `run-fs-uae.sh` deletes the `.uaem`
+  files before a run.  The `RESTARTS`/`BACKTRACE` view of clamiga's own
+  port in `drive.rexx` (`LispView`) is what named the cause; keep such
+  INFO lines in a leg whose checks go through the editor.
+- **clamiga's m68k JIT lost a throw that unwound through a cleanup with
+  a nested `unwind-protect` in it** (2026-09-11, found by the phase-4 leg,
+  fixed the same day in `vendor/clamiga`, `src/jit/runtime.c`).  The
+  symptom: `ABORT` from debugger level 2 back to level 1 ended the whole
+  form with the level-1 condition, and `CONTINUE` on a `cerror` came back
+  as `RESULT 10 ERROR: stop here` -- the restart's `restart-case` clause
+  never ran (its `; Aborted` never printed), the two interposed
+  `%repl-debug` cleanups did, and the condition being handled escaped as
+  if the handler had declined.  Green with `--no-jit` and on the host.
+  Seven FS-UAE runs narrowed it to "m68k, restart from the debugger"; the
+  real bisection took two minutes on the Vampire with clamiga run
+  directly (`tests/amiga/dev-repl-tests.lisp` and a scratch matrix): the
+  minimal shape -- a handler on top of the erring frame, a nested job
+  with its own `restart-case`, `invoke-restart` from the nested handler --
+  passes in every variant (native or bytecode signaller and machinery,
+  parked on a condition variable or not, on a thread or not) **unless the
+  interposed `unwind-protect`'s cleanup itself contains an
+  `unwind-protect` that exits normally** (`with-lock-held` is one; so is
+  the `handler-case` in the announcement's send).  Root cause, in the
+  JIT's runtime helpers: the VM parks the pending-throw record on a
+  per-thread saved-pending stack when an `unwind-protect` is armed,
+  updates it when its landing fires, leaves it alone on a normal pop and
+  restores it in `OP_UWRETHROW`; the JIT parked nothing, cleared
+  `cl_pending_throw` on every normal-exit pop, and so the outer transfer
+  was gone the moment a nested cleanup's `unwind-protect` finished.  A
+  second, smaller gap found on the way: the JIT's shared NLX allocator
+  did not record the C error-frame depth (`error_mark`) for CATCH, BLOCK,
+  TAGBODY and UNWIND-PROTECT frames (only HANDLER-CASE did), so a landing
+  left `cl_error_frame_top` pointing into unwound C stack.  Both now
+  mirror the VM.  Two wrong turns before that, each refuted by a later
+  run: the JIT's shadow frames (innocent; a `DEBUG` attach turns them on
+  so natively compiled functions show in the backtrace) and "a natively
+  compiled signaller" (the one green JIT run was luck: the emulator's
+  `.uaem` dance had left `intro.lisp` uncached and bytecode).  What told
+  the sides apart was clamiga's own view over its port (`drive.rexx`'s
+  `LispView`: `RESTARTS` and `BACKTRACE` at each step), and what found
+  the cause was running the suite file straight on hardware instead of
+  through the editor and the emulator.  The dev-repl matrix now runs in
+  cl-amiga's Amiga suite; the `drive.rexx` checks are `FAIL` again.
 - **Raw typing into the minibuffer works on real hardware.**  `M-x
   end-of-buffer RET` as one stream of `IECLASS_RAWKEY` events with one- to
   two-tick gaps (the box agent's input injection) ran `end-of-buffer`
@@ -676,6 +818,14 @@ not have saved; CLAUDE.md carries the short list.
   thread caught mid-`OUTPUT` at that moment waits for a reply that comes
   only when MUI disposes of the port; clamiga's `REPL-DETACH` gives up on
   the thread after five seconds and answers rc 10, and the editor exits.
+- **The phase-4 leg of `drive.rexx`** (the debugger and inspector windows)
+  passes on FS-UAE (2026-09-11) and has not been run on hardware yet;
+  `run-drive` is the step, and its `OK` lines are in `verify-amiga`'s
+  list.  What it does not cover: the mouse paths (double-click on a
+  restart, a frame or a part, the buttons), which are the same functions
+  the commands call; and a `RESTART` whose interactive function reads a
+  line (host-tested in cl-amiga: it goes through `READLINE`, which the
+  REPL window answers as in phase 3).
 - **MorphOS build**: `Makefile.mos` is written to the flags the
   TextEditor.mcc demo's own MorphOS build uses (`-noixemul
   -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been

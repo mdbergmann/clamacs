@@ -3,16 +3,19 @@
 An Emacs-flavoured Common Lisp IDE for AmigaOS 3 and MorphOS: a native MUI
 editor with Emacs key handling that talks to a running
 [CL-Amiga](https://github.com/mdbergmann/cl-amiga) (`clamiga`) over its ARexx
-port — load, compile, evaluate, and later a REPL, debugger and inspector in
+port — load, compile, evaluate, a REPL, a debugger and an inspector in
 their own windows.
 
-**Status:** phases 1 to 3 run on AmigaOS 3 — the editor with Lisp mode and
+**Status:** phases 1 to 4 run on AmigaOS 3 — the editor with Lisp mode and
 its own ARexx port, introspection (arglist, completion, jump to
-definition, describe, apropos, macroexpand) asked from clamiga, and a REPL
+definition, describe, apropos, macroexpand) asked from clamiga, a REPL
 window (`C-c C-z`) fed by a REPL thread in clamiga that streams output,
-asks the editor for `read-line` input and can be interrupted. See
-`CLAUDE.md` for the design and the phase plan, and `specs/clamacs-ide.md`
-for the full one.
+asks the editor for `read-line` input and can be interrupted, a debugger
+window that opens when a form at that REPL signals an error (restarts,
+backtrace, locals, eval in a frame; the REPL thread stays parked on the
+erring stack until a restart is chosen), and an inspector window
+(`C-c I`) with a parts list and a Back button. See `CLAUDE.md` for the
+design and the phase plan, and `specs/clamacs-ide.md` for the full one.
 
 ## Layout
 

@@ -26,6 +26,7 @@
 #include "rexx/queue.h"
 #include "rexx/symcache.h"
 #include "rexx/replmsg.h"
+#include "rexx/dbgmsg.h"
 
 /* ---- OS types start here ---------------------------------------- */
 
@@ -278,6 +279,33 @@ typedef struct ck_app {
     Object *errorlist;
     int32_t error_row;   /* the diagnostic next-error last visited, or -1 */
 
+    /* Phase 4: the debugger window (debugwin.c).  dbg_level is the level
+     * clamiga last announced with DEBUGGER, 0 when its REPL thread is not
+     * parked in the debugger.  The strings are what the Text objects and
+     * the window title point at, so they live here (see the ck_doc note on
+     * MUIA_Text_Contents). */
+    Object *debugwin;
+    Object *dbg_condition_obj;
+    Object *dbg_restarts;
+    Object *dbg_frames;
+    Object *dbg_locals;
+    Object *dbg_evalstr;
+    Object *dbg_continue_btn;
+    int32_t dbg_level;
+    int32_t dbg_frame;          /* the frame whose locals are shown, or -1 */
+    char    dbg_condition[CK_MSG_MAX];
+    char    dbg_title[64];
+
+    /* Phase 4: the inspector window (inspectwin.c).  insp_depth is the
+     * depth of clamiga's navigation stack, 0 when nothing is inspected. */
+    Object *inspectwin;
+    Object *insp_object_obj;
+    Object *insp_parts;
+    Object *insp_back_btn;
+    int32_t insp_depth;
+    char    insp_object[CK_MSG_MAX];
+    char    insp_title[96];
+
     int32_t quitting;
 } ck_app;
 
@@ -467,6 +495,11 @@ void    ck_repl_output(ck_app *app, const char *text);
 void    ck_repl_readline(ck_app *app);
 void    ck_repl_result(ck_app *app, int32_t rc, const char *package,
                        const char *values);
+/* DEBUGGER <level> <pkg> (phase 4): the REPL thread is parked in the
+ * debugger at LEVEL, or has left it (0).  TEXT is the body -- the
+ * condition line and the restart lines -- handed on to debugwin.c. */
+void    ck_repl_debugger(ck_app *app, int32_t level, const char *package,
+                         const char *text);
 
 /* The continuation for the CK_REQ_REPL_* request kinds. */
 void    ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
@@ -500,5 +533,40 @@ void    ck_errorwin_jump(ck_app *app, int32_t row);
 /* Which diagnostic the error list has selected, or -1.  next-error walks
  * from there, so the two stay in step. */
 int32_t ck_errorwin_current(ck_app *app);
+
+/* ---- debugwin.c (phase 4) ---------------------------------------- */
+
+Object *ck_debugwin_create(ck_app *app);
+
+/* A DEBUGGER message: LEVEL 1, 2, ... opens (or refreshes) the window for
+ * the condition and restarts in TEXT and asks for the backtrace; LEFT
+ * closes it. */
+void    ck_debug_entered(ck_app *app, int32_t level, const char *text);
+void    ck_debug_left(ck_app *app);
+
+/* The commands.  Those that take a number prompt for it when N is -1 (the
+ * `M-x' way in); the window's lists and buttons call them with one. */
+void    ck_debug_show(ck_doc *doc);                    /* clamacs-debugger */
+void    ck_debug_abort(ck_doc *doc);                   /* ABORT */
+void    ck_debug_continue(ck_doc *doc);                /* CONTINUE */
+void    ck_debug_restart(ck_doc *doc, int32_t n);      /* RESTART <n> */
+void    ck_debug_frame(ck_doc *doc, int32_t n);        /* FRAME <n>: show its locals */
+void    ck_debug_eval(ck_doc *doc, const char *form);  /* FRAME-EVAL in the shown frame; prompts when NULL */
+
+/* The continuation for the CK_REQ_DBG_* request kinds. */
+void    ck_debug_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
+                       const char *text);
+
+/* ---- inspectwin.c (phase 4) -------------------------------------- */
+
+Object *ck_inspectwin_create(ck_app *app);
+
+void    ck_inspect_prompt(ck_doc *doc);                 /* C-c I */
+void    ck_inspect_form(ck_doc *doc, const char *form); /* INSPECT <form> */
+void    ck_inspect_part(ck_doc *doc, int32_t n);        /* PART <n>; prompts when -1 */
+void    ck_inspect_pop(ck_doc *doc);                    /* POP */
+
+/* The continuation for CK_REQ_INSPECT. */
+void    ck_inspect_reply(ck_app *app, ck_doc *doc, int32_t rc, const char *text);
 
 #endif /* CLAMACS_H */

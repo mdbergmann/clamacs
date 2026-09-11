@@ -30,6 +30,8 @@
 
 #define CK_REPL_NAME "*clamacs-repl*"
 
+static void ck_repl_busy_message(ck_doc *doc);
+
 static void ck_first_line(const char *text, char *out, int32_t size)
 {
     int32_t n = 0;
@@ -172,7 +174,9 @@ static void ck_repl_attach(ck_doc *doc)
         return;
     }
 
-    if (ck_rexx_send(app, doc, CK_REQ_REPL_ATTACH, "REPL-ATTACH %s", own) >= 0) {
+    /* DEBUG: an unhandled error parks the REPL thread and opens the
+     * debugger window (phase 4) instead of ending the form. */
+    if (ck_rexx_send(app, doc, CK_REQ_REPL_ATTACH, "REPL-ATTACH %s DEBUG", own) >= 0) {
         app->repl_attaching = 1;
         ck_message(doc, "Attaching the REPL to %s ...", app->clamiga_port);
     }
@@ -230,8 +234,7 @@ void ck_repl_return(ck_doc *doc)
     int32_t end;
 
     if (doc->input_start < 0) {
-        ck_message(doc, "The REPL is busy (C-c C-c interrupts)");
-        ck_beep(doc);
+        ck_repl_busy_message(doc);
         return;
     }
 
@@ -321,8 +324,7 @@ void ck_repl_history(ck_doc *doc, int32_t back)
 void ck_repl_clear(ck_doc *doc)
 {
     if (doc->input_start < 0) {
-        ck_message(doc, "The REPL is busy (C-c C-c interrupts)");
-        ck_beep(doc);
+        ck_repl_busy_message(doc);
         return;
     }
     doc->prompt_start = -1;
@@ -351,7 +353,11 @@ void ck_repl_interrupt(ck_doc *doc)
 
 static void ck_repl_busy_message(ck_doc *doc)
 {
-    ck_message(doc, "The REPL is busy (C-c C-c interrupts)");
+    if (doc->app->dbg_level > 0)
+        ck_message(doc, "The REPL is in the debugger (M-x clamacs-debugger shows it, "
+                        "M-x clamacs-debugger-abort returns to the prompt)");
+    else
+        ck_message(doc, "The REPL is busy (C-c C-c interrupts)");
     ck_beep(doc);
 }
 
@@ -503,6 +509,10 @@ void ck_repl_result(ck_app *app, int32_t rc, const char *package,
     doc->input_start  = -1;
     ck_repl_set_package(doc, package);
 
+    /* The form is done, so the debugger is too, whatever was announced. */
+    if (app->dbg_level > 0)
+        ck_debug_left(app);
+
     ck_repl_ensure_bol(doc);
     if (values != NULL && values[0] != '\0') {
         ck_repl_append(doc, values);
@@ -520,6 +530,24 @@ void ck_repl_result(ck_app *app, int32_t rc, const char *package,
     }
 
     ck_repl_prompt(doc);
+}
+
+/* DEBUGGER <level> <pkg> (phase 4).  The form is still running -- parked
+ * in the debugger -- so the transcript stays as it is; the window is the
+ * debugger's face (debugwin.c).  The package is the REPL thread's, moved
+ * by a FRAME-EVAL's IN-PACKAGE as a form's would be. */
+void ck_repl_debugger(ck_app *app, int32_t level, const char *package,
+                      const char *text)
+{
+    ck_doc *doc = ck_repl_doc(app);
+
+    if (doc != NULL)
+        ck_repl_set_package(doc, package);
+
+    if (level > 0)
+        ck_debug_entered(app, level, text);
+    else
+        ck_debug_left(app);
 }
 
 /* ------------------------------------------------------------------ *
@@ -607,6 +635,8 @@ void ck_repl_closed(ck_doc *doc)
     app->repl_attached  = 0;
     app->repl_attaching = 0;
     app->repl           = NULL;
+    /* The detach lets a parked REPL thread go; the window goes with it. */
+    ck_debug_left(app);
 }
 
 void ck_repl_disconnected(ck_app *app)
@@ -617,6 +647,7 @@ void ck_repl_disconnected(ck_app *app)
         return;
     app->repl_attached  = 0;
     app->repl_attaching = 0;
+    ck_debug_left(app);
     if (doc == NULL)
         return;
     doc->repl_busy    = 0;

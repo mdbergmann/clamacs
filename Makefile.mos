@@ -57,7 +57,8 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/rexx/diag.c \
            $(SRCDIR)/rexx/queue.c \
            $(SRCDIR)/rexx/symcache.c \
-           $(SRCDIR)/rexx/replmsg.c
+           $(SRCDIR)/rexx/replmsg.c \
+           $(SRCDIR)/rexx/dbgmsg.c
 
 # The MUI half, minus the m68k varargs stubs.
 MUI_SRC  = $(SRCDIR)/main.c \
@@ -67,7 +68,9 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/repl.c \
            $(SRCDIR)/rexxclient.c \
            $(SRCDIR)/rexxport.c \
-           $(SRCDIR)/errorwin.c
+           $(SRCDIR)/errorwin.c \
+           $(SRCDIR)/debugwin.c \
+           $(SRCDIR)/inspectwin.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
 ALL_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(ALL_SRC))

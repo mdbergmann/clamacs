@@ -117,7 +117,20 @@
     X(REPL_PREVIOUS_INPUT,      "clamacs-repl-previous-input")                \
     X(REPL_NEXT_INPUT,          "clamacs-repl-next-input")                    \
     X(REPL_CLEAR,               "clamacs-repl-clear")                         \
-    X(INTERRUPT,                "clamacs-interrupt")
+    X(INTERRUPT,                "clamacs-interrupt")                          \
+    /* The debugger and inspector windows (phase 4).  `clamacs-inspect' is
+     * SLIME's `C-c I'; the rest are the windows' buttons and lists as
+     * commands, so `M-x' and the ARexx port can drive the debugger too.
+     * The ones that take a number prompt for it. */                        \
+    X(INSPECT,                  "clamacs-inspect")                            \
+    X(INSPECTOR_PART,           "clamacs-inspector-part")                     \
+    X(INSPECTOR_POP,            "clamacs-inspector-pop")                      \
+    X(DEBUGGER,                 "clamacs-debugger")                           \
+    X(DEBUGGER_ABORT,           "clamacs-debugger-abort")                     \
+    X(DEBUGGER_CONTINUE,        "clamacs-debugger-continue")                  \
+    X(DEBUGGER_RESTART,         "clamacs-debugger-restart")                   \
+    X(DEBUGGER_FRAME,           "clamacs-debugger-frame")                     \
+    X(DEBUGGER_EVAL,            "clamacs-debugger-eval")
 
 typedef enum {
     CK_CMD_NONE = -1,

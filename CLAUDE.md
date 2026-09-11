@@ -54,10 +54,19 @@ Phase 2 added `ARGLIST`, `COMPLETE`, `DESCRIBE`, `APROPOS`,
 added `REPL-ATTACH <port>`, `REPL-EVAL`, `REPL-INPUT`, `REPL-INTERRUPT`,
 `REPL-DETACH`, with clamiga's REPL thread sending `OUTPUT`, `READLINE` and
 `RESULT <rc> <pkg>` commands *to the editor's port* -- see the spec's
-phase 3 section for why the editor never holds a reply.  On the editor
-side those three arrive through `MUIA_Application_RexxHook` (the raw
-`RexxMsg`, no ReadArgs), parsed by `src/rexx/replmsg.c` and acted on by
-`src/repl.c`.
+phase 3 section for why the editor never holds a reply.  Phase 4
+(2026-09-11) added `REPL-ATTACH <port> DEBUG`, under which an unhandled
+error parks the REPL thread on the erring stack and sends `DEBUGGER
+<level> <pkg>` (condition and restarts in the body) to the editor, which
+then asks `BACKTRACE`, `RESTARTS`, `FRAME <n>`, `FRAME-EVAL <n> <forms>`,
+`RESTART <n>`, `ABORT`, `CONTINUE` (a `DEBUG` attach also switches the
+m68k JIT's shadow frames on, else natively compiled functions are missing
+from the backtrace); plus `INSPECT <form>`, `PART <n>`, `POP`,
+synchronous on the handler thread over the new `ext:inspect-parts`
+builtin.  On the editor side the inbound commands arrive through
+`MUIA_Application_RexxHook` (the raw `RexxMsg`, no ReadArgs), parsed by
+`src/rexx/replmsg.c` and acted on by `src/repl.c`, `src/debugwin.c` and
+`src/inspectwin.c`; `src/rexx/dbgmsg.c` reads the reply lines.
 
 Protocol facts the client must respect:
 
@@ -162,9 +171,20 @@ list under "Answered during phase 1".
    port during EVAL, read requests the other way, a dedicated REPL thread
    in clamiga so the port stays responsive.  `C-c C-z` opens
    `*clamacs-repl*`; `src/repl.c` is the editor half.
-4. **Debugger and inspector windows**: nested command loop on the REPL
-   thread, an EVAL mode that does not catch, `BACKTRACE`/`FRAME`/`RESTART`,
-   `INSPECT`/`PART`.
+4. **Debugger and inspector windows** (done 2026-09-11): the REPL attaches
+   with `DEBUG`; an unhandled error at the prompt opens the debugger
+   window (restarts, backtrace, locals, eval-in-frame) fed by clamiga's
+   parked REPL thread, `C-c I` opens the inspector.  The window's buttons
+   are also `M-x clamacs-debugger-*` / `clamacs-inspector-*` commands, so
+   the port drives them.  Only forms typed at the REPL reach the debugger;
+   buffer evals still go through `EVAL` and its diagnostics.  A `DEBUG`
+   attach turns clamiga's JIT shadow frames on so natively compiled
+   functions show in the backtrace.  The first hardware run found a
+   clamiga JIT bug (a throw lost when it unwound through a cleanup holding
+   a nested `unwind-protect`; fixed in `vendor/clamiga`
+   `src/jit/runtime.c`, pinned by `tests/amiga/dev-repl-tests.lisp`) --
+   when a restart "does nothing" on the Amiga but works on the host, run
+   that test file straight on the box before blaming the editor.
 
 ## Build and toolchain
 
@@ -202,6 +222,10 @@ list under "Answered during phase 1".
   before the port opens, and the leg is silently skipped) and a minute or two
   of startup.  When the leg is skipped, the log ends with `clamiga.log` and a
   `status` process list that say whether clamiga was still compiling or dead.
+  A fixture the run *saves* (`clamacs-load-buffer` saves first) gets an
+  FS-UAE `.uaem` metadata file pinning the date the Amiga sees, so a later
+  host edit loads the cached old contents: `run-fs-uae.sh` deletes
+  `verify/realamiga/*.uaem` before each run for that.
   `quit.rexx` ends the run: it quits the editor, waits for its port to go,
   then sets the flag `arexx-host.lisp` waits on through every `CLAMIGA`
   port it finds, and the host stops its port and exits.  Never let a
@@ -221,7 +245,8 @@ list under "Answered during phase 1".
   a clamiga with its `lib/` under `Clamacs:clamiga/`, then `Run >NIL:
   Execute Clamacs:verify/realamiga/run-drive` and wait for
   `build/amiga/drive-done`.  Passed on the Vampire 2026-09-08 (phase 1,
-  raw-key leg included) and 2026-09-11 (phases 1-3, 70 `OK`).  The
+  raw-key leg included) and 2026-09-11 (phases 1-3, 70 `OK`); the phase-4
+  leg is FS-UAE-verified only so far.  The
   `Clamacs:` assign and the box's DHCP address do not survive a reboot:
   re-assign, and scan the LAN for the agent port if the old address is
   silent.

@@ -22,3 +22,15 @@
 (twice-of 4)
 
 (twice 21)
+
+;;; What the phase-4 leg breaks on purpose.  Defined here, not typed at the
+;;; prompt, so no string has to travel through INSERT's ReadArgs template:
+;;; (dbg-fn 3 4) opens the debugger with ARG0 = 3 and LOCAL3 = 12 in frame
+;;; 0, (dbg-go-on) offers a CONTINUE restart and answers :WENT-ON.
+(defun dbg-fn (a b)
+  (let ((c (* a b)))
+    (error "bad ~a" c)))
+
+(defun dbg-go-on ()
+  (cerror "Go on" "stop here")
+  :went-on)

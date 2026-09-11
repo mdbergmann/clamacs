@@ -49,7 +49,15 @@ typedef enum {
     CK_REQ_REPL_EVAL,        /* rc 10 means the REPL was busy */
     CK_REQ_REPL_INPUT,       /* the answer to a READLINE */
     CK_REQ_REPL_INTERRUPT,
-    CK_REQ_REPL_DETACH
+    CK_REQ_REPL_DETACH,
+
+    /* Phase 4: the debugger window (asked while clamiga's REPL thread is
+     * parked at a DEBUGGER level) and the inspector window. */
+    CK_REQ_DBG_BACKTRACE,    /* the frames list */
+    CK_REQ_DBG_FRAME,        /* the locals list of one frame */
+    CK_REQ_DBG_FRAME_EVAL,   /* rc only; the values arrive as OUTPUT */
+    CK_REQ_DBG_RESTART,      /* rc only: RESTART <n>, ABORT, CONTINUE */
+    CK_REQ_INSPECT           /* INSPECT, PART and POP: the parts window */
 } ck_req_kind;
 
 typedef struct ck_request {

@@ -75,6 +75,39 @@ TEST(result_carries_rc_package_and_values)
     ASSERT_STR_EQ(m.text, "");
 }
 
+TEST(debugger_carries_level_package_and_body)
+{
+    ck_replmsg m;
+
+    /* What lib/dev-repl.lisp sends on entry: the level and package on the
+     * header line, then the condition and one restart per line. */
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER 1 CL-USER\nSIMPLE-ERROR: bad 12\n"
+                                   "0: ABORT Return to the REPL", &m), 1);
+    ASSERT_EQ_INT(m.kind, CK_REPLMSG_DEBUGGER);
+    ASSERT_EQ_INT(m.rc, 1);
+    ASSERT_STR_EQ(m.package, "CL-USER");
+    ASSERT_STR_EQ(m.text, "SIMPLE-ERROR: bad 12\n0: ABORT Return to the REPL");
+
+    /* A nested level. */
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER 2 EXT.DEV\nSIMPLE-ERROR: nested\n"
+                                   "0: ABORT Return to debugger level 1", &m), 1);
+    ASSERT_EQ_INT(m.rc, 2);
+    ASSERT_STR_EQ(m.package, "EXT.DEV");
+
+    /* Level 0 -- the debugger was left -- has no body. */
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER 0 CL-USER", &m), 1);
+    ASSERT_EQ_INT(m.kind, CK_REPLMSG_DEBUGGER);
+    ASSERT_EQ_INT(m.rc, 0);
+    ASSERT_STR_EQ(m.text, "");
+
+    /* The same header rules as RESULT. */
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER", &m), 0);
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER x CL-USER", &m), 0);
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGER 1", &m), 0);
+    ASSERT_EQ_INT(ck_replmsg_parse("DEBUGGERS 1 CL-USER", &m), 0);
+    ASSERT_EQ_INT(m.kind, CK_REPLMSG_NONE);
+}
+
 TEST(verbs_match_like_mui_does)
 {
     ck_replmsg m;
@@ -113,6 +146,7 @@ int main(void)
     RUN(output_keeps_its_text_verbatim);
     RUN(readline_has_no_argument);
     RUN(result_carries_rc_package_and_values);
+    RUN(debugger_carries_level_package_and_body);
     RUN(verbs_match_like_mui_does);
     RUN(malformed_and_foreign_commands_are_rejected);
     REPORT();

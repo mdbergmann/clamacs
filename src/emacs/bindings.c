@@ -130,6 +130,9 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     /* the REPL thread (phase 3): SLIME's interrupt key in a source buffer */
     { "C-c C-b",     CK_CMD_INTERRUPT },
 
+    /* the inspector (phase 4): SLIME's key, a form evaluated in clamiga */
+    { "C-c I",       CK_CMD_INSPECT },
+
     { NULL,      CK_CMD_NONE }
 };
 

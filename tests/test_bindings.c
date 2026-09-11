@@ -207,6 +207,7 @@ TEST(spec_repl_keys)
         { "M-.",     "clamacs-edit-definition" },
         { "C-c C-d d", "clamacs-describe-symbol" },
         { "C-x C-f", "find-file" },
+        { "C-c I",   "clamacs-inspect" },
         { NULL,      NULL }
     };
     static const struct expectation lisp[] = {
@@ -214,6 +215,9 @@ TEST(spec_repl_keys)
         { "C-c C-b", "clamacs-interrupt" },
         { "C-c C-c", "clamacs-eval-defun" },   /* unchanged in a source buffer */
         { "RET",     "newline-and-indent" },
+        /* Phase 4: SLIME's inspect key, in the Lisp map and so in the
+         * REPL's. */
+        { "C-c I",   "clamacs-inspect" },
         { NULL,      NULL }
     };
     static const struct expectation global[] = {

@@ -1,6 +1,7 @@
 /* drive.rexx -- the unattended acceptance run, driven through clamacs's own
 ** ARexx port: the phase-1 editor and integration checks, then the phase-2
-** introspection leg and the phase-3 REPL leg against the same clamiga.
+** introspection leg, the phase-3 REPL leg and the phase-4 debugger and
+** inspector leg against the same clamiga.
 **
 ** This is the shape specs/clamacs-ide.md asks for under Testing: a script
 ** that talks to the editor the way a user's macro would, so the run is
@@ -916,6 +917,171 @@ IF RESULT = '*clamacs-repl*' & LINE ~= '' THEN
 ELSE
     SAY 'FAIL back in' RESULT 'the cursor line is' LINE
 
+/* ------------------------------------------------------------------ *
+** Phase 4: the debugger and inspector windows.  The REPL was attached
+** with DEBUG, so an error at the prompt does not end the form: clamiga's
+** REPL thread parks on the erring stack and sends DEBUGGER 1, the editor
+** opens its debugger window, asks for the backtrace and then for frame
+** 0's locals, and echoes each step in the REPL's echo area -- the last
+** of which, `Debugger level N, frame 0: <first local>', is the state a
+** poll can rely on.  The window's lists and buttons want a mouse, so the
+** commands behind them are driven by name here, as M-x would.  dbg-fn
+** and dbg-go-on are in intro.lisp, loaded by the phase-2 leg, so no
+** string has to travel through INSERT's ReadArgs template.
+** ------------------------------------------------------------------ */
+
+'EVAL clamacs-repl'
+'EVAL end-of-buffer'
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (dbg-fn 3 4)'
+'KEY RET'
+ECHO = WaitEcho('Debugger level 1, frame 0: ARG0 = 3', 60)
+IF ECHO ~= '' THEN
+    SAY 'OK an error at the prompt opened the debugger:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no debugger for (dbg-fn 3 4); the echo area says' RESULT
+END
+CALL LispView 'level 1'
+
+/* The transcript is closed while the form is parked. */
+'KEY RET'
+'STATUS'
+IF POS('in the debugger', RESULT) > 0 THEN
+    SAY 'OK RET at the prompt is refused while debugging:' RESULT
+ELSE
+    SAY 'FAIL RET while debugging gave' RESULT
+
+/* Eval in frame 0, with the locals bound under their placeholder names;
+** the values come back as OUTPUT into the transcript, after the input
+** line (the cursor follows the append, as it does for any output). */
+'EVAL clamacs-debugger-eval'
+'STATUS'
+IF POS('Eval in frame 0', RESULT) > 0 THEN
+    SAY 'OK clamacs-debugger-eval prompted:' RESULT
+ELSE
+    SAY 'FAIL clamacs-debugger-eval gave' RESULT
+'KEY ( l i s t SPC a r g 0 SPC a r g 1 )'
+'KEY RET'
+Y = WaitCursorAt(P + 2, 40)
+'GOTOLINE' P + 2
+L = GetLine()
+IF Y ~= '' & L = '(3 4)' THEN
+    SAY 'OK the frame eval saw the locals by name:' L
+ELSE
+    SAY 'FAIL the frame eval gave' L '(cursor' Y')'
+'EVAL end-of-buffer'
+
+/* An error inside the frame eval is a nested level -- a different frame
+** 0, with ARG0 = 1 -- and ABORT there returns to level 1, announced
+** again with its own frame 0. */
+'EVAL clamacs-debugger-eval'
+'KEY ( d b g - f n SPC 1 SPC 2 )'
+'KEY RET'
+ECHO = WaitEcho('Debugger level 2, frame 0: ARG0 = 1', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK an error in the frame eval nested the debugger:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no nested debugger; the echo area says' RESULT
+END
+CALL LispView 'level 2'
+'EVAL clamacs-debugger-abort'
+ECHO = WaitEcho('Debugger level 1, frame 0: ARG0 = 3', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK ABORT returned to level 1:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL ABORT from level 2 left the echo area at' RESULT
+END
+CALL LispView 'after the abort'
+
+/* A restart by number: 0 is the REPL's own ABORT, so the form ends with
+** `; Aborted' as its value and a fresh prompt. */
+'EVAL clamacs-debugger-restart'
+'KEY 0'
+'KEY RET'
+LINE = WaitLine('CL-USER> ', 40)
+IF LINE ~= '' THEN
+    SAY 'OK RESTART 0 returned to the prompt'
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no prompt after RESTART 0; the echo area says' RESULT
+END
+'TE GETCURSOR LINE'
+Q = RESULT
+'GOTOLINE' Q
+L = GetLine()
+IF L = '; Aborted' THEN
+    SAY 'OK the transcript says the form was aborted:' L
+ELSE
+    SAY 'FAIL before the prompt came' L
+'EVAL end-of-buffer'
+
+/* CONTINUE: a CERROR's restart, and the form goes on to its value. */
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (dbg-go-on)'
+'KEY RET'
+ECHO = WaitEcho('Debugger level 1, frame 0', 60)
+IF ECHO ~= '' THEN
+    SAY 'OK CERROR opened the debugger:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no debugger for (dbg-go-on); the echo area says' RESULT
+END
+'EVAL clamacs-debugger-continue'
+LINE = WaitLine('CL-USER> ', 40)
+'GOTOLINE' P + 2
+L = GetLine()
+IF LINE ~= '' & L = ':WENT-ON' THEN
+    SAY 'OK CONTINUE let the form finish:' L
+ELSE
+    SAY 'FAIL after CONTINUE came' L
+'EVAL end-of-buffer'
+
+/* The inspector: C-c I evaluates a form in clamiga and the window shows
+** the object and its numbered parts; a part descends, Back comes up.
+** The inspector window takes the focus when it opens, so the REPL is
+** raised again before each command typed by name. */
+'KEY C-c I'
+'STATUS'
+IF POS('Inspect value', RESULT) > 0 THEN
+    SAY 'OK C-c I prompted:' RESULT
+ELSE
+    SAY 'FAIL C-c I gave' RESULT
+'KEY ( l i s t SPC 1 SPC ( l i s t SPC 2 SPC 3 ) )'
+'KEY RET'
+ECHO = WaitEcho('Inspecting CONS: (1 (2 3))', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK the inspector showed the object:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL the inspector did not answer; the echo area says' RESULT
+END
+'EVAL clamacs-repl'
+'EVAL clamacs-inspector-part'
+'KEY 1'
+'KEY RET'
+ECHO = WaitEcho('Inspecting CONS: ((2 3))', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK part 1 descended into the cdr:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL PART 1 gave' RESULT
+END
+'EVAL clamacs-repl'
+'EVAL clamacs-inspector-pop'
+ECHO = WaitEcho('Inspecting CONS: (1 (2 3))', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK Back came up to the list again:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL POP gave' RESULT
+END
+'EVAL clamacs-repl'
+
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp
 ** is what verify-amiga expects. */
@@ -1009,6 +1175,22 @@ WaitCursorAt: PROCEDURE EXPOSE PORT
         CALL DELAY(25)
     END
     RETURN ''
+
+/* clamiga's own view of the debugger, for the log: the current level's
+** restarts and backtrace, asked over its port directly.  INFO lines only
+** -- the checks are made through the editor -- but when one of those
+** fails, this says which side got it wrong. */
+LispView: PROCEDURE EXPOSE PORT LISP
+    PARSE ARG what
+    OPTIONS RESULTS
+    ADDRESS VALUE LISP
+    'RESTARTS'
+    IF RC = 0 THEN SAY 'INFO restarts at' what':' RESULT
+    ELSE SAY 'INFO RESTARTS at' what 'answered rc' RC
+    'BACKTRACE'
+    IF RC = 0 THEN SAY 'INFO backtrace at' what':' RESULT
+    ADDRESS VALUE PORT
+    RETURN
 
 /* Whether one of the first N lines of the active window contains NEEDLE.
 ** Moves the cursor. */

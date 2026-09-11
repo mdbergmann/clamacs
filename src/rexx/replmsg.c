@@ -53,7 +53,9 @@ int32_t ck_replmsg_parse(const char *raw, ck_replmsg *out)
         return 1;
     }
 
-    if ((n = rm_verb(raw, "RESULT")) > 0) {
+    /* RESULT and DEBUGGER share a header: `<verb> <number> <package>' on
+     * the first line, the body after it. */
+    if ((n = rm_verb(raw, "RESULT")) > 0 || (n = rm_verb(raw, "DEBUGGER")) > 0) {
         const char *p = raw + n;
         int32_t     rc = 0, digits = 0, i = 0;
 
@@ -77,14 +79,15 @@ int32_t ck_replmsg_parse(const char *raw, ck_replmsg *out)
         if (i == 0)
             return 0;
 
-        /* The values start after the first newline; a RESULT without one
-         * carries none. */
+        /* The body starts after the first newline; a header without one
+         * carries none (every RESULT of no values, every DEBUGGER 0). */
         while (*p != '\0' && *p != '\n')
             p++;
         if (*p == '\n')
             p++;
 
-        out->kind = CK_REPLMSG_RESULT;
+        out->kind = (rm_lower((unsigned char)raw[0]) == 'r') ? CK_REPLMSG_RESULT
+                                                             : CK_REPLMSG_DEBUGGER;
         out->rc   = rc;
         out->text = p;
         return 1;
