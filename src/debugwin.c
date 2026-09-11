@@ -323,7 +323,7 @@ HOOKPROTONHNO(ck_debug_frame_click_func, void, ULONG *params)
     if (line > 0)
         ck_doc_goto_line(doc, line);
     else
-        set(doc->win, MUIA_Window_Activate, TRUE);
+        ck_doc_activate(doc);
 }
 MakeStaticHook(ck_debug_frame_click_hook, ck_debug_frame_click_func);
 

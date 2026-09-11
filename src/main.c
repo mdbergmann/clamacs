@@ -18,7 +18,15 @@ struct IntuitionBase *IntuitionBase;
 struct GfxBase       *GfxBase;
 struct Library       *KeymapBase;
 struct Library       *AslBase;
-struct RxsLib        *RexxSysBase;
+/* The definition must match the extern in proto/rexxsyslib.h, and the two
+ * SDKs disagree: the m68k NDK declares `struct RxsLib *`, the MorphOS SDK
+ * `struct Library *` (cl-amiga's platform_amiga_rexx.c does the same). */
+#ifdef __MORPHOS__
+typedef struct Library ck_rexxsysbase_t;
+#else
+typedef struct RxsLib ck_rexxsysbase_t;
+#endif
+ck_rexxsysbase_t     *RexxSysBase;
 
 /* clamacs is a small program with one application object; a file-scope
  * pointer is what lets the ARexx command hooks -- which MUI calls with no
@@ -69,7 +77,7 @@ static int32_t ck_open_libraries(void)
     GfxBase       = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 39);
     KeymapBase    = OpenLibrary((STRPTR)"keymap.library", 37);
     AslBase       = OpenLibrary((STRPTR)"asl.library", 37);
-    RexxSysBase   = (struct RxsLib *)OpenLibrary((STRPTR)"rexxsyslib.library", 36);
+    RexxSysBase   = (ck_rexxsysbase_t *)OpenLibrary((STRPTR)"rexxsyslib.library", 36);
     MUIMasterBase = OpenLibrary((STRPTR)MUIMASTER_NAME, CK_MUIMASTER_VMIN);
 
     return IntuitionBase != NULL && GfxBase != NULL && KeymapBase != NULL &&

@@ -31,6 +31,18 @@ echo "=== run start ===" >build/amiga/clamacs-test.log
 date >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
 stack 128000
+; The PPC clamiga wants the stack cl-amiga's own MorphOS scripts give it.
+; (A path on the boot volume, not `MOSSYS:': asking AmigaOS 3 for a volume
+; it does not have raises the "please insert volume" requester and parks
+; the script under it.)
+IF EXISTS SYS:MorphOS
+  stack 800000
+ENDIF
+; RX lives in SYS:Rexxc on AmigaOS 3 and on the command path on MorphOS.
+set rx RX
+IF EXISTS SYS:Rexxc/RX
+  set rx SYS:Rexxc/RX
+ENDIF
 
 ; clamiga first, with its development port open (see boot-override for
 ; why the order matters on a small machine).  Its output goes to a file of
@@ -47,7 +59,7 @@ ENDIF
 run >>build/amiga/clamacs-test.log build/amiga/clamacs Clamacs:verify/realamiga/sample.lisp
 ; HARDWARE enables the leg that drives keys into the ACTIVE minibuffer,
 ; which FS-UAE cannot (it deactivates the String after one injected key).
-SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx HARDWARE >>build/amiga/clamacs-test.log
+$rx Clamacs:verify/realamiga/drive.rexx HARDWARE >>build/amiga/clamacs-test.log
 ; clamiga's own output and the process list, so a skipped integration leg
 ; can be explained from the log alone (see boot-override).
 echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
@@ -57,10 +69,10 @@ ENDIF
 echo "=== status ===" >>build/amiga/clamacs-test.log
 status >>build/amiga/clamacs-test.log
 echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
-SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
+$rx Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
 echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
-SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
+$rx Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
 C:Wait 3
 echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log

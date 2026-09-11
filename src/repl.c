@@ -205,7 +205,7 @@ void ck_repl_switch(ck_doc *from)
         app->repl_attached = 0;
     }
 
-    set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(doc);
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
 
     if (!app->repl_attached)

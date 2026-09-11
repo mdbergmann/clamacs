@@ -35,7 +35,7 @@ void ck_errorwin_jump(ck_app *app, int32_t row)
     if (doc == NULL)
         return;
 
-    set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(doc);
     if (d->line > 0) {
         set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
         set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(d->line - 1));

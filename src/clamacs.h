@@ -247,6 +247,21 @@ typedef struct ck_app {
 
     ck_doc  *docs;
     uint32_t next_id;
+    /* The document whose window was activated last -- by the editor
+     * (ck_doc_activate) or by the user (the MUIA_Window_Activate
+     * notification).  Kept here because MUIA_Window_Activate, read back,
+     * lags on MUI 4: a window opened by a port command reports inactive for
+     * a while, and its predecessor active, so ck_doc_active() cannot ask. */
+    ck_doc  *active_doc;
+    /* The last ck_doc_activate() request MUI has not reported back yet.
+     * While it is outstanding, a report for a *different* window is a
+     * late one for an earlier request (MUI 4 delivers them seconds
+     * later, in order) and must not override it; a report for this same
+     * window is accepted at once and clears the field, so a genuine
+     * click on another window right after (AmigaOS 3, no lag) is not
+     * mistaken for a late report too. */
+    ck_doc  *activate_pending;
+    uint32_t activate_stamp;    /* when, in ck_ticks_now() ticks */
 
     /* ARexx client */
     struct MsgPort *reply;
@@ -342,6 +357,10 @@ void    ck_doc_close(ck_doc *doc, int32_t ask);
 void    ck_app_reap(ck_app *app);
 ck_doc *ck_doc_find_by_path(ck_app *app, const char *path);
 ck_doc *ck_doc_active(ck_app *app);
+/* Bring the document's window to the front and make it the active one for
+ * every caller of ck_doc_active() -- the port, the debugger, the messages
+ * -- at once, without waiting for MUI to report the activation. */
+void    ck_doc_activate(ck_doc *doc);
 
 /* Returns non-zero when the key was consumed and must not reach the
  * superclass. */

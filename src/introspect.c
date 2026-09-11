@@ -248,7 +248,7 @@ void ck_intro_idle(ck_doc *doc)
     if (doc->closing || !doc->lisp_mode || doc->win == NULL)
         return;
     /* Only the window the user is in; the others keep what they show. */
-    if (!ck_get(doc->win, MUIA_Window_Activate))
+    if (ck_doc_active(doc->app) != doc)
         return;
     if (doc->mini_state != CK_MINI_IDLE)
         return;
@@ -536,7 +536,7 @@ void ck_intro_pop_definition(ck_doc *doc)
         return;
     }
 
-    set(target->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(target);
     ck_doc_set_cursor_index(target, loc.index);
     set(target->win, MUIA_Window_ActiveObject, (IPTR)target->text);
 }

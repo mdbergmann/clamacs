@@ -201,8 +201,14 @@ list under "Answered during phase 1".
   as cl-amiga does -- there is no PPC cross-compiler on the Mac.
   `Makefile.mos` mirrors the TextEditor.mcc demo's MorphOS flags and leaves
   `muistubs.c` out (its `&tag1` trick is m68k-only; the SDK supplies the
-  varargs entry points).  **Not yet compiled** as of 2026-09-08: the box
-  was off.  Its header and the spec's "Still open" list track that.
+  varargs entry points).  First built on the box 2026-09-11; `run-drive`
+  passes there.  Two MUI 4 differences bit: window activation is
+  reported late (so the app tracks its active document itself,
+  `ck_doc_activate()`), and an active `String`'s keys never reach
+  `MUIA_String_EditHook` but come through the subclass's
+  `MUIM_HandleEvent` twice, once per handler node, so the mini class
+  hands the second visit to the superclass -- the spec's "Still open"
+  list has the details.
 
 ## Testing
 
@@ -245,9 +251,21 @@ list under "Answered during phase 1".
   a clamiga with its `lib/` under `Clamacs:clamiga/`, then `Run >NIL:
   Execute Clamacs:verify/realamiga/run-drive` and wait for
   `build/amiga/drive-done`.  Passed on the Vampire 2026-09-08 (phase 1,
-  raw-key leg included) and 2026-09-11 (phases 1-3, 70 `OK`); the phase-4
-  leg is FS-UAE-verified only so far.  The
+  raw-key leg included) and 2026-09-11 (phases 1-4, 93 `OK`).  The
   `Clamacs:` assign and the box's DHCP address do not survive a reboot:
   re-assign, and scan the LAN for the agent port if the old address is
-  silent.
+  silent.  On the MorphOS box the same layout lives under
+  `Work:DevelAdd/Sources/clamacs` (a tarball of `src/`, `Makefile.mos`
+  and the vendored headers, built with `gg:bin/sh` + `make -f
+  Makefile.mos`; `build/amiga/clamacs` is a copy of the PPC binary so
+  `run-drive` finds it), with a clamiga built from the phase-4 branch
+  under `Clamacs:clamiga/`; `run-drive` passed there 2026-09-11 (93
+  `OK`).  Warm clamiga's FASL cache on that box before a run (a
+  `--load` of a file that requires `amiga/arexx`), since `run-drive`
+  waits 15 s for the port.  The box agent has one command slot: a
+  message to an editor that is not answering its port wedges it until
+  someone touches the box, so check `status` and the port list before
+  every `ADDRESS 'CLAMACS.1'`.  And never `IF EXISTS <volume>:` for a
+  volume AmigaOS 3 may not have -- the "please insert volume" requester
+  parks the script.
 - LF line endings are forced by `.gitattributes`.

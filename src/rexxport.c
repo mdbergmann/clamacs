@@ -71,7 +71,7 @@ HOOKPROTONHNO(ck_rx_open_func, LONG, IPTR *args)
     if (doc == NULL)
         return 0;
 
-    set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(doc);
     if (line != NULL && *line > 0) {
         set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
         set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(*line - 1));

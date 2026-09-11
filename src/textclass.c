@@ -72,6 +72,13 @@ struct ck_mini_data {
      * on to consult it for the same event -- does not act on it twice. */
     ck_key  hook_key;
     int32_t hook_taken;
+    /* The last RAWKEY event MUIM_HandleEvent saw, to recognise the same
+     * event arriving a second time through the String class's own handler
+     * node (MUI 4, see the method). */
+    struct IntuiMessage *seen_imsg;
+    UWORD   seen_code;
+    ULONG   seen_seconds;
+    ULONG   seen_micros;
 };
 
 /* ------------------------------------------------------------------ *
@@ -311,22 +318,38 @@ SDISPATCHER(ck_text_dispatcher)
 /*
  * The string edit hook: MUI calls it "as if it was a real string edit hook
  * in a real string gadget" (MUI_String.doc), with the SGWork in A2 and the
- * command word in A1, BEFORE the class's own edit hook, and it ignores the
- * result.  That last point shapes what the hook can do.  It cannot tell
- * MUI "handled, stop here": the class's hook runs on the same SGWork next,
- * so a key we take has to be made invisible to it -- the event's code is
- * turned into a key release and the mapped character cleared, and a string
- * gadget does nothing with those.  And the action itself is deferred with
- * MUIM_Application_PushMethod rather than run here: the class's hook may
- * still write its work buffer back to the gadget after us, which would
- * undo a completion or a history item set from inside this call.  What
- * the hook does here is decide, exactly as the handler node decides, and
+ * command word in A1.  The two MUIs the editor runs on disagree on the
+ * rest, and the hook is written to Intuition's protocol (intuition/
+ * sghooks.h) so that it works under both:
+ *
+ *  - MUI 3.8 (AmigaOS 3) calls it BEFORE the class's own edit hook and
+ *    ignores the result.  It cannot tell MUI "handled, stop here": the
+ *    class's hook runs on the same SGWork next, so a key we take has to be
+ *    made invisible to it -- the event's code is turned into a key release
+ *    and the mapped character cleared, and a string gadget does nothing
+ *    with those.
+ *  - MUI 4 (MorphOS) never calls it (a traced build saw no call at all);
+ *    there the keys of an active String come through MUIM_HandleEvent,
+ *    where the method handles them -- see the MUI 4 note in the
+ *    dispatcher.  Should a MUI call it as a real Intuition edit hook, it
+ *    answers as one: non-zero for an SGH_KEY it understood, and SGA_USE
+ *    cleared for a key it takes.
+ *
+ * The action itself is deferred with MUIM_Application_PushMethod rather
+ * than run here: under MUI 3.8 the class's hook may still write its work
+ * buffer back to the gadget after us, which would undo a completion or a
+ * history item set from inside this call.  What the hook does here is
+ * decide, exactly as the handler node decides, and
  * ck_doc_minibuffer_binds() is the one list both consult.
  *
  * Meta plus a character that the minibuffer does not bind is taken too:
  * left to the gadget, Alt-x goes through the keymap with Alt as a dead-key
  * qualifier and types a stray character (`x' gave `×' on the Vampire).
  * The deferred method reports it undefined, as the text object does.
+ *
+ * A build with -DCK_MINI_TRACE appends what MUI hands the hook and the
+ * handler method to T:clamacs-mini.log, which is how the MUI 4 behaviour
+ * was established.
  */
 
 /* The keymap lookup on the SGWork's InputEvent.  The dead-key history
@@ -352,35 +375,82 @@ static int32_t ck_mini_meta_char(ck_key key)
     return (CK_KEY_MODS(key) & CK_MOD_META) != 0 && code >= 0x20 && code <= 0xFF;
 }
 
+#ifdef CK_MINI_TRACE
+/* Diagnostic build only (make CFLAGS=... -DCK_MINI_TRACE): what MUI hands
+ * the edit hook, appended to T:clamacs-mini.log. */
+#include <stdio.h>
+static void ck_mini_trace(const char *where, struct SGWork *sgw, ULONG *msg, ck_key key)
+{
+    FILE *f = fopen("T:clamacs-mini.log", "a");
+    if (f == NULL)
+        return;
+    if (sgw == NULL) {
+        fprintf(f, "%s key=%08lx\n", where, (unsigned long)key);
+    } else {
+        struct InputEvent *ie = sgw->IEvent;
+        fprintf(f, "%s cmd=%lu ie=%p class=%u code=%04x qual=%04x key=%08lx "
+                "sgwcode=%04x actions=%08lx editop=%lu pos=%u work=[%s]\n",
+                where, msg != NULL ? (unsigned long)msg[0] : 0UL, (void *)ie,
+                ie != NULL ? (unsigned)ie->ie_Class : 0U,
+                ie != NULL ? (unsigned)ie->ie_Code : 0U,
+                ie != NULL ? (unsigned)ie->ie_Qualifier : 0U,
+                (unsigned long)key, (unsigned)sgw->Code, (unsigned long)sgw->Actions,
+                (unsigned long)sgw->EditOp, (unsigned)sgw->BufferPos,
+                sgw->WorkBuffer != NULL ? (const char *)sgw->WorkBuffer : "");
+    }
+    fclose(f);
+}
+#else
+#define ck_mini_trace(where, sgw, msg, key) ((void)0)
+#endif
+
+/* The hook's answer for an SGH_KEY: "understood" (sghooks.h: "SGH_KEY is
+ * required and assumed"), whether the key was ours or the gadget's. */
+#define CK_SGH_KEY_DONE ((ULONG)~0UL)
+
 HOOKPROTO(ck_mini_edit_func, ULONG, struct SGWork *sgw, ULONG *msg)
 {
     struct ck_mini_data *data = (struct ck_mini_data *)hook->h_Data;
     struct InputEvent   *ie;
     ck_key               key;
 
-    if (msg == NULL || msg[0] != SGH_KEY || sgw == NULL || sgw->IEvent == NULL ||
-        data == NULL || data->doc == NULL)
+    if (msg == NULL || sgw == NULL)
         return 0;
+    if (msg[0] != SGH_KEY) {
+        ck_mini_trace("hook-other", sgw, msg, 0);
+        return 0;                       /* a command we do not implement */
+    }
+    if (sgw->IEvent == NULL || data == NULL || data->doc == NULL) {
+        ck_mini_trace("hook-skip", sgw, msg, 0);
+        return CK_SGH_KEY_DONE;
+    }
 
     ie  = sgw->IEvent;
     key = ck_rawkey_decode(ie->ie_Code, ie->ie_Qualifier, ck_maprawkey_ie, ie);
+    ck_mini_trace("hook", sgw, msg, key);
     if (key == CK_KEY_NONE)
-        return 0;
+        return CK_SGH_KEY_DONE;
     if (!ck_doc_minibuffer_binds(data->doc, key) && !ck_mini_meta_char(key))
-        return 0;
+        return CK_SGH_KEY_DONE;         /* the gadget's key: its editing stands */
 
     data->hook_key   = key;
     data->hook_taken = 1;
 
-    /* Make the key a no-op for the class's hook: a release of no key, with
-     * no qualifier and no character. */
+    /* Make the key a no-op for the class's hook when it runs after us (MUI
+     * 3.8): a release of no key, with no qualifier and no character. */
     ie->ie_Code      = (UWORD)(CK_RAW_UP_PREFIX | 0x7F);
     ie->ie_Qualifier = 0;
     sgw->Code        = 0;
+    /* And undo the default editing when it ran before us (MUI 4): the
+     * gadget stays as it was, and the key ends nothing. */
+    sgw->Actions    &= ~(SGA_USE | SGA_END | SGA_BEEP | SGA_REUSE |
+                         SGA_NEXTACTIVE | SGA_PREVACTIVE);
+    sgw->EditOp      = EO_NOOP;
 
     DoMethod(_app(data->self), MUIM_Application_PushMethod, (IPTR)data->self,
              2, CKM_MiniKey, (IPTR)key);
-    return 0;
+    ck_mini_trace("hook-taken", sgw, msg, key);
+    return CK_SGH_KEY_DONE;
 }
 MakeStaticHook(ck_mini_edit_hook, ck_mini_edit_func);
 
@@ -436,9 +506,32 @@ SDISPATCHER(ck_mini_dispatcher)
     case MUIM_HandleEvent: {
         struct MUIP_HandleEvent *m = (struct MUIP_HandleEvent *)msg;
         data = (struct ck_mini_data *)INST_DATA(cl, obj);
+        if (m->imsg != NULL && m->imsg->Class == IDCMP_RAWKEY) {
+            /* MUI 3.8 coerces a handler node's call to the node's class, so
+             * this method sees an event once, through our own node, and
+             * the String class's node reaches the String class directly.
+             * MUI 4 dispatches the String's node through the object's
+             * class chain instead -- through here, a second time for the
+             * same event -- and it never calls the String edit hook.  That
+             * second visit is the String's turn to edit (a return of 0
+             * there typed nothing into the minibuffer on MorphOS), and it
+             * is recognised as the event just seen: same message, code
+             * and time stamp.  The first visit decides as before. */
+            if (data->seen_imsg == m->imsg && data->seen_code == m->imsg->Code &&
+                data->seen_seconds == m->imsg->Seconds &&
+                data->seen_micros == m->imsg->Micros) {
+                ck_mini_trace("node-again", NULL, NULL, 0);
+                return DoSuperMethodA(cl, obj, (Msg)msg);
+            }
+            data->seen_imsg    = m->imsg;
+            data->seen_code    = m->imsg->Code;
+            data->seen_seconds = m->imsg->Seconds;
+            data->seen_micros  = m->imsg->Micros;
+        }
         if (data->doc != NULL && m->imsg != NULL &&
             m->imsg->Class == IDCMP_RAWKEY && ck_is_active(obj)) {
             ck_key key = ck_decode_rawkey(m->imsg);
+            ck_mini_trace("node", NULL, NULL, key);
             /* An active String edits its keys through the edit hook before
              * the handler list is consulted, so when the hook has just taken
              * this key the node is seeing the same event again.  The flag
@@ -451,6 +544,16 @@ SDISPATCHER(ck_mini_dispatcher)
             }
             if (key != CK_KEY_NONE && ck_doc_minibuffer_key(data->doc, key))
                 return MUI_EventHandlerRC_Eat;
+            /* Meta plus an unbound character, reported undefined rather than
+             * typed as a stray dead-key character: the edit hook's rule,
+             * applied here for the MUI that never calls the hook. */
+            if (key != CK_KEY_NONE && ck_mini_meta_char(key) &&
+                data->doc->mini_state != CK_MINI_IDLE) {
+                char spelling[32];
+                ck_message(data->doc, "%s is undefined",
+                           ck_key_to_string(key, spelling, (int32_t)sizeof spelling));
+                return MUI_EventHandlerRC_Eat;
+            }
         }
         /* Not consumed: MUI's next handler -- the string gadget's own -- does
          * the ordinary editing and cursor motion. */

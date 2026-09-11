@@ -819,19 +819,60 @@ not have saved; CLAUDE.md carries the short list.
   only when MUI disposes of the port; clamiga's `REPL-DETACH` gives up on
   the thread after five seconds and answers rc 10, and the editor exits.
 - **The phase-4 leg of `drive.rexx`** (the debugger and inspector windows)
-  passes on FS-UAE (2026-09-11) and has not been run on hardware yet;
-  `run-drive` is the step, and its `OK` lines are in `verify-amiga`'s
-  list.  What it does not cover: the mouse paths (double-click on a
-  restart, a frame or a part, the buttons), which are the same functions
-  the commands call; and a `RESTART` whose interactive function reads a
-  line (host-tested in cl-amiga: it goes through `READLINE`, which the
-  REPL window answers as in phase 3).
-- **MorphOS build**: `Makefile.mos` is written to the flags the
-  TextEditor.mcc demo's own MorphOS build uses (`-noixemul
-  -DNO_PPCINLINE_STDARG`, SDK varargs, no `muistubs.c`) and has not been
-  compiled -- there is no PPC cross-compiler on the Mac and the box was
-  off.  `make -f Makefile.mos` in a checkout on the box is the step, then
-  the same `drive.rexx` (with `build/morphos/clamacs`), and the shipped
-  TextEditor.mcc version goes into the list above.
+  passes on FS-UAE and on the Vampire (2026-09-11, `run-drive`: 93 `OK`,
+  no `FAIL`, clamiga at the submodule's JIT-fix commit); its `OK` lines
+  are in `verify-amiga`'s list.  What it does not cover: the mouse paths
+  (double-click on a restart, a frame or a part, the buttons), which are
+  the same functions the commands call; and a `RESTART` whose interactive
+  function reads a line (host-tested in cl-amiga: it goes through
+  `READLINE`, which the REPL window answers as in phase 3).
+- **MorphOS**: `Makefile.mos` built on the box for the first time on
+  2026-09-11 (MorphOS 3.20, the SDK's gcc 9.5.0, muimaster.library 22.4,
+  TextEditor.mcc from `SYS:Classes/MUI`) after one source fix -- the
+  MorphOS SDK declares `RexxSysBase` as `struct Library *`, the m68k NDK
+  as `struct RxsLib *`, so `main.c` picks the type under `__MORPHOS__` as
+  cl-amiga does.  `run-drive` runs there unchanged except that `RX` is on
+  the command path rather than in `SYS:Rexxc` (it now looks for both).
+  The first run passed every check but four, all of them one of two MUI 4
+  differences; both are fixed in the tree and re-verified on the Vampire
+  (93 `OK`, MUI 3.8 unaffected) and on the box (`run-drive` with the
+  clamiga built there from the phase-4 branch: 93 `OK`, no `FAIL`, the
+  integration, REPL and debugger legs included, `sendkey`'s Alt-as-Meta
+  through MorphOS's 68k emulation too):
+    - **Window activation is reported late.**  `MUIA_Window_Activate`
+      read back after `OPEN` of a file already open still named the
+      previous window two seconds later, so `ck_doc_active()`, which asked
+      MUI, picked the wrong document and `KEY TAB` indented a line of the
+      other file.  And the `MUIA_Window_Activate` notification reports
+      Intuition's activations seconds late and more than one request
+      behind: after `OPEN` asked for the source window, the report for
+      the macroexpansion window the previous command had activated could
+      still follow the source window's own, which sent `C-c C-d d` to the
+      expansion and described `LET`.  The application now remembers its
+      active document itself: `ck_doc_activate()` records the request,
+      the per-window notification records the user's clicks, and for
+      three seconds after a request every report is taken as the late one
+      it may be.
+    - **The `String` edit hook is never called, and the handler node is
+      dispatched twice.**  MUI 3.8 coerces a handler node's call to the
+      node's class, so the mini class's `MUIM_HandleEvent` sees a key once
+      and the String class's node reaches the String class directly; the
+      edit hook is where an active String's keys are taken.  MUI 4 never
+      calls `MUIA_String_EditHook` (a `-DCK_MINI_TRACE` build showed no
+      call) and dispatches the String's node through the object's class
+      chain, i.e. through the override a second time for the same event.
+      The override returned 0 there, meant for MUI 3.8's "let the class's
+      node edit", and so nothing was ever typed into the minibuffer: `RET`
+      after a completion, `Alt-x` in the prompt and `C-s` in isearch
+      failed while TAB and `C-g`, which the method acts on itself, worked.
+      The method now recognises the second visit (same IntuiMessage, code
+      and time stamp) and hands it to the superclass, and reports an
+      unbound Meta character undefined itself, as the hook does.  The
+      hook stays for MUI 3.8 and answers as an Intuition edit hook should
+      (non-zero for `SGH_KEY`, `SGA_USE` cleared for a key it takes) in
+      case a MUI calls it as one.
+  Also found there: `IF EXISTS MOSSYS:` in a DOS script raises AmigaOS
+  3's "please insert volume" requester and parks the script under it, so
+  `run-drive` tests `SYS:MorphOS` for its MorphOS stack size instead.
 - **Encoding beyond ISO-8859-1** is out of scope until clamiga's wide
   strings are in a release build.

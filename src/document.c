@@ -606,7 +606,7 @@ void ck_doc_replace(ck_doc *doc, int32_t start, int32_t stop, const char *text)
 
 void ck_doc_goto_line(ck_doc *doc, int32_t line)
 {
-    set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(doc);
     if (line > 0) {
         set(doc->text, MUIA_TextEditor_CursorX, (IPTR)0);
         set(doc->text, MUIA_TextEditor_CursorY, (IPTR)(line - 1));
@@ -646,7 +646,7 @@ void ck_doc_set_text(ck_doc *doc, const char *text)
     ck_doc_forget_arglist(doc);
     ck_doc_colour_all(doc);
     ck_doc_set_cursor_index(doc, 0);
-    set(doc->win, MUIA_Window_Activate, TRUE);
+    ck_doc_activate(doc);
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
     ck_doc_update_status(doc);
 }
@@ -1487,7 +1487,7 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     case CK_CMD_OTHER_WINDOW: {
         ck_doc *next = (doc->next != NULL) ? doc->next : app->docs;
         if (next != NULL && next != doc)
-            set(next->win, MUIA_Window_Activate, TRUE);
+            ck_doc_activate(next);
         break;
     }
 
@@ -1913,6 +1913,51 @@ HOOKPROTONHNO(ck_close_func, void, ULONG *params)
 }
 MakeStaticHook(ck_close_hook, ck_close_func);
 
+/* The user activated the window (a click, a depth gadget): from now on this
+ * is the document the port and the messages mean. */
+/* Ticks (1/50 s) since some epoch, wrapping: only differences are used. */
+static uint32_t ck_ticks_now(void)
+{
+    struct DateStamp ds;
+    DateStamp(&ds);
+    return ((uint32_t)ds.ds_Days * 1440UL + (uint32_t)ds.ds_Minute) * 3000UL +
+           (uint32_t)ds.ds_Tick;
+}
+
+/* How long a ck_doc_activate() request outranks activation reports.  MUI
+ * 4 delivers Intuition's reports seconds late and more than one request
+ * behind -- after `OPEN' asked for the source window, the report for the
+ * macroexpansion window the previous command activated can still follow
+ * the one for the source window -- so a report cannot be matched to a
+ * request and the request simply stands for this long.  The reports were
+ * within two seconds; the user's clicks count again after this. */
+#define CK_ACTIVATE_PENDING_TICKS 150
+
+HOOKPROTONHNO(ck_activate_func, void, ULONG *params)
+{
+    ck_doc *doc = (ck_doc *)params[0];
+    ck_app *app = doc->app;
+
+    if (doc->closing)
+        return;
+    if (app->activate_pending != NULL && app->activate_pending != doc &&
+        !app->activate_pending->closing &&
+        ck_ticks_now() - app->activate_stamp < CK_ACTIVATE_PENDING_TICKS)
+        return;      /* a late report for a window other than the one
+                       * requested: the request stands */
+    app->activate_pending = NULL;
+    app->active_doc       = doc;
+}
+MakeStaticHook(ck_activate_hook, ck_activate_func);
+
+void ck_doc_activate(ck_doc *doc)
+{
+    doc->app->active_doc       = doc;
+    doc->app->activate_pending = doc;
+    doc->app->activate_stamp   = ck_ticks_now();
+    set(doc->win, MUIA_Window_Activate, TRUE);
+}
+
 /* ------------------------------------------------------------------ *
  * Creation and destruction
  * ------------------------------------------------------------------ */
@@ -2025,6 +2070,9 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     DoMethod(doc->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE,
              MUIV_Notify_Application, 3, MUIM_CallHook, (IPTR)&ck_close_hook,
              (IPTR)doc);
+    DoMethod(doc->win, MUIM_Notify, MUIA_Window_Activate, TRUE,
+             MUIV_Notify_Application, 3, MUIM_CallHook, (IPTR)&ck_activate_hook,
+             (IPTR)doc);
     DoMethod(doc->mini, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime,
              MUIV_Notify_Application, 3, MUIM_CallHook, (IPTR)&ck_mini_ack_hook,
              (IPTR)doc);
@@ -2108,6 +2156,10 @@ void ck_doc_close(ck_doc *doc, int32_t ask)
      * would pull the ground out from under the caller. */
     set(doc->win, MUIA_Window_Open, FALSE);
     doc->closing = 1;
+    if (app->active_doc == doc)
+        app->active_doc = NULL;
+    if (app->activate_pending == doc)
+        app->activate_pending = NULL;
 }
 
 void ck_app_reap(ck_app *app)
@@ -2151,6 +2203,8 @@ ck_doc *ck_doc_active(ck_app *app)
 {
     ck_doc *doc;
 
+    if (app->active_doc != NULL && !app->active_doc->closing)
+        return app->active_doc;
     for (doc = app->docs; doc != NULL; doc = doc->next) {
         if (!doc->closing && ck_get(doc->win, MUIA_Window_Activate))
             return doc;
