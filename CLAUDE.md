@@ -202,6 +202,14 @@ list under "Answered during phase 1".
   before the port opens, and the leg is silently skipped) and a minute or two
   of startup.  When the leg is skipped, the log ends with `clamiga.log` and a
   `status` process list that say whether clamiga was still compiling or dead.
+  `quit.rexx` ends the run: it quits the editor, waits for its port to go,
+  then sets the flag `arexx-host.lisp` waits on through every `CLAMIGA`
+  port it finds, and the host stops its port and exits.  Never let a
+  clamiga exit with its port thread alive: the process `_exit`s around the
+  thread, which stays on the public port with the VM torn down, and the
+  next message to it crashes the task while the sender (and the box agent
+  behind it) waits forever.  `amiga.arexx:start` now registers `stop` as an
+  exit hook for exactly that.
 - Real hardware: the `vamp` (Vampire, AmigaOS 3) and `mos` (MorphOS) MCP
   servers, see cl-amiga's memory notes for the workflow.  When the MCP
   config is stale (or, as in this checkout, absent),
