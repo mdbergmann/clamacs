@@ -601,9 +601,10 @@ debugger.
   host-side watchdog).  A test boots clamiga with the port and clamacs,
   drives clamacs through its ARexx port (`OPEN`, `EVAL` of editor
   commands, `GETFILE`, `KEY`), and checks results written to a log file.
-  The clamiga binary comes from the pinned `vendor/clamiga` submodule
-  (`vendor/clamiga/build/cross/`); the emulator assets (aos3, FS-UAE.app),
-  which are not in that clone, come from a cl-amiga checkout beside the repo.
+  The clamiga binary comes from the cl-amiga superproject this repository
+  is a submodule of (`../build/cross/clamiga`), and so do the emulator
+  assets (aos3, FS-UAE.app) in its `verify/realamiga/`; a standalone clone
+  falls back to a cl-amiga checkout beside it.
 - **Raw keys**: the port's `KEY` command stops above the decoder.
   `verify/realamiga/sendkey` (a 68k CLI tool, built alongside the editor)
   writes real `IECLASS_RAWKEY` events to `input.device`, spelled like the
@@ -707,7 +708,7 @@ not have saved; CLAUDE.md carries the short list.
   plus a small stack** (found 2026-09-10, the first run after pinning the
   submodule).  clamiga's cache lives on the Workbench image
   (`S:cl-amiga/faslcache/<version>-fasl<N>/`) and is validated by source
-  mtime, so a fresh clone or a re-pin of `vendor/clamiga` makes every
+  mtime, so a fresh clone or a pull of the cl-amiga superproject makes every
   entry stale and the port's library -- `lib/amiga/arexx.lisp`,
   `lib/dev-commands.lisp` and their requires -- is compiled from source at
   startup.  That compile needs cl-amiga's baseline `stack 128000`; at the
@@ -731,7 +732,7 @@ not have saved; CLAUDE.md carries the short list.
   INFO lines in a leg whose checks go through the editor.
 - **clamiga's m68k JIT lost a throw that unwound through a cleanup with
   a nested `unwind-protect` in it** (2026-09-11, found by the phase-4 leg,
-  fixed the same day in `vendor/clamiga`, `src/jit/runtime.c`).  The
+  fixed the same day in cl-amiga, `src/jit/runtime.c`).  The
   symptom: `ABORT` from debugger level 2 back to level 1 ended the whole
   form with the level-1 condition, and `CONTINUE` on a `cerror` came back
   as `RESULT 10 ERROR: stop here` -- the restart's `restart-case` clause

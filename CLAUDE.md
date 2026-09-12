@@ -186,7 +186,7 @@ list under "Answered during phase 1".
    attach turns clamiga's JIT shadow frames on so natively compiled
    functions show in the backtrace.  The first hardware run found a
    clamiga JIT bug (a throw lost when it unwound through a cleanup holding
-   a nested `unwind-protect`; fixed in `vendor/clamiga`
+   a nested `unwind-protect`; fixed in cl-amiga's
    `src/jit/runtime.c`, pinned by `tests/amiga/dev-repl-tests.lisp`) --
    when a restart "does nothing" on the Amiga but works on the host, run
    that test file straight on the box before blaming the editor.

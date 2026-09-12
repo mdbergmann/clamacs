@@ -10,7 +10,7 @@
 ;                         examples/arexx/ (the checkout's layout)
 ;     Clamacs:clamiga/    a clamiga with its lib/ beside it -- one with the
 ;                         EXT.DEV introspection commands, i.e. built from
-;                         the vendor/clamiga submodule, for the phase-2 leg;
+;                         the cl-amiga superproject, for the phase-2 leg;
 ;                         absent, the integration leg is skipped
 ;
 ; Start it detached so the shell (or the box agent's command slot) stays
