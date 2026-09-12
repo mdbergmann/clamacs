@@ -3,16 +3,15 @@
 #
 #   Workbench  cl-amiga's aos3 system, which already has MUI and
 #              TextEditor.mcc installed.  A local emulator asset (not tracked
-#              in git), so it lives in a cl-amiga checkout beside this repo,
-#              not in the vendor/clamiga submodule.
-#   CLAmiga    the pinned vendor/clamiga submodule -- the clamiga runtime the
-#              editor drives, isolated from mainline clamiga.  Required, not
-#              optional: that system's S/user-startup ends with
+#              in git) under the superproject's verify/realamiga.
+#   CLAmiga    the cl-amiga checkout this repository is a submodule of -- the
+#              clamiga runtime the editor drives.  Required, not optional:
+#              that system's S/user-startup ends with
 #                  execute CLAmiga:verify/realamiga/call-on-ustartup
 #              and that script is what honours the boot-override this harness
 #              drops into CLAmiga:build/amiga/; boot-override then runs
 #              CLAmiga:build/cross/clamiga.
-#   Clamacs    this repository.
+#   Clamacs    this repository (cl-amiga/clamacs).
 #
 # accuracy = 2 and no JIT: the point of the low-end config is that timing and
 # memory look like the machine the editor is meant to run on.
@@ -31,9 +30,9 @@ graphics_card = uaegfx
 graphics_memory = 2048
 hard_drive_0 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/verify/realamiga/aos3
 hard_drive_0_label = Workbench
-hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/clamacs/vendor/clamiga
+hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga
 hard_drive_1_label = CLAmiga
-hard_drive_2 = /Users/mbergmann/Development/MySources/amigasources/clamacs
+hard_drive_2 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/clamacs
 hard_drive_2_label = Clamacs
 joystick_port_1_mode = nothing
 keep_aspect = 1

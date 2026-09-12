@@ -23,18 +23,25 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
-# Two different dependencies used to be one shared cl-amiga checkout:
+# Two dependencies, both normally the cl-amiga checkout this repository is a
+# submodule of (clamacs lives at cl-amiga/clamacs):
 #   EMU     the emulator assets -- the aos3 Workbench image (with MUI and
-#           TextEditor.mcc) and FS-UAE.app.  These are NOT tracked in git, so
-#           they are not in the vendor/clamiga submodule; they stay in a
-#           cl-amiga checkout beside this one (override with EMU_DIR).
+#           TextEditor.mcc) and FS-UAE.app.  These are NOT tracked in git;
+#           they live in the superproject's verify/realamiga (override with
+#           EMU_DIR).
 #   CLAMIGA the clamiga RUNTIME the editor drives -- the CLAmiga: volume, from
-#           which boot-override reads CLAmiga:build/cross/clamiga.  This is now
-#           the pinned vendor/clamiga submodule, so a clamiga change made for
-#           clamacs is isolated from mainline clamiga (override with CLAMIGA_DIR).
+#           which boot-override reads CLAmiga:build/cross/clamiga.  That is
+#           the superproject: build clamiga there first (override with
+#           CLAMIGA_DIR to drive another checkout).
 # The .fs-uae config's hard_drive_1 must point at the same place as CLAMIGA.
-EMU="${EMU_DIR:-$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)}"
-CLAMIGA="${CLAMIGA_DIR:-$ROOT/vendor/clamiga}"
+# A standalone clone (not under cl-amiga) falls back to ../cl-amiga.
+if [ -f "$ROOT/../src/core/types.h" ]; then
+	SUPER=$(cd "$ROOT/.." && pwd)
+else
+	SUPER=$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)
+fi
+EMU="${EMU_DIR:-$SUPER}"
+CLAMIGA="${CLAMIGA_DIR:-$SUPER}"
 
 CONFIG="${1:-$HERE/verify.fs-uae}"
 LOG="$ROOT/build/amiga/clamacs-test.log"
@@ -45,17 +52,22 @@ STALL_TIMEOUT="${STALL_TIMEOUT:-300}"
 HARD_TIMEOUT="${HARD_TIMEOUT:-1200}"
 
 if [ -z "$EMU" ] || [ ! -d "$EMU/verify/realamiga/aos3" ]; then
-	echo "cl-amiga emulator assets not found beside this repository."
-	echo "The Workbench image (aos3) and FS-UAE.app are not tracked in git, so"
-	echo "they are not in the vendor/clamiga submodule.  Set EMU_DIR to a"
-	echo "cl-amiga checkout that has verify/realamiga/aos3."
+	echo "cl-amiga emulator assets not found at ${EMU:-<no cl-amiga checkout>}."
+	echo "The Workbench image (aos3) and FS-UAE.app are not tracked in git."
+	echo "Set EMU_DIR to a cl-amiga checkout that has verify/realamiga/aos3."
 	exit 1
 fi
 
-if [ ! -d "$CLAMIGA/verify/realamiga" ]; then
-	echo "vendor/clamiga submodule is not checked out at $CLAMIGA."
-	echo "Run: git submodule update --init vendor/clamiga  (or set CLAMIGA_DIR)."
+if [ -z "$CLAMIGA" ] || [ ! -d "$CLAMIGA/verify/realamiga" ]; then
+	echo "clamiga checkout not found at ${CLAMIGA:-<no cl-amiga checkout>}."
+	echo "clamacs is a submodule of cl-amiga; run from cl-amiga/clamacs, or set"
+	echo "CLAMIGA_DIR to a cl-amiga checkout."
 	exit 1
+fi
+if [ ! -f "$CLAMIGA/build/cross/clamiga" ]; then
+	echo "NOTE: $CLAMIGA/build/cross/clamiga is missing -- the integration leg"
+	echo "      will be skipped.  Build the runtime first:"
+	echo "        make -C $CLAMIGA -f Makefile.cross amiga"
 fi
 
 # FS-UAE keeps Amiga-side metadata for a file the emulated system wrote --

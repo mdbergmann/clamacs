@@ -30,11 +30,16 @@ verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
                            sendkey.c injects real key events through input.device
 docs/memory.md             what the editor costs on an 8 MB machine
 tools/setup-toolchain.sh   m68k-amigaos-gcc installer (copied from cl-amiga)
-tools/m68k-amigaos-gcc/    submodule: the cross toolchain sources (same pin as cl-amiga)
+tools/m68k-amigaos-gcc/    submodule: the cross toolchain sources (same pin as cl-amiga);
+                           optional -- the build falls back to the superproject's install
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
-vendor/clamiga/            submodule: a pinned full clone of the clamiga runtime (cl-amiga),
-                           so clamiga changes for clamacs stay separate from mainline clamiga
 ```
+
+Clamacs is a git submodule of [cl-amiga](https://github.com/mdbergmann/cl-amiga)
+(checked out at `cl-amiga/clamacs`) and ships in its binary release next to
+the `clamiga` binaries. The runtime it drives is the superproject: build
+`clamiga` there, and make runtime changes (new `EXT.DEV` commands, compiler
+fixes) as commits there under its gates.
 
 ## Building and testing
 
@@ -51,13 +56,13 @@ Lisp tokenizer, the sexp scanner, the indenter, the diagnostic parser and the
 request queue all run on the host, so a failing assertion costs a second
 instead of an emulator boot.
 
-The FS-UAE run uses the clamiga runtime from the `vendor/clamiga` submodule
-(the `CLAmiga:` volume; the integration leg reads
-`vendor/clamiga/build/cross/clamiga`, so build clamiga in the submodule
-first). The Workbench image (with MUI and TextEditor.mcc) and `FS-UAE.app`
-are not tracked in git and so are not in that submodule; the run takes them
-from a `cl-amiga` checkout next to this one. Override with `EMU_DIR` (the
-emulator assets) and `CLAMIGA_DIR` (the clamiga runtime).
+The FS-UAE run uses the clamiga runtime from the superproject (the
+`CLAmiga:` volume; the integration leg reads its `build/cross/clamiga`, so
+run `make -f Makefile.cross amiga` in `cl-amiga` first). The Workbench image
+(with MUI and TextEditor.mcc) and `FS-UAE.app` are not tracked in git; the
+run takes them from the superproject's `verify/realamiga/` too. A standalone
+clone falls back to a `cl-amiga` checkout next to it. Override with
+`EMU_DIR` (the emulator assets) and `CLAMIGA_DIR` (the clamiga runtime).
 
 ## Requirements on the Amiga
 
@@ -72,6 +77,18 @@ the muimaster protos and the SDI headers, so a MUI application compiles
 against it without the MUI developer kit.
 
 ## Setup
+
+The usual way is through the cl-amiga checkout, whose toolchain install the
+build picks up on its own:
+
+```
+git clone --recursive https://github.com/mdbergmann/cl-amiga.git
+cd cl-amiga && tools/setup-toolchain.sh        # once, for both projects
+cd clamacs && make -f Makefile.cross amiga
+```
+
+A standalone clone works too; it then needs its own toolchain (or a link to
+an existing install):
 
 ```
 git clone --recursive https://github.com/mdbergmann/clamacs.git

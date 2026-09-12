@@ -2,13 +2,18 @@
 
 Emacs-flavoured Common Lisp IDE for AmigaOS 3 (68020+) and MorphOS. Native C
 MUI application; drives a running `clamiga` (the CL-Amiga runtime) over ARexx.
-clamiga is pinned as the `vendor/clamiga` submodule -- a full clone of
-cl-amiga (`https://github.com/mdbergmann/cl-amiga.git`), so a clamiga change
-needed for clamacs is made and built there, isolated from mainline clamiga.
-`git submodule update --init vendor/clamiga` after cloning. (The FS-UAE
-emulator assets -- the aos3 Workbench image and FS-UAE.app -- are NOT in that
-clone; they are not tracked in git and live in a cl-amiga checkout beside this
-repo; see Testing.)
+This repository is a **git submodule of cl-amiga**
+(`https://github.com/mdbergmann/cl-amiga.git`, checked out at
+`cl-amiga/clamacs`) and ships in cl-amiga's binary release beside the
+`clamiga` binaries (`scripts/make-binary-release.sh` over there builds it).
+The runtime the editor drives is the superproject -- one level up.  A
+clamiga change needed for clamacs (an `EXT.DEV` command, a compiler or JIT
+fix) is a commit *in cl-amiga* under its gates, then the superproject's
+pin of this submodule is bumped when the editor side lands.  Work here
+never gates on cl-amiga's suites, and cl-amiga's `make test` never runs
+ours.  (The FS-UAE emulator assets -- the aos3 Workbench image and
+FS-UAE.app -- are not tracked in git; they live in the superproject's
+`verify/realamiga`, see Testing.)
 
 The full design and phase plan is `specs/clamacs-ide.md`; this file is the
 short version.
@@ -199,9 +204,11 @@ list under "Answered during phase 1".
 
 ## Build and toolchain
 
-- `tools/setup-toolchain.sh` installs (or `--link`s) `m68k-amigaos-gcc`
-  into `tools/m68k-amigaos-gcc/prefix`; the submodule is the same commit
-  cl-amiga pins, so both repos use one compiler.
+- `Makefile.cross` uses this repository's `tools/m68k-amigaos-gcc/prefix`
+  when one is installed, else the superproject's
+  (`../tools/m68k-amigaos-gcc/prefix`) -- the same toolchain commit, so
+  one install serves both; `TOOLCHAIN=...` overrides.  A standalone clone
+  runs `tools/setup-toolchain.sh` (or `--link`s an install).
 - Mirror cl-amiga's flags: `-noixemul -mcpu=68020 -std=c99 -Os
   -fomit-frame-pointer`, link with `-s`. This gcc **miscompiles at -O2**
   (flexible-array pointer arithmetic) and `-flto` is broken — stay at `-Os`,
@@ -224,17 +231,19 @@ list under "Answered during phase 1".
 ## Testing
 
 - Unattended FS-UAE runs follow cl-amiga's `verify/realamiga/run-fs-uae.sh`
-  pattern (watchdog, auto-quit). The clamiga runtime is the `vendor/clamiga`
-  submodule: the `CLAmiga:` volume mounts it, and the integration leg reads
-  `vendor/clamiga/build/cross/clamiga` (build clamiga in the submodule first,
-  which needs its own `tools/m68k-amigaos-gcc` -- `git submodule update
-  --init` inside `vendor/clamiga`). The emulator assets it can't provide (the
-  aos3 Workbench with MUI + TextEditor.mcc, and FS-UAE.app) are not tracked in
-  git, so `run-fs-uae.sh` takes them from a cl-amiga checkout beside this repo
-  (`EMU_DIR`, default `../cl-amiga`); `CLAMIGA_DIR` overrides the submodule.
+  pattern (watchdog, auto-quit). The clamiga runtime is the superproject:
+  the `CLAmiga:` volume mounts `..` (the cl-amiga checkout), and the
+  integration leg reads its `build/cross/clamiga` (`make -f Makefile.cross
+  amiga` up there first; without it the leg is skipped with a NOTE). The
+  emulator assets (the aos3 Workbench with MUI + TextEditor.mcc, and
+  FS-UAE.app) are not tracked in git; `run-fs-uae.sh` takes them from the
+  superproject too (`EMU_DIR` overrides; `CLAMIGA_DIR` points the runtime at
+  another checkout; a standalone clone falls back to `../cl-amiga` for both).
+  The `.fs-uae` configs carry the same two paths as absolute
+  `hard_drive_1`/`hard_drive_2` entries and must agree with them.
   clamiga's FASL cache lives on that Workbench image (`S:cl-amiga/faslcache`)
-  and is validated by source mtime, so after a fresh clone or a re-pin of the
-  submodule the first run compiles the port's library from source: that needs
+  and is validated by source mtime, so after a fresh clone or a pull of the
+  superproject the first run compiles the port's library from source: that needs
   the `stack 128000` the boot scripts set (at 65000 the reader's guard fires
   before the port opens, and the leg is silently skipped) and a minute or two
   of startup.  When the leg is skipped, the log ends with `clamiga.log` and a
