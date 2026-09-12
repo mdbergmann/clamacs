@@ -69,11 +69,13 @@ MakeStaticHook(ck_errorwin_close_hook, ck_errorwin_close_func);
 
 Object *ck_errorwin_create(ck_app *app)
 {
+    struct TagItem place[CK_SNAPSHOT_TAGS];
+
+    ck_snapshot_tags(app, "errors", place,
+                     MUIV_Window_Width_Visible(60), MUIV_Window_Height_Visible(25));
+
     app->errorwin = WindowObject,
         MUIA_Window_Title,  (IPTR)"clamacs diagnostics",
-        MUIA_Window_ID,     MAKE_ID('C','L','E','R'),
-        MUIA_Window_Width,  MUIV_Window_Width_Visible(60),
-        MUIA_Window_Height, MUIV_Window_Height_Visible(25),
         WindowContents, VGroup,
             Child, ListviewObject,
                 MUIA_Listview_List, app->errorlist = ListObject,
@@ -83,6 +85,7 @@ Object *ck_errorwin_create(ck_app *app)
                 End,
             End,
         End,
+        TAG_MORE, (IPTR)place,   /* the stored place, or the default size */
     End;
 
     if (app->errorwin == NULL)

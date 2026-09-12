@@ -177,6 +177,14 @@ static int32_t ck_app_create(ck_app *app)
     ck_symcache_init(&app->arglists);
     ck_locstack_init(&app->locations);
 
+    /* Where the windows go, before the first one is created. */
+    ck_snapshot_load(app);
+    if (app->layout.count > 0) {
+        snprintf(note, sizeof note, "window positions read (%ld)",
+                 (long)app->layout.count);
+        ck_note(note);
+    }
+
     app->global   = ck_bindings_global();
     app->lisp     = ck_bindings_lisp();
     app->repl_map = ck_bindings_repl();

@@ -47,16 +47,30 @@ static int32_t ck_te(ck_doc *doc, const char *cmd)
     return 1;
 }
 
-/* The constructor behind ck_doc_new() and ck_doc_scratch(): WINDOW_ID is
- * the MUI window ID the new window snapshots under (MUIA_Window_ID). */
-static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id);
+/* The constructor behind ck_doc_new() and ck_doc_scratch(): ROLE is what
+ * the window's position is stored under (emacs/winstore.h, snapshot.c). */
+static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role);
 
-/* MUI keeps one snapshot -- position and size, ENV:MUI/CLAMACS.cfg -- per
- * window ID.  File windows share one, so a second document opens where the
- * first was snapshotted; the REPL has its own, so snapshotting it moves
- * neither the text windows nor is it moved by them. */
-#define CK_WINDOW_ID_DOC  MAKE_ID('C','L','M','A')
-#define CK_WINDOW_ID_REPL MAKE_ID('C','L','R','E')
+/* The role of the next file window: the lowest slot no open file window
+ * holds, so the first file of a session takes `doc1' wherever it was
+ * snapshotted, and a window closed and reopened takes its slot back. */
+static void ck_doc_free_role(ck_app *app, char *role, int32_t size)
+{
+    int32_t slot;
+
+    for (slot = 1; ; slot++) {
+        ck_doc *d;
+        int32_t used = 0;
+
+        for (d = app->docs; d != NULL && !used; d = d->next) {
+            if (!d->closing && ck_winstore_doc_slot(d->role) == slot)
+                used = 1;
+        }
+        if (!used)
+            break;
+    }
+    ck_winstore_doc_role(slot, role, size);
+}
 
 static void ck_te_repeat(ck_doc *doc, const char *cmd, int32_t times)
 {
@@ -635,8 +649,11 @@ ck_doc *ck_doc_scratch(ck_app *app, const char *name, int32_t lisp_mode)
             return doc;
     }
 
-    doc = ck_doc_create(app, NULL, strcmp(name, CK_REPL_NAME) == 0
-                                       ? CK_WINDOW_ID_REPL : CK_WINDOW_ID_DOC);
+    {
+        char role[CK_WINSTORE_NAME_MAX];
+        ck_winstore_scratch_role(name, role, (int32_t)sizeof role);
+        doc = ck_doc_create(app, NULL, role);
+    }
     if (doc == NULL)
         return NULL;
 
@@ -1692,6 +1709,9 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     case CK_CMD_DEBUGGER_FRAME:     ck_debug_frame(doc, -1); break;
     case CK_CMD_DEBUGGER_EVAL:      ck_debug_eval(doc, NULL); break;
 
+    /* --- window positions, see snapshot.c ------------------------- */
+    case CK_CMD_SNAPSHOT_WINDOWS:   ck_snapshot_take(doc); break;
+
     default:
         ck_message(doc, "%s is not implemented yet",
                    ck_command_name(command) != NULL
@@ -2003,15 +2023,22 @@ static int32_t ck_looks_like_lisp(const char *path)
 
 ck_doc *ck_doc_new(ck_app *app, const char *path)
 {
-    return ck_doc_create(app, path, CK_WINDOW_ID_DOC);
+    char role[CK_WINSTORE_NAME_MAX];
+    ck_doc_free_role(app, role, (int32_t)sizeof role);
+    return ck_doc_create(app, path, role);
 }
 
-static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id)
+static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
 {
     ck_doc *doc = (ck_doc *)AllocVec(sizeof(ck_doc), MEMF_ANY | MEMF_CLEAR);
+    struct TagItem place[CK_SNAPSHOT_TAGS];
 
     if (doc == NULL)
         return NULL;
+
+    strncpy(doc->role, role, sizeof doc->role - 1);
+    doc->role[sizeof doc->role - 1] = '\0';
+    ck_snapshot_tags(app, doc->role, place, 0, 0);
 
     doc->app     = app;
     doc->id      = app->next_id++;
@@ -2030,7 +2057,6 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id)
 
     doc->win = WindowObject,
         MUIA_Window_Title,  (IPTR)"clamacs",
-        MUIA_Window_ID,     window_id,
         WindowContents, VGroup,
             Child, HGroup,
                 MUIA_Group_Spacing, 0,
@@ -2089,6 +2115,9 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id)
                 End,
             End,
         End,
+        /* Where the window goes: its stored place, or MUI's choice.  Last,
+         * since TAG_MORE hands the rest of the list over. */
+        TAG_MORE, (IPTR)place,
     End;
 
     if (doc->win == NULL) {

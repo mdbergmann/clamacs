@@ -201,6 +201,19 @@ list under "Answered during phase 1".
    items are set).  The port's `MENU <name> [STATE]` drives and inspects
    it for `drive.rexx`.  Add a command to the menu by adding a row to
    the table; `tests/test_menudef.c` checks the key shown really runs it.
+6. **Window positions** (2026-09-12): `clamacs-snapshot-windows`
+   (Windows > Snapshot Windows) writes every open window's geometry to
+   `ENVARC:Clamacs/windows.cfg` + `ENV:`, keyed by role (`doc1`, `doc2`,
+   ... for file windows by the lowest free slot, `repl`, `description`,
+   `errors`, `inspector`, `debugger`); `src/snapshot.c` reads the file
+   at startup and every window is created with `TAG_MORE` into the tags
+   `ck_snapshot_tags()` fills.  The store (`src/emacs/winstore.c`) is
+   data, host-tested.  **The windows carry no `MUIA_Window_ID` on
+   purpose**: MUI's own snapshot would override the editor's, and MUI
+   3.8 has no way to take one from code.  The port's `GETWINDOW`
+   answers `role left top width height` for `drive.rexx`, whose leg
+   snapshots, checks the file, then starts a second editor against a
+   hand-written file and reads where it came up.
 
 ## Build and toolchain
 

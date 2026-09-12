@@ -18,10 +18,22 @@ erring stack until a restart is chosen), and an inspector window
 (`C-c I`) with a parts list and a Back button. See `CLAUDE.md` for the
 design and the phase plan, and `specs/clamacs-ide.md` for the full one.
 
+## Window positions
+
+Arrange the windows, then pick **Windows > Snapshot Windows** (or `M-x
+clamacs-snapshot-windows`): the position and size of every open window is
+written to `ENVARC:Clamacs/windows.cfg` (and `ENV:`), and the windows come
+up there from then on — the REPL, the debugger, the inspector, the error
+list, and the file windows in the order they are opened (the first file of
+a session where the first file window was, and so on). The file is plain
+text, one `role left top width height` line per window; edit it or delete
+it to start over. Snapshotting again only updates the windows that are
+open at the time.
+
 ## Layout
 
 ```
-src/emacs/                 keymaps, raw-key decoding rules, command table, menu table, kill ring, minibuffer history
+src/emacs/                 keymaps, raw-key decoding rules, command table, menu table, kill ring, minibuffer history, window positions
 src/lisp/                  tokenizer, sexp scanner, indenter
 src/rexx/                  diagnostic parser, request queue, the rc ladder, the REPL thread's messages
 src/*.c                    the MUI half: custom classes, windows, ARexx, introspection, the REPL, main

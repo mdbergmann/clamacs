@@ -56,6 +56,7 @@ CORE_SRC = $(SRCDIR)/emacs/keymap.c \
            $(SRCDIR)/emacs/minihist.c \
            $(SRCDIR)/emacs/locstack.c \
            $(SRCDIR)/emacs/menudef.c \
+           $(SRCDIR)/emacs/winstore.c \
            $(SRCDIR)/lisp/token.c \
            $(SRCDIR)/lisp/sexp.c \
            $(SRCDIR)/lisp/indent.c \
@@ -77,6 +78,7 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/debugwin.c \
            $(SRCDIR)/inspectwin.c \
            $(SRCDIR)/menu.c \
+           $(SRCDIR)/snapshot.c \
            $(SRCDIR)/muistubs.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
@@ -174,7 +176,16 @@ verify-amiga:
 	    'OK raw ESC > acted as Meta' \
 	    'OK raw C-x C-q went through the prefix map' \
 	    'OK raw RET indented the new line' \
-	    'OK raw typing self-inserted'; do \
+	    'OK raw typing self-inserted' \
+	    'OK GETWINDOW answered doc1' \
+	    'OK the snapshot was taken' \
+	    'OK the snapshot wrote ENV: and ENVARC:' \
+	    'OK the file holds the active window' \
+	    'OK ENVARC: holds the same line' \
+	    'OK the file holds the error list' \
+	    'OK a second editor came up where the file said' \
+	    'OK the second editor quit' \
+	    'OK the snapshot files are gone again'; do \
 	    if ! grep -qF "$$want" build/amiga/clamacs-test.log; then \
 	        echo "=== Amiga verification FAILED (missing: $$want) ==="; \
 	        exit 1; \

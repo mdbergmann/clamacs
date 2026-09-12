@@ -90,6 +90,8 @@ static const ck_menu_entry ck_menu_table[] = {
     ITEM(CK_CMD_REPL_NEXT_INPUT,         CK_MENU_REPL_WINDOW,   "Next Input",          "M-n",     2),
     BAR,
     ITEM(CK_CMD_OTHER_WINDOW,            CK_MENU_ALWAYS,        "Other Window",        "C-x o",   0),
+    BAR,
+    ITEM(CK_CMD_SNAPSHOT_WINDOWS,        CK_MENU_ALWAYS,        "Snapshot Windows",    NULL,      0),
 
     { CK_MENU_END, CK_MENU_ALWAYS, CK_CMD_NONE, NULL, NULL, 0 }
 };

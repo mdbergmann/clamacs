@@ -1,7 +1,8 @@
 /* drive.rexx -- the unattended acceptance run, driven through clamacs's own
-** ARexx port: the phase-1 editor and integration checks, then the phase-2
-** introspection leg, the phase-3 REPL leg and the phase-4 debugger and
-** inspector leg against the same clamiga.
+** ARexx port: the phase-1 editor checks, the window-position snapshot
+** (with a second editor started to see the restore), then the integration
+** checks, the phase-2 introspection leg, the phase-3 REPL leg and the
+** phase-4 debugger and inspector leg against the same clamiga.
 **
 ** This is the shape specs/clamacs-ide.md asks for under Testing: a script
 ** that talks to the editor the way a user's macro would, so the run is
@@ -505,6 +506,116 @@ ELSE DO
     ELSE
         SAY 'FAIL raw typing gave' RESULT
 END
+
+/* ------------------------------------------------------------------ *
+** Window positions.  clamacs-snapshot-windows writes where every open
+** window is to ENV:Clamacs/windows.cfg and ENVARC:, and GETWINDOW says
+** where the active window is and under which role, so the file can be
+** checked against the window.  The restore cannot be seen in THIS
+** editor -- a window is placed when it is created, from a file read at
+** startup -- so a SECOND editor is started against a file this script
+** writes, and asked where its first window came up.  Both files are
+** deleted afterwards: the Workbench image the run leaves behind must not
+** carry a snapshot into the next run.
+** ------------------------------------------------------------------ */
+
+CFG     = 'ENV:Clamacs/windows.cfg'
+ARCHIVE = 'ENVARC:Clamacs/windows.cfg'
+
+/* The error list is opened too, so a fixed window is in the snapshot
+** beside the file windows; sample.lisp, opened at startup, is doc1. */
+'EVAL clamacs-show-errors'
+'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+CALL DELAY(10)
+'GETWINDOW'
+PLACE = RESULT
+PARSE VAR PLACE ROLE L T W H .
+IF RC = 0 & ROLE = 'doc1' & DATATYPE(L, 'W') & DATATYPE(T, 'W') & DATATYPE(W, 'W') & DATATYPE(H, 'W') & W > 0 & H > 0 THEN
+    SAY 'OK GETWINDOW answered' PLACE
+ELSE
+    SAY 'FAIL GETWINDOW gave' PLACE
+
+'EVAL clamacs-snapshot-windows'
+'STATUS'
+IF POS('Saved the positions', RESULT) > 0 THEN
+    SAY 'OK the snapshot was taken:' RESULT
+ELSE
+    SAY 'FAIL clamacs-snapshot-windows said' RESULT
+
+IF EXISTS(CFG) & EXISTS(ARCHIVE) THEN
+    SAY 'OK the snapshot wrote ENV: and ENVARC:'
+ELSE
+    SAY 'FAIL after the snapshot ENV: has' EXISTS(CFG) 'and ENVARC: has' EXISTS(ARCHIVE)
+
+/* The line for the active window must say what GETWINDOW said, and the
+** error list must have a line of its own. */
+IF FileHasLine(CFG, PLACE) THEN
+    SAY 'OK the file holds the active window as' PLACE
+ELSE
+    SAY 'FAIL no line' PLACE 'in' CFG
+IF FileHasLine(ARCHIVE, PLACE) THEN
+    SAY 'OK ENVARC: holds the same line'
+ELSE
+    SAY 'FAIL no line' PLACE 'in' ARCHIVE
+IF FileHasPrefix(CFG, 'errors ') THEN
+    SAY 'OK the file holds the error list'
+ELSE
+    SAY 'FAIL no errors line in' CFG
+
+/* A second editor, against a file with a place of our choosing for its
+** first window: it must come up there.  Its port is the first CLAMACS
+** name that is not ours.  A comment line and a blank line go in front,
+** as a hand-edited file would have them. */
+WANT = 'doc1 24 48 400 160'
+IF WriteFile(CFG, '; written by drive.rexx' || '0A'x || '0A'x || WANT || '0A'x) THEN
+    SAY 'OK wrote a file of our own:' WANT
+ELSE
+    SAY 'FAIL could not write' CFG
+ADDRESS COMMAND 'Run >NIL: Clamacs:build/amiga/clamacs Clamacs:verify/realamiga/sample2.lisp'
+PORT2 = ''
+DO i = 1 TO 120 WHILE PORT2 = ''
+    IF SHOW('P', 'CLAMACS') & 'CLAMACS' ~= PORT THEN
+        PORT2 = 'CLAMACS'
+    ELSE DO n = 1 TO 9
+        IF SHOW('P', 'CLAMACS.'n) & 'CLAMACS.'n ~= PORT THEN DO
+            PORT2 = 'CLAMACS.'n
+            LEAVE n
+        END
+    END
+    IF PORT2 = '' THEN CALL DELAY(25)
+END
+IF PORT2 = '' THEN
+    SAY 'FAIL no second editor port appeared'
+ELSE DO
+    SAY 'OK a second editor is at' PORT2
+    ADDRESS VALUE PORT2
+    /* The port comes with the application object, before the first
+    ** window is opened: wait for a window to answer. */
+    GOT = ''
+    DO i = 1 TO 40 WHILE GOT = ''
+        'GETWINDOW'
+        IF RC = 0 & RESULT ~= '' THEN GOT = RESULT
+        ELSE CALL DELAY(25)
+    END
+    IF GOT = WANT THEN
+        SAY 'OK a second editor came up where the file said:' GOT
+    ELSE
+        SAY 'FAIL the second editor came up at' GOT '(wanted' WANT')'
+    'EVAL save-buffers-kill-emacs'
+    DO i = 1 TO 20 WHILE SHOW('P', PORT2)
+        CALL DELAY(25)
+    END
+    IF SHOW('P', PORT2) THEN
+        SAY 'FAIL the second editor did not quit'
+    ELSE
+        SAY 'OK the second editor quit'
+    ADDRESS VALUE PORT
+END
+ADDRESS COMMAND 'Delete >NIL: QUIET' CFG ARCHIVE
+IF EXISTS(CFG) | EXISTS(ARCHIVE) THEN
+    SAY 'FAIL the snapshot files could not be deleted'
+ELSE
+    SAY 'OK the snapshot files are gone again'
 
 /* ------------------------------------------------------------------ *
 ** The point of the whole thing: driving a real clamiga.
@@ -1304,6 +1415,36 @@ LispView: PROCEDURE EXPOSE PORT LISP
     IF RC = 0 THEN SAY 'INFO backtrace at' what':' RESULT
     ADDRESS VALUE PORT
     RETURN
+
+/* Whether PATH has a line that is exactly WANT (trailing blanks aside). */
+FileHasLine: PROCEDURE
+    PARSE ARG path, want
+    IF ~OPEN('wf', path, 'R') THEN RETURN 0
+    found = 0
+    DO WHILE ~EOF('wf')
+        IF STRIP(READLN('wf')) == want THEN found = 1
+    END
+    CALL CLOSE('wf')
+    RETURN found
+
+/* Whether PATH has a line that starts with PREFIX. */
+FileHasPrefix: PROCEDURE
+    PARSE ARG path, prefix
+    IF ~OPEN('wf', path, 'R') THEN RETURN 0
+    found = 0
+    DO WHILE ~EOF('wf')
+        IF LEFT(READLN('wf'), LENGTH(prefix)) == prefix THEN found = 1
+    END
+    CALL CLOSE('wf')
+    RETURN found
+
+/* Replace PATH with TEXT. */
+WriteFile: PROCEDURE
+    PARSE ARG path, text
+    IF ~OPEN('wf', path, 'W') THEN RETURN 0
+    CALL WRITECH('wf', text)
+    CALL CLOSE('wf')
+    RETURN 1
 
 /* Whether one of the first N lines of the active window contains NEEDLE.
 ** Moves the cursor. */

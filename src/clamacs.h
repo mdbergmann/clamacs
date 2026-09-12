@@ -20,6 +20,7 @@
 #include "emacs/minihist.h"
 #include "emacs/locstack.h"
 #include "emacs/menudef.h"
+#include "emacs/winstore.h"
 #include "lisp/token.h"
 #include "lisp/sexp.h"
 #include "lisp/indent.h"
@@ -85,9 +86,9 @@
 #define CKM_MiniKey (TAG_USER | 0x0C1A0003)
 struct CKP_MiniKey { ULONG MethodID; ULONG key; };
 
-/* The REPL window's name (phase 3).  Here rather than in repl.c because
- * ck_doc_scratch() gives that one window a MUI window ID of its own: a
- * snapshot of the REPL must not move every text window along with it. */
+/* The REPL window's name (phase 3): what repl.c opens, what the port's
+ * GETNAME answers there, and -- without the stars and the prefix -- the
+ * role `repl' its position is stored under (emacs/winstore.h). */
 #define CK_REPL_NAME "*clamacs-repl*"
 
 #define CK_PATH_MAX 256
@@ -161,6 +162,11 @@ typedef struct ck_doc {
     char path[CK_PATH_MAX];    /* "" for a buffer that has no file yet */
     char name[CK_PATH_MAX];    /* the file part, shown in the title */
     char package[CK_PKG_MAX];
+    /* The role its position is stored under (emacs/winstore.h): `doc1',
+     * `doc2', ... for file windows -- the lowest slot no open file window
+     * held when this one was created -- `repl' and the other scratch names
+     * for the rest; "" for a window with no stored place. */
+    char role[CK_WINSTORE_NAME_MAX];
 
     /* MUI keeps the pointer it is given for MUIA_Text_Contents, so the
      * strings behind the status line and the echo area have to outlive the
@@ -328,6 +334,11 @@ typedef struct ck_app {
     /* The menu strip (menu.c), shared by every window; NULL when it could
      * not be built, in which case the editor runs without menus. */
     Object *menustrip;
+
+    /* Where the windows go (snapshot.c): read from ENV:Clamacs/windows.cfg
+     * at startup, consulted whenever a window is created, rewritten by
+     * `clamacs-snapshot-windows'. */
+    ck_winstore layout;
 
     int32_t quitting;
 } ck_app;
@@ -571,6 +582,29 @@ int32_t ck_menu_pick(ck_app *app, int32_t i);
  * -1; and whether that item is currently enabled. */
 int32_t ck_menu_find(const char *command);
 int32_t ck_menu_is_enabled(int32_t i);
+
+/* ---- snapshot.c -------------------------------------------------- */
+
+/* Read the stored positions into app->layout: ENV:Clamacs/windows.cfg,
+ * else ENVARC:.  Nothing found leaves the store empty, which is fine. */
+void    ck_snapshot_load(ck_app *app);
+
+/* The window-creation tags for ROLE into TAGS, which must hold
+ * CK_SNAPSHOT_TAGS entries: LeftEdge/TopEdge/Width/Height from the store
+ * when it has the role, else DEF_WIDTH/DEF_HEIGHT as the Width/Height data
+ * (0 for MUI's own default) and the edges left to MUI.  Meant to be the
+ * LAST thing in a WindowObject list, as `TAG_MORE, (IPTR)tags'. */
+#define CK_SNAPSHOT_TAGS 5
+void    ck_snapshot_tags(ck_app *app, const char *role, struct TagItem *tags,
+                         IPTR def_width, IPTR def_height);
+
+/* `clamacs-snapshot-windows': record every open window and write the
+ * store to ENV: and ENVARC:, reporting in DOC's echo area. */
+void    ck_snapshot_take(ck_doc *doc);
+
+/* The current geometry of DOC's window, for the port's GETWINDOW:
+ * `role left top width height'. */
+void    ck_snapshot_describe(ck_doc *doc, char *out, int32_t size);
 
 /* ---- errorwin.c -------------------------------------------------- */
 

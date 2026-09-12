@@ -8,7 +8,9 @@
  *
  * The command set is the phase-1 table from specs/clamacs-ide.md, plus
  * `GETNAME' from phase 2 (the scratch windows have no file for GETFILE to
- * name).  `EVAL' runs an EDITOR command by name -- the same namespace `M-x'
+ * name) and `GETWINDOW' (where the active window is, and the role its
+ * position is stored under).  `EVAL' runs an EDITOR command by name -- the
+ * same namespace `M-x'
  * uses, which is the point of having a command table at all -- and `TE'
  * passes straight through to MUIM_TextEditor_ARexxCmd, so the macros people
  * already have for CygnusEd-style editors keep working.
@@ -120,6 +122,30 @@ HOOKPROTONHNO(ck_rx_getname_func, LONG, IPTR *args)
     return 0;
 }
 MakeStaticHook(ck_rx_getname_hook, ck_rx_getname_func);
+
+/*
+ * The active window's place: `role left top width height', the role being
+ * what `clamacs-snapshot-windows' stores it under (`doc1', `repl', ...).
+ * A macro cannot move a window, so this is the read side only -- and how
+ * the unattended test checks that a snapshot wrote what the window showed
+ * and that a second editor came up where the file said.
+ */
+HOOKPROTONHNO(ck_rx_getwindow_func, LONG, IPTR *args)
+{
+    ck_doc *doc = ck_rx_doc();
+    char    text[80];
+    (void)args;
+
+    if (doc == NULL) {
+        ck_rx_result("");
+        return 0;
+    }
+    ck_snapshot_describe(doc, text, (int32_t)sizeof text);
+    ck_rx_result(text);
+
+    return 0;
+}
+MakeStaticHook(ck_rx_getwindow_hook, ck_rx_getwindow_func);
 
 /*
  * LINE is 1-based here, unlike the class's own GOTOLINE (which sets
@@ -400,6 +426,7 @@ const struct MUI_Command ck_rexx_commands[] = {
     { (char *)"SAVE",     (char *)"",              0, (struct Hook *)&ck_rx_save_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"GETFILE",  (char *)"",              0, (struct Hook *)&ck_rx_getfile_hook,  { 0, 0, 0, 0, 0 } },
     { (char *)"GETNAME",  (char *)"",              0, (struct Hook *)&ck_rx_getname_hook,  { 0, 0, 0, 0, 0 } },
+    { (char *)"GETWINDOW", (char *)"",             0, (struct Hook *)&ck_rx_getwindow_hook, { 0, 0, 0, 0, 0 } },
     { (char *)"GOTOLINE", (char *)"LINE/N/A",      1, (struct Hook *)&ck_rx_gotoline_hook, { 0, 0, 0, 0, 0 } },
     { (char *)"EVAL",     (char *)"FORM/F",        1, (struct Hook *)&ck_rx_eval_hook,     { 0, 0, 0, 0, 0 } },
     { (char *)"INSERT",   (char *)"TEXT/F",        1, (struct Hook *)&ck_rx_insert_hook,   { 0, 0, 0, 0, 0 } },

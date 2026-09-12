@@ -400,17 +400,17 @@ MakeStaticHook(ck_debug_close_hook, ck_debug_close_func);
 Object *ck_debugwin_create(ck_app *app)
 {
     Object *abort_btn, *invoke_btn;
+    struct TagItem place[CK_SNAPSHOT_TAGS];
 
     app->dbg_level = 0;
     app->dbg_frame = -1;
     app->dbg_condition[0] = '\0';
     strcpy(app->dbg_title, "clamacs debugger");
+    ck_snapshot_tags(app, "debugger", place,
+                     MUIV_Window_Width_Visible(60), MUIV_Window_Height_Visible(60));
 
     app->debugwin = WindowObject,
         MUIA_Window_Title,  (IPTR)app->dbg_title,
-        MUIA_Window_ID,     MAKE_ID('C','L','D','B'),
-        MUIA_Window_Width,  MUIV_Window_Width_Visible(60),
-        MUIA_Window_Height, MUIV_Window_Height_Visible(60),
         WindowContents, VGroup,
             Child, app->dbg_condition_obj = TextObject,
                 MUIA_Text_Contents, (IPTR)app->dbg_condition,
@@ -474,6 +474,7 @@ Object *ck_debugwin_create(ck_app *app)
                 Child, abort_btn = KeyButton("_Abort", 'a'),
             End,
         End,
+        TAG_MORE, (IPTR)place,   /* the stored place, or the default size */
     End;
 
     if (app->debugwin == NULL)

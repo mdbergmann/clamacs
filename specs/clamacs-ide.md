@@ -241,6 +241,45 @@ as the mouse would, or reports its state, so `drive.rexx` checks that
 Save follows the buffer, the Clamiga menu follows the port, Next Error
 follows the diagnostics and the Debugger item follows the debugger.
 
+### Window positions
+
+`clamacs-snapshot-windows` (Windows > Snapshot Windows, 2026-09-12)
+records the position and size of every open window in
+`ENVARC:Clamacs/windows.cfg` and `ENV:Clamacs/windows.cfg`, and every
+window is created where the file says from then on.  The store is the
+editor's own, not MUI's, for two reasons that are both MUI 3.8's: it can
+snapshot only one window at a time, from that window's own MUI menu, with
+no method an application could call for all of them; and a window that
+carries a `MUIA_Window_ID` takes MUI's snapshot over any
+`LeftEdge`/`TopEdge` it is created with, so an editor store beside it
+would lose silently whenever the user had once used MUI's.  The editor's
+windows therefore carry no MUI ID at all, and the file is the one place a
+position lives, on MUI 3.8 and MUI 4 alike.
+
+A window is named by its *role*: `errors`, `inspector`, `debugger`; the
+scratch windows by their name without the stars and the `clamacs-` prefix
+(`repl`, `description`, `apropos`, `macroexpansion`); a file window by
+`doc1`, `doc2`, ... -- the lowest slot no open file window holds when it
+is created, so the first file of a session comes up where the first file
+window was at the snapshot, and a window closed and reopened takes its
+slot back.  The file is one `role left top width height` line per window
+with `;`/`#` comments; a line that does not parse is skipped, never
+fatal.  A snapshot updates the entries of the windows open at the time
+and leaves the others.
+
+The split is the usual one: `src/emacs/winstore.c` is the store as data
+(parse, format, lookup, the role rules) and is host-tested by
+`tests/test_winstore.c`; `src/snapshot.c` reads the file at startup into
+`app->layout`, fills a five-entry tag array per window
+(`ck_snapshot_tags()`: the stored edges and size, or the window's default
+size) that each `WindowObject` list ends with as `TAG_MORE`, and
+implements the command over `MUIA_Window_LeftEdge`/`TopEdge`/`Width`/
+`Height`, which MUI answers for an open window.  The port's `GETWINDOW`
+reports the active window's role and geometry, which is how `drive.rexx`
+checks that the snapshot wrote what the window showed and -- with a file
+it writes itself -- that a second editor instance comes up where the file
+says.
+
 ## Lisp mode
 
 - **Tokenizer** (pure C, host-testable): comments (`;`, `#| |#`), strings,
@@ -328,6 +367,7 @@ name `CLAMACS`, `CLAMACS.1` for a second instance).  Phase-1 commands:
 | `SAVE` | | save the active document |
 | `GETFILE` | | result: full path of the active document |
 | `GETNAME` | | result: the active window's name -- the file part of the path, or `*clamacs-description*` and the other phase-2 scratch windows, which have no file |
+| `GETWINDOW` | | result: `role left top width height` of the active window, the role being what `clamacs-snapshot-windows` stores it under (`doc1`, `repl`, ...) |
 | `GOTOLINE` | `LINE/N/A` | jump |
 | `EVAL` | `FORM/F` | run an editor command by name (the `M-x` namespace) |
 | `INSERT` | `TEXT/F` | insert at point |
@@ -592,7 +632,8 @@ debugger.
 ## Testing
 
 - **Host unit tests** for every pure C module — keymap engine, tokenizer,
-  sexp scanner, indentation, diagnostic parser, request queue — compiled
+  sexp scanner, indentation, diagnostic parser, request queue, the
+  window-position store — compiled
   with the host compiler against a small `test.h` in the style of
   cl-amiga's, run by `make test`.  These modules take no MUI or OS types,
   which is a design rule, not an accident.

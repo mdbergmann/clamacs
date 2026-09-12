@@ -194,16 +194,16 @@ MakeStaticHook(ck_inspect_close_hook, ck_inspect_close_func);
 Object *ck_inspectwin_create(ck_app *app)
 {
     Object *part_btn;
+    struct TagItem place[CK_SNAPSHOT_TAGS];
 
     app->insp_depth     = 0;
     app->insp_object[0] = '\0';
     strcpy(app->insp_title, "clamacs inspector");
+    ck_snapshot_tags(app, "inspector", place,
+                     MUIV_Window_Width_Visible(50), MUIV_Window_Height_Visible(40));
 
     app->inspectwin = WindowObject,
         MUIA_Window_Title,  (IPTR)app->insp_title,
-        MUIA_Window_ID,     MAKE_ID('C','L','I','N'),
-        MUIA_Window_Width,  MUIV_Window_Width_Visible(50),
-        MUIA_Window_Height, MUIV_Window_Height_Visible(40),
         WindowContents, VGroup,
             Child, app->insp_object_obj = TextObject,
                 MUIA_Text_Contents, (IPTR)app->insp_object,
@@ -224,6 +224,7 @@ Object *ck_inspectwin_create(ck_app *app)
                 Child, app->insp_back_btn = KeyButton("_Back", 'b'),
             End,
         End,
+        TAG_MORE, (IPTR)place,   /* the stored place, or the default size */
     End;
 
     if (app->inspectwin == NULL)

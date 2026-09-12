@@ -130,7 +130,10 @@
     X(DEBUGGER_CONTINUE,        "clamacs-debugger-continue")                  \
     X(DEBUGGER_RESTART,         "clamacs-debugger-restart")                   \
     X(DEBUGGER_FRAME,           "clamacs-debugger-frame")                     \
-    X(DEBUGGER_EVAL,            "clamacs-debugger-eval")
+    X(DEBUGGER_EVAL,            "clamacs-debugger-eval")                      \
+    /* Window positions: record where every open window is, so they come
+     * up there next time (emacs/winstore.h). */                             \
+    X(SNAPSHOT_WINDOWS,         "clamacs-snapshot-windows")
 
 typedef enum {
     CK_CMD_NONE = -1,

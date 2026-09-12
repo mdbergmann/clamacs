@@ -102,6 +102,7 @@ TEST(the_unbound_commands_are_reachable_from_the_menu)
     ASSERT(ck_menudef_find(CK_CMD_COMPILE_FILE) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_ARGLIST) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_DEBUGGER) >= 0);
+    ASSERT(ck_menudef_find(CK_CMD_SNAPSHOT_WINDOWS) >= 0);
 }
 
 TEST(every_shortcut_shown_runs_its_command)
