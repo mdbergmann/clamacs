@@ -28,8 +28,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-#define CK_REPL_NAME "*clamacs-repl*"
-
 static void ck_repl_busy_message(ck_doc *doc);
 
 static void ck_first_line(const char *text, char *out, int32_t size)

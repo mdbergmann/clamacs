@@ -85,6 +85,11 @@
 #define CKM_MiniKey (TAG_USER | 0x0C1A0003)
 struct CKP_MiniKey { ULONG MethodID; ULONG key; };
 
+/* The REPL window's name (phase 3).  Here rather than in repl.c because
+ * ck_doc_scratch() gives that one window a MUI window ID of its own: a
+ * snapshot of the REPL must not move every text window along with it. */
+#define CK_REPL_NAME "*clamacs-repl*"
+
 #define CK_PATH_MAX 256
 #define CK_PKG_MAX   64
 #define CK_MSG_MAX  512

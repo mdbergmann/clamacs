@@ -47,6 +47,17 @@ static int32_t ck_te(ck_doc *doc, const char *cmd)
     return 1;
 }
 
+/* The constructor behind ck_doc_new() and ck_doc_scratch(): WINDOW_ID is
+ * the MUI window ID the new window snapshots under (MUIA_Window_ID). */
+static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id);
+
+/* MUI keeps one snapshot -- position and size, ENV:MUI/CLAMACS.cfg -- per
+ * window ID.  File windows share one, so a second document opens where the
+ * first was snapshotted; the REPL has its own, so snapshotting it moves
+ * neither the text windows nor is it moved by them. */
+#define CK_WINDOW_ID_DOC  MAKE_ID('C','L','M','A')
+#define CK_WINDOW_ID_REPL MAKE_ID('C','L','R','E')
+
 static void ck_te_repeat(ck_doc *doc, const char *cmd, int32_t times)
 {
     int32_t i;
@@ -624,7 +635,8 @@ ck_doc *ck_doc_scratch(ck_app *app, const char *name, int32_t lisp_mode)
             return doc;
     }
 
-    doc = ck_doc_new(app, NULL);
+    doc = ck_doc_create(app, NULL, strcmp(name, CK_REPL_NAME) == 0
+                                       ? CK_WINDOW_ID_REPL : CK_WINDOW_ID_DOC);
     if (doc == NULL)
         return NULL;
 
@@ -1991,6 +2003,11 @@ static int32_t ck_looks_like_lisp(const char *path)
 
 ck_doc *ck_doc_new(ck_app *app, const char *path)
 {
+    return ck_doc_create(app, path, CK_WINDOW_ID_DOC);
+}
+
+static ck_doc *ck_doc_create(ck_app *app, const char *path, ULONG window_id)
+{
     ck_doc *doc = (ck_doc *)AllocVec(sizeof(ck_doc), MEMF_ANY | MEMF_CLEAR);
 
     if (doc == NULL)
@@ -2013,7 +2030,7 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
 
     doc->win = WindowObject,
         MUIA_Window_Title,  (IPTR)"clamacs",
-        MUIA_Window_ID,     MAKE_ID('C','L','M','A'),
+        MUIA_Window_ID,     window_id,
         WindowContents, VGroup,
             Child, HGroup,
                 MUIA_Group_Spacing, 0,
