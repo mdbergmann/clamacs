@@ -29,9 +29,6 @@ tests/                     host unit tests for everything under emacs/ lisp/ rex
 verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
                            sendkey.c injects real key events through input.device
 docs/memory.md             what the editor costs on an 8 MB machine
-tools/setup-toolchain.sh   m68k-amigaos-gcc installer (copied from cl-amiga)
-tools/m68k-amigaos-gcc/    submodule: the cross toolchain sources (same pin as cl-amiga);
-                           optional -- the build falls back to the superproject's install
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
 ```
 
@@ -78,8 +75,9 @@ against it without the MUI developer kit.
 
 ## Setup
 
-The usual way is through the cl-amiga checkout, whose toolchain install the
-build picks up on its own:
+Clamacs carries no cross toolchain of its own; it builds with the one
+cl-amiga installs (`tools/setup-toolchain.sh` there, one level up from this
+directory):
 
 ```
 git clone --recursive https://github.com/mdbergmann/cl-amiga.git
@@ -87,14 +85,11 @@ cd cl-amiga && tools/setup-toolchain.sh        # once, for both projects
 cd clamacs && make -f Makefile.cross amiga
 ```
 
-A standalone clone works too; it then needs its own toolchain (or a link to
-an existing install):
+A standalone clone (`git clone --recursive https://github.com/mdbergmann/clamacs.git`)
+points the build at an existing install instead:
 
 ```
-git clone --recursive https://github.com/mdbergmann/clamacs.git
-cd clamacs
-tools/setup-toolchain.sh                                   # download (macOS arm64) or build
-tools/setup-toolchain.sh --link ../cl-amiga/tools/m68k-amigaos-gcc/prefix   # reuse an existing install
+make -f Makefile.cross amiga TOOLCHAIN=/path/to/cl-amiga/tools/m68k-amigaos-gcc/prefix
 ```
 
 The MorphOS build is native: `make -f Makefile.mos` in a checkout on a

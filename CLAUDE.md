@@ -204,11 +204,11 @@ list under "Answered during phase 1".
 
 ## Build and toolchain
 
-- `Makefile.cross` uses this repository's `tools/m68k-amigaos-gcc/prefix`
-  when one is installed, else the superproject's
-  (`../tools/m68k-amigaos-gcc/prefix`) -- the same toolchain commit, so
-  one install serves both; `TOOLCHAIN=...` overrides.  A standalone clone
-  runs `tools/setup-toolchain.sh` (or `--link`s an install).
+- There is no toolchain in this repository: `Makefile.cross` uses the
+  superproject's `../tools/m68k-amigaos-gcc/prefix` (cl-amiga's
+  `tools/setup-toolchain.sh` installs it; a nested copy would make a
+  recursive clone of cl-amiga fetch the toolchain sources twice).
+  `TOOLCHAIN=...` points a standalone clone at any install.
 - Mirror cl-amiga's flags: `-noixemul -mcpu=68020 -std=c99 -Os
   -fomit-frame-pointer`, link with `-s`. This gcc **miscompiles at -O2**
   (flexible-array pointer arithmetic) and `-flto` is broken — stay at `-Os`,

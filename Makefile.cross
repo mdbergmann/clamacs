@@ -20,16 +20,12 @@
 # developer kit is needed: that directory has libraries/mui.h, the muimaster
 # protos and inlines, mui/TextEditor_mcc.h and the SDI headers.
 
-# The compiler: this repository's own toolchain install when there is one,
-# else the superproject's (clamacs is a submodule of cl-amiga, which pins
-# the same toolchain commit -- one install serves both).  TOOLCHAIN=... on
-# the command line overrides either.
-ifneq ($(wildcard $(CURDIR)/tools/m68k-amigaos-gcc/prefix/bin/m68k-amigaos-gcc),)
-TOOLCHAIN = $(CURDIR)/tools/m68k-amigaos-gcc/prefix
-else
-TOOLCHAIN = $(CURDIR)/../tools/m68k-amigaos-gcc/prefix
-endif
-CC        = $(TOOLCHAIN)/bin/m68k-amigaos-gcc
+# The compiler is the superproject's: clamacs is a submodule of cl-amiga,
+# whose tools/setup-toolchain.sh installs m68k-amigaos-gcc one level up.
+# There is no toolchain of our own.  TOOLCHAIN=... on the command line
+# points a standalone clone at any install.
+TOOLCHAIN ?= $(CURDIR)/../tools/m68k-amigaos-gcc/prefix
+CC         = $(TOOLCHAIN)/bin/m68k-amigaos-gcc
 
 BUILDDIR = build/cross
 SRCDIR   = src
@@ -102,8 +98,8 @@ check-toolchain:
 	    echo "  m68k-amigaos-gcc not found at:"; \
 	    echo "    $(CC)"; \
 	    echo ""; \
-	    echo "  Install it with (in the cl-amiga superproject, or here):"; \
-	    echo "    ./tools/setup-toolchain.sh"; \
+	    echo "  Install it in the cl-amiga superproject (one level up):"; \
+	    echo "    ../tools/setup-toolchain.sh"; \
 	    echo "  or point at an install:  make -f Makefile.cross amiga TOOLCHAIN=/path/to/prefix"; \
 	    echo ""; \
 	    exit 1; \
