@@ -147,7 +147,8 @@ typedef struct ck_doc {
 
     Object *win;
     Object *text;
-    Object *slider;
+    Object *slider;   /* vertical, always */
+    Object *hslider;  /* horizontal; NULL on a TextEditor.mcc below 15.48 */
     Object *status;   /* file, package, line:column */
     /* The echo area is one line that shows EITHER a message OR a prompt
      * beside the minibuffer input, as in Emacs: a page group whose page 0

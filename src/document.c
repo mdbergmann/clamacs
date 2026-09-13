@@ -2028,6 +2028,40 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     return ck_doc_create(app, path, role);
 }
 
+/* Is the installed TextEditor.mcc at least VERSION.REVISION?  Read once
+ * by ck_classes_create(); features the class grew after the 15.29 floor
+ * are gated on this. */
+static int32_t ck_texteditor_at_least(const ck_app *app, LONG version,
+                                      LONG revision)
+{
+    return app->te_version > version ||
+           (app->te_version == version && app->te_revision >= revision);
+}
+
+/* The text area with its scrollbar(s): the editor and the vertical bar
+ * side by side, and — when the class can drive one — the horizontal bar
+ * under the editor, the corner under the vertical bar left empty.  A 2x2
+ * column group keeps the horizontal bar from running under the vertical
+ * one, as Scrollgroup.mui lays it out.  The objects are created by the
+ * caller; a group that fails to build disposes of them (MUI semantics), as
+ * a failing inline child list would have. */
+static Object *ck_doc_text_group(ck_doc *doc)
+{
+    if (doc->hslider == NULL)
+        return HGroup,
+            MUIA_Group_Spacing, 0,
+            Child, doc->text,
+            Child, doc->slider,
+        End;
+    return ColGroup(2),
+        MUIA_Group_Spacing, 0,
+        Child, doc->text,
+        Child, doc->slider,
+        Child, doc->hslider,
+        Child, RectangleObject, End,
+    End;
+}
+
 static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
 {
     ck_doc *doc = (ck_doc *)AllocVec(sizeof(ck_doc), MEMF_ANY | MEMF_CLEAR);
@@ -2055,28 +2089,35 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
 
     ck_keystate_init(&doc->keys, app->global, doc->lisp_mode ? app->lisp : NULL);
 
+    doc->text = NewObject(app->textclass->mcc_Class, NULL,
+        MUIA_CycleChain,               TRUE,
+        MUIA_TextEditor_FixedFont,     TRUE,
+        MUIA_TextEditor_UndoLevels,    200,
+        MUIA_TextEditor_WrapMode,      MUIV_TextEditor_WrapMode_NoWrap,
+        /* NoStyle, not Plain: the Plain export hook writes \033P[...]
+         * colour escapes into the exported text, which would
+         * desynchronise every byte offset from
+         * MUIA_TextEditor_CursorIndex and put escape sequences into
+         * saved files. */
+        MUIA_TextEditor_ExportHook,    MUIV_TextEditor_ExportHook_NoStyle,
+        MUIA_TextEditor_ImportHook,    MUIV_TextEditor_ImportHook_Plain,
+        CKA_Doc,                       (IPTR)doc,
+    TAG_DONE);
+    doc->slider = ScrollbarObject, End;
+    /* Lines never wrap (NoWrap above), so a long line runs off the right
+     * edge and only the cursor scrolls the view: a horizontal scrollbar
+     * makes it reachable with the mouse.  TextEditor.mcc drives one from
+     * 15.48 on (MUIA_TextEditor_HorizontalSlider, ChangeLog 2016-10-27);
+     * an older class ignores the attribute and the bar would sit there
+     * inert, so it is only built when the installed class can use it. */
+    doc->hslider = ck_texteditor_at_least(app, 15, 48)
+        ? ScrollbarObject, MUIA_Group_Horiz, TRUE, End
+        : NULL;
+
     doc->win = WindowObject,
         MUIA_Window_Title,  (IPTR)"clamacs",
         WindowContents, VGroup,
-            Child, HGroup,
-                MUIA_Group_Spacing, 0,
-                Child, doc->text = NewObject(app->textclass->mcc_Class, NULL,
-                    MUIA_CycleChain,               TRUE,
-                    MUIA_TextEditor_FixedFont,     TRUE,
-                    MUIA_TextEditor_UndoLevels,    200,
-                    MUIA_TextEditor_WrapMode,      MUIV_TextEditor_WrapMode_NoWrap,
-                    /* NoStyle, not Plain: the Plain export hook writes
-                     * \033P[...] colour escapes into the exported text,
-                     * which would desynchronise every byte offset from
-                     * MUIA_TextEditor_CursorIndex and put escape sequences
-                     * into saved files. */
-                    MUIA_TextEditor_ExportHook,    MUIV_TextEditor_ExportHook_NoStyle,
-                    MUIA_TextEditor_ImportHook,    MUIV_TextEditor_ImportHook_Plain,
-                    CKA_Doc,                       (IPTR)doc,
-                TAG_DONE),
-                Child, doc->slider = ScrollbarObject,
-                End,
-            End,
+            Child, ck_doc_text_group(doc),
             Child, doc->status = TextObject,
                 MUIA_Text_Contents, (IPTR)"",
                 MUIA_Text_SetMin,   FALSE,
@@ -2126,6 +2167,8 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
     }
 
     set(doc->text, MUIA_TextEditor_Slider, (IPTR)doc->slider);
+    if (doc->hslider != NULL)
+        set(doc->text, MUIA_TextEditor_HorizontalSlider, (IPTR)doc->hslider);
 
     DoMethod(app->app, OM_ADDMEMBER, (IPTR)doc->win);
 

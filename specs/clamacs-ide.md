@@ -63,7 +63,9 @@ Components of the editor:
   state, the editor's own ARexx port (`MUIA_Application_Commands`), the
   keymap tables and the command table.
 - **Document window** — one per file: a `ClamacsText` object, a scrollbar
-  attached through `MUIA_TextEditor_Slider`, a status line (file, package,
+  attached through `MUIA_TextEditor_Slider` (and, on TextEditor.mcc 15.48
+  or newer, a horizontal one through `MUIA_TextEditor_HorizontalSlider`,
+  since lines never wrap), a status line (file, package,
   line/column, arglist echo from phase 2), and the minibuffer (a `String`
   object that becomes active when a command needs input).
 - **ClamacsText** — the private subclass of `TextEditor.mcc` carrying the
