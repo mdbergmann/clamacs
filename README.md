@@ -18,6 +18,33 @@ erring stack until a restart is chosen), and an inspector window
 (`C-c I`) with a parts list and a Back button. See `CLAUDE.md` for the
 design and the phase plan, and `specs/clamacs-ide.md` for the full one.
 
+## Screenshots
+
+Taken on a Vampire V4 (AmigaOS 3.2, MUI 3.8, 1280x720) driving the
+clamiga from the binary release.
+
+A file loaded with `C-c C-k` and the `*clamacs-repl*` window (`C-c C-z`)
+talking to it, the clamiga console at the bottom:
+
+![The editor and the REPL window](docs/screenshots/editor-repl.png)
+
+An error signalled at the REPL prompt parks clamiga's REPL thread and opens
+the debugger window: condition, restarts, backtrace, the locals of the
+selected frame and an eval-in-frame line:
+
+![The debugger window](docs/screenshots/debugger.png)
+
+`C-c I` evaluates a form and opens the inspector on its value; a part
+descends, Back comes up:
+
+![The inspector window](docs/screenshots/inspector.png)
+
+Loading a file with mistakes fills the diagnostics window; a click on a row
+or `C-x \`` puts the cursor on the offending line, with the message in the
+echo area:
+
+![The diagnostics window](docs/screenshots/diagnostics.png)
+
 ## Window positions
 
 Arrange the windows, then pick **Windows > Snapshot Windows** (or `M-x

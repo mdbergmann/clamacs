@@ -107,45 +107,137 @@ int32_t ck_rexx_find_port(ck_app *app)
     return 0;
 }
 
+/*
+ * Where the clamiga to start is.  The binary release puts clamiga beside
+ * the editor (bin/aos3/), so PROGDIR:clamiga is tried first -- resolved to
+ * an absolute path here, because the shell System() starts has a PROGDIR:
+ * of its own.  A bare "clamiga" is the fallback, for a clamiga on the
+ * shell path.  Returns the command to run in BUF.
+ */
+static void ck_rexx_clamiga_command(char *buf, int32_t size)
+{
+    BPTR dir = GetProgramDir();
+
+    if (dir != (BPTR)0 && NameFromLock(dir, (STRPTR)buf, (LONG)size)
+        && AddPart((STRPTR)buf, (STRPTR)"clamiga", (ULONG)size)) {
+        BPTR lock = Lock((STRPTR)buf, ACCESS_READ);
+        if (lock != (BPTR)0) {
+            UnLock(lock);
+            return;
+        }
+    }
+    strncpy(buf, "clamiga", (size_t)size - 1);
+    buf[size - 1] = '\0';
+}
+
+/*
+ * clamiga needs a 128K stack (the AmigaOS default of 64K is enough for the
+ * core, not for the GUI libraries or Quicklisp), and the stack a shell runs
+ * a command on is its cli_DefaultStack -- inherited from whatever started
+ * the editor, so from Workbench it is the 16K system default.  The one
+ * way to set it for a command started through System() is a script that
+ * says `Stack' first, so the launch is written to T: and Executed.
+ * CK_LAUNCH_STACK_SIZE is shared with the NP_StackSize fallback tag below,
+ * so a command run directly (script unwritable/T: full) still gets the
+ * same 128K instead of silently falling back to the 64K OS default.
+ */
+#define CK_LAUNCH_STACK_SIZE 131072
+#define CK_STR2(x) #x
+#define CK_STR(x) CK_STR2(x)
+
+/*
+ * The script name carries this task's address so two editor instances (or
+ * two rapid launch attempts) never share a file: MODE_NEWFILE truncates,
+ * so a shared name would let a second writer corrupt the first launch's
+ * script out from under its still-reading Execute.
+ */
+static void ck_rexx_launch_script_path(char *path, int32_t size)
+{
+    snprintf(path, (size_t)size, "T:clamacs-start-clamiga-%08lx",
+             (unsigned long)FindTask(NULL));
+}
+
+/* Returns 0 when the script cannot be written; the caller then runs the
+ * command directly on whatever stack the shell has. */
+static int32_t ck_rexx_write_launch_script(const char *command,
+                                            const char *path)
+{
+    BPTR fh = Open((STRPTR)path, MODE_NEWFILE);
+    LONG ok;
+
+    if (fh == (BPTR)0)
+        return 0;
+    ok = FPuts(fh, (STRPTR)"Stack " CK_STR(CK_LAUNCH_STACK_SIZE) "\n\"") == 0
+      && FPuts(fh, (STRPTR)command) == 0
+      && FPuts(fh, (STRPTR)"\"\n") == 0;
+    Close(fh);
+    if (!ok)
+        DeleteFile((STRPTR)path);
+    return ok;
+}
+
 int32_t ck_rexx_launch(ck_app *app)
 {
-    BPTR    console;
-    LONG    rc;
-    int32_t tries;
+    BPTR        console;
+    LONG        rc;
+    int32_t     tries;
+    int32_t     found = 0;
+    char        command[512];
+    char        script_path[64];
+    const char *cmdline;
+    int32_t     script_written;
 
     if (ck_rexx_find_port(app))
         return 1;
+
+    ck_rexx_clamiga_command(command, sizeof command);
+    ck_rexx_launch_script_path(script_path, sizeof script_path);
+    script_written = ck_rexx_write_launch_script(command, script_path);
+    if (script_written)
+        snprintf(command, sizeof command, "Execute %s", script_path);
+    cmdline = command;
 
     /* clamiga gets its own console window: it is a REPL in its own right,
      * and until phase 3 lands that window IS the REPL. */
     console = Open((STRPTR)"CON:0/40/640/220/clamiga/CLOSE/WAIT",
                    MODE_OLDFILE);
-    if (console == (BPTR)0)
+    if (console == (BPTR)0) {
+        if (script_written)
+            DeleteFile((STRPTR)script_path);
         return 0;
+    }
 
-    rc = SystemTags((STRPTR)"clamiga",
+    rc = SystemTags((STRPTR)cmdline,
                     SYS_Input,   (IPTR)console,
                     SYS_Output,  (IPTR)NULL,
                     SYS_Asynch,  TRUE,
                     NP_Name,     (IPTR)"clamiga",
-                    NP_StackSize, 65536,
+                    NP_StackSize, CK_LAUNCH_STACK_SIZE,
                     TAG_DONE);
     if (rc != 0) {
         /* System() only takes ownership of the handles once it succeeds. */
         Close(console);
+        if (script_written)
+            DeleteFile((STRPTR)script_path);
         return 0;
     }
 
     /* The port appears once the user's S:.clamigarc has run
      * (require "amiga/arexx") (amiga.arexx:start).  Give it a few seconds;
      * this is the one place the editor waits, and it waits before there is
-     * anything to be responsive about. */
+     * anything to be responsive about.  By the first time this loop checks,
+     * Execute has long since read the (now unique) script into its own
+     * buffer, so it is safe to remove once the wait is over either way. */
     for (tries = 0; tries < 100; tries++) {
         Delay(10);   /* 10 ticks = 1/5 s */
-        if (ck_rexx_find_port(app))
-            return 1;
+        if (ck_rexx_find_port(app)) {
+            found = 1;
+            break;
+        }
     }
-    return 0;
+    if (script_written)
+        DeleteFile((STRPTR)script_path);
+    return found;
 }
 
 /* Put the head of the queue on the wire, if nothing is in flight. */
