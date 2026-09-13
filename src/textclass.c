@@ -169,6 +169,13 @@ static int32_t ck_is_active(Object *obj)
  * ClamacsText
  * ------------------------------------------------------------------ */
 
+/* The window keys switched off while the text object has the focus (see
+ * MUIM_GoActive below): RET must not fire a default gadget, TAB must not
+ * cycle, ESC must neither deactivate the object nor close the window. */
+#define CK_TEXT_WINDOW_KEYS \
+    (MUIKEYF_PRESS | MUIKEYF_GADGET_NEXT | MUIKEYF_GADGET_PREV | \
+     MUIKEYF_GADGET_OFF | MUIKEYF_WINDOW_CLOSE)
+
 SDISPATCHER(ck_text_dispatcher)
 {
     struct ck_text_data *data;
@@ -298,9 +305,22 @@ SDISPATCHER(ck_text_dispatcher)
      */
     case MUIM_GoActive: {
         IPTR result = DoSuperMethodA(cl, obj, (Msg)msg);
-        set(_win(obj), MUIA_Window_DisableKeys,
-            MUIKEYF_PRESS | MUIKEYF_GADGET_NEXT | MUIKEYF_GADGET_PREV |
-            MUIKEYF_GADGET_OFF | MUIKEYF_WINDOW_CLOSE);
+        set(_win(obj), MUIA_Window_DisableKeys, CK_TEXT_WINDOW_KEYS);
+        return result;
+    }
+
+    /* TextEditor.mcc's own MUIM_Hide writes 0 to MUIA_Window_DisableKeys
+     * and its MUIM_Show puts nothing back -- and MUI hides and shows every
+     * object on a relayout, a window resize above all.  The object stays
+     * the active one through that, so no GoActive follows, and from then
+     * on ESC reached the window as MUIKEY_WINDOW_CLOSE: with one window
+     * open, that quit the editor (Vampire, 2026-09-13: resize, ESC, the
+     * "unsaved changes" requester).  Re-arm the set whenever this object
+     * is shown while it is the window's active object. */
+    case MUIM_Show: {
+        IPTR result = DoSuperMethodA(cl, obj, (Msg)msg);
+        if (ck_is_active(obj))
+            set(_win(obj), MUIA_Window_DisableKeys, CK_TEXT_WINDOW_KEYS);
         return result;
     }
 
@@ -582,6 +602,17 @@ SDISPATCHER(ck_mini_dispatcher)
     case MUIM_GoActive:
         set(_win(obj), MUIA_Window_DisableKeys, MUIKEYF_GADGET_NEXT);
         break;
+
+    /* Same relayout hole as the text object's MUIM_Show (see there): the
+     * text object's superclass zeroes the set in its MUIM_Hide, and a
+     * relayout while the minibuffer is active -- the prompt row is relaid
+     * when its label changes -- would hand TAB back to the cycle chain. */
+    case MUIM_Show: {
+        IPTR result = DoSuperMethodA(cl, obj, (Msg)msg);
+        if (ck_is_active(obj))
+            set(_win(obj), MUIA_Window_DisableKeys, MUIKEYF_GADGET_NEXT);
+        return result;
+    }
 
     case MUIM_GoInactive:
         data = (struct ck_mini_data *)INST_DATA(cl, obj);

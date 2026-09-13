@@ -376,6 +376,12 @@ void    ck_doc_close(ck_doc *doc, int32_t ask);
  * never from a hook. */
 void    ck_app_reap(ck_app *app);
 ck_doc *ck_doc_find_by_path(ck_app *app, const char *path);
+/* find-file into an existing window (document.c): may this window take
+ * another file, may its text go (asks about unsaved changes), and the
+ * refresh after ck_doc_load_file() replaced what it showed. */
+int32_t ck_doc_holds_file(const ck_doc *doc);
+int32_t ck_doc_release_text(ck_doc *doc);
+void    ck_doc_show_loaded(ck_doc *doc);
 ck_doc *ck_doc_active(ck_app *app);
 /* Bring the document's window to the front and make it the active one for
  * every caller of ck_doc_active() -- the port, the debugger, the messages

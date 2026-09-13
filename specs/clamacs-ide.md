@@ -183,7 +183,11 @@ editor does not emulate them.  Several documents, several windows.
 - **Isearch** (`C-s`/`C-r`) over `MUIM_TextEditor_Search` with the
   minibuffer showing the pattern.
 - **Files**: `C-x C-f`, `C-x C-s`, `C-x C-w`, `C-x b`, `C-x k`; ASL file
-  requester behind `C-x C-f` when the minibuffer entry is empty.  Files are
+  requester behind `C-x C-f` when the minibuffer entry is empty.  `C-x C-f`
+  (Open...) shows the file in the current window, asking about unsaved
+  text first, and goes to the file's window when it is open already; `C-x 2`
+  (Open in New Window...) always opens a new window.  The REPL and the
+  scratch windows are never reused for a file.  Files are
   8-bit (ISO-8859-1), matching clamiga's narrow strings.
 
 Phase-1 key table (the bindings a user can rely on):

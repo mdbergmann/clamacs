@@ -1778,10 +1778,28 @@ void ck_doc_minibuffer_done(ck_doc *doc)
             strncpy(path, answer, sizeof path - 1);
             path[sizeof path - 1] = '\0';
         }
-        if (command == CK_CMD_FIND_FILE && doc->path[0] == '\0' &&
-            !ck_get(doc->text, MUIA_TextEditor_HasChanged)) {
+        /* A file that is open already has a window: go there, as Emacs
+         * switches to the buffer it already has.  find-file-other-window
+         * (C-x 2) always opens a new window instead, per spec. */
+        if (command == CK_CMD_FIND_FILE) {
+            ck_doc *open = ck_doc_find_by_path(doc->app, path);
+            if (open != NULL) {
+                ck_doc_activate(open);
+                set(open->win, MUIA_Window_ActiveObject, (IPTR)open->text);
+                break;
+            }
+        }
+        /* find-file (Open...) shows the file in THIS window, like Emacs;
+         * a new window is what find-file-other-window (Open in New
+         * Window..., C-x 2) is for.  Only a file window can be reused:
+         * the REPL transcript and the *description* / *errors* scratch
+         * windows keep their own text and get a new window instead.
+         * Unsaved text is asked about first, as closing the window would. */
+        if (command == CK_CMD_FIND_FILE && ck_doc_holds_file(doc)) {
+            if (!ck_doc_release_text(doc))
+                break;
             if (ck_doc_load_file(doc, path))
-                ck_doc_colour_all(doc);
+                ck_doc_show_loaded(doc);
             else
                 ck_message(doc, "Cannot open %s", path);
         } else if (ck_doc_new(doc->app, path) == NULL) {
@@ -2026,6 +2044,66 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     char role[CK_WINSTORE_NAME_MAX];
     ck_doc_free_role(app, role, (int32_t)sizeof role);
     return ck_doc_create(app, path, role);
+}
+
+/* Is this a file window -- one that find-file may load another file into?
+ * A window with a path is; so is the "(unnamed)" window the editor opens
+ * at startup.  The REPL transcript and the scratch windows (*description*,
+ * *errors*, ...: no path, a name of their own) are not. */
+int32_t ck_doc_holds_file(const ck_doc *doc)
+{
+    return !doc->repl_mode &&
+           (doc->path[0] != '\0' || strcmp(doc->name, "(unnamed)") == 0);
+}
+
+/* Before the window's text is replaced: ask about unsaved changes the way
+ * closing the window does.  Returns 1 when the text may go (it was clean,
+ * saved, or discarded), 0 to keep it.  An unnamed buffer cannot be saved
+ * in place, so it is only offered Discard / Cancel. */
+int32_t ck_doc_release_text(ck_doc *doc)
+{
+    LONG answer;
+
+    if (!ck_get(doc->text, MUIA_TextEditor_HasChanged))
+        return 1;
+    if (doc->path[0] == '\0') {
+        answer = MUI_Request(doc->app->app, doc->win, 0, "clamacs",
+                             "_Discard|_Cancel",
+                             "%s has unsaved changes.", doc->name);
+        return answer == 1;
+    }
+    /* 1 = Save, 2 = Discard, 0 = Cancel (the rightmost gadget) */
+    answer = MUI_Request(doc->app->app, doc->win, 0, "clamacs",
+                         "_Save|_Discard|_Cancel",
+                         "%s has unsaved changes.", doc->name);
+    if (answer == 0)
+        return 0;
+    if (answer == 1 && !ck_doc_save_file(doc, doc->path)) {
+        ck_message(doc, "Cannot write %s", doc->path);
+        return 0;
+    }
+    return 1;
+}
+
+/* After ck_doc_load_file() into a window that showed something else: the
+ * mode follows the new file's name, the cursor starts at the top, and the
+ * status line and colouring are redone for the new text. */
+void ck_doc_show_loaded(ck_doc *doc)
+{
+    int32_t lisp_mode = ck_looks_like_lisp(doc->path);
+
+    if (doc->lisp_mode != lisp_mode) {
+        doc->lisp_mode = lisp_mode;
+        ck_keystate_init(&doc->keys, doc->app->global,
+                         lisp_mode ? doc->app->lisp : NULL);
+    }
+    doc->mark = -1;
+    doc->paren_x = doc->paren_y = -1;
+    ck_doc_colour_all(doc);
+    ck_doc_set_cursor_index(doc, 0);
+    ck_doc_update_status(doc);
+    ck_menu_update(doc->app);
+    set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
 }
 
 /* Is the installed TextEditor.mcc at least VERSION.REVISION?  Read once
