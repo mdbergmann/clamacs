@@ -613,6 +613,16 @@ void    ck_snapshot_take(ck_doc *doc);
  * `role left top width height'. */
 void    ck_snapshot_describe(ck_doc *doc, char *out, int32_t size);
 
+/* ---- url.c ------------------------------------------------------- */
+
+/* Where `clamacs-hyperspec' (Help > Common Lisp HyperSpec) goes. */
+#define CK_HYPERSPEC_URL "https://www.lispworks.com/documentation/HyperSpec/Front/"
+
+/* Hand URL to the user's browser through openurl.library, reporting in
+ * DOC's echo area.  Without the library the URL is shown in a requester
+ * instead.  Returns 1 when a browser took it. */
+int32_t ck_url_open(ck_doc *doc, const char *url);
+
 /* ---- errorwin.c -------------------------------------------------- */
 
 Object *ck_errorwin_create(ck_app *app);

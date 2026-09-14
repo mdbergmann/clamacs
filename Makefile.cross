@@ -79,6 +79,7 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/inspectwin.c \
            $(SRCDIR)/menu.c \
            $(SRCDIR)/snapshot.c \
+           $(SRCDIR)/url.c \
            $(SRCDIR)/muistubs.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
@@ -162,6 +163,7 @@ verify-amiga:
 	    'OK Close Buffer closed it' \
 	    'OK the menu ran beginning-of-defun' \
 	    'OK Clear Transcript is dimmed outside the REPL' \
+	    'OK the Help menu has the HyperSpec' \
 	    'OK C-x is pending' \
 	    'OK C-g cancelled the prefix' \
 	    'OK C-x C-q reported' \

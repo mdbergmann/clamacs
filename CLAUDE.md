@@ -201,6 +201,10 @@ list under "Answered during phase 1".
    items are set).  The port's `MENU <name> [STATE]` drives and inspects
    it for `drive.rexx`.  Add a command to the menu by adding a row to
    the table; `tests/test_menudef.c` checks the key shown really runs it.
+   Help > Common Lisp HyperSpec (`clamacs-hyperspec`, 2026-09-14) opens
+   the URL through `openurl.library` (`src/url.c`, which declares the
+   one entry itself: no toolchain ships the OpenURL headers), and shows
+   the address in a requester when the library is missing.
 6. **Window positions** (2026-09-12): `clamacs-snapshot-windows`
    (Windows > Snapshot Windows) writes every open window's geometry to
    `ENVARC:Clamacs/windows.cfg` + `ENV:`, keyed by role (`doc1`, `doc2`,

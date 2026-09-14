@@ -221,6 +221,15 @@ IF RESULT = 'disabled' THEN
 ELSE
     SAY 'FAIL Clear Transcript in a file buffer is' RESULT
 
+/* Help > Common Lisp HyperSpec is always live.  Only its STATE is asked:
+** a pick hands the URL to openurl.library, which the test image does not
+** have, and the requester that follows would park an unattended run. */
+'MENU clamacs-hyperspec STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK the Help menu has the HyperSpec'
+ELSE
+    SAY 'FAIL MENU clamacs-hyperspec STATE gave' RESULT
+
 /* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.
 **

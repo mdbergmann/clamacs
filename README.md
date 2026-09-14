@@ -106,6 +106,12 @@ MUI 3.8 or newer (`muimaster.library` 19+) and `TextEditor.mcc` 15.29 or
 newer installed in `MUI:Libs/mui/`; the editor checks both at startup.
 Verified against MUI 3.8 and TextEditor.mcc 15.56.
 
+**Help > Common Lisp HyperSpec** (`M-x clamacs-hyperspec`) opens the
+HyperSpec in your browser through `openurl.library` — part of MorphOS, and
+on AmigaOS 3 the [OpenURL](https://github.com/jens-maus/libopenurl)
+package (Aminet `comm/www/OpenURL.lha`). Without it the editor shows the
+address in a requester instead.
+
 `vendor/texteditor` is used for its headers, documentation and demo only —
 the editor subclasses the *installed* `TextEditor.mcc` at runtime and never
 builds the class. Its `include/` directory also carries `libraries/mui.h`,

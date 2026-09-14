@@ -93,6 +93,9 @@ static const ck_menu_entry ck_menu_table[] = {
     BAR,
     ITEM(CK_CMD_SNAPSHOT_WINDOWS,        CK_MENU_ALWAYS,        "Snapshot Windows",    NULL,      0),
 
+    TITLE("Help"),
+    ITEM(CK_CMD_HYPERSPEC,               CK_MENU_ALWAYS,        "Common Lisp HyperSpec...", NULL, 0),
+
     { CK_MENU_END, CK_MENU_ALWAYS, CK_CMD_NONE, NULL, NULL, 0 }
 };
 

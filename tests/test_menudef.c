@@ -78,7 +78,7 @@ TEST(table_is_well_formed)
         }
     }
     ASSERT_EQ_INT(i, ck_menudef_count());
-    ASSERT_EQ_INT(titles, 5);
+    ASSERT_EQ_INT(titles, 6);
     ASSERT(items > 30);
 }
 
@@ -103,6 +103,7 @@ TEST(the_unbound_commands_are_reachable_from_the_menu)
     ASSERT(ck_menudef_find(CK_CMD_ARGLIST) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_DEBUGGER) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_SNAPSHOT_WINDOWS) >= 0);
+    ASSERT(ck_menudef_find(CK_CMD_HYPERSPEC) >= 0);
 }
 
 TEST(every_shortcut_shown_runs_its_command)

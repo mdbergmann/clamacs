@@ -133,7 +133,9 @@
     X(DEBUGGER_EVAL,            "clamacs-debugger-eval")                      \
     /* Window positions: record where every open window is, so they come
      * up there next time (emacs/winstore.h). */                             \
-    X(SNAPSHOT_WINDOWS,         "clamacs-snapshot-windows")
+    X(SNAPSHOT_WINDOWS,         "clamacs-snapshot-windows")                   \
+    /* Help: the Common Lisp HyperSpec in the user's browser (url.c). */     \
+    X(HYPERSPEC,                "clamacs-hyperspec")
 
 typedef enum {
     CK_CMD_NONE = -1,

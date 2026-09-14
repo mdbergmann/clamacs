@@ -75,7 +75,8 @@ MUI_SRC  = $(SRCDIR)/main.c \
            $(SRCDIR)/debugwin.c \
            $(SRCDIR)/inspectwin.c \
            $(SRCDIR)/menu.c \
-           $(SRCDIR)/snapshot.c
+           $(SRCDIR)/snapshot.c \
+           $(SRCDIR)/url.c
 
 ALL_SRC = $(CORE_SRC) $(MUI_SRC)
 ALL_OBJ = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(ALL_SRC))

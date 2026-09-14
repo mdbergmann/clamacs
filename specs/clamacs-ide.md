@@ -230,11 +230,14 @@ What is in it: Project (open, save, save as, next/close buffer, about,
 quit), Edit (undo/redo, cut/copy/paste, select all, search, go to line,
 `M-x`), Lisp (indentation, defun motion, the phase-2 introspection),
 Clamiga (connect, start clamiga, load/compile, the evals, interrupt, the
-error list) and Windows (REPL, inspector, debugger, the REPL's own
-commands, other window).  Cursor and word motion and the kill commands
-are left out on purpose.  Four commands have no key at all and were
-reachable only through `M-x` before: `clamacs-connect`, `run-lisp`,
-`clamacs-compile-file` and `clamacs-arglist`.
+error list), Windows (REPL, inspector, debugger, the REPL's own
+commands, other window) and Help (the Common Lisp HyperSpec, 2026-09-14:
+`clamacs-hyperspec` hands the URL to `openurl.library`, which MorphOS
+ships and the OpenURL package supplies on AmigaOS 3; without it the URL
+is shown in a requester -- `src/url.c`).  Cursor and word motion and the
+kill commands are left out on purpose.  Four commands have no key at all
+and were reachable only through `M-x` before: `clamacs-connect`,
+`run-lisp`, `clamacs-compile-file` and `clamacs-arglist`.
 
 Enable state is polled, not notified: `ck_menu_update()` computes the
 flags (buffer changed, has a file, port known, REPL window active,

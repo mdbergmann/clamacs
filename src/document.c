@@ -1712,6 +1712,9 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     /* --- window positions, see snapshot.c ------------------------- */
     case CK_CMD_SNAPSHOT_WINDOWS:   ck_snapshot_take(doc); break;
 
+    /* --- help, see url.c ------------------------------------------ */
+    case CK_CMD_HYPERSPEC:          ck_url_open(doc, CK_HYPERSPEC_URL); break;
+
     default:
         ck_message(doc, "%s is not implemented yet",
                    ck_command_name(command) != NULL
