@@ -12,11 +12,31 @@ introspection (arglist, completion, jump to
 definition, describe, apropos, macroexpand) asked from clamiga, a REPL
 window (`C-c C-z`) fed by a REPL thread in clamiga that streams output,
 asks the editor for `read-line` input and can be interrupted, a debugger
-window that opens when a form at that REPL signals an error (restarts,
+window that opens when a form signals an error -- typed at that REPL or
+evaluated from a buffer with `C-c C-c` / `C-x C-e` (restarts,
 backtrace, locals, eval in a frame; the REPL thread stays parked on the
 erring stack until a restart is chosen), and an inspector window
 (`C-c I`) with a parts list and a Back button. See `CLAUDE.md` for the
 design and the phase plan, and `specs/clamacs-ide.md` for the full one.
+
+## Files and evaluation
+
+**Project > New** opens an empty Lisp buffer in a window of its own;
+`C-x C-f` (Open...) with a name no file has yet does the same under that
+name, as in Emacs, and `C-x C-s` writes it.  Lisp mode -- colouring, paren
+matching, indentation -- follows the file name (`.lisp`, `.lsp`, `.cl`,
+`.asd`); an unnamed buffer is always in Lisp mode.
+
+`C-c C-c` (Eval Defun), `C-x C-e` (Eval Last Sexp), `C-c C-r` (Eval
+Region) and `C-c C-e` (Eval Expression...) run the form on clamiga's REPL
+thread: what it prints goes to the `*clamacs-repl*` transcript, its
+values to the buffer's echo area, and an error opens the debugger window
+with the erring stack still there.  The REPL window is opened and
+attached the first time you evaluate; `C-c C-b` interrupts.  When clamiga
+was restarted, the next evaluation finds the new one and attaches the
+REPL again by itself (the echo area says `clamiga found on CLAMIGA`).
+Loading (`C-c C-k`, `C-c C-l`) stays what it was: every error in the file
+becomes a row in the diagnostics window.
 
 ## Screenshots
 

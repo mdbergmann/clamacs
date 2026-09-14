@@ -664,21 +664,39 @@ BEFORE = RESULT
 'EVAL clamacs-eval-last-sexp'
 
 /* The client never blocks on a reply, so the answer arrives later -- poll
-** the echo area for it rather than assuming it is already there. */
+** the echo area for it rather than assuming it is already there.  A buffer
+** eval runs on clamiga's REPL thread, and this is the first one: the
+** editor opens the REPL window and attaches it first, which loads dev-repl
+** in clamiga -- gray streams and CLOS, compiled from source when the FASL
+** cache is cold, so minutes on an emulated 68020 -- and the echo area
+** says other things (`clamiga found on ...') on the way.  So wait for the
+** value itself, and generously: a cold cache took the first attach past
+** the 180 s the REPL leg budgets (2026-09-14), the value arriving only
+** after that leg had given up. */
 ANSWER = ''
-DO i = 1 TO 60
+LAST = ''
+DO i = 1 TO 900
     CALL DELAY(25)
     'STATUS'
-    IF RESULT ~= BEFORE & RESULT ~= '' THEN DO
+    IF RESULT = '3' THEN DO
         ANSWER = RESULT
         LEAVE
     END
+    IF RESULT ~= BEFORE & RESULT ~= '' THEN LAST = RESULT
 END
 
 IF ANSWER = '3' THEN
-    SAY 'OK eval-last-sexp on (+ 1 2) echoed' ANSWER
+    SAY 'OK eval-last-sexp on (+ 1 2) echoed' ANSWER 'after' i '/ 2 s (the first eval attaches the REPL)'
 ELSE
-    SAY 'FAIL eval-last-sexp echoed' ANSWER
+    SAY 'FAIL eval-last-sexp echoed' LAST
+
+/* That eval attached the REPL: its window exists, and the buffer that
+** asked kept the focus. */
+'GETNAME'
+IF RESULT = 'eval.lisp' THEN
+    SAY 'OK the buffer eval left eval.lisp active:' RESULT
+ELSE
+    SAY 'FAIL after the buffer eval the active window is' RESULT
 
 /* That request found the port, so the Clamiga menu is live now and Start
 ** clamiga is not. */
@@ -1272,6 +1290,41 @@ IF LINE ~= '' & L = ':WENT-ON' THEN
     SAY 'OK CONTINUE let the form finish:' L
 ELSE
     SAY 'FAIL after CONTINUE came' L
+'EVAL end-of-buffer'
+
+/* A buffer eval reaches the debugger too (2026-09-14): C-x C-e on a form
+** that errors runs on the same REPL thread, so it parks there and the
+** debugger window opens, with the echo lines going to the buffer that
+** asked; Abort brings `; Aborted' back to that echo area.  The buffer is
+** a file in RAM: that does not exist yet -- Open... on such a name makes
+** an empty buffer of it (the New file path) -- saved and closed at the
+** end so quitting never asks about it. */
+'OPEN FILE RAM:clamacs-bufeval-test.lisp'
+'STATUS'
+IF RESULT = '(New file)' THEN
+    SAY 'OK Open... on a name no file has made a new buffer:' RESULT
+ELSE
+    SAY 'FAIL Open... on a new name said' RESULT
+'INSERT (dbg-fn 5 6)'
+'EVAL clamacs-eval-last-sexp'
+ECHO = WaitEcho('Debugger level 1, frame 0: ARG0 = 5', 60)
+IF ECHO ~= '' THEN
+    SAY 'OK an error in a buffer eval opened the debugger:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL no debugger for the buffer eval of (dbg-fn 5 6); the echo area says' RESULT
+END
+'EVAL clamacs-debugger-abort'
+ECHO = WaitEcho('Aborted', 40)
+IF ECHO ~= '' THEN
+    SAY 'OK Abort ended the buffer eval in its own echo area:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL after Abort the buffer''s echo area says' RESULT
+END
+'MENU save-buffer'
+'MENU kill-buffer'
+'EVAL clamacs-repl'
 'EVAL end-of-buffer'
 
 /* The inspector: C-c I evaluates a form in clamiga and the window shows

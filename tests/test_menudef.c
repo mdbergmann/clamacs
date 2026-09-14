@@ -97,6 +97,7 @@ TEST(find_returns_the_item)
 TEST(the_unbound_commands_are_reachable_from_the_menu)
 {
     /* The reason the menu exists for these: they have no key. */
+    ASSERT(ck_menudef_find(CK_CMD_NEW_BUFFER) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_CONNECT) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_RUN_LISP) >= 0);
     ASSERT(ck_menudef_find(CK_CMD_COMPILE_FILE) >= 0);

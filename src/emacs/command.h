@@ -62,6 +62,7 @@
     /* files, buffers, windows */                                             \
     X(FIND_FILE,                "find-file")                                  \
     X(FIND_FILE_OTHER_WINDOW,   "find-file-other-window")                     \
+    X(NEW_BUFFER,               "clamacs-new-buffer")                         \
     X(SAVE_BUFFER,              "save-buffer")                                \
     X(WRITE_FILE,               "write-file")                                 \
     X(SWITCH_TO_BUFFER,         "switch-to-buffer")                           \

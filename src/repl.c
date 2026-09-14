@@ -25,10 +25,12 @@
 #include "clamacs.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 
 static void ck_repl_busy_message(ck_doc *doc);
+static void ck_repl_attach(ck_doc *doc);
 
 static void ck_first_line(const char *text, char *out, int32_t size)
 {
@@ -138,19 +140,54 @@ static void ck_repl_note(ck_doc *doc, const char *fmt, ...)
     ck_repl_append(doc, line);
 }
 
+/* clamiga's *command-package* moved: a buffer eval that follows must not
+ * assume the port is still where it last put it. */
+static void ck_repl_wire_package(ck_app *app, const char *package)
+{
+    if (package == NULL || package[0] == '\0')
+        return;
+    strncpy(app->wire_package, package, sizeof app->wire_package - 1);
+    app->wire_package[sizeof app->wire_package - 1] = '\0';
+}
+
+/* The prompt's package.  Only a form typed at the prompt moves it: a
+ * buffer eval runs in its buffer's package and leaves the prompt alone,
+ * as in SLIME (ck_repl_return re-asserts the prompt's package before each
+ * form anyway). */
 static void ck_repl_set_package(ck_doc *doc, const char *package)
 {
-    ck_app *app = doc->app;
-
     if (package == NULL || package[0] == '\0')
         return;
     strncpy(doc->package, package, sizeof doc->package - 1);
     doc->package[sizeof doc->package - 1] = '\0';
+    ck_repl_wire_package(doc->app, package);
+}
 
-    /* clamiga's *command-package* moved with it: a buffer eval that follows
-     * must not assume the port is still where it last put it. */
-    strncpy(app->wire_package, package, sizeof app->wire_package - 1);
-    app->wire_package[sizeof app->wire_package - 1] = '\0';
+/* ------------------------------------------------------------------ *
+ * Buffer evals waiting for the attach
+ * ------------------------------------------------------------------ */
+
+static void ck_repl_clear_pending(ck_app *app)
+{
+    if (app->repl_pending != NULL)
+        free(app->repl_pending);
+    app->repl_pending        = NULL;
+    app->repl_pending_origin = 0;
+}
+
+static int32_t ck_repl_set_pending(ck_app *app, ck_doc *from, const char *text)
+{
+    size_t n = strlen(text);
+    char  *copy;
+
+    ck_repl_clear_pending(app);
+    copy = (char *)malloc(n + 1);
+    if (copy == NULL)
+        return 0;
+    memcpy(copy, text, n + 1);
+    app->repl_pending        = copy;
+    app->repl_pending_origin = from->id;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -180,34 +217,93 @@ static void ck_repl_attach(ck_doc *doc)
     }
 }
 
+/* The REPL window, opened if there is none yet.  Opening puts it in front;
+ * the caller decides whether that is where the user goes. */
+static ck_doc *ck_repl_open(ck_app *app, ck_doc *from)
+{
+    ck_doc *doc = ck_repl_doc(app);
+
+    if (doc != NULL)
+        return doc;
+
+    doc = ck_doc_scratch(app, CK_REPL_NAME, 1);
+    if (doc == NULL) {
+        ck_message(from, "Cannot open the REPL window");
+        ck_beep(from);
+        return NULL;
+    }
+    doc->repl_mode    = 1;
+    doc->prompt_start = -1;
+    doc->input_start  = -1;
+    doc->repl_busy    = 0;
+    doc->repl_reading = 0;
+    doc->repl_bol     = 1;
+    ck_keystate_init(&doc->keys, app->global, app->repl_map);
+    app->repl          = doc;
+    app->repl_attached = 0;
+    app->repl_origin   = 0;
+    return doc;
+}
+
 void ck_repl_switch(ck_doc *from)
 {
     ck_app *app = from->app;
-    ck_doc *doc = ck_repl_doc(app);
+    ck_doc *doc = ck_repl_open(app, from);
 
-    if (doc == NULL) {
-        doc = ck_doc_scratch(app, CK_REPL_NAME, 1);
-        if (doc == NULL) {
-            ck_message(from, "Cannot open the REPL window");
-            ck_beep(from);
-            return;
-        }
-        doc->repl_mode    = 1;
-        doc->prompt_start = -1;
-        doc->input_start  = -1;
-        doc->repl_busy    = 0;
-        doc->repl_reading = 0;
-        doc->repl_bol     = 1;
-        ck_keystate_init(&doc->keys, app->global, app->repl_map);
-        app->repl          = doc;
-        app->repl_attached = 0;
-    }
+    if (doc == NULL)
+        return;
 
     ck_doc_activate(doc);
     set(doc->win, MUIA_Window_ActiveObject, (IPTR)doc->text);
 
     if (!app->repl_attached)
         ck_repl_attach(doc);
+}
+
+/*
+ * A buffer eval on the REPL thread.  SLIME's model: C-c C-c in a source
+ * buffer is the same evaluation a form typed at the prompt gets -- output
+ * streams into the transcript, an error parks the thread and opens the
+ * debugger window -- only the values go to the buffer's echo area instead
+ * of the transcript, and the prompt's package is left alone.  Before the
+ * REPL is attached the form waits for the REPL-ATTACH reply; the REPL
+ * window opens for that, but the user stays in the buffer.
+ */
+void ck_repl_eval_from(ck_doc *from, const char *text)
+{
+    ck_app *app  = from->app;
+    ck_doc *repl = ck_repl_doc(app);
+
+    if (!app->repl_attached) {
+        if (repl == NULL) {
+            repl = ck_repl_open(app, from);
+            if (repl == NULL)
+                return;
+            /* The new window came up in front: the eval came from FROM. */
+            ck_doc_activate(from);
+            set(from->win, MUIA_Window_ActiveObject, (IPTR)from->text);
+        }
+        if (!ck_repl_set_pending(app, from, text)) {
+            ck_message(from, "Out of memory");
+            ck_beep(from);
+            return;
+        }
+        ck_repl_attach(repl);
+        if (!app->repl_attaching)
+            ck_repl_clear_pending(app);   /* the attach never left */
+        return;
+    }
+
+    if (app->repl_origin != 0 || (repl != NULL && repl->input_start < 0)) {
+        ck_repl_busy_message(from);
+        return;
+    }
+
+    /* The buffer's package, not the prompt's: IN-PACKAGE first when they
+     * differ from what the port was last told. */
+    ck_doc_send_package(from, 1);
+    if (ck_rexx_send_text(app, from, CK_REQ_REPL_EVAL, "REPL-EVAL ", text) >= 0)
+        app->repl_origin = from->id;
 }
 
 /* ------------------------------------------------------------------ *
@@ -258,6 +354,9 @@ void ck_repl_return(ck_doc *doc)
         /* Still typing the form: RET does what it does in a source buffer. */
         ck_doc_set_cursor_index(doc, end);
         ck_doc_run_command(doc, CK_CMD_NEWLINE_AND_INDENT, 1);
+    } else if (app->repl_origin != 0) {
+        /* The thread is running a buffer eval; the prompt stayed up. */
+        ck_repl_busy_message(doc);
     } else if (!app->repl_attached) {
         ck_message(doc, "No REPL attached -- C-c C-z attaches one");
         ck_beep(doc);
@@ -354,8 +453,10 @@ static void ck_repl_busy_message(ck_doc *doc)
     if (doc->app->dbg_level > 0)
         ck_message(doc, "The REPL is in the debugger (M-x clamacs-debugger shows it, "
                         "M-x clamacs-debugger-abort returns to the prompt)");
-    else
+    else if (doc->repl_mode)
         ck_message(doc, "The REPL is busy (C-c C-c interrupts)");
+    else
+        ck_message(doc, "The REPL is busy (C-c C-b interrupts)");
     ck_beep(doc);
 }
 
@@ -498,6 +599,29 @@ void ck_repl_result(ck_app *app, int32_t rc, const char *package,
 {
     ck_doc *doc = ck_repl_doc(app);
 
+    if (app->repl_origin != 0) {
+        /* A buffer eval: the values are that buffer's news, the transcript
+         * keeps its prompt (any output already went above it), and the
+         * prompt's package is not touched. */
+        ck_doc *from = ck_doc_by_id(app, app->repl_origin);
+        char    line[CK_MSG_MAX];
+
+        app->repl_origin = 0;
+        ck_repl_wire_package(app, package);
+        if (app->dbg_level > 0)
+            ck_debug_left(app);
+        if (from == NULL || from->closing)
+            return;
+        ck_first_line(values, line, (int32_t)sizeof line);
+        if (rc != CK_RC_OK) {
+            ck_message(from, "%s", line[0] != '\0' ? line : "Evaluation failed");
+            ck_beep(from);
+        } else {
+            ck_message(from, "%s", line[0] != '\0' ? line : "; No values");
+        }
+        return;
+    }
+
     if (doc == NULL)
         return;
 
@@ -539,7 +663,9 @@ void ck_repl_debugger(ck_app *app, int32_t level, const char *package,
 {
     ck_doc *doc = ck_repl_doc(app);
 
-    if (doc != NULL)
+    if (app->repl_origin != 0)
+        ck_repl_wire_package(app, package);   /* a buffer eval's package */
+    else if (doc != NULL)
         ck_repl_set_package(doc, package);
 
     if (level > 0)
@@ -565,38 +691,63 @@ void ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
     case CK_REQ_REPL_ATTACH:
         app->repl_attaching = 0;
         if (rc != CK_RC_OK) {
+            ck_doc *from = ck_doc_by_id(app, app->repl_pending_origin);
             if (doc != NULL) {
                 ck_repl_note(doc, "%s", line[0] != '\0' ? line : "REPL-ATTACH failed");
                 ck_message(doc, "%s", line[0] != '\0' ? line : "REPL-ATTACH failed");
                 ck_beep(doc);
             }
+            /* The buffer eval that waited for this is off. */
+            if (from != NULL && from != doc && !from->closing) {
+                ck_message(from, "%s", line[0] != '\0' ? line : "REPL-ATTACH failed");
+                ck_beep(from);
+            }
+            ck_repl_clear_pending(app);
             break;
         }
         if (doc == NULL || doc != ck_repl_doc(app)) {
             /* The window went away while the request was out: do not leave
              * a REPL thread sending to nobody. */
             ck_rexx_send(app, NULL, CK_REQ_REPL_DETACH, "REPL-DETACH");
+            ck_repl_clear_pending(app);
             break;
         }
         app->repl_attached = 1;
+        app->repl_origin   = 0;
         doc->repl_busy     = 0;
         doc->repl_reading  = 0;
         ck_repl_set_package(doc, line);
         ck_repl_note(doc, "REPL attached to %s", app->clamiga_port);
         ck_message(doc, "REPL attached to %s", app->clamiga_port);
         ck_repl_prompt(doc);
+        /* Now the buffer eval that asked for the attach. */
+        if (app->repl_pending != NULL) {
+            ck_doc *from = ck_doc_by_id(app, app->repl_pending_origin);
+            char   *form = app->repl_pending;
+            app->repl_pending        = NULL;
+            app->repl_pending_origin = 0;
+            if (from != NULL && !from->closing)
+                ck_repl_eval_from(from, form);
+            free(form);
+        }
         break;
 
     case CK_REQ_REPL_EVAL:
         if (rc != CK_RC_OK && doc != NULL) {
             /* Refused: the REPL thread is gone (clamiga restarted) or
-             * still busy.  Either way the prompt comes back. */
+             * still busy. */
             if (strstr(text, "no REPL attached") != NULL)
                 app->repl_attached = 0;
             ck_message(doc, "%s", line[0] != '\0' ? line : "REPL-EVAL failed");
             ck_beep(doc);
-            doc->repl_busy = 0;
-            ck_repl_prompt(doc);
+            if (doc == ck_repl_doc(app)) {
+                /* Typed at the prompt: the prompt comes back. */
+                doc->repl_busy = 0;
+                ck_repl_prompt(doc);
+            } else if (app->repl_origin == doc->id) {
+                /* A buffer eval that never started. */
+                app->repl_origin = 0;
+            }
         }
         break;
 
@@ -632,7 +783,9 @@ void ck_repl_closed(ck_doc *doc)
         ck_rexx_send(app, NULL, CK_REQ_REPL_DETACH, "REPL-DETACH");
     app->repl_attached  = 0;
     app->repl_attaching = 0;
+    app->repl_origin    = 0;
     app->repl           = NULL;
+    ck_repl_clear_pending(app);
     /* The detach lets a parked REPL thread go; the window goes with it. */
     ck_debug_left(app);
 }
@@ -645,6 +798,8 @@ void ck_repl_disconnected(ck_app *app)
         return;
     app->repl_attached  = 0;
     app->repl_attaching = 0;
+    app->repl_origin    = 0;
+    ck_repl_clear_pending(app);
     ck_debug_left(app);
     if (doc == NULL)
         return;
@@ -652,8 +807,23 @@ void ck_repl_disconnected(ck_app *app)
     doc->repl_reading = 0;
     doc->prompt_start = -1;
     doc->input_start  = -1;
-    ck_repl_note(doc, "clamiga is gone (C-c C-z attaches again)");
+    ck_repl_note(doc, "clamiga is gone (it is attached again when it comes back)");
     ck_repl_prompt(doc);
+}
+
+/* The port is back (ck_rexx_find_port saw it appear).  A REPL window that
+ * lost its thread gets a new one without being asked: the transcript
+ * says so, and the next RET at the prompt or C-c C-c in a buffer just
+ * works.  A fresh clamiga has no REPL thread, so this is an attach, not a
+ * resume -- the old session's history is gone with the old process. */
+void ck_repl_reconnected(ck_app *app)
+{
+    ck_doc *doc = ck_repl_doc(app);
+
+    if (doc == NULL || app->repl_attached || app->repl_attaching)
+        return;
+    ck_repl_note(doc, "clamiga is back on %s", app->clamiga_port);
+    ck_repl_attach(doc);
 }
 
 void ck_repl_quit(ck_app *app)
@@ -662,4 +832,6 @@ void ck_repl_quit(ck_app *app)
         ck_rexx_send(app, NULL, CK_REQ_REPL_DETACH, "REPL-DETACH");
     app->repl_attached  = 0;
     app->repl_attaching = 0;
+    app->repl_origin    = 0;
+    ck_repl_clear_pending(app);
 }

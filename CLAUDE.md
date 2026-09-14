@@ -181,8 +181,14 @@ list under "Answered during phase 1".
    window (restarts, backtrace, locals, eval-in-frame) fed by clamiga's
    parked REPL thread, `C-c I` opens the inspector.  The window's buttons
    are also `M-x clamacs-debugger-*` / `clamacs-inspector-*` commands, so
-   the port drives them.  Only forms typed at the REPL reach the debugger;
-   buffer evals still go through `EVAL` and its diagnostics.  A `DEBUG`
+   the port drives them.  Buffer evals (`C-c C-c`, `C-x C-e`, `C-c C-r`,
+   `C-c C-e`) run on the REPL thread too (2026-09-14, `ck_repl_eval_from`
+   in `src/repl.c`): the REPL is attached on demand -- its window opens
+   but the buffer keeps the focus -- output goes to the transcript, the
+   values to the buffer's echo area, the prompt's package is left alone,
+   and an error opens the debugger window exactly as at the prompt, its
+   echo lines going to that buffer.  The handler thread's `EVAL` is for
+   macros and the port, not for keys.  A `DEBUG`
    attach turns clamiga's JIT shadow frames on so natively compiled
    functions show in the backtrace.  The first hardware run found a
    clamiga JIT bug (a throw lost when it unwound through a cleanup holding

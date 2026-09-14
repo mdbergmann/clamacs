@@ -357,7 +357,7 @@ other event.  Rules:
 | `IN-PACKAGE <pkg>` | sent before an eval when the buffer's package changed since the last request |
 | `LOAD <file>` | `C-c C-k` after saving the buffer; `C-c C-l` for another file |
 | `COMPILE-FILE <file>` | `M-x compile-file` |
-| `EVAL <form>` | `C-c C-c`, `C-x C-e`, `C-c C-r` |
+| `EVAL <form>` | macros (`clamacs.rexx`); the keys `C-c C-c`, `C-x C-e`, `C-c C-r`, `C-c C-e` use `REPL-EVAL` (phase 3) since 2026-09-14, so an error opens the debugger |
 | `LASTRESULT` | automatic after a non-zero rc |
 
 Diagnostics are parsed from the reply text one line at a time:
@@ -633,10 +633,11 @@ placeholders), so the locals list and the frame eval speak of `ARG0` and
 arguments only; inspecting a local from the debugger (SLIME's `i` in sldb) would
 need a command that evaluates in the REPL thread's frame, which `INSPECT`
 on the handler thread cannot; CLOS instances inspect as the structs they
-are underneath; and `C-x C-e` / `C-c C-c` from a source buffer still go
-through `EVAL` on the handler thread, which catches errors into
-diagnostics as in phase 1 -- only forms typed at the REPL reach the
-debugger.
+are underneath.  (`C-x C-e` / `C-c C-c` from a source buffer went
+through `EVAL` on the handler thread until 2026-09-14, so an error there
+came back as a diagnostic; they run on the REPL thread now, attaching it
+on demand, and an error opens the debugger as at the prompt -- the values
+land in the buffer's echo area and the prompt's package is untouched.)
 
 ## Testing
 

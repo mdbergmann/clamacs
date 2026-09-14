@@ -15,6 +15,7 @@
  * key in the shortcut column is the one a user would learn next. */
 static const ck_menu_entry ck_menu_table[] = {
     TITLE("Project"),
+    ITEM(CK_CMD_NEW_BUFFER,              CK_MENU_ALWAYS,        "New",                 NULL,      0),
     ITEM(CK_CMD_FIND_FILE,               CK_MENU_ALWAYS,        "Open...",             "C-x C-f", 0),
     ITEM(CK_CMD_FIND_FILE_OTHER_WINDOW,  CK_MENU_ALWAYS,        "Open in New Window...", "C-x 2",  0),
     ITEM(CK_CMD_SAVE_BUFFER,             CK_MENU_DOC_CHANGED,   "Save",                "C-x C-s", 0),

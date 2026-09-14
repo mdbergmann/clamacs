@@ -81,6 +81,7 @@ int32_t ck_rexx_find_port(ck_app *app)
 {
     char    name[32];
     int32_t i;
+    int32_t was = app->connected;
 
     /* CLAMIGA, then CLAMIGA.1 .. CLAMIGA.9 -- the same scan the shipped
      * clamiga.rexx macro does, so a second clamiga instance is reachable. */
@@ -96,6 +97,18 @@ int32_t ck_rexx_find_port(ck_app *app)
             strncpy(app->clamiga_port, name, sizeof app->clamiga_port - 1);
             app->clamiga_port[sizeof app->clamiga_port - 1] = '\0';
             app->connected = 1;
+            if (!was) {
+                /* Newly found -- at startup, or back after it was gone.
+                 * Say so where the user is looking, since the command
+                 * that provoked the scan would otherwise just work as if
+                 * nothing had happened; and a fresh clamiga starts in
+                 * CL-USER, whatever the old one was last told. */
+                ck_doc *doc = ck_doc_active(app);
+                app->wire_package[0] = '\0';
+                if (doc != NULL)
+                    ck_message(doc, "clamiga found on %s", name);
+                ck_repl_reconnected(app);
+            }
             ck_menu_update(app);
             return 1;
         }
@@ -433,10 +446,12 @@ int32_t ck_rexx_send_text(ck_app *app, ck_doc *doc, uint16_t kind,
  * Continuations
  * ------------------------------------------------------------------ */
 
-static ck_doc *ck_doc_by_id(ck_app *app, uint32_t id)
+ck_doc *ck_doc_by_id(ck_app *app, uint32_t id)
 {
     ck_doc *doc;
 
+    if (id == 0)
+        return NULL;
     for (doc = app->docs; doc != NULL; doc = doc->next) {
         if (doc->id == id)
             return doc;

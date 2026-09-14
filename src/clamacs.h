@@ -67,6 +67,10 @@
 /* Private attribute: which document an object belongs to.  In the user tag
  * space, so it cannot collide with MUI's own. */
 #define CKA_Doc (TAG_USER | 0x0C1A0001)
+/* OM_GET on a ClamacsText: the width in pixels of one character of the
+ * font it draws with (0 before MUIM_Setup).  What ck_doc_hscroll_into_view()
+ * turns a column into a pixel offset with; the text is fixed-width. */
+#define CKA_CharWidth (TAG_USER | 0x0C1A0002)
 
 /* Private method: the idle tick, fired by the text object's own MUI timer
  * input handler (MUIIHNF_TIMER).  It carries no parameters -- the handler
@@ -300,6 +304,15 @@ typedef struct ck_app {
     int32_t  repl_attached;      /* clamiga's REPL thread sends to us */
     int32_t  repl_attaching;     /* a REPL-ATTACH is on the wire */
     char     own_port[32];
+    /* A buffer eval (C-c C-c, C-x C-e, C-c C-r, C-c C-e) runs on the REPL
+     * thread too, so an error opens the debugger window: repl_origin is
+     * the id of the document it came from while it runs, 0 when the REPL
+     * thread is idle or running a form typed at the prompt.  A buffer eval
+     * before the REPL is attached waits in repl_pending (malloc'd) for
+     * the REPL-ATTACH reply. */
+    uint32_t repl_origin;
+    char    *repl_pending;
+    uint32_t repl_pending_origin;
 
     Object *errorwin;
     Object *errorlist;
@@ -370,6 +383,16 @@ ck_key ck_decode_rawkey(const struct IntuiMessage *imsg);
 /* ---- document.c -------------------------------------------------- */
 
 ck_doc *ck_doc_new(ck_app *app, const char *path);
+/* The document with this ARexx request cookie, or NULL once it is gone. */
+ck_doc *ck_doc_by_id(ck_app *app, uint32_t id);
+/* Whether PATH can be locked: a name no file has is a new file (find-file
+ * and Open... make an empty buffer of it, not an error). */
+int32_t ck_file_exists(const char *path);
+/* Make DOC an empty, unmodified buffer named PATH, to be saved there. */
+void    ck_doc_visit_new(ck_doc *doc, const char *path);
+/* Scroll the view sideways so the cursor's column is on screen (the class
+ * only does that for the cursor moves it makes itself). */
+void    ck_doc_hscroll_into_view(ck_doc *doc);
 void    ck_doc_close(ck_doc *doc, int32_t ask);
 
 /* Dispose of the windows ck_doc_close() retired.  Called from the input loop,
@@ -554,6 +577,13 @@ void    ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
  * editor is quitting (detaches, so the REPL thread stops). */
 void    ck_repl_closed(ck_doc *doc);
 void    ck_repl_disconnected(ck_app *app);
+/* The port came back after it was gone: a REPL window that lost its
+ * thread attaches again by itself. */
+void    ck_repl_reconnected(ck_app *app);
+/* Evaluate TEXT from a source buffer on the REPL thread (attaching the
+ * REPL first when it is not): the values land in FROM's echo area, output
+ * in the transcript, and an error opens the debugger window. */
+void    ck_repl_eval_from(ck_doc *from, const char *text);
 void    ck_repl_quit(ck_app *app);
 
 /* ---- rexxport.c -------------------------------------------------- */

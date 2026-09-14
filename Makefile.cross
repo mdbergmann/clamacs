@@ -257,6 +257,10 @@ verify-amiga:
 	        'OK the transcript says the form was aborted' \
 	        'OK CERROR opened the debugger' \
 	        'OK CONTINUE let the form finish' \
+	        'OK the buffer eval left eval.lisp active' \
+	        'OK Open... on a name no file has made a new buffer' \
+	        'OK an error in a buffer eval opened the debugger' \
+	        'OK Abort ended the buffer eval in its own echo area' \
 	        'OK C-c I prompted' \
 	        'OK the inspector showed the object' \
 	        'OK part 1 descended into the cdr' \

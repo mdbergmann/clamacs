@@ -202,6 +202,21 @@ SDISPATCHER(ck_text_dispatcher)
         break;
     }
 
+    case OM_GET: {
+        struct opGet *g = (struct opGet *)msg;
+        if (g->opg_AttrID == CKA_CharWidth) {
+            /* The object's font, known from Setup on.  MUIA_TextEditor_
+             * FixedFont makes the class ask MUI for its fixed font, which
+             * is this one unless the user's TextEditor.mcc prefs name a
+             * fixed font of their own -- then the class draws with that,
+             * and this is an estimate. */
+            struct TextFont *font = (muiRenderInfo(obj) != NULL) ? _font(obj) : NULL;
+            *g->opg_Storage = (IPTR)((font != NULL) ? font->tf_XSize : 0);
+            return TRUE;
+        }
+        break;
+    }
+
     case MUIM_Setup: {
         struct ColorMap *cm;
         int32_t          i;

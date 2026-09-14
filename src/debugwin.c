@@ -35,8 +35,15 @@ static LONG ck_dbg_get(Object *obj, ULONG attr)
 
 /* Where messages about the debugger go: the REPL window, whose form is
  * being debugged, else the active document. */
+/* Where the debugger's echo lines go: the buffer whose eval is in the
+ * debugger, else the REPL window, else wherever the user is. */
 static ck_doc *ck_debug_doc(ck_app *app)
 {
+    if (app->repl_origin != 0) {
+        ck_doc *from = ck_doc_by_id(app, app->repl_origin);
+        if (from != NULL && !from->closing)
+            return from;
+    }
     if (app->repl != NULL && !app->repl->closing)
         return app->repl;
     return ck_doc_active(app);

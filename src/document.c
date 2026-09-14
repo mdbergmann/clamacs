@@ -93,6 +93,38 @@ void ck_doc_set_cursor_index(ck_doc *doc, int32_t index)
     if (index < 0)
         index = 0;
     set(doc->text, MUIA_TextEditor_CursorIndex, (IPTR)index);
+    ck_doc_hscroll_into_view(doc);
+}
+
+/*
+ * Keep the cursor's column on screen.  TextEditor.mcc scrolls the view
+ * sideways only after cursor moves it made itself -- its own key handling
+ * and the mouse -- so a move made by the Emacs layer (RET's
+ * newline-and-indent, C-a, a yank, a jump to a diagnostic) left the cursor
+ * wherever the view was: a Return typed past the right edge put the new
+ * line's start out of sight.  The horizontal bar counts pixels (the
+ * class's xpos), and the text is drawn in a fixed-width font, so the
+ * column times the character width is where the cursor is.  Tabs are
+ * counted as one character, which errs towards the left.
+ */
+void ck_doc_hscroll_into_view(ck_doc *doc)
+{
+    LONG cw, px, first, visible;
+
+    if (doc->hslider == NULL)
+        return;
+    cw = ck_get(doc->text, CKA_CharWidth);
+    if (cw <= 0)
+        return;
+    px      = ck_get(doc->text, MUIA_TextEditor_CursorX) * cw;
+    first   = ck_get(doc->hslider, MUIA_Prop_First);
+    visible = ck_get(doc->hslider, MUIA_Prop_Visible);
+    if (visible <= 0)
+        return;
+    if (px < first)
+        set(doc->hslider, MUIA_Prop_First, (IPTR)px);
+    else if (px + cw > first + visible)
+        set(doc->hslider, MUIA_Prop_First, (IPTR)(px + cw - visible));
 }
 
 STRPTR ck_doc_export_all(ck_doc *doc)
@@ -997,12 +1029,13 @@ void ck_doc_send_package(ck_doc *doc, int32_t track)
     }
 }
 
-/* Send a form for evaluation, preceded by an IN-PACKAGE when the buffer's
- * package differs from what the port was last told. */
+/* Send a form for evaluation.  On the REPL thread (repl.c), so that an
+ * error opens the debugger window with the erring stack still there,
+ * instead of coming back as a diagnostic the way a LOAD's do -- the
+ * handler thread's EVAL is for macros and the port, not for C-c C-c. */
 static void ck_doc_eval(ck_doc *doc, const char *form)
 {
-    ck_doc_send_package(doc, 1);
-    ck_rexx_send_text(doc->app, doc, CK_REQ_EVAL, "EVAL ", form);
+    ck_repl_eval_from(doc, form);
 }
 
 static void ck_doc_eval_region(ck_doc *doc, int32_t start, int32_t stop)
@@ -1493,6 +1526,15 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         ck_doc_prompt(doc, "Find file: ", "", command, CK_COMPLETE_FILE, arg);
         break;
 
+    case CK_CMD_NEW_BUFFER:
+        /* Project > New: an unnamed Lisp buffer in a window of its own,
+         * the one the editor opens at startup; Save asks for the name. */
+        if (ck_doc_new(app, NULL) == NULL) {
+            ck_message(doc, "Cannot open a new window");
+            ck_beep(doc);
+        }
+        break;
+
     case CK_CMD_SAVE_BUFFER:
         if (doc->path[0] == '\0') {
             ck_doc_prompt(doc, "Write file: ", "", CK_CMD_WRITE_FILE,
@@ -1724,6 +1766,8 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     }
 
     doc->last_command = command;
+    if (!doc->closing)
+        ck_doc_hscroll_into_view(doc);
     ck_doc_update_status(doc);
     ck_menu_update(app);
 }
@@ -1801,10 +1845,17 @@ void ck_doc_minibuffer_done(ck_doc *doc)
         if (command == CK_CMD_FIND_FILE && ck_doc_holds_file(doc)) {
             if (!ck_doc_release_text(doc))
                 break;
-            if (ck_doc_load_file(doc, path))
+            if (ck_doc_load_file(doc, path)) {
                 ck_doc_show_loaded(doc);
-            else
+            } else if (!ck_file_exists(path)) {
+                /* A name no file has yet is a new buffer with that name,
+                 * exactly as in Emacs. */
+                ck_doc_visit_new(doc, path);
+                ck_doc_show_loaded(doc);
+                ck_message(doc, "(New file)");
+            } else {
                 ck_message(doc, "Cannot open %s", path);
+            }
         } else if (ck_doc_new(doc->app, path) == NULL) {
             ck_message(doc, "Cannot open %s", path);
         }
@@ -1951,6 +2002,7 @@ HOOKPROTONHNO(ck_cursor_func, void, ULONG *params)
     ck_doc *doc = (ck_doc *)params[0];
     ck_doc_update_status(doc);
     ck_doc_show_paren(doc);
+    ck_doc_hscroll_into_view(doc);
 }
 MakeStaticHook(ck_cursor_hook, ck_cursor_func);
 
@@ -1962,6 +2014,12 @@ HOOKPROTONHNO(ck_changed_func, void, ULONG *params)
     ck_doc_update_status(doc);
     /* The first edit after a save is what enables Save in the menu. */
     ck_menu_update(doc->app);
+    /* The class notifies ContentsChanged only when the flag flips, and it
+     * only ever sets it -- a new Contents clears it, nothing else does.
+     * Left alone, this hook would run once per buffer: the first character
+     * typed into a new buffer was coloured and nothing after it.  Cleared
+     * here, quietly, so the next edit is a change again. */
+    nnset(doc->text, MUIA_TextEditor_ContentsChanged, FALSE);
 }
 MakeStaticHook(ck_changed_hook, ck_changed_func);
 
@@ -2047,6 +2105,31 @@ ck_doc *ck_doc_new(ck_app *app, const char *path)
     char role[CK_WINSTORE_NAME_MAX];
     ck_doc_free_role(app, role, (int32_t)sizeof role);
     return ck_doc_create(app, path, role);
+}
+
+int32_t ck_file_exists(const char *path)
+{
+    BPTR lock = Lock((STRPTR)path, ACCESS_READ);
+
+    if (lock == (BPTR)0)
+        return 0;
+    UnLock(lock);
+    return 1;
+}
+
+/* Visit PATH as a file that does not exist yet: an empty, unmodified
+ * buffer under that name, which Save (C-x C-s) writes there.  The mode
+ * follows the name, as for a loaded file (ck_doc_show_loaded). */
+void ck_doc_visit_new(ck_doc *doc, const char *path)
+{
+    set(doc->text, MUIA_TextEditor_Contents, (IPTR)"");
+    strncpy(doc->path, path, sizeof doc->path - 1);
+    doc->path[sizeof doc->path - 1] = '\0';
+    ck_basename(doc->path, doc->name, (int32_t)sizeof doc->name);
+    set(doc->text, MUIA_TextEditor_HasChanged, FALSE);
+    set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
+    ck_doc_forget_arglist(doc);
+    ck_menu_update(doc->app);
 }
 
 /* Is this a file window -- one that find-file may load another file into?
@@ -2147,6 +2230,7 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
 {
     ck_doc *doc = (ck_doc *)AllocVec(sizeof(ck_doc), MEMF_ANY | MEMF_CLEAR);
     struct TagItem place[CK_SNAPSHOT_TAGS];
+    int32_t new_file = 0;
 
     if (doc == NULL)
         return NULL;
@@ -2281,11 +2365,10 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
     if (path != NULL && path[0] != '\0') {
         if (!ck_doc_load_file(doc, path)) {
             /* A file that does not exist yet is a new buffer with a name,
-             * exactly as in Emacs. */
-            strncpy(doc->path, path, sizeof doc->path - 1);
-            doc->path[sizeof doc->path - 1] = '\0';
-            ck_basename(doc->path, doc->name, (int32_t)sizeof doc->name);
-            set(doc->win, MUIA_Window_Title, (IPTR)doc->name);
+             * exactly as in Emacs.  (One that exists but cannot be read
+             * gets the same empty buffer; Save will say what is wrong.) */
+            ck_doc_visit_new(doc, path);
+            new_file = 1;
         }
     }
 
@@ -2296,6 +2379,8 @@ static ck_doc *ck_doc_create(ck_app *app, const char *path, const char *role)
     ck_doc_colour_all(doc);
     ck_doc_update_status(doc);
     ck_menu_update(app);
+    if (new_file)
+        ck_message(doc, "(New file)");
     return doc;
 }
 
