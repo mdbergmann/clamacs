@@ -40,7 +40,7 @@ descends, Back comes up:
 ![The inspector window](docs/screenshots/inspector.png)
 
 Loading a file with mistakes fills the diagnostics window; a click on a row
-or `C-x \`` puts the cursor on the offending line, with the message in the
+or ``C-x ` `` puts the cursor on the offending line, with the message in the
 echo area:
 
 ![The diagnostics window](docs/screenshots/diagnostics.png)
