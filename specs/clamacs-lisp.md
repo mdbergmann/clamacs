@@ -335,6 +335,21 @@ Each is a cl-amiga item; none blocks phase 1, all shape it.
    for native code (the relocation tables, presumably) on every
    collection.  Two runtime items: the per-call round trip that makes
    JIT'd generic code slower than bytecode, and the marker's JIT cost.
+
+   **The marker's JIT cost: DONE 2026-09-16 (cl-amiga).**  It was not
+   the relocation tables: the conservative native-stack scan validated
+   each spilled word by walking the *whole arena* header by header,
+   and with the JIT on every collection runs under a native frame.  A
+   per-page block-start index (`gc_hdr_page[]`, `CLAMIGA_HDR_INDEX=0`
+   is the A/B switch) bounds that to a page.  Re-measured with this
+   spike, same box, same binary, explicit full GC first / later:
+   Vampire 129 / 55 ms with the index vs 342 / 90 ms without vs 123 /
+   48 ms with `--no-jit` (the 0.10.0 release: 354 / 91); FS-UAE 68040
+   161 / 48 vs 314 / 74 vs 155 / 38 ms; FS-UAE 68020 5.3 / 1.7 s vs
+   11.0 / 2.7 s.  A collection under the JIT now costs what one without
+   it costs; per-key cost is unchanged.  The runners took two knobs for
+   this (`SPIKE_SETENV`, `SPIKE_CLAMIGA_ARGS`; `run-vamp.py` also
+   `SPIKE_CLAMIGA` for a binary pushed beside the release's).
 7. **The generational collector cannot help on the Amiga as it is**: it
    tracks dirty pages with `mprotect`, and `specs/generational-gc.md`
    deliberately rejected a source-level write barrier.  A 68k version
@@ -357,7 +372,9 @@ commits, each under cl-amiga's gates and each re-measured with the spike
 
 1. The marker's JIT cost: a collection must not pay for native code it
    is not moving (94 -> 47 ms on the Vampire is the target, 3 -> 1.5 s on
-   the 68020).
+   the 68020).  **DONE 2026-09-16**: 90 -> 55 ms on the Vampire, 2.7 ->
+   1.7 s on the 68020 (item 6 above has the table); the remaining gap to
+   `--no-jit` is within the 20 ms phase clock.
 2. The JIT's default policy for generic code: bytecode beats it on the
    call-heavy paths (per key 0.71 vs 1.04 ms) -- either the per-call
    round trip gets cheaper or only declared code is compiled.
