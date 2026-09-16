@@ -14,3 +14,5 @@ build/
 # Non-redistributable SDKs dropped in locally.  The MorphOS SDK is needed
 # for the mos build only; MUI headers come from vendor/texteditor/include.
 /tools/mos-sdk/
+__pycache__/
+*.pyc
