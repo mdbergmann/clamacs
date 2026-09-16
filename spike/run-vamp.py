@@ -10,7 +10,8 @@ SPIKE_RELEASE (the release drawer), SPIKE_OUT (scratch drawer),
 SPIKE_CLAMIGA (a binary other than the release's, e.g. a cross-built one
 pushed beside it so it finds the release's lib/), SPIKE_CLAMIGA_ARGS (extra
 clamiga arguments, e.g. --no-jit), SPIKE_SETENV=NAME=VALUE (one AmigaDOS
-environment variable set before the launch, e.g. CLAMIGA_HDR_INDEX=0)."""
+environment variable set before the launch, e.g. CLAMIGA_HDR_INDEX=0, and
+unset again after the run -- a setenv outlives the run otherwise)."""
 import os, sys, time, subprocess
 sys.path.insert(0, os.path.expanduser("~/Development/MySources/amimcp/server"))
 from amiga import Amiga
@@ -27,6 +28,9 @@ EXTRA = os.environ.get("SPIKE_CLAMIGA_ARGS", "")   # e.g. --no-jit
 TAG = os.environ.get("SPIKE_TAG", "vamp")
 SETENV = os.environ.get("SPIKE_SETENV", "")
 SETENV_LINE = ("setenv " + SETENV.replace("=", " ", 1)) if SETENV else ""
+# AmigaDOS setenv persists until reboot: unset it at the end of the run, or
+# the next run on the box silently inherits the A/B setting.
+UNSETENV_LINE = ("UnSetEnv " + SETENV.split("=", 1)[0]) if SETENV else ""
 
 a = Amiga(HOST, token=TOKEN, timeout=600)
 
@@ -99,6 +103,7 @@ ENDIF
 echo "=== avail after ===" >>spike-run.log
 avail >>spike-run.log
 echo "=== run end ===" >>spike-run.log
+{UNSETENV_LINE}
 echo done >spike-done
 """
 

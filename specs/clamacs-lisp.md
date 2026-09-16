@@ -377,7 +377,20 @@ commits, each under cl-amiga's gates and each re-measured with the spike
    `--no-jit` is within the 20 ms phase clock.
 2. The JIT's default policy for generic code: bytecode beats it on the
    call-heavy paths (per key 0.71 vs 1.04 ms) -- either the per-call
-   round trip gets cheaper or only declared code is compiled.
+   round trip gets cheaper or only declared code is compiled.  **DONE
+   2026-09-16 (cl-amiga, the round trip)**: every call from native code
+   went through the generic `cl_vm_apply` trampoline and, for a Lisp
+   callee, a stub interpreter frame -- a JIT'd call to a native leaf cost
+   18.8 us on the Vampire where the interpreter's cost 11.8.  The JIT's
+   call helpers now dispatch builtins, FFI stubs and native callees
+   directly (7.0 us for the same call) and interpreted callees through
+   the stub frame without the copies and probes
+   (`trunk/bench-jit-call.lisp`, `specs/native-backend.md` "Status
+   (2026-09-16)").  Re-measured with this spike, same box, same session,
+   JIT on vs `--no-jit`: per key 658 vs 689 us median (p90 1094 vs
+   1105), RET 50 vs 88 ms (naive indent scan 22 vs 36 ms, declared 12
+   vs 30 ms), full GC 131 / 55 vs 133 / 50 ms.  The default stays
+   "compile everything"; a declared-only policy is not needed.
 3. A string-scan fast path: fused character opcodes for `SCHAR`, `CHAR=`
    / `CASE` on characters and list push/pop, with a `trunk/bench-general`
    row; 26 us per character on a real 68040 today, a tenth of that is
