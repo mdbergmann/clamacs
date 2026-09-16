@@ -301,7 +301,9 @@ Each is a cl-amiga item; none blocks phase 1, all shape it.
    match and colouring pass, so this is the first optimization target:
    `trunk/bench-general.lisp` should get a string-scan row, and the
    editor's scans must stay bounded (from the top-level form, not the
-   buffer start) whatever the compiler does.
+   buffer start) whatever the compiler does.  **Addressed 2026-09-16**
+   (runtime item 3 below): 2.0-2.8 us per character for the scan itself
+   on the Vampire.
 2. **Full GC of a small live heap costs ~90 ms on the Vampire and 3 s on
    a 68020, with a first collection 4x worse.**  The live set was 750
    KB; the arena 8 MB.  Whether that is sweep-over-arena, the demand-
@@ -394,7 +396,23 @@ commits, each under cl-amiga's gates and each re-measured with the spike
 3. A string-scan fast path: fused character opcodes for `SCHAR`, `CHAR=`
    / `CASE` on characters and list push/pop, with a `trunk/bench-general`
    row; 26 us per character on a real 68040 today, a tenth of that is
-   the aim.
+   the aim.  **DONE 2026-09-16 (cl-amiga, `specs/performance.md` 4.4)**:
+   two-argument `AREF`/`SVREF`/`CHAR`/`SCHAR` and `CHAR=` compile to one
+   opcode each, a comparison under a branch fuses with it, `PUSH`/`POP` on
+   a local are one opcode, `CASE` misses a key in one dispatch and
+   `INCF`/`DECF` of a local by a constant lost their temporaries (JIT
+   templates for all of them).  The 26 us was the scan *plus* the
+   indentation decision after it; the scan alone, measured on its own
+   (`trunk/bench-scan.lisp`), went from 18.3 to 2.4-2.8 us per character
+   (naive) and from 7.6 to 2.0-2.4 (declared) on the Vampire — the aim,
+   for the scan.  Re-measured with this spike, same box, identical trees,
+   two runs each, before vs after: RET median 48.5 / 51.2 vs 35.9 / 32.0
+   ms, naive indent 20.9 / 22.1 vs 10.2 / 8.2 ms, declared 11.6 / 12.0 vs
+   9.7 / 8.5 ms, per key 651 / 634 vs 661 / 622 us, full GC unchanged.
+   What remains in each indent cell (~7 ms) is `indent-at-paren`:
+   `POSITION-IF` with a closure, `SUBSEQ` and `MEMBER :test STRING-EQUAL`
+   over the body-form names — phase 1's Lisp mode should find the head
+   with a declared scan and a hash table, not generic sequence functions.
 
 Plus the editor-side rules phase 1 inherits: scans bounded to the
 top-level form, one FFI round trip per key (a fused raw-key decode),
