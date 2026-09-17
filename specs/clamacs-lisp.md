@@ -1,6 +1,6 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: PROPOSED
+Status: IN PROGRESS (phase 1)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -175,10 +175,18 @@ store), `src/lisp/` (tokenizer, sexp scanner, indentation) and
 `src/rexx/` (diagnostic parser, request queue, REPL and debugger message
 parsers, symbol cache) are logic with unit tests and no OS types.  They
 port one-to-one into `CLAMACS` functions, and their C test cases become
-the data of the Lisp tests.  The keymap becomes an `EQUAL` hash table of
-key-sequence lists to command symbols; a command is a function with a
-`(define-command clamacs-forward-sexp (doc) ...)` macro that registers
-it for `M-x` completion and the menu table.  The user's init file
+the data of the Lisp tests.  A key is a fixnum (code plus modifier bits,
+the C encoding) and a keymap an `EQL` hash table from key to a command
+symbol or to another keymap -- the prefix state machine needs the prefix
+maps as objects, because inside `C-x` the local and the global side both
+stay live.  A command is a symbol: `(define-command forward-sexp () "doc"
+...)` is `DEFUN` plus registration under the lowercase name, which is
+what `M-x` completion, the menu table and the port's `EVAL` look up, so
+redefining a command in a running editor changes what its keys do.  The
+C editor's whole command list is *declared* in `lisp/command.lisp`
+(bindings and namespace are complete and host-tested before a frontend
+implements them); a declared command without a function reports "not
+implemented".  "Not possible" is `NIL` throughout, never `-1`.  The user's init file
 (`S:.clamacsrc`, loaded after the image restores) binds keys with the
 same forms.
 
@@ -431,6 +439,15 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    (paren match, indentation, colouring via `SetBlock`).  The pure
    modules come first, host-tested; the GUI second, FS-UAE-tested.
    Files open from the command line and from Workbench arguments.
+   **Pure modules DONE 2026-09-17**: keymap, rawkey, command, bindings,
+   killring, minihist, locstack, token, sexp, indent under `lisp/`, 218
+   tests (every C case plus what C missed; token, sexp and indent also
+   fuzzed differentially against the C code, no differences), green on
+   the host and with a compaction at every allocation (33 s).  No
+   runtime bug surfaced.  The modules of later phases (menudef,
+   winstore, diag, queue, symcache, replmsg, dbgmsg) are ported with
+   their consumers.  Next: the frontend protocol with an in-memory fake
+   frontend, so the commands are host-tested before `frontend-mui.lisp`.
 2. **The wire.**  Client thread and queue, `AMIGA.AREXX:START` for the
    editor's port with the phase-1 verb set, diagnostic parser, error list
    window, `LOAD`/`COMPILE-FILE`/`EVAL`/`IN-PACKAGE` with clickable

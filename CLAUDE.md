@@ -18,6 +18,41 @@ FS-UAE.app -- are not tracked in git; they live in the superproject's
 The full design and phase plan is `specs/clamacs-ide.md`; this file is the
 short version.
 
+## The Lisp port (decided 2026-09-16, in progress)
+
+`specs/clamacs-lisp.md`: the editor is being rewritten in Common Lisp as
+its own clamiga instance, ARexx wire unchanged.  **The C editor below is
+frozen (bug fixes only) and keeps shipping until the port declares
+parity**; everything else in this file describes it and stays the
+behaviour spec.  New editor work goes into `lisp/`:
+
+- `lisp/` holds the editor; `lisp/load.lisp` loads it in order.  The PURE
+  modules (keymap, rawkey, command, bindings, killring, minihist,
+  locstack, token, sexp, indent) take no MUI and no OS types -- the same
+  rule as `src/emacs`, `src/lisp`, `src/rexx` -- and are ports of those C
+  modules with the C code as their specification.
+- `tests/test-*.lisp` are their tests (the C cases plus what C missed),
+  `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
+  `make test-lisp` runs them under the superproject's
+  `../build/host/clamiga` (skipped with a NOTE when it is not built) and
+  `make test` includes it; `make test-lisp-gc-stress` runs them with a
+  compaction at every allocation (`../build/host-gcstress/clamiga`, built
+  by the superproject's `make test-gc-stress`).  `CLAMACS_TEST=keymap`
+  runs one file.  Both must pass before a commit that touches `lisp/`.
+- The verdict is the LAST LINE (`CLAMACS-LISP-TESTS: PASS`), never the
+  exit code: clamiga's `LOAD` recovers form by form and a script exits 0
+  after a reader error, so `tests/run-lisp-tests.sh` also fails on any
+  `ERROR` line.  All test files share the `CLAMACS` package; `deftest`
+  refuses a name a second file already used.
+- Conventions: a buffer is a `SIMPLE-STRING`, a position a character
+  index, "not possible" is `NIL` (never -1); scans are declared `SCHAR`
+  loops (the runtime's string-scan opcodes), never generic sequence
+  functions on a per-key path, and stacks are lists (`PUSH`/`POP`), not
+  per-call vectors.  A command is a symbol (`define-command`), a key a
+  fixnum, a keymap an `EQL` hash table.
+- A wrong answer from conforming CL code is a clamiga bug: reduce it,
+  fix it in the superproject under its gates, never work around it here.
+
 ## Architecture decisions (2026-09-08)
 
 - **Two processes.** The editor is native C, the Lisp lives in `clamiga`.

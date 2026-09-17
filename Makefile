@@ -9,8 +9,12 @@
 # Makefile is what enforces it: anything that reaches for <proto/exec.h>
 # stops compiling here.
 #
-#   make test        build and run the whole host suite
+#   make test        build and run the whole host suite (C and Lisp)
 #   make test-keymap run one test binary
+#   make test-lisp   the Lisp editor's pure modules (specs/clamacs-lisp.md)
+#                    under ../build/host/clamiga; CLAMACS_TEST=keymap for one
+#   make test-lisp-gc-stress  the same, a compaction at every allocation
+#                    (needs the superproject's `make test-gc-stress' binary)
 #   make amiga       cross-compile the editor (delegates to Makefile.cross)
 
 CC_HOST     ?= cc
@@ -46,7 +50,11 @@ TESTS = keymap rawkey command bindings killring minihist locstack menudef winsto
 
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 
-.PHONY: all test clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS))
+# The Lisp editor's tests run under the SUPERPROJECT's host build.
+CLAMIGA_HOST     ?= ../build/host/clamiga
+CLAMIGA_GCSTRESS ?= ../build/host-gcstress/clamiga
+
+.PHONY: all test test-lisp test-lisp-gc-stress clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS))
 
 # Without this, make treats the core objects as intermediates of the pattern
 # rule that builds a test binary and deletes them after every run, so each
@@ -63,8 +71,16 @@ test: $(TEST_BINS)
 	    echo "=== $$t ==="; \
 	    $$t || fail=1; \
 	done; \
+	echo "=== tests/run-lisp-tests.sh ==="; \
+	tests/run-lisp-tests.sh $(CLAMIGA_HOST) || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "=== SOME TESTS FAILED ==="; exit 1; fi; \
 	echo "=== ALL TESTS PASSED ==="
+
+test-lisp:
+	@tests/run-lisp-tests.sh $(CLAMIGA_HOST)
+
+test-lisp-gc-stress:
+	@CLAMIGA_GC_STRESS=1 tests/run-lisp-tests.sh $(CLAMIGA_GCSTRESS)
 
 $(patsubst %,test-%,$(TESTS)): test-%: $(BUILDDIR)/test_%
 	$<
