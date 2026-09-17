@@ -446,8 +446,19 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    the host and with a compaction at every allocation (33 s).  No
    runtime bug surfaced.  The modules of later phases (menudef,
    winstore, diag, queue, symcache, replmsg, dbgmsg) are ported with
-   their consumers.  Next: the frontend protocol with an in-memory fake
-   frontend, so the commands are host-tested before `frontend-mui.lisp`.
+   their consumers.
+   **Frontend protocol and editing commands DONE 2026-09-17**:
+   `lisp/frontend.lisp` (the `document` class and ~20 generic functions:
+   index-based text access, the widget's own motions and edits, echo,
+   beep, colour) and `lisp/commands.lisp` (command loop, context
+   window, motion, kill/yank, mark, sexp commands, indentation, paren
+   highlight, colouring), host-tested against `tests/fake-frontend.lisp`
+   (a string, a cursor, an undo list): 254 tests, 100 s under GC stress.
+   Fixed against C on the way: `indent-region` is top-down (bottom-up
+   indented a line against a parent that had not moved yet) and
+   backward kills join.  Next: the minibuffer protocol (prompts, `M-x`,
+   isearch, goto-line, files) on the fake frontend, then
+   `frontend-mui.lisp` in FS-UAE.
 2. **The wire.**  Client thread and queue, `AMIGA.AREXX:START` for the
    editor's port with the phase-1 verb set, diagnostic parser, error list
    window, `LOAD`/`COMPILE-FILE`/`EVAL`/`IN-PACKAGE` with clickable

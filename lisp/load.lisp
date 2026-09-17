@@ -6,7 +6,8 @@
 (defvar cl-user::*clamacs-pure-files*
   '("package" "keymap" "rawkey" "minihist" "command" "bindings"
     "killring" "locstack"
-    "token" "sexp" "indent"))
+    "token" "sexp" "indent"
+    "frontend" "commands"))
 
 (let ((here (or *load-truename* *load-pathname*)))
   (dolist (name cl-user::*clamacs-pure-files*)

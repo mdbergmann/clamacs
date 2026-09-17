@@ -30,7 +30,12 @@ behaviour spec.  New editor work goes into `lisp/`:
   modules (keymap, rawkey, command, bindings, killring, minihist,
   locstack, token, sexp, indent) take no MUI and no OS types -- the same
   rule as `src/emacs`, `src/lisp`, `src/rexx` -- and are ports of those C
-  modules with the C code as their specification.
+  modules with the C code as their specification.  `frontend.lisp` is
+  the frontend protocol (generic functions on a `document`); commands
+  (`commands.lisp`) are functions of `(doc arg)` written against it and
+  nothing else, and `tests/fake-frontend.lisp` implements it over a
+  string so they are host-tested too.  Only `frontend-mui.lisp` may name
+  `AMIGA.MUI`.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),
   `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
   `make test-lisp` runs them under the superproject's

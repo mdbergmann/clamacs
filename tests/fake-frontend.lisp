@@ -1,0 +1,256 @@
+;;;; fake-frontend.lisp -- the frontend protocol over a string.
+;;;;
+;;;; The second implementation of lisp/frontend.lisp, and the reason the
+;;;; commands are host-tested: a document whose "widget" is a string, a
+;;;; cursor and an undo list, which records what it was told to show (the
+;;;; echo area, beeps, colours, the clipboard) so a test can ask.  It is
+;;;; deliberately as dumb as TextEditor.mcc is opaque: it implements the
+;;;; protocol and nothing the commands could lean on by accident.
+
+(in-package :clamacs)
+
+(defclass fake-document (document)
+  ((text :initarg :text :initform "" :accessor fake-text)
+   (point :initarg :point :initform 0 :accessor fake-point)
+   (undo-list :initform '() :accessor fake-undo-list)
+   (redo-list :initform '() :accessor fake-redo-list)
+   (messages :initform '() :accessor fake-messages) ; newest first
+   (beeps :initform 0 :accessor fake-beeps)
+   (colours :initform '() :accessor fake-colours)   ; (y x0 x1 colour) ...
+   (clipboard :initform nil :accessor fake-clipboard)
+   (selection :initform nil :accessor fake-selection)
+   (quiet-calls :initform 0 :accessor fake-quiet-calls)
+   (page-lines :initform 10 :accessor fake-page-lines)))
+
+(defun make-fake (text &key (point 0) (lisp-mode t) (editor (make-editor)))
+  "A document holding TEXT.  A `|' in TEXT is removed and marks the cursor."
+  (let ((bar (position #\| text)))
+    (when bar
+      (setq text (concatenate 'string (subseq text 0 bar)
+                              (subseq text (1+ bar)))
+            point bar))
+    (make-instance 'fake-document :editor editor :lisp-mode lisp-mode
+                                  :text (coerce text 'simple-string)
+                                  :point point)))
+
+(defun fake-state (doc)
+  "The text with a `|' where the cursor is."
+  (let ((text (fake-text doc)) (point (fake-point doc)))
+    (concatenate 'string (subseq text 0 point) "|" (subseq text point))))
+
+(defun fake-last-message (doc)
+  (first (fake-messages doc)))
+
+(defun lines (&rest lines)
+  "LINES joined by newlines: (lines \"(a\" \" b)\")."
+  (format nil "~{~A~^~%~}" lines))
+
+;;; --- text access ----------------------------------------------------
+
+(defmethod doc-point ((doc fake-document))
+  (fake-point doc))
+
+(defmethod doc-set-point ((doc fake-document) index)
+  (setf (fake-point doc) (max 0 (min index (length (fake-text doc))))))
+
+(defmethod doc-end ((doc fake-document))
+  (length (fake-text doc)))
+
+(defmethod doc-line-count ((doc fake-document))
+  (1+ (count #\Newline (fake-text doc))))
+
+(defmethod doc-index-line ((doc fake-document) index)
+  (let* ((text (fake-text doc))
+         (index (max 0 (min index (length text))))
+         (y (count #\Newline text :end index))
+         (start (let ((nl (position #\Newline text :end index :from-end t)))
+                  (if nl (1+ nl) 0))))
+    (values y (- index start))))
+
+(defmethod doc-line-index ((doc fake-document) y)
+  (let ((text (fake-text doc))
+        (index 0))
+    (dotimes (i (max 0 (min y (1- (doc-line-count doc)))) index)
+      (setq index (1+ (position #\Newline text :start index))))))
+
+(defmethod doc-text ((doc fake-document) start end)
+  (coerce (subseq (fake-text doc) start end) 'simple-string))
+
+(defmethod doc-lines-text ((doc fake-document) y0 y1)
+  (let ((last (1- (doc-line-count doc))))
+    (doc-text doc
+              (doc-line-index doc y0)
+              (if (>= y1 last)
+                  (doc-end doc)
+                  (doc-line-index doc (1+ y1))))))
+
+;;; --- editing --------------------------------------------------------
+
+(defun fake-record-undo (doc)
+  (push (cons (fake-text doc) (fake-point doc)) (fake-undo-list doc))
+  (setf (fake-redo-list doc) '()))
+
+(defmethod doc-insert ((doc fake-document) text)
+  (fake-record-undo doc)
+  (let ((old (fake-text doc)) (point (fake-point doc)))
+    (setf (fake-text doc) (concatenate 'simple-string (subseq old 0 point)
+                                       text (subseq old point))
+          (fake-point doc) (+ point (length text)))))
+
+(defmethod doc-delete ((doc fake-document) start end)
+  (fake-record-undo doc)
+  (let ((old (fake-text doc)))
+    (setf (fake-text doc) (concatenate 'simple-string (subseq old 0 start)
+                                       (subseq old end))
+          (fake-point doc) start)))
+
+(defun fake-word-char-p (c)
+  (alphanumericp c))
+
+(defmethod doc-move ((doc fake-document) motion)
+  (let* ((text (fake-text doc))
+         (len (length text))
+         (point (fake-point doc))
+         (target
+           (multiple-value-bind (y x) (doc-index-line doc point)
+             (flet ((line-end (y)
+                      (or (position #\Newline text
+                                    :start (doc-line-index doc y))
+                          len))
+                    (to-line (y)
+                      (and (<= 0 y (1- (doc-line-count doc)))
+                           (let ((start (doc-line-index doc y)))
+                             (min (+ start x)
+                                  (or (position #\Newline text :start start)
+                                      len))))))
+               (ecase motion
+                 (:left (and (> point 0) (1- point)))
+                 (:right (and (< point len) (1+ point)))
+                 (:up (to-line (1- y)))
+                 (:down (to-line (1+ y)))
+                 (:line-start (doc-line-index doc y))
+                 (:line-end (line-end y))
+                 (:text-start 0)
+                 (:text-end len)
+                 (:next-word
+                  (and (< point len)
+                       (let ((p point))
+                         (loop while (and (< p len)
+                                          (not (fake-word-char-p
+                                                (char text p))))
+                               do (incf p))
+                         (loop while (and (< p len)
+                                          (fake-word-char-p (char text p)))
+                               do (incf p))
+                         p)))
+                 (:previous-word
+                  (and (> point 0)
+                       (let ((p point))
+                         (loop while (and (> p 0)
+                                          (not (fake-word-char-p
+                                                (char text (1- p)))))
+                               do (decf p))
+                         (loop while (and (> p 0)
+                                          (fake-word-char-p
+                                           (char text (1- p))))
+                               do (decf p))
+                         p)))
+                 (:next-page
+                  (to-line (min (1- (doc-line-count doc))
+                                (+ y (fake-page-lines doc)))))
+                 (:previous-page
+                  (to-line (max 0 (- y (fake-page-lines doc))))))))))
+    (when target
+      (setf (fake-point doc) target)
+      t)))
+
+(defmethod doc-edit ((doc fake-document) operation)
+  (let ((point (fake-point doc)))
+    (ecase operation
+      (:delete
+       (when (< point (doc-end doc))
+         (doc-delete doc point (1+ point))
+         t))
+      (:backspace
+       (when (> point 0)
+         (doc-delete doc (1- point) point)
+         t))
+      (:undo
+       (let ((entry (pop (fake-undo-list doc))))
+         (when entry
+           (push (cons (fake-text doc) point) (fake-redo-list doc))
+           (setf (fake-text doc) (car entry)
+                 (fake-point doc) (cdr entry))
+           t)))
+      (:redo
+       (let ((entry (pop (fake-redo-list doc))))
+         (when entry
+           (push (cons (fake-text doc) point) (fake-undo-list doc))
+           (setf (fake-text doc) (car entry)
+                 (fake-point doc) (cdr entry))
+           t)))
+      (:select-all
+       (setf (fake-selection doc) (cons 0 (doc-end doc)))
+       t)
+      (:select-none
+       (setf (fake-selection doc) nil)
+       t))))
+
+(defmethod doc-clipboard-copy ((doc fake-document) start end cut)
+  (setf (fake-clipboard doc) (doc-text doc start end))
+  (when cut
+    (doc-delete doc start end)))
+
+;;; --- presentation ---------------------------------------------------
+
+(defmethod doc-message ((doc fake-document) text)
+  (push text (fake-messages doc)))
+
+(defmethod doc-beep ((doc fake-document))
+  (incf (fake-beeps doc)))
+
+(defmethod doc-colour ((doc fake-document) y x0 x1 colour)
+  (push (list y x0 x1 colour) (fake-colours doc)))
+
+(defmethod doc-call-quietly ((doc fake-document) function)
+  (incf (fake-quiet-calls doc))
+  (funcall function))
+
+(defun fake-line-colours (doc y)
+  "What line Y looks like after every DOC-COLOUR so far: (x0 x1 colour) for
+each coloured run, left to right, as a painter's algorithm gives it."
+  (let* ((width (length (doc-lines-text doc y y)))
+         (pens (make-list width :initial-element nil)))
+    (dolist (entry (reverse (fake-colours doc)))
+      (destructuring-bind (ey x0 x1 colour) entry
+        (when (= ey y)
+          (loop for x from x0 below (min x1 width)
+                do (setf (nth x pens) colour)))))
+    (let ((runs '()) (x 0))
+      (loop
+        (when (>= x width)
+          (return (nreverse runs)))
+        (let ((pen (nth x pens)) (start x))
+          (loop while (and (< x width) (eq (nth x pens) pen))
+                do (incf x))
+          (when pen
+            (push (list start x pen) runs)))))))
+
+;;; --- driving it -----------------------------------------------------
+
+(defun type-keys (doc keys)
+  "Feed the keys spelled in KEYS (\"C-x C-f\") through HANDLE-KEY.  An
+unbound printable key self-inserts and an unbound BS deletes backwards,
+which is the widget's half of the bargain; the list of the keys the Emacs
+layer did NOT take is returned."
+  (let ((passed '()))
+    (dolist (key (split-key-sequence keys) (nreverse passed))
+      (unless (handle-key doc key)
+        (push (key-to-string key) passed)
+        (cond ((and (= (key-mods key) 0) (<= #x20 (key-code key) #xFF)
+                    (/= (key-code key) +key-delete+))
+               (doc-insert doc (string (code-char (key-code key)))))
+              ((eql key +key-backspace+)
+               (doc-edit doc :backspace)))
+        (note-text-changed doc))
+      (note-cursor-moved doc))))
