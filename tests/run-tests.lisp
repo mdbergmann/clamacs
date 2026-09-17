@@ -11,7 +11,7 @@
 (defparameter cl-user::*clamacs-test-files*
   '("keymap" "rawkey" "command" "bindings"
     "killring" "minihist" "locstack"
-    "token" "sexp" "indent" "commands"))
+    "token" "sexp" "indent" "commands" "minibuffer" "files"))
 
 (let* ((here (or *load-truename* *load-pathname*))
        (only (ext:getenv "CLAMACS_TEST"))

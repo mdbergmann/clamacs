@@ -20,9 +20,31 @@
    (clipboard :initform nil :accessor fake-clipboard)
    (selection :initform nil :accessor fake-selection)
    (quiet-calls :initform 0 :accessor fake-quiet-calls)
+   ;; The input line: NIL while hidden, else its contents; and its label.
+   (mini-text :initform nil :accessor fake-mini-text)
+   (mini-label :initform nil :accessor fake-mini-label)
+   (modified :initform nil :accessor fake-modified)
+   (title :initform nil :accessor fake-title)
+   (active :initform 0 :accessor fake-activations)
+   (window-open :initform t :accessor fake-window-open)
+   ;; What the requesters will answer, a test's script: keywords for
+   ;; DOC-ASK, paths (or NIL, cancel) for DOC-ASK-FILE; and what was asked.
+   (answers :initform '() :accessor fake-answers)
+   (asked :initform '() :accessor fake-asked)
    (page-lines :initform 10 :accessor fake-page-lines)))
 
-(defun make-fake (text &key (point 0) (lisp-mode t) (editor (make-editor)))
+;;; The editor whose documents are fake ones.
+(defstruct (fake-editor (:include editor)
+                        (:constructor make-fake-editor ())))
+
+(defmethod editor-make-document ((editor fake-editor)
+                                 &key path name lisp-mode)
+  (make-instance 'fake-document :editor editor :path path :name name
+                                :lisp-mode lisp-mode
+                                :text (coerce "" 'simple-string)))
+
+(defun make-fake (text &key (point 0) (lisp-mode t)
+                       (editor (make-fake-editor)))
   "A document holding TEXT.  A `|' in TEXT is removed and marks the cursor."
   (let ((bar (position #\| text)))
     (when bar
@@ -87,6 +109,7 @@
 ;;; --- editing --------------------------------------------------------
 
 (defun fake-record-undo (doc)
+  (setf (fake-modified doc) t)
   (push (cons (fake-text doc) (fake-point doc)) (fake-undo-list doc))
   (setf (fake-redo-list doc) '()))
 
@@ -236,21 +259,128 @@ each coloured run, left to right, as a painter's algorithm gives it."
           (when pen
             (push (list start x pen) runs)))))))
 
+;;; --- files and windows ---------------------------------------------
+
+(defmethod doc-set-text ((doc fake-document) text)
+  (setf (fake-text doc) (coerce text 'simple-string)
+        (fake-point doc) 0
+        (fake-undo-list doc) '()
+        (fake-redo-list doc) '()
+        (fake-modified doc) nil))
+
+(defmethod doc-modified-p ((doc fake-document))
+  (fake-modified doc))
+
+(defmethod doc-set-modified ((doc fake-document) flag)
+  (setf (fake-modified doc) flag))
+
+(defmethod doc-set-title ((doc fake-document) title)
+  (setf (fake-title doc) title))
+
+(defmethod doc-ask-file ((doc fake-document) title save)
+  (push (list :file title save) (fake-asked doc))
+  (pop (fake-answers doc)))
+
+(defmethod doc-ask ((doc fake-document) question choices)
+  (push (list question choices) (fake-asked doc))
+  (let ((answer (pop (fake-answers doc))))
+    (unless (member answer choices)
+      (error "The test scripted ~S for a requester offering ~S."
+             answer choices))
+    answer))
+
+(defmethod doc-activate ((doc fake-document))
+  (incf (fake-activations doc)))
+
+(defmethod doc-close-window ((doc fake-document))
+  (setf (fake-window-open doc) nil))
+
+;;; --- the minibuffer ------------------------------------------------
+
+(defmethod doc-open-minibuffer ((doc fake-document) label initial)
+  (setf (fake-mini-label doc) label
+        (fake-mini-text doc) (copy-seq initial)))
+
+(defmethod doc-close-minibuffer ((doc fake-document))
+  (setf (fake-mini-label doc) nil
+        (fake-mini-text doc) nil))
+
+(defmethod doc-minibuffer-text ((doc fake-document))
+  (fake-mini-text doc))
+
+(defmethod doc-set-minibuffer-text ((doc fake-document) text)
+  (setf (fake-mini-text doc) (copy-seq text)))
+
+(defmethod doc-set-minibuffer-label ((doc fake-document) label)
+  (setf (fake-mini-label doc) label))
+
+(defmethod doc-search ((doc fake-document) pattern backwards again)
+  ;; Forwards the cursor ends up after the match, backwards at its start,
+  ;; so AGAIN needs no adjustment either way: the next search from the
+  ;; cursor cannot find the same match.
+  (declare (ignore again))
+  (let* ((text (fake-text doc))
+         (point (fake-point doc))
+         (found (if backwards
+                    (search pattern text :from-end t
+                                         :end2 (min (length text)
+                                                    (+ point
+                                                       (length pattern)
+                                                       -1)))
+                    (search pattern text :start2 point))))
+    (when found
+      (setf (fake-point doc)
+            (if backwards found (+ found (length pattern))))
+      t)))
+
+(defun fake-prompt (doc)
+  "The input line as the user sees it, label and contents; NIL when hidden."
+  (and (fake-mini-text doc)
+       (concatenate 'string (fake-mini-label doc) (fake-mini-text doc))))
+
 ;;; --- driving it -----------------------------------------------------
 
+(defun printable-key-p (key)
+  (and (= (key-mods key) 0)
+       (<= #x20 (key-code key) #xFF)
+       (/= (key-code key) +key-delete+)))
+
+(defun type-minibuffer-key (doc key)
+  "A key while the input line has the keyboard: the minibuffer's own keys
+first, then the input line's editing, which is the widget's half."
+  (cond ((minibuffer-key doc key))
+        ((eql key +key-return+) (minibuffer-done doc))
+        ((printable-key-p key)
+         (doc-set-minibuffer-text
+          doc (concatenate 'string (fake-mini-text doc)
+                           (string (code-char (key-code key)))))
+         (minibuffer-changed doc))
+        ((and (eql key +key-backspace+) (string/= (fake-mini-text doc) ""))
+         (doc-set-minibuffer-text
+          doc (subseq (fake-mini-text doc) 0
+                      (1- (length (fake-mini-text doc)))))
+         (minibuffer-changed doc))))
+
 (defun type-keys (doc keys)
-  "Feed the keys spelled in KEYS (\"C-x C-f\") through HANDLE-KEY.  An
+  "Feed the keys spelled in KEYS (\"C-x C-f\") to whatever has the keyboard:
+the input line while a prompt is open, else HANDLE-KEY.  In the text an
 unbound printable key self-inserts and an unbound BS deletes backwards,
 which is the widget's half of the bargain; the list of the keys the Emacs
 layer did NOT take is returned."
   (let ((passed '()))
     (dolist (key (split-key-sequence keys) (nreverse passed))
-      (unless (handle-key doc key)
-        (push (key-to-string key) passed)
-        (cond ((and (= (key-mods key) 0) (<= #x20 (key-code key) #xFF)
-                    (/= (key-code key) +key-delete+))
-               (doc-insert doc (string (code-char (key-code key)))))
-              ((eql key +key-backspace+)
-               (doc-edit doc :backspace)))
-        (note-text-changed doc))
+      (cond ((minibuffer-open-p doc)
+             (type-minibuffer-key doc key))
+            ((not (handle-key doc key))
+             (push (key-to-string key) passed)
+             (cond ((printable-key-p key)
+                    (doc-insert doc (string (code-char (key-code key)))))
+                   ((eql key +key-backspace+)
+                    (doc-edit doc :backspace)))
+             (note-text-changed doc)))
       (note-cursor-moved doc))))
+
+(defun type-text (doc text)
+  "Type the characters of TEXT, spaces included."
+  (loop for c across text
+        do (type-keys doc (if (char= c #\Space) "SPC" (string c)))))

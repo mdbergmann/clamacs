@@ -26,7 +26,12 @@
 ;;; ------------------------------------------------------------------
 
 (defstruct (editor (:constructor make-editor ()))
+  ;; Set by save-buffers-kill-emacs; the frontend's event loop leaves.
+  (quitting nil)
   (kill-ring (make-killring))
+  ;; One history per KIND of prompt, since the input line is reused.
+  (command-history (make-history))
+  (file-history (make-history))
   (documents '()))
 
 ;;; ------------------------------------------------------------------
@@ -36,9 +41,16 @@
 (defclass document ()
   ((editor :initarg :editor :reader doc-editor)
    (path :initarg :path :initform nil :accessor doc-path)
+   ;; What the title shows: the file's name, "(unnamed)", or a scratch
+   ;; window's own name ("*errors*").
+   (name :initarg :name :initform "(unnamed)" :accessor doc-name)
+   ;; Retired: off the screen, waiting for the frontend to dispose of it.
+   (closing :initform nil :accessor doc-closing)
    (lisp-mode :initarg :lisp-mode :initform t :accessor doc-lisp-mode)
    (keys :accessor doc-keys)
    (mark :initform nil :accessor doc-mark)
+   ;; The open prompt or search (minibuffer.lisp), or NIL.
+   (minibuffer :initform nil :accessor doc-minibuffer)
    ;; The command that ran before this one: consecutive kills join, and
    ;; `M-y' is only valid after a yank.  NIL after an unbound key.
    (last-command :initform nil :accessor doc-last-command)

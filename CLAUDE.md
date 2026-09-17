@@ -34,8 +34,9 @@ behaviour spec.  New editor work goes into `lisp/`:
   the frontend protocol (generic functions on a `document`); commands
   (`commands.lisp`) are functions of `(doc arg)` written against it and
   nothing else, and `tests/fake-frontend.lisp` implements it over a
-  string so they are host-tested too.  Only `frontend-mui.lisp` may name
-  `AMIGA.MUI`.
+  string so they are host-tested too; `minibuffer.lisp` (a prompt is a
+  continuation) and `files.lisp` extend the protocol the same way.  Only
+  `frontend-mui.lisp` may name `AMIGA.MUI`.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),
   `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
   `make test-lisp` runs them under the superproject's
@@ -55,6 +56,14 @@ behaviour spec.  New editor work goes into `lisp/`:
   functions on a per-key path, and stacks are lists (`PUSH`/`POP`), not
   per-call vectors.  A command is a symbol (`define-command`), a key a
   fixnum, a keymap an `EQL` hash table.
+- The runner gives clamiga a private, empty FASL cache
+  (`CLAMIGA_FASL_CACHE_DIR`): `LOAD`'s cache is keyed by a file's own
+  mtime, so cached code with another file's `DEFSTRUCT` slot offsets
+  inlined goes stale when that defstruct changes.  It also means the
+  GC-stress leg COMPILES everything under stress (about 7 minutes), which
+  is how it found the runtime's pre-scan GC bug on 2026-09-17.  A test
+  that fails only in the suite, or only outside it, after a defstruct,
+  macro or constant changed in another file: suspect a cache first.
 - A wrong answer from conforming CL code is a clamiga bug: reduce it,
   fix it in the superproject under its gates, never work around it here.
 

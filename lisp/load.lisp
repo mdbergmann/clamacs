@@ -7,7 +7,7 @@
   '("package" "keymap" "rawkey" "minihist" "command" "bindings"
     "killring" "locstack"
     "token" "sexp" "indent"
-    "frontend" "commands"))
+    "frontend" "commands" "minibuffer" "files"))
 
 (let ((here (or *load-truename* *load-pathname*)))
   (dolist (name cl-user::*clamacs-pure-files*)

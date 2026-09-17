@@ -22,6 +22,16 @@ if [ ! -x "$clamiga" ]; then
     exit 0
 fi
 
+# A private, empty FASL cache: clamiga's LOAD caches compiled files keyed by
+# the file's OWN mtime, and code that inlined another file's DEFSTRUCT slot
+# offsets goes stale when that defstruct changes (2026-09-17: a slot added
+# to EDITOR in lisp/frontend.lisp made the cached tests/test-commands.lisp
+# read the wrong slot).  The tests must run what the sources say.
+cache=$(mktemp -d "${TMPDIR:-/tmp}/clamacs-faslcache.XXXXXX") || exit 1
+trap 'rm -rf "$cache"' EXIT
+CLAMIGA_FASL_CACHE_DIR=$cache
+export CLAMIGA_FASL_CACHE_DIR
+
 out=$("$clamiga" --no-userinit --heap 16M --script "$here/run-tests.lisp" \
       </dev/null 2>&1)
 echo "$out" | grep -v '^; Loading'

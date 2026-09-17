@@ -456,9 +456,36 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    (a string, a cursor, an undo list): 254 tests, 100 s under GC stress.
    Fixed against C on the way: `indent-region` is top-down (bottom-up
    indented a line against a parent that had not moved yet) and
-   backward kills join.  Next: the minibuffer protocol (prompts, `M-x`,
-   isearch, goto-line, files) on the fake frontend, then
-   `frontend-mui.lisp` in FS-UAE.
+   backward kills join.
+   **Minibuffer and files DONE 2026-09-17**: `lisp/minibuffer.lisp` (a
+   prompt is a continuation, not a case in a switch; TAB completion,
+   per-kind histories, isearch over the widget's own search, `M-x`,
+   `goto-line`) and `lisp/files.lisp` (ISO-8859-1 file I/O in Lisp,
+   find-file into this window / other window / the window that has the
+   file, the unsaved-changes requester, save/write, new, kill-buffer,
+   other-window, quit), both on the fake frontend: 289 tests.  That is
+   the whole phase-1 Emacs layer without a line of MUI.  Next:
+   `frontend-mui.lisp` (application, document window, `ClamacsText`, the
+   minibuffer class with its edit-hook dance) in FS-UAE, then the
+   command line and Workbench arguments.
+
+   What the port found for the runtime so far (cl-amiga commits):
+   - **A GC-safety bug in the compiler's pre-scans, FIXED 2026-09-17.**
+     Both speculative macroexpansion scans held the form unprotected
+     across `cl_build_lex_env`, which conses only inside a `MACROLET`
+     body -- and `LOOP` expands into one.  Any user macro in a `LOOP`
+     body could be expanded from a stale form when a compaction fell
+     there; with a `HANDLER-CASE` around the compile (the test runner's)
+     that aborted the load.  It had hidden because the FASL cache is
+     shared with the non-stress binary; the runner's private cache made
+     the suite compile under stress.
+   - **OPEN: `LOAD`'s implicit FASL cache is keyed by the file's own
+     mtime.**  Code that inlined another file's `DEFSTRUCT` slot offsets
+     stays cached when that defstruct changes and reads the wrong slot.
+     `tests/run-lisp-tests.sh` runs with a private, empty cache for that
+     reason; the image build must do the same.
+   - Noted, not filed: no warning at `LOAD` for a call to an undefined
+     function; a `--script` exits 0 after a reader error.
 2. **The wire.**  Client thread and queue, `AMIGA.AREXX:START` for the
    editor's port with the phase-1 verb set, diagnostic parser, error list
    window, `LOAD`/`COMPILE-FILE`/`EVAL`/`IN-PACKAGE` with clickable
