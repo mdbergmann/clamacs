@@ -479,11 +479,17 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
      that aborted the load.  It had hidden because the FASL cache is
      shared with the non-stress binary; the runner's private cache made
      the suite compile under stress.
-   - **OPEN: `LOAD`'s implicit FASL cache is keyed by the file's own
-     mtime.**  Code that inlined another file's `DEFSTRUCT` slot offsets
-     stays cached when that defstruct changes and reads the wrong slot.
-     `tests/run-lisp-tests.sh` runs with a private, empty cache for that
-     reason; the image build must do the same.
+   - **`LOAD`'s implicit FASL cache was keyed by the file's own mtime
+     alone, FIXED 2026-09-17 (FASL v35).**  Code that inlined another
+     file's `DEFSTRUCT` slot offsets stayed cached when that defstruct
+     changed and read the wrong slot (a slot added at the front of
+     `editor` made the cached `test-commands.lisp` read the old index).
+     A FASL now records the layout of every struct it inlined and is
+     recompiled when one changed; `--no-fasl-cache` switches the cache
+     off.  **Still open by design**: a changed macro or inline function
+     in another file leaves cached dependents stale (a wrong expansion,
+     not a wrong slot).  `tests/run-lisp-tests.sh` runs with a private,
+     empty cache for that reason; the image build must do the same.
    - Noted, not filed: no warning at `LOAD` for a call to an undefined
      function; a `--script` exits 0 after a reader error.
 2. **The wire.**  Client thread and queue, `AMIGA.AREXX:START` for the

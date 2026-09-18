@@ -58,12 +58,14 @@ behaviour spec.  New editor work goes into `lisp/`:
   fixnum, a keymap an `EQL` hash table.
 - The runner gives clamiga a private, empty FASL cache
   (`CLAMIGA_FASL_CACHE_DIR`): `LOAD`'s cache is keyed by a file's own
-  mtime, so cached code with another file's `DEFSTRUCT` slot offsets
-  inlined goes stale when that defstruct changes.  It also means the
-  GC-stress leg COMPILES everything under stress (about 7 minutes), which
-  is how it found the runtime's pre-scan GC bug on 2026-09-17.  A test
-  that fails only in the suite, or only outside it, after a defstruct,
-  macro or constant changed in another file: suspect a cache first.
+  mtime plus, since FASL v35, the layouts of the `DEFSTRUCT`s it inlined
+  (a changed struct recompiles the dependents) -- but a changed macro or
+  inline function in another file still leaves cached dependents stale.
+  It also means the GC-stress leg COMPILES everything under stress (about
+  7 minutes), which is how it found the runtime's pre-scan GC bug on
+  2026-09-17.  A test that fails only in the suite, or only outside it,
+  after a macro or inline function changed in another file: suspect a
+  cache first (`--no-fasl-cache` to confirm).
 - A wrong answer from conforming CL code is a clamiga bug: reduce it,
   fix it in the superproject under its gates, never work around it here.
 
