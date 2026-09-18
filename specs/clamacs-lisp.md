@@ -1,6 +1,9 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 3 done; next phase 4, the REPL, debugger and inspector)
+Status: IN PROGRESS (phase 3 done; next: the three Vampire findings under
+"Open" -- the window dispose that signals, the edit hook MUI never calls,
+the layout-dependent FASL failure -- then phase 4, the REPL, debugger and
+inspector)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -750,7 +753,22 @@ phases 0-5 plan, and why:
   it go away for the day.  A runtime item for cl-amiga; the suspects and
   the experiments run are in the session's memory note.  The editor's
   host suite now runs on the box (`Clamacs:tests/run-tests.lisp`), which
-  is the reproduction vehicle.
+  is the reproduction vehicle.  (3) Disposing a document window signals
+  on the box (FS-UAE never does): every exit left an orphan diagnostics
+  window, since the condition escaped `start`'s teardown before the
+  application was disposed of, and a `kill-buffer` over the port reaped
+  the same window twice and froze the machine.  The teardown now forgets
+  a window before disposing of it, catches what the dispose signals and
+  logs it to `T:clamacs-exit.log` (`*exit-trace*` logs every step there;
+  what a `Run >log` clamiga prints never reaches the log on AmigaOS), and
+  disposes of the diagnostics window itself.  The condition, read from
+  that log: `FFI:FREE-FOREIGN: pointer was not allocated by FFI` --
+  ClamacsMini's OM_DISPOSE keeps only the address of its edit hook and
+  rebuilds an unowned pointer to free it, which `free-foreign` refuses.
+  The fix to make: keep the hook object `make-hook` returned (a table on
+  the editor, keyed by the object's address) and free that after the
+  String's dispose.  With the teardown rework the exit already leaves no
+  window and no process behind.
 - The MorphOS run of phases 2 and 3.
 - The MorphOS column of the spike (box unreachable on 2026-09-16).
 - Whether the client thread or an asynchronous platform send is the
