@@ -634,7 +634,9 @@ to the class's hook: the event becomes a key release, the character is
 cleared.  The action itself is deferred with MUIM_Application_PushMethod,
 since the class's hook may still write its work buffer back after us."
   (lambda (hook sgw msg)
-    (cond ((or (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg)) 0)
+    (cond ((or (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg))
+           (mini-trace :hook-null (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg))
+           0)
           ((/= (ffi:peek-u32 msg 0) intui:+sgh-key+)
            (when *mini-trace*
              (mini-trace :hook-other (ffi:peek-u32 msg 0)))
@@ -759,12 +761,17 @@ since the class's hook may still write its work buffer back after us."
                      (mui:set-attrs obj m:+muia-string-edit-hook+ hook)))
                  self))
               ((= id intui:+om-dispose+)
+               ;; The String is disposed of FIRST: it holds the hook, and
+               ;; FREE-HOOK releases the hook's callback stub as well as the
+               ;; struct -- "only after every object that holds the hook is
+               ;; disposed".  Read the pointer before the superclass frees
+               ;; the instance data.
                (let* ((data (mui:inst-data class object))
                       (hook (ffi:peek-u32 data +mini-hook-offset+)))
-                 (when (/= hook 0)
-                   (amiga.ffi:free-hook (ffi:make-foreign-pointer hook))
-                   (ffi:poke-u32 data 0 +mini-hook-offset+)))
-               (mui:do-super-method class object message))
+                 (ffi:poke-u32 data 0 +mini-hook-offset+)
+                 (prog1 (mui:do-super-method class object message)
+                   (when (/= hook 0)
+                     (amiga.ffi:free-hook (ffi:make-foreign-pointer hook))))))
               ((= id m:+muim-setup+)
                (let ((ok (mui:do-super-method class object message)))
                  (when (/= ok 0)
@@ -1476,23 +1483,77 @@ it from running under the vertical one."
     (doc-set-title doc (doc-name doc))
     doc))
 
+(defvar *exit-trace* nil
+  "When true, each step of START's teardown is appended to
+T:clamacs-exit.log as it completes -- set from the running editor over the
+port when a window outlives the process.  A file, not standard output:
+what a `Run >log' clamiga prints never reaches the log on AmigaOS.")
+
+(defun exit-note (step &optional always)
+  (when (or *exit-trace* always)
+    (ignore-errors
+      (with-open-file (out "T:clamacs-exit.log" :direction :output
+                                               :if-exists :append
+                                               :if-does-not-exist :create)
+        (format out "clamacs: exit ~A~%" step)))))
+
+(defun dispose-window-object (editor window what)
+  "MUI_DisposeObject on WINDOW, one of the editor's.  The dispose runs the
+editor's own dispatchers (OM_DISPOSE of ClamacsText and ClamacsMini), and
+an error in one of them comes back out of the dispose call: it is caught
+here, written to T:clamacs-exit.log whether or not the trace is on -- the
+one place a `Run'-started editor can report to -- and shown, so the
+teardown goes on and the window is never disposed of a second time."
+  (handler-case (mui:dispose-object window)
+    (error (e)
+      (exit-note (format nil "~A: the dispose signalled: ~A" what
+                         (handler-case (princ-to-string e)
+                           (error () "(unprintable condition)")))
+                 t)
+      (report-error editor e))))
+
+(defun dispose-errors-window (editor)
+  "The diagnostics window, at exit: closed, taken out of the application
+and disposed of, exactly as REAP does with a document's window.  Leaving
+it to the application's own dispose left an orphan window on the
+Workbench after every run on a Vampire (MUI 3.8): a window Intuition still
+shows, with no task behind it."
+  (let ((window (mui-editor-errors-window editor)))
+    (when window
+      ;; Forgotten first: a dispose that signals must not be repeated.
+      (setf (mui-editor-errors-window editor) nil
+            (mui-editor-errors-list editor) nil)
+      (mui:set-attrs window m:+muia-window-open+ nil)
+      (mui:do-method (mui-editor-app editor) intui:+om-remmember+ window)
+      (dispose-window-object editor window "diagnostics window"))))
+
 (defun reap (editor)
   "Dispose of the retired windows, from the event loop where nothing is
 running inside them."
   (dolist (doc (editor-documents editor))
     (when (and (doc-closing doc) (mdoc-window doc))
-      (let ((objects (mui-editor-objects editor)))
+      (exit-note (format nil "reap ~A: forgetting the objects" (doc-name doc)))
+      (let ((window (mdoc-window doc))
+            (objects (mui-editor-objects editor)))
         (remhash (object-address (mdoc-text doc)) objects)
         (remhash (object-address (mdoc-mini doc)) objects)
-        (remhash (object-address (mdoc-window doc)) objects))
-      (mui:do-method (mui-editor-app editor) intui:+om-remmember+ (mdoc-window doc))
-      (mui:dispose-object (mdoc-window doc))
-      (setf (mdoc-window doc) nil (mdoc-text doc) nil (mdoc-mini doc) nil)
+        (remhash (object-address window) objects)
+        ;; Forgotten BEFORE the dispose: should the dispose signal (an
+        ;; error in a dispatcher's OM_DISPOSE), the loop's error handler
+        ;; reaps again, and a second dispose of the same window is what
+        ;; froze a Vampire.
+        (setf (mdoc-window doc) nil (mdoc-text doc) nil (mdoc-mini doc) nil)
+        (exit-note "reap: removing the window from the application")
+        (mui:do-method (mui-editor-app editor) intui:+om-remmember+ window)
+        (exit-note "reap: disposing the window")
+        (dispose-window-object editor window (format nil "reap ~A" (doc-name doc)))
+        (exit-note "reap: window disposed"))
       (dolist (buf (list (mdoc-title-buf doc) (mdoc-status-buf doc)
                          (mdoc-message-buf doc) (mdoc-label-buf doc)))
         (when buf (ffi:free-foreign buf)))
       (setf (mdoc-title-buf doc) nil (mdoc-status-buf doc) nil
-            (mdoc-message-buf doc) nil (mdoc-label-buf doc) nil)))
+            (mdoc-message-buf doc) nil (mdoc-label-buf doc) nil)
+      (exit-note "reap: buffers freed")))
   (setf (editor-documents editor)
         (remove-if #'doc-closing (editor-documents editor))))
 
@@ -1600,14 +1661,20 @@ function: an image is saved before it runs and restores into it."
              ;; Order: no more calls from the other threads (waiters are
              ;; woken with the shutdown answer), then the port and the
              ;; client thread, then the windows.
+             (exit-note "loop left")
              (close-mailbox editor)
              (when (and *wire-stopper* (editor-wire editor))
                (handler-case (funcall *wire-stopper* editor)
                  (error (e) (report-error editor e))))
+             (exit-note "wire stopped")
              (dolist (doc (editor-documents editor))
                (setf (doc-closing doc) t))
              (reap editor)
+             (exit-note "documents reaped")
+             (dispose-errors-window editor)
+             (exit-note "diagnostics window disposed")
              (mui:dispose-object (mui-editor-app editor))
+             (exit-note "application disposed")
              (setf (mui-editor-app editor) nil)
              (free-mailbox editor)))
       (setf *editor* nil))
