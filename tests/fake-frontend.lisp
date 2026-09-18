@@ -33,9 +33,28 @@
    (asked :initform '() :accessor fake-asked)
    (page-lines :initform 10 :accessor fake-page-lines)))
 
-;;; The editor whose documents are fake ones.
+;;; The editor whose documents are fake ones.  It records what the
+;;; diagnostics window was told, and which document was activated last.
 (defstruct (fake-editor (:include editor)
-                        (:constructor make-fake-editor ())))
+                        (:constructor make-fake-editor ()))
+  (active nil)
+  (diag-rows '())
+  (diag-open nil)
+  (diag-selected nil))
+
+(defmethod editor-active-document ((editor fake-editor))
+  (let ((active (fake-editor-active editor)))
+    (or (and active (not (doc-closing active)) active)
+        (first (live-documents editor)))))
+
+(defmethod editor-show-diagnostics ((editor fake-editor) rows &key open)
+  (setf (fake-editor-diag-rows editor) rows
+        (fake-editor-diag-selected editor) nil)
+  (when (or open rows)
+    (setf (fake-editor-diag-open editor) t)))
+
+(defmethod editor-select-diagnostic ((editor fake-editor) row)
+  (setf (fake-editor-diag-selected editor) row))
 
 (defmethod editor-make-document ((editor fake-editor)
                                  &key path name lisp-mode)
@@ -229,6 +248,26 @@
 (defmethod doc-message ((doc fake-document) text)
   (push text (fake-messages doc)))
 
+(defmethod doc-message-text ((doc fake-document))
+  ;; A prompt's label takes the message line's place while it is open,
+  ;; exactly as the MUI echo area shows it.
+  (or (fake-mini-label doc) (first (fake-messages doc)) ""))
+
+(defmethod doc-widget-command ((doc fake-document) command)
+  "The few TextEditor.mcc commands the tests send through `TE': the
+cursor as the class reports it (0-based), the cursor line, the four
+POSITIONs.  NIL for anything else, as the class answers FALSE."
+  (let ((words (split-words (string-upcase command))))
+    (multiple-value-bind (y x) (doc-index-line doc (fake-point doc))
+      (cond ((equal words '("GETCURSOR" "LINE")) (princ-to-string y))
+            ((equal words '("GETCURSOR" "COLUMN")) (princ-to-string x))
+            ((equal words '("GETLINE")) (doc-lines-text doc y y))
+            ((equal words '("POSITION" "SOL")) (doc-move doc :line-start) t)
+            ((equal words '("POSITION" "EOL")) (doc-move doc :line-end) t)
+            ((equal words '("POSITION" "SOF")) (doc-move doc :text-start) t)
+            ((equal words '("POSITION" "EOF")) (doc-move doc :text-end) t)
+            (t nil)))))
+
 (defmethod doc-beep ((doc fake-document))
   (incf (fake-beeps doc)))
 
@@ -290,7 +329,10 @@ each coloured run, left to right, as a painter's algorithm gives it."
     answer))
 
 (defmethod doc-activate ((doc fake-document))
-  (incf (fake-activations doc)))
+  (incf (fake-activations doc))
+  (let ((editor (doc-editor doc)))
+    (when (fake-editor-p editor)
+      (setf (fake-editor-active editor) doc))))
 
 (defmethod doc-close-window ((doc fake-document))
   (setf (fake-window-open doc) nil))
@@ -340,26 +382,13 @@ each coloured run, left to right, as a painter's algorithm gives it."
 
 ;;; --- driving it -----------------------------------------------------
 
-(defun printable-key-p (key)
-  (and (= (key-mods key) 0)
-       (<= #x20 (key-code key) #xFF)
-       (/= (key-code key) +key-delete+)))
-
 (defun type-minibuffer-key (doc key)
   "A key while the input line has the keyboard: the minibuffer's own keys
-first, then the input line's editing, which is the widget's half."
-  (cond ((minibuffer-key doc key))
-        ((eql key +key-return+) (minibuffer-done doc))
-        ((printable-key-p key)
-         (doc-set-minibuffer-text
-          doc (concatenate 'string (fake-mini-text doc)
-                           (string (code-char (key-code key)))))
-         (minibuffer-changed doc))
-        ((and (eql key +key-backspace+) (string/= (fake-mini-text doc) ""))
-         (doc-set-minibuffer-text
-          doc (subseq (fake-mini-text doc) 0
-                      (1- (length (fake-mini-text doc)))))
-         (minibuffer-changed doc))))
+first, then the input line's editing, which is the widget's half -- the
+protocol's default DOC-MINIBUFFER-EDIT, which is also what the port's KEY
+uses."
+  (or (minibuffer-key doc key)
+      (doc-minibuffer-edit doc key)))
 
 (defun type-keys (doc keys)
   "Feed the keys spelled in KEYS (\"C-x C-f\") to whatever has the keyboard:

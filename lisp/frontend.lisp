@@ -32,7 +32,9 @@
   ;; One history per KIND of prompt, since the input line is reused.
   (command-history (make-history))
   (file-history (make-history))
-  (documents '()))
+  (documents '())
+  ;; The connection to clamiga (wire.lisp), or NIL before it is set up.
+  (wire nil))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.
@@ -131,6 +133,28 @@ applications see it; the kill ring itself never reads the clipboard."))
 
 (defgeneric doc-message (doc text)
   (:documentation "Show TEXT in the echo area."))
+
+(defgeneric doc-message-text (doc)
+  (:documentation "What the echo area shows: the last DOC-MESSAGE, or the
+prompt's label while one is open.  The port's STATUS command reads it."))
+
+(defgeneric doc-widget-command (doc command)
+  (:documentation "One of the text widget's OWN commands, TextEditor.mcc's
+ARexx set (`GETCURSOR LINE', `POSITION SOL'): the text it answers, T for
+a command that answered nothing, NIL when the widget did not take it."))
+
+(defgeneric editor-active-document (editor)
+  (:documentation "The document the port's commands and the messages mean:
+the one whose window is active."))
+
+(defgeneric editor-show-diagnostics (editor rows &key open)
+  (:documentation "Fill the diagnostics window with ROWS, one string per
+line, nothing selected; open it when OPEN, or when there are rows.  A row
+the user selects there is DIAGNOSTIC-JUMPed to (wire.lisp)."))
+
+(defgeneric editor-select-diagnostic (editor row)
+  (:documentation "Show ROW (0-based, NIL for none) as the selected row of
+the diagnostics window, without jumping to it."))
 
 (defgeneric doc-beep (doc)
   (:documentation "The error signal: a display beep."))

@@ -297,3 +297,20 @@ an unnamed buffer needs a name: the prompt opens and the window stays."
   ;; The frontend's event loop sees the flag and leaves; it closes the
   ;; windows through CLOSE-DOCUMENT, which asks about each unsaved text.
   (setf (editor-quitting (doc-editor doc)) t))
+
+(define-command kill-emacs (doc arg)
+  "Quit without asking: unsaved changes are discarded.  What a macro or an
+unattended run wants -- a requester nobody is there to answer would hold
+the editor -- and what the C editor's quit always did."
+  (declare (ignore arg))
+  (setf (editor-quitting (doc-editor doc)) :discard))
+
+(defun quit-requested (editor)
+  "A quit command set the flag: close every window, asking about each
+unsaved text unless the quit was KILL-EMACS.  A Cancel keeps the editor
+running.  True when every window closed."
+  (let ((ask (not (eq (editor-quitting editor) :discard))))
+    (setf (editor-quitting editor) nil)
+    (dolist (doc (live-documents editor) t)
+      (unless (close-document doc ask)
+        (return nil)))))

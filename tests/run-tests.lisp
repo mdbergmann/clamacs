@@ -11,7 +11,8 @@
 (defparameter cl-user::*clamacs-test-files*
   '("keymap" "rawkey" "command" "bindings"
     "killring" "minihist" "locstack"
-    "token" "sexp" "indent" "commands" "minibuffer" "files"))
+    "token" "sexp" "indent" "commands" "minibuffer" "files"
+    "diag" "wire" "port"))
 
 (let* ((here (or *load-truename* *load-pathname*))
        (only (ext:getenv "CLAMACS_TEST"))
@@ -21,6 +22,7 @@
                (load (merge-pathnames "../lisp/load.lisp" here))
                (load (merge-pathnames "framework.lisp" here))
                (load (merge-pathnames "fake-frontend.lisp" here))
+               (load (merge-pathnames "fake-transport.lisp" here))
                (dolist (name (if (and only (string/= only ""))
                                  (list only)
                                  cl-user::*clamacs-test-files*))

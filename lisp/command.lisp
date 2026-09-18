@@ -97,7 +97,7 @@ longest common prefix, as COMPLETE returns them."
  ;; files, buffers, windows
  find-file find-file-other-window clamacs-new-buffer save-buffer
  write-file switch-to-buffer kill-buffer other-window
- save-buffers-kill-emacs
+ save-buffers-kill-emacs kill-emacs
  ;; the command loop itself.  `C-u' is deliberately absent: the numeric
  ;; argument is read by the key state machine before dispatch, so it never
  ;; becomes a command and `M-x universal-argument' would be meaningless.

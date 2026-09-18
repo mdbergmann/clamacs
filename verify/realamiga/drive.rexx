@@ -19,8 +19,25 @@ OPTIONS FAILAT 21
 /* `RX drive.rexx HARDWARE' (what run-drive says) enables the leg that only a
 ** real input chain can pass: keys into an ACTIVE minibuffer String.  Under
 ** FS-UAE MUI deactivates a programmatically activated String after one
-** injected key, so that leg is skipped there rather than failed. */
-PARSE UPPER ARG MODE .
+** injected key, so that leg is skipped there rather than failed.
+**
+** `PHASE n' runs the legs the Lisp editor (specs/clamacs-lisp.md) has
+** reached: 2 is the editor checks and the integration leg, 3 adds the
+** introspection leg, 4 the REPL and debugger legs, 5 (the default: all of
+** it, what the C editor answers) the menu strip and the window snapshot.
+** The checks themselves are the same either way -- the script talks to a
+** port and reads a log, so it does not know which language answered. */
+MODE = ''
+PHASE = 5
+PARSE UPPER ARG ARGS
+DO WHILE ARGS ~= ''
+    PARSE VAR ARGS WORD ARGS
+    SELECT
+        WHEN WORD = 'HARDWARE' THEN MODE = 'HARDWARE'
+        WHEN WORD = 'PHASE' THEN PARSE VAR ARGS PHASE ARGS
+        OTHERWISE SAY 'INFO ignoring argument' WORD
+    END
+END
 
 /* MUI's startup on an emulated 14 MHz 68020 is not instant: the class
 ** scan, the config load and the first window layout all happen before the
@@ -156,6 +173,7 @@ ELSE
 ** path from IDCMP_MENUPICK to MUIA_Application_MenuAction is MUI's.
 ** ------------------------------------------------------------------ */
 
+IF PHASE >= 5 THEN DO
 'MENU find-file STATE'
 IF RESULT = 'enabled' THEN
     SAY 'OK the menu strip has Open'
@@ -229,6 +247,7 @@ IF RESULT = 'enabled' THEN
     SAY 'OK the Help menu has the HyperSpec'
 ELSE
     SAY 'FAIL MENU clamacs-hyperspec STATE gave' RESULT
+END /* PHASE >= 5: the menu strip */
 
 /* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.
@@ -528,6 +547,7 @@ END
 ** carry a snapshot into the next run.
 ** ------------------------------------------------------------------ */
 
+IF PHASE >= 5 THEN DO
 CFG     = 'ENV:Clamacs/windows.cfg'
 ARCHIVE = 'ENVARC:Clamacs/windows.cfg'
 
@@ -625,6 +645,7 @@ IF EXISTS(CFG) | EXISTS(ARCHIVE) THEN
     SAY 'FAIL the snapshot files could not be deleted'
 ELSE
     SAY 'OK the snapshot files are gone again'
+END /* PHASE >= 5: the window snapshot */
 
 /* ------------------------------------------------------------------ *
 ** The point of the whole thing: driving a real clamiga.
@@ -700,6 +721,7 @@ ELSE
 
 /* That request found the port, so the Clamiga menu is live now and Start
 ** clamiga is not. */
+IF PHASE >= 5 THEN DO
 'MENU clamacs-eval-defun STATE'
 IF RESULT = 'enabled' THEN
     SAY 'OK the Clamiga menu woke up with the port'
@@ -710,6 +732,7 @@ IF RESULT = 'disabled' THEN
     SAY 'OK Start clamiga is dimmed while connected'
 ELSE
     SAY 'FAIL Start clamiga while connected is' RESULT
+END
 
 /* C-c C-k on a file with two errors.  The reply comes back with rc 10, so
 ** ARexx drops RESULT and the editor has to fetch the text with LASTRESULT
@@ -746,11 +769,13 @@ ELSE
     SAY 'FAIL load-buffer diagnostics were' DIAGS
 
 /* The reply filled the error list, which is what enables Next Error. */
+IF PHASE >= 5 THEN DO
 'MENU clamacs-next-error STATE'
 IF RESULT = 'enabled' THEN
     SAY 'OK Next Error woke up with the diagnostics'
 ELSE
     SAY 'FAIL Next Error with two diagnostics is' RESULT
+END
 
 /* "selecting one jumps to the file and line" -- the other acceptance
 ** criterion of the error list.  next-error shares its position and its jump
@@ -796,6 +821,10 @@ ELSE
 ** ------------------------------------------------------------------ */
 
 INTRO = 'Clamacs:verify/realamiga/intro.lisp'
+IF PHASE < 3 THEN DO
+    SAY 'INFO PHASE' PHASE': the introspection, REPL and debugger legs are not run'
+    SIGNAL Done
+END
 'OPEN FILE' INTRO
 CALL DELAY(25)
 'EVAL clamacs-load-buffer'
@@ -983,6 +1012,10 @@ ELSE
 ** the input.
 ** ------------------------------------------------------------------ */
 
+IF PHASE < 4 THEN DO
+    SAY 'INFO PHASE' PHASE': the REPL and debugger legs are not run'
+    SIGNAL Done
+END
 'OPEN FILE' INTRO
 CALL DELAY(25)
 'KEY C-c C-z'
@@ -1371,6 +1404,8 @@ END
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp
 ** is what verify-amiga expects. */
+Done:
+ADDRESS VALUE PORT
 'OPEN FILE Clamacs:verify/realamiga/errors.lisp'
 CALL DELAY(25)
 

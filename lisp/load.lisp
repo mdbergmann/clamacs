@@ -7,13 +7,15 @@
   '("package" "keymap" "rawkey" "minihist" "command" "bindings"
     "killring" "locstack"
     "token" "sexp" "indent"
-    "frontend" "commands" "minibuffer" "files"))
+    "frontend" "commands" "minibuffer" "files"
+    "diag" "wire" "port"))
 
-;;; The frontend: the MUI one on an Amiga, none on the host (the tests
-;;; bring their own, tests/fake-frontend.lisp).  Bind it to NIL to load
-;;; the pure modules alone on an Amiga too.
+;;; The frontend: the MUI one on an Amiga, with the ARexx transport and the
+;;; editor's port behind it; none on the host (the tests bring their own,
+;;; tests/fake-frontend.lisp and tests/fake-transport.lisp).  Bind it to
+;;; NIL to load the pure modules alone on an Amiga too.
 (defvar cl-user::*clamacs-frontend-files*
-  #+amigaos '("frontend-mui")
+  #+amigaos '("frontend-mui" "transport-arexx")
   #-amigaos '())
 
 (let ((here (or *load-truename* *load-pathname*)))

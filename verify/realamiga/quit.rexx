@@ -21,7 +21,12 @@ IF PORT = '' THEN
     SAY 'INFO no clamacs port to quit'
 ELSE DO
     ADDRESS VALUE PORT
-    'EVAL save-buffers-kill-emacs'
+    /* kill-emacs discards what the run typed into the fixtures without a
+    ** requester nobody is here to answer (the Lisp editor asks on
+    ** save-buffers-kill-emacs, as Emacs does); the C editor has no
+    ** kill-emacs, and its save-buffers-kill-emacs never asked. */
+    'EVAL kill-emacs'
+    IF RESULT = 'unknown command' THEN 'EVAL save-buffers-kill-emacs'
     SAY 'OK asked clamacs to quit'
     CALL waitgone PORT, 'clamacs'
 END

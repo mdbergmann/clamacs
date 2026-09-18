@@ -51,6 +51,15 @@ behaviour spec.  New editor work goes into `lisp/`:
   and the saved file must equal what the same keys produce on the host
   under the fake frontend (`verify/realamiga/lisp-editor-keys.lisp` is
   the one list of keys).  Run it after touching `frontend-mui.lisp`.
+- `verify/realamiga/run-lisp-drive.sh [040|020] [PHASE]` (`make -f
+  Makefile.cross test-lisp-amiga`) is the Lisp editor's acceptance run:
+  a target clamiga with its port, the editor on `sample.lisp`, and the
+  SAME `drive.rexx` as the C editor with `PHASE n` (2 today) selecting
+  the legs the port has reached; then the shipped macro and
+  `quit.rexx`.  The script checks the log itself.  Run it after touching
+  `wire.lisp`, `port.lisp`, `transport-arexx.lisp` or the event loop.
+  It needs the superproject's `build/cross/clamiga`, rebuilt after a
+  runtime change -- a stale one is the first suspect for a red leg.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),
   `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
   `make test-lisp` runs them under the superproject's
@@ -160,8 +169,9 @@ list under "Answered during phase 1".
 
 - MUI 3.8 is `muimaster.library` **19**.  The vendored `libraries/mui.h`
   says `MUIMASTER_VMIN` is 20, which would refuse to run on the target.
-- The editor's ARexx port is `CLAMACS.1` on the first instance, not
-  `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
+- The C editor's ARexx port is `CLAMACS.1` on the first instance, not
+  `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
+  the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
 - Export with `MUIV_TextEditor_ExportHook_NoStyle`.  The `Plain` hook writes
   colour escapes into the text, which breaks saved files and desynchronises
   every offset from `MUIA_TextEditor_CursorIndex`.

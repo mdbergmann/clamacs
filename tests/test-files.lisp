@@ -300,3 +300,20 @@
     (is (not (editor-quitting (doc-editor doc))))
     (type-keys doc "C-x C-c")
     (is (editor-quitting (doc-editor doc)))))
+
+(deftest quitting-asks-about-unsaved-text-unless-killed
+  (let* ((doc (make-fake "|"))
+         (editor (doc-editor doc)))
+    (doc-insert doc "unsaved")
+    ;; C-x C-c: asked, and Cancel keeps the editor running.
+    (type-keys doc "C-x C-c")
+    (push :cancel (fake-answers doc))
+    (is (not (quit-requested editor)))
+    (is-equal (length (fake-asked doc)) 1)
+    (is (fake-window-open doc))
+    (is (not (editor-quitting editor)))
+    ;; kill-emacs: no question, the window goes.
+    (run-command doc 'kill-emacs)
+    (is (quit-requested editor))
+    (is-equal (length (fake-asked doc)) 1)
+    (is (not (fake-window-open doc)))))

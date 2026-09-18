@@ -261,10 +261,29 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; request that outranks late activation reports (see ACTIVATE-HOOK)
   active-doc activate-pending (activate-stamp 0)
   ;; the return ID that wakes the loop to reap closed windows
-  (reap-id 1))
+  (reap-id 1)
+  ;; The mailbox: what the other threads (the port's, the client's) hand
+  ;; the MUI task -- see CALL-IN-EDITOR.  The task and the signal bit the
+  ;; loop waits on beside MUI's own.
+  task (signal-bit -1) (signal-mask 0)
+  mailbox-lock mailbox-cv (mailbox '()) (mailbox-closed nil)
+  ;; The diagnostics window, made on first use, and its list
+  errors-window errors-list
+  ;; Set while EDITOR-SELECT-DIAGNOSTIC moves the list's cursor, so the
+  ;; selection hook does not jump a second time
+  (selecting nil))
 
 (defvar *editor* nil
   "The running MUI editor, from START to its return.")
+
+(defvar *wire-starter* nil
+  "Function of the editor that sets up the wire to clamiga and the editor's
+own port, called by START once the first windows are open -- so the port
+never answers before there is a document.  transport-arexx.lisp sets it;
+without it the editor runs alone.")
+
+(defvar *wire-stopper* nil
+  "Its counterpart at exit, called before the windows go.")
 
 (defvar *after-start-hooks* '()
   "Functions of the editor, called once its first windows are open and
@@ -299,6 +318,93 @@ init file may open what it likes.")
 
 (defun address-document (editor address)
   (gethash address (mui-editor-objects editor)))
+
+;;; ------------------------------------------------------------------
+;;; The mailbox: only the MUI task touches MUI
+;;; ------------------------------------------------------------------
+;;;
+;;; The port's handler thread and the client thread never call a method;
+;;; they post a closure here, raise the editor's signal, and the event loop
+;;; runs it between two MUI inputs.  A waiting caller (a port command that
+;;; needs the answer) blocks on the condition variable until the loop has
+;;; run its closure; a fire-and-forget one (a reply arriving from clamiga)
+;;; just posts.  Exec signals are sticky, so a post while the loop is busy
+;;; is picked up on its next wait.
+
+(defstruct (mail (:constructor make-mail (thunk wait)))
+  thunk wait (done nil) (values nil))
+
+(defun setup-mailbox (editor)
+  (let ((bit (exec:alloc-signal -1)))
+    (when (< bit 0)
+      (error "Clamacs: no free signal bit for the editor's mailbox."))
+    (setf (mui-editor-task editor) (exec:find-task nil)
+          (mui-editor-signal-bit editor) bit
+          (mui-editor-signal-mask editor) (ash 1 bit)
+          (mui-editor-mailbox-lock editor) (mp:make-lock "clamacs-mailbox")
+          (mui-editor-mailbox-cv editor) (mp:make-condition-variable "clamacs-mailbox")
+          (mui-editor-mailbox editor) '()
+          (mui-editor-mailbox-closed editor) nil)))
+
+(defun free-mailbox (editor)
+  (when (>= (mui-editor-signal-bit editor) 0)
+    (exec:free-signal (mui-editor-signal-bit editor))
+    (setf (mui-editor-signal-bit editor) -1
+          (mui-editor-signal-mask editor) 0)))
+
+(defun call-in-editor (editor thunk &key (wait t))
+  "From any thread: have the MUI task call THUNK.  With WAIT, block until
+it has run and return its values; a closed mailbox (the editor is shutting
+down) answers rc 20 instead.  Without, post and return at once."
+  (let ((lock (mui-editor-mailbox-lock editor))
+        (cv (mui-editor-mailbox-cv editor))
+        (mail (make-mail thunk wait)))
+    (mp:with-lock-held (lock)
+      (when (mui-editor-mailbox-closed editor)
+        (return-from call-in-editor
+          (values +rc-fatal+ "ERROR: the editor is shutting down")))
+      (push mail (mui-editor-mailbox editor)))
+    (exec:signal (mui-editor-task editor) (mui-editor-signal-mask editor))
+    (when wait
+      (mp:with-lock-held (lock)
+        (loop until (or (mail-done mail) (mui-editor-mailbox-closed editor))
+              do (mp:condition-wait cv lock 1)))
+      (if (mail-done mail)
+          (values-list (mail-values mail))
+          (values +rc-fatal+ "ERROR: the editor is shutting down")))))
+
+(defun drain-mailbox (editor)
+  "The MUI task: run everything posted since the last drain."
+  (let ((lock (mui-editor-mailbox-lock editor))
+        (cv (mui-editor-mailbox-cv editor)))
+    (loop
+      (let ((batch (mp:with-lock-held (lock)
+                     (prog1 (nreverse (mui-editor-mailbox editor))
+                       (setf (mui-editor-mailbox editor) '())))))
+        (when (null batch)
+          (return))
+        (dolist (mail batch)
+          (let ((values (handler-case (multiple-value-list (funcall (mail-thunk mail)))
+                          (error (e)
+                            (if (mail-wait mail)
+                                (list +rc-fatal+
+                                      (format nil "ERROR: ~A"
+                                              (handler-case (princ-to-string e)
+                                                (error () "(unprintable condition)"))))
+                                (progn (report-error editor e) nil))))))
+            (mp:with-lock-held (lock)
+              (setf (mail-values mail) values
+                    (mail-done mail) t)
+              (mp:condition-broadcast cv))))))))
+
+(defun close-mailbox (editor)
+  "No more calls: every waiter is woken with the shutdown answer, and a
+later post is refused."
+  (let ((lock (mui-editor-mailbox-lock editor)))
+    (when lock
+      (mp:with-lock-held (lock)
+        (setf (mui-editor-mailbox-closed editor) t)
+        (mp:condition-broadcast (mui-editor-mailbox-cv editor))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Raw keys: the one OS call rawkey.lisp is parameterised over
@@ -810,6 +916,17 @@ counts pixels and the font is fixed-width."
 (defmethod doc-message ((doc mui-document) text)
   (set-message-line doc text))
 
+(defmethod doc-message-text ((doc mui-document))
+  (mdoc-message-text doc))
+
+(defmethod doc-widget-command ((doc mui-document) command)
+  "MUIM_TextEditor_ARexxCmd: FALSE, TRUE, or a string the class AllocVec'd."
+  (let ((r (ffi:with-foreign-string (p command)
+             (mui:do-method (mdoc-text doc) +tem-arexx-cmd+ p))))
+    (cond ((zerop r) nil)
+          ((= r 1) t)
+          (t (take-foreign-string r)))))
+
 (defmethod doc-beep ((doc mui-document))
   (intui:display-beep nil))
 
@@ -902,6 +1019,23 @@ relayout on every keystroke."
   (setf (mdoc-message-text doc) label)
   (set-label doc label))
 
+(defmethod doc-minibuffer-edit ((doc mui-document) key)
+  ;; The String's contents notification runs when the contents are set,
+  ;; as it does for typing -- an isearch prompt searches as the pattern
+  ;; grows -- so MINIBUFFER-CHANGED must not be called here a second time.
+  (let ((text (doc-minibuffer-text doc)))
+    (cond ((eql key +key-return+)
+           (minibuffer-done doc)
+           t)
+          ((printable-key-p key)
+           (doc-set-minibuffer-text
+            doc (concatenate 'string text (string (code-char (key-code key)))))
+           t)
+          ((and (eql key +key-backspace+) (string/= text ""))
+           (doc-set-minibuffer-text doc (subseq text 0 (1- (length text))))
+           t)
+          (t nil))))
+
 (defmethod doc-search ((doc mui-document) pattern backwards again)
   (ffi:with-foreign-string (p pattern)
     (/= 0 (mui:do-method (mdoc-text doc) +tem-search+ p
@@ -960,7 +1094,7 @@ relayout on every keystroke."
 (defun choice-label (choice)
   (case choice
     (:save "_Save") (:discard "_Discard") (:cancel "_Cancel")
-    (:yes "_Yes") (:no "_No") (:ok "_OK")
+    (:yes "_Yes") (:no "_No") (:ok "_OK") (:start "_Start")
     (t (string-capitalize (symbol-name choice)))))
 
 (defmethod doc-ask ((doc mui-document) question choices)
@@ -1021,6 +1155,75 @@ Intuition says is active, else any."
                    (/= 0 (or (mui:get-attr m:+muia-window-activate+ (mdoc-window doc)) 0)))
                  docs)
         (first docs))))
+
+(defmethod editor-active-document ((editor mui-editor))
+  (active-document editor))
+
+;;; ------------------------------------------------------------------
+;;; The diagnostics window: a plain MUI List, deliberately -- a fancier
+;;; widget would add a second MCC dependency to the release for no gain.
+;;; Selecting a row jumps to the file and line, which is the whole feature.
+;;; ------------------------------------------------------------------
+
+(defun list-active-row (list)
+  "MUIA_List_Active as a row, or NIL for MUIV_List_Active_Off (-1, which
+GetAttr hands back unsigned)."
+  (let ((active (or (mui:get-attr m:+muia-list-active+ list) #xFFFFFFFF)))
+    (and (< active #x80000000) active)))
+
+(defun ensure-errors-window (editor)
+  (or (mui-editor-errors-window editor)
+      (let* ((list (mui:new-object :list
+                                   m:+muia-frame+ m:+muiv-frame-input-list+
+                                   m:+muia-list-construct-hook+ m:+muiv-list-construct-hook-string+
+                                   m:+muia-list-destruct-hook+ m:+muiv-list-destruct-hook-string+))
+             (window (mui:new-object :window
+                                     m:+muia-window-title+ "clamacs diagnostics"
+                                     m:+muia-window-width+ (mui:window-size-visible 60)
+                                     m:+muia-window-height+ (mui:window-size-visible 25)
+                                     m:+muia-window-root-object+
+                                     (mui:new-object :listview m:+muia-listview-list+ list))))
+        (setf (mui-editor-errors-window editor) window
+              (mui-editor-errors-list editor) list)
+        (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
+        ;; The close gadget only closes: the rows stay for `C-c ! l'.
+        (mui:notify window m:+muia-window-close-request+ t
+                    window m:+muim-set+ m:+muia-window-open+ nil)
+        (mui:notify list m:+muia-list-active+ :every-time
+                    :application m:+muim-call-hook+
+                    (mui:pool-hook (lambda (hook object message)
+                                     (declare (ignore hook object message))
+                                     (unless (mui-editor-selecting editor)
+                                       (let ((row (list-active-row list))
+                                             (wire (editor-wire editor)))
+                                         (when (and row wire)
+                                           (diagnostic-jump wire row)
+                                           (after-command editor))))
+                                     0)))
+        window)))
+
+(defmethod editor-show-diagnostics ((editor mui-editor) rows &key open)
+  (let* ((window (ensure-errors-window editor))
+         (list (mui-editor-errors-list editor)))
+    (mui:set-attrs list m:+muia-list-quiet+ t)
+    (mui:do-method list m:+muim-list-clear+)
+    (dolist (row rows)
+      (ffi:with-foreign-string (s row)
+        (mui:do-method list m:+muim-list-insert-single+ s m:+muiv-list-insert-bottom+)))
+    ;; Setting Active would fire the notification and jump somewhere the
+    ;; user did not ask to go: the list comes up with nothing selected.
+    (editor-select-diagnostic editor nil)
+    (mui:set-attrs list m:+muia-list-quiet+ nil)
+    (when (or open rows)
+      (mui:set-attrs window m:+muia-window-open+ t))))
+
+(defmethod editor-select-diagnostic ((editor mui-editor) row)
+  (let ((list (mui-editor-errors-list editor)))
+    (when list
+      (setf (mui-editor-selecting editor) t)
+      (unwind-protect
+           (mui:set-attrs list m:+muia-list-active+ (or row m:+muiv-list-active-off+))
+        (setf (mui-editor-selecting editor) nil)))))
 
 ;;; --- The notification hooks: one per kind, the document found from the
 ;;; text object's address the notification carries.
@@ -1209,14 +1412,6 @@ running inside them."
 ;;; The event loop
 ;;; ------------------------------------------------------------------
 
-(defun quit-requested (editor)
-  "save-buffers-kill-emacs set the flag: close every window, asking about
-each unsaved text.  A Cancel keeps the editor running."
-  (setf (editor-quitting editor) nil)
-  (dolist (doc (live-documents editor) t)
-    (unless (close-document doc)
-      (return nil))))
-
 (defun report-error (editor condition)
   "An error in a command or a method, re-signaled at the loop: shown in the
 active document's echo area, and on the console when there is none."
@@ -1227,19 +1422,43 @@ active document's echo area, and on the console when there is none."
         (doc-message doc (substitute #\Space #\Newline text))
         (format *error-output* "clamacs: ~A~%" text))))
 
+(defun housekeeping (editor id)
+  "After MUI input or a mailbox drain: reap retired windows, carry out a
+quit.  True when the last window is gone and the loop must leave."
+  (when (eql id (mui-editor-reap-id editor))
+    (reap editor))
+  (when (editor-quitting editor)
+    (quit-requested editor))
+  (null (live-documents editor)))
+
 (defun run-loop (editor)
-  (let ((app (mui-editor-app editor)))
+  "The MUI event loop, MUI's idiom (NewInput, Wait on the mask it hands
+back) with two additions: the mailbox signal joins the mask and is drained
+when it arrives, and the Wait is AMIGA:WAIT-SIGNALS -- a GC safe region --
+so a collection started by the client or the port thread does not wait for
+the next keystroke."
+  (let ((app (mui-editor-app editor))
+        (mailbox (mui-editor-signal-mask editor)))
     (loop
       (handler-case
-          (progn
-            (mui:do-application-events ((id) app :timeout nil)
-              (when (eql id (mui-editor-reap-id editor))
-                (reap editor))
-              (when (editor-quitting editor)
-                (quit-requested editor))
-              (when (null (live-documents editor))
-                (return)))
-            (return))
+          (loop
+            (multiple-value-bind (id sigs) (mui:application-input app)
+              (when (eq id :quit)
+                (return-from run-loop))
+              (when (housekeeping editor id)
+                (return-from run-loop))
+              (cond ((zerop sigs)
+                     ;; MUI: more input pending -- but never spin on nothing.
+                     (unless id (dos:delay 1)))
+                    (t
+                     (let ((got (amiga:wait-signals
+                                 (logior sigs mailbox dos:+sigbreakf-ctrl-c+))))
+                       (when (logtest got dos:+sigbreakf-ctrl-c+)
+                         (return-from run-loop))
+                       (when (logtest got mailbox)
+                         (drain-mailbox editor)
+                         (when (housekeeping editor nil)
+                           (return-from run-loop))))))))
         (error (e)
           (report-error editor e)
           ;; A window closed by the failing command still needs reaping.
@@ -1273,6 +1492,7 @@ function: an image is saved before it runs and restores into it."
                                  m:+muia-application-title+ "Clamacs"
                                  m:+muia-application-version+ "$VER: Clamacs (Lisp)"
                                  m:+muia-application-description+ "Emacs-flavoured Common Lisp IDE"))
+           (setup-mailbox editor)
            (unwind-protect
                 (progn
                   (if files
@@ -1281,13 +1501,26 @@ function: an image is saved before it runs and restores into it."
                           (format *error-output* "clamacs: cannot open ~A~%" path)))
                       (open-document editor nil))
                   (when (live-documents editor)
+                    ;; The wire and the editor's own port, once there is a
+                    ;; document for the first command to act on.
+                    (when *wire-starter*
+                      (handler-case (funcall *wire-starter* editor)
+                        (error (e) (report-error editor e))))
                     (dolist (hook *after-start-hooks*)
                       (funcall hook editor))
                     (run-loop editor)))
+             ;; Order: no more calls from the other threads (waiters are
+             ;; woken with the shutdown answer), then the port and the
+             ;; client thread, then the windows.
+             (close-mailbox editor)
+             (when (and *wire-stopper* (editor-wire editor))
+               (handler-case (funcall *wire-stopper* editor)
+                 (error (e) (report-error editor e))))
              (dolist (doc (editor-documents editor))
                (setf (doc-closing doc) t))
              (reap editor)
              (mui:dispose-object (mui-editor-app editor))
-             (setf (mui-editor-app editor) nil)))
+             (setf (mui-editor-app editor) nil)
+             (free-mailbox editor)))
       (setf *editor* nil))
     t))

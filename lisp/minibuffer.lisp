@@ -73,6 +73,12 @@ is what M-p and M-n walk and where the answer is recorded."
         (make-minibuffer :prompt label continuation completer history))
   (doc-open-minibuffer doc label initial))
 
+(defun prompt-for-form (doc label continuation)
+  "Prompt for a Lisp form to hand to clamiga; the answer is not a command
+name, so no completion, and the command history keeps it."
+  (prompt doc label continuation
+          :history (editor-command-history (doc-editor doc))))
+
 (defun minibuffer-finish (doc)
   (setf (doc-minibuffer doc) nil)
   (doc-close-minibuffer doc))
@@ -179,6 +185,35 @@ reach the input line."
        (isearch-label mini
                       (not (doc-search doc pattern
                                        (minibuffer-backwards mini) again)))))))
+
+(defun printable-key-p (key)
+  "A key that types itself: no modifier, a Latin-1 character, not DEL."
+  (and (= (key-mods key) 0)
+       (<= #x20 (key-code key) #xFF)
+       (/= (key-code key) +key-delete+)))
+
+(defgeneric doc-minibuffer-edit (doc key)
+  (:documentation "A key the minibuffer did not take (MINIBUFFER-KEY),
+done as the input line itself would do it from the keyboard: a printable
+key self-inserts, BS deletes backwards, RET accepts the input.  True when
+the key did something.  The port's KEY command types into a prompt with
+this; a frontend whose input line changes its contents itself overrides it
+so the change is notified once.")
+  (:method ((doc document) key)
+    (let ((text (doc-minibuffer-text doc)))
+      (cond ((eql key +key-return+)
+             (minibuffer-done doc)
+             t)
+            ((printable-key-p key)
+             (doc-set-minibuffer-text
+              doc (concatenate 'string text (string (code-char (key-code key)))))
+             (minibuffer-changed doc)
+             t)
+            ((and (eql key +key-backspace+) (string/= text ""))
+             (doc-set-minibuffer-text doc (subseq text 0 (1- (length text))))
+             (minibuffer-changed doc)
+             t)
+            (t nil)))))
 
 (defun minibuffer-changed (doc)
   "The input line's contents changed.  In a search that IS the command:

@@ -1,6 +1,6 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 1)
+Status: IN PROGRESS (phase 2 done; next phase 3, introspection)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -535,6 +535,45 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    window, `LOAD`/`COMPILE-FILE`/`EVAL`/`IN-PACKAGE` with clickable
    diagnostics, launch of the target clamiga when no port is found.
    Gate: `drive.rexx`'s phase-1 leg.
+   **DONE 2026-09-18.**  Three pure modules, host-tested on the fake
+   frontend and a fake transport (`tests/fake-transport.lisp`; 355 tests
+   in all): `lisp/diag.lisp` (the reply parser, `src/rexx/diag.c`'s cases),
+   `lisp/wire.lisp` (the transport protocol -- `transport-find-port`,
+   `transport-send`, `transport-launch` -- the one-in-flight queue with
+   the automatic `LASTRESULT`, the continuations, the error list and its
+   walk, the `clamacs-*` commands and `run-lisp`) and `lisp/port.lisp`
+   (the verbs: `OPEN SAVE GETFILE GETNAME GOTOLINE EVAL INSERT TE STATUS
+   KEY`, a ReadArgs-shaped argument parser; `EVAL` of a `(`-form runs in
+   the editor's own Lisp, so a macro can `define-command` into the running
+   editor).  `lisp/transport-arexx.lisp` is the Amiga half: the client
+   thread (one `AMIGA.AREXX:SEND` at a time, the reply posted to the MUI
+   task), the port thread's verbs as `EXT.DEV:DEFINE-COMMAND`s that post
+   to the MUI task and wait, the first instance's port being `CLAMACS`,
+   and the launch of `PROGDIR:clamiga` through an Execute script with a
+   `--load` preamble that opens the port.  The mailbox lives in
+   `frontend-mui.lisp` (`call-in-editor`, drained by the event loop on a
+   signal bit of its own), with the diagnostics window a plain MUI List.
+   Gate passed the same day: `verify/realamiga/run-lisp-drive.sh 040 2`
+   (`make -f Makefile.cross test-lisp-amiga`) runs the unchanged
+   `drive.rexx` with `PHASE 2` -- the editor checks, the KEY and raw-key
+   legs, the integration leg (C-x C-e echoes 3, the editor answers while
+   a LOAD is in flight, two diagnostics walked with next/previous-error),
+   the shipped macro and quit.rexx; the legs of later phases and the C
+   editor's menu and snapshot are gated by `PHASE`, and the C run still
+   gets all of it.
+
+   What the wire found for the runtime (cl-amiga commits, 2026-09-18):
+   - **A raw exec `Wait()` is invisible to a stop-the-world GC.**  The
+     MUI loop (and ReAction's) waited with `AMIGA.RAW.EXEC:WAIT`, a plain
+     library call outside any safe region, so a collection started by
+     another Lisp thread -- the client thread consing on a reply -- waited
+     for the loop's next keystroke.  `AMIGA:WAIT-SIGNALS` is exec `Wait()`
+     bracketed as a safe region; both loops use it, and
+     `tests/amiga/wait-signals-tests.lisp` runs a full GC on a worker
+     while the main task waits.  This was the spec's "a way to hand a
+     thread's result to the MUI task" item.
+   - `(coerce nil 'string)` answered `"NIL"`; CLHS makes NIL the empty
+     sequence there (`tests/test_array.c`).
 3. **Introspection.**  Arglist on the idle timer, completion with the
    minibuffer hand-off, `M-.`/`M-,`, describe and apropos windows,
    macroexpansion window.  Gate: the phase-2 leg.
@@ -560,7 +599,9 @@ gates, none blocking phase 0:
 - A way to hand a thread's result to the MUI task: `AMIGA.RAW.EXEC`'s
   `ALLOC-SIGNAL`/`SIGNAL`/`FIND-TASK` plus an `MP` lock and a list
   suffice; if the pattern recurs, an `AMIGA.MUI:APPLICATION-MAILBOX`
-  helper belongs in the runtime.
+  helper belongs in the runtime.  (Phase 2: the list and the signal did
+  suffice; what the runtime needed was the GC-safe `AMIGA:WAIT-SIGNALS`
+  for the task that waits on them.)
 - Asynchronous `AREXX-SEND` in the platform layer if the client thread's
   cost shows in the spike numbers or under MT bench.
 - Whatever the spike finds in the callback and `PEEK`/`POKE` hot path

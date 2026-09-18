@@ -129,11 +129,19 @@ clean:
 # Unattended FS-UAE run: boot AmigaOS 3, start clamacs, drive it through its
 # own ARexx port, quit.  See verify/realamiga/run-fs-uae.sh for how the boot
 # hook is borrowed from the cl-amiga checkout next door.
-.PHONY: test-amiga verify-amiga
+.PHONY: test-amiga verify-amiga test-lisp-amiga
 
 test-amiga: $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
 	verify/realamiga/run-fs-uae.sh verify/realamiga/verify.fs-uae
 	@$(MAKE) --no-print-directory -f Makefile.cross verify-amiga
+
+# The LISP editor (specs/clamacs-lisp.md) through the same drive.rexx, on
+# the 68040 config, for the legs its phase has reached (PHASE=2 default);
+# the runtime is the superproject's build/cross/clamiga.  The script
+# verifies the log itself.
+PHASE ?= 2
+test-lisp-amiga: $(BUILDDIR)/sendkey
+	verify/realamiga/run-lisp-drive.sh 040 $(PHASE)
 
 verify-amiga:
 	@if [ ! -f build/amiga/clamacs-test.log ]; then \
