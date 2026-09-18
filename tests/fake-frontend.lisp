@@ -25,6 +25,8 @@
    (mini-label :initform nil :accessor fake-mini-label)
    (modified :initform nil :accessor fake-modified)
    (title :initform nil :accessor fake-title)
+   ;; The status line's arglist field
+   (arglist :initform "" :accessor fake-arglist)
    (active :initform 0 :accessor fake-activations)
    (window-open :initform t :accessor fake-window-open)
    ;; What the requesters will answer, a test's script: keywords for
@@ -270,6 +272,9 @@ POSITIONs.  NIL for anything else, as the class answers FALSE."
 
 (defmethod doc-beep ((doc fake-document))
   (incf (fake-beeps doc)))
+
+(defmethod doc-show-arglist ((doc fake-document) text)
+  (setf (fake-arglist doc) text))
 
 (defmethod doc-colour ((doc fake-document) y x0 x1 colour)
   (push (list y x0 x1 colour) (fake-colours doc)))

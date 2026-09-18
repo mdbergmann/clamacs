@@ -3,23 +3,7 @@
 
 (in-package :clamacs)
 
-(defun temp-path (name)
-  (let ((dir (or (ext:getenv "TMPDIR") "/tmp/")))
-    (concatenate 'string dir
-                 (if (and (> (length dir) 0)
-                          (member (char dir (1- (length dir))) '(#\/ #\:)))
-                     ""
-                     "/")
-                 "clamacs-test-" name)))
-
-(defun temp-file (name &optional contents)
-  "A path under TMPDIR; holding CONTENTS, or not existing."
-  (let ((path (temp-path name)))
-    (when (probe-file path)
-      (delete-file path))
-    (when contents
-      (is (write-file-text path contents)))
-    path))
+;;; TEMP-FILE is in framework.lisp: test-wire and test-introspect use it too.
 
 (defun answer-prompt (doc text)
   (type-text doc text)

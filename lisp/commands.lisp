@@ -548,4 +548,5 @@ cursor sits after typing a `)' -- Emacs's rule."
   (show-paren doc))
 
 (defun note-text-changed (doc)
+  (incf (doc-edit-serial doc))
   (colour-line doc (doc-index-line doc (doc-point doc))))

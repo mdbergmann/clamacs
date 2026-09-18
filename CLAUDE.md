@@ -35,7 +35,13 @@ behaviour spec.  New editor work goes into `lisp/`:
   (`commands.lisp`) are functions of `(doc arg)` written against it and
   nothing else, and `tests/fake-frontend.lisp` implements it over a
   string so they are host-tested too; `minibuffer.lisp` (a prompt is a
-  continuation) and `files.lisp` extend the protocol the same way.  Only
+  continuation) and `files.lisp` extend the protocol the same way.
+  `wire.lisp` (the queue to clamiga, over a transport object),
+  `diag.lisp`, `port.lisp` (the editor's own verbs) and
+  `introspect.lisp` (arglist, completion, `M-.`, describe / apropos /
+  macroexpand; `symcache.lisp` is its cache) are pure too, tested on
+  `tests/fake-transport.lisp`; a reply is a continuation in
+  `wire-dispatch`, never waited for.  Only
   `frontend-mui.lisp` may name `AMIGA.MUI`: it is the two custom classes
   and the document window, a port of `src/textclass.c` and the MUI half
   of `src/document.c` (the "Phase 1 facts" below apply to it line by
@@ -54,10 +60,11 @@ behaviour spec.  New editor work goes into `lisp/`:
 - `verify/realamiga/run-lisp-drive.sh [040|020] [PHASE]` (`make -f
   Makefile.cross test-lisp-amiga`) is the Lisp editor's acceptance run:
   a target clamiga with its port, the editor on `sample.lisp`, and the
-  SAME `drive.rexx` as the C editor with `PHASE n` (2 today) selecting
+  SAME `drive.rexx` as the C editor with `PHASE n` (3 today) selecting
   the legs the port has reached; then the shipped macro and
   `quit.rexx`.  The script checks the log itself.  Run it after touching
-  `wire.lisp`, `port.lisp`, `transport-arexx.lisp` or the event loop.
+  `wire.lisp`, `port.lisp`, `introspect.lisp`, `transport-arexx.lisp` or
+  the event loop.
   It needs the superproject's `build/cross/clamiga`, rebuilt after a
   runtime change -- a stale one is the first suspect for a red leg.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),

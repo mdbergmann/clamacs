@@ -5,10 +5,10 @@
 ;;; DEFVAR, so a caller may bind the list first and load a subset.
 (defvar cl-user::*clamacs-pure-files*
   '("package" "keymap" "rawkey" "minihist" "command" "bindings"
-    "killring" "locstack"
+    "killring" "locstack" "symcache"
     "token" "sexp" "indent"
     "frontend" "commands" "minibuffer" "files"
-    "diag" "wire" "port"))
+    "diag" "wire" "port" "introspect"))
 
 ;;; The frontend: the MUI one on an Amiga, with the ARexx transport and the
 ;;; editor's port behind it; none on the host (the tests bring their own,

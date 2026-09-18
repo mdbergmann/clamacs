@@ -51,7 +51,8 @@ bounded time for the port to appear.  True when it did."))
 
 (defstruct (request (:constructor make-request (command kind doc)))
   command
-  kind                      ; :ping :version :in-package :load :compile-file :eval :lastresult
+  kind                      ; :ping :version :in-package :load :compile-file
+                            ; :eval :lastresult, and introspect.lisp's
   doc                       ; the document the reply is about, or NIL
   (auto nil)                ; an automatic LASTRESULT
   (origin nil)              ; ... standing in for a request of this kind
@@ -229,6 +230,10 @@ thread."
                 (let ((line (first-line text)))
                   (doc-message doc (if (string= line "") "; no values" line)))))
              (t (wire-diagnostics wire doc text))))
+      ((:arglist :arglist-echo :complete-buffer :complete-mini
+        :source-location :describe :apropos :macroexpand)
+       ;; The questions about a symbol (introspect.lisp).
+       (intro-reply wire kind doc (request-subject req) rc text))
       (t
        (when (and doc text) (doc-message doc text))))))
 
@@ -307,9 +312,10 @@ stays once another buffer has spoken, so it is always said."
     (declare (ignore base))
     (or (and text (sexp-current-package text point)) "CL-USER")))
 
-(defun wire-ensure-package (wire doc)
-  "Tell clamiga's port DOC's package, unless it was told already."
-  (let ((package (doc-current-package doc)))
+(defun wire-ensure-package (wire doc &optional package)
+  "Tell clamiga's port DOC's package (PACKAGE when the caller has it
+already), unless it was told already."
+  (let ((package (or package (doc-current-package doc))))
     (unless (and (wire-package wire) (string-equal package (wire-package wire)))
       (when (wire-request wire doc :in-package (format nil "IN-PACKAGE ~A" package))
         (setf (wire-package wire) package)))))

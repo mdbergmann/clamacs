@@ -32,9 +32,14 @@
   ;; One history per KIND of prompt, since the input line is reused.
   (command-history (make-history))
   (file-history (make-history))
+  (symbol-history (make-history))
   (documents '())
   ;; The connection to clamiga (wire.lisp), or NIL before it is set up.
-  (wire nil))
+  (wire nil)
+  ;; What clamiga said about a symbol's arglist, and where `M-.' came
+  ;; from (introspect.lisp).
+  (arglists (make-symcache))
+  (locations (make-locstack)))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.
@@ -57,7 +62,13 @@
    ;; `M-y' is only valid after a yank.  NIL after an unbound key.
    (last-command :initform nil :accessor doc-last-command)
    ;; Where the paren highlight is, as (y . x), to take it down again.
-   (paren-shown :initform nil :accessor doc-paren-shown)))
+   (paren-shown :initform nil :accessor doc-paren-shown)
+   ;; Counts the edits (NOTE-TEXT-CHANGED), so that what was worked out
+   ;; from the text can tell whether it still holds.
+   (edit-serial :initform 0 :accessor doc-edit-serial)
+   ;; What the editor asked clamiga about this text (introspect.lisp),
+   ;; made on first use.
+   (intro :initform nil :accessor %doc-intro)))
 
 (defmethod initialize-instance :after ((doc document) &key)
   (setf (doc-keys doc)
@@ -137,6 +148,10 @@ applications see it; the kill ring itself never reads the clipboard."))
 (defgeneric doc-message-text (doc)
   (:documentation "What the echo area shows: the last DOC-MESSAGE, or the
 prompt's label while one is open.  The port's STATUS command reads it."))
+
+(defgeneric doc-show-arglist (doc text)
+  (:documentation "Show TEXT, the arglist of the operator at point, in the
+status line -- \"\" for none."))
 
 (defgeneric doc-widget-command (doc command)
   (:documentation "One of the text widget's OWN commands, TextEditor.mcc's

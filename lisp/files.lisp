@@ -120,6 +120,8 @@ belonged to the old text."
 (defun show-file-text (doc path text)
   (doc-set-text doc text)
   (visit-path doc path)
+  ;; The arglist shown belonged to the old text (introspect.lisp).
+  (forget-arglist doc)
   (colour-all doc)
   t)
 
@@ -177,7 +179,29 @@ and Cancel."
   (reverse (remove-if #'doc-closing (editor-documents editor))))
 
 (defun find-document-by-path (editor path)
-  (find path (live-documents editor) :key #'doc-path :test #'equal))
+  "The window showing PATH.  AmigaDOS paths are case-insensitive, and
+clamiga spells a path back (a diagnostic's, a source location's) as it
+was given, not necessarily as the window was opened."
+  (find-if (lambda (doc)
+             (let ((p (doc-path doc)))
+               (and p (string-equal p path))))
+           (live-documents editor)))
+
+(defun find-scratch-document (editor name)
+  "The scratch window called NAME -- no file, a name of its own."
+  (find-if (lambda (doc)
+             (and (null (doc-path doc)) (equal (doc-name doc) name)))
+           (live-documents editor)))
+
+(defun ensure-scratch-document (editor name lisp-mode)
+  "The scratch window NAME (*clamacs-description*, ...), made when there
+is none, in LISP-MODE or not.  NIL when no window could be made."
+  (let ((doc (find-scratch-document editor name)))
+    (cond (doc
+           (set-lisp-mode doc lisp-mode)
+           doc)
+          (t
+           (editor-make-document editor :name name :lisp-mode lisp-mode)))))
 
 (defun open-document (editor path)
   "A new window showing PATH (NIL: an unnamed Lisp buffer; a name no file

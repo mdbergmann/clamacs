@@ -98,10 +98,22 @@
 (defconstant +te-min-version+ 15)
 (defconstant +te-min-revision+ 29)
 
-;;; The editor's private method, the C editor's CKM_MiniKey (TAG_USER |
-;;; 0x0C1A0003): a minibuffer key the edit hook took, delivered later
-;;; through MUIM_Application_PushMethod.
+;;; The editor's private methods, the C editor's (TAG_USER | 0x0C1A000n):
+;;; CKM_IdleTick, fired on the text object by its own MUI timer input
+;;; handler every 3/10 s for the arglist in the status line; CKM_MiniKey,
+;;; a minibuffer key the edit hook took, delivered later through
+;;; MUIM_Application_PushMethod.
+(defconstant +ckm-idle-tick+ #x8c1a0002)
 (defconstant +ckm-mini-key+ #x8c1a0003)
+;;; struct MUI_InputHandlerNode (libraries/mui.h), 24 bytes: ihn_Object at
+;;; 8, ihn_Millis (UWORD) at 12, ihn_Flags at 16, ihn_Method at 20.
+(defconstant +ihn-size+ 24)
+(defconstant +ihn-object-offset+ 8)
+(defconstant +ihn-millis-offset+ 12)
+(defconstant +ihn-flags-offset+ 16)
+(defconstant +ihn-method-offset+ 20)
+;;; MUIIHNF_TIMER | MUIIHNF_TIMER_SCALE100, 3 units: 300 ms.
+(defconstant +idle-tick-units+ 3)
 
 ;; struct MUIP_HandleEvent { ULONG MethodID; struct IntuiMessage *imsg; LONG muikey; }
 (defconstant +hev-imsg-offset+ 4)
@@ -145,12 +157,15 @@
 (defconstant +fr-drawer-offset+ 8)
 
 ;;; Instance data of ClamacsText: the handler node, the eight pens
-;;; (MUIA_TextEditor_ColorMap points here), and two flags.
-(defconstant +text-data-size+ 64)
+;;; (MUIA_TextEditor_ColorMap points here), two flags, the idle timer's
+;;; input handler node and its flag.
+(defconstant +text-data-size+ 96)
 (defconstant +text-ehn-offset+ 0)
 (defconstant +text-cmap-offset+ 24)
 (defconstant +text-pens-held-offset+ 56)
 (defconstant +text-eh-added-offset+ 60)
+(defconstant +text-ihn-offset+ 64)
+(defconstant +text-timer-added-offset+ 88)
 ;;; Instance data of ClamacsMini: the handler node, the edit hook, the key
 ;;; the hook last took, and the event MUIM_HandleEvent last saw.
 (defconstant +mini-data-size+ 56)
@@ -311,7 +326,9 @@ init file may open what it likes.")
    (message-text :initform "" :accessor mdoc-message-text)
    (label-text :initform "" :accessor mdoc-label-text)
    ;; The package the status line shows; the wire (phase 2) tracks it
-   (package :initform "CL-USER" :accessor mdoc-package)))
+   (package :initform "CL-USER" :accessor mdoc-package)
+   ;; The arglist of the operator at point, at the end of the status line
+   (arglist :initform "" :accessor mdoc-arglist)))
 
 (defun object-document (editor object)
   (gethash (object-address object) (mui-editor-objects editor)))
@@ -476,7 +493,24 @@ MUI's CoerceMethod comes back to this dispatcher."
 ;;; ClamacsText
 ;;; ------------------------------------------------------------------
 
-(defun text-setup (class object message)
+(defun add-idle-timer (editor ihn object)
+  "The arglist idle timer: MUI fires +CKM-IDLE-TICK+ on OBJECT every
+3/10 s; ARGLIST-IDLE returns at once unless the cursor has come to rest in
+this (active) window, so a background document costs a comparison per
+tick.  Its own handler node, like the RAWKEY one, so its lifetime is
+exactly the object's."
+  (dotimes (i +ihn-size+)
+    (ffi:poke-u8 ihn 0 i))
+  (ffi:poke-u32 ihn (object-address object) +ihn-object-offset+)
+  (ffi:poke-u16 ihn +idle-tick-units+ +ihn-millis-offset+)
+  (ffi:poke-u32 ihn (logior m:+muiihnf-timer+ m:+muiihnf-timer-scale100+) +ihn-flags-offset+)
+  (ffi:poke-u32 ihn +ckm-idle-tick+ +ihn-method-offset+)
+  (mui:do-method (mui-editor-app editor) m:+muim-application-add-input-handler+ ihn))
+
+(defun rem-idle-timer (editor ihn)
+  (mui:do-method (mui-editor-app editor) m:+muim-application-rem-input-handler+ ihn))
+
+(defun text-setup (editor class object message)
   (let ((ok (mui:do-super-method class object message)))
     (when (/= ok 0)
       (let ((data (mui:inst-data class object)))
@@ -492,11 +526,16 @@ MUI's CoerceMethod comes back to this dispatcher."
         (mui:set-attrs object +tea-color-map+ (ffi:pointer+ data +text-cmap-offset+))
         ;; The Emacs layer's key handler, ahead of the class's own.
         (add-handler (ffi:pointer+ data +text-ehn-offset+) class object)
-        (ffi:poke-u32 data 1 +text-eh-added-offset+)))
+        (ffi:poke-u32 data 1 +text-eh-added-offset+)
+        (add-idle-timer editor (ffi:pointer+ data +text-ihn-offset+) object)
+        (ffi:poke-u32 data 1 +text-timer-added-offset+)))
     ok))
 
-(defun text-cleanup (class object message)
+(defun text-cleanup (editor class object message)
   (let ((data (mui:inst-data class object)))
+    (when (/= 0 (ffi:peek-u32 data +text-timer-added-offset+))
+      (rem-idle-timer editor (ffi:pointer+ data +text-ihn-offset+))
+      (ffi:poke-u32 data 0 +text-timer-added-offset+))
     (when (/= 0 (ffi:peek-u32 data +text-eh-added-offset+))
       (rem-handler (ffi:pointer+ data +text-ehn-offset+) object)
       (ffi:poke-u32 data 0 +text-eh-added-offset+))
@@ -541,10 +580,16 @@ MUI's next handler -- the class's node -- edits."
     (let ((id (mui:method-id message)))
       (cond ((= id m:+muim-handle-event+)
              (text-handle-event editor object message))
+            ((= id +ckm-idle-tick+)
+             (let ((doc (object-document editor object)))
+               (when (and doc (not (doc-closing doc)))
+                 (arglist-idle doc)
+                 (after-command editor)))
+             0)
             ((= id m:+muim-setup+)
-             (text-setup class object message))
+             (text-setup editor class object message))
             ((= id m:+muim-cleanup+)
-             (text-cleanup class object message))
+             (text-cleanup editor class object message))
             ((= id m:+muim-go-active+)
              (let ((result (mui:do-super-method class object message)))
                (set-window-keys object *text-window-keys*)
@@ -950,15 +995,24 @@ presentation, not content, so the flag is put back afterwards."
     (mui:set-attrs (mdoc-text doc) +tea-quiet+ nil)))
 
 (defun update-status (doc)
-  "`*name  PACKAGE  line:column' in the status line."
-  (mui:set-attrs (mdoc-status doc) m:+muia-text-contents+
-                 (store-string (mdoc-status-buf doc)
-                               (format nil "~A~A  ~A  ~D:~D"
-                                       (if (doc-modified-p doc) "*" " ")
-                                       (doc-name doc)
-                                       (mdoc-package doc)
-                                       (1+ (te-get doc +tea-cursor-y+))
-                                       (1+ (te-get doc +tea-cursor-x+))))))
+  "`*name  PACKAGE  line:column  (arglist)' in the status line.  The
+arglist of the operator at point rides at the end, where a long one is
+cut off rather than pushing the rest out of view."
+  (let ((arglist (mdoc-arglist doc)))
+    (mui:set-attrs (mdoc-status doc) m:+muia-text-contents+
+                   (store-string (mdoc-status-buf doc)
+                                 (format nil "~A~A  ~A  ~D:~D~A~A"
+                                         (if (doc-modified-p doc) "*" " ")
+                                         (doc-name doc)
+                                         (mdoc-package doc)
+                                         (1+ (te-get doc +tea-cursor-y+))
+                                         (1+ (te-get doc +tea-cursor-x+))
+                                         (if (string= arglist "") "" "  ")
+                                         arglist)))))
+
+(defmethod doc-show-arglist ((doc mui-document) text)
+  (setf (mdoc-arglist doc) text)
+  (update-status doc))
 
 ;;; ------------------------------------------------------------------
 ;;; The minibuffer's part

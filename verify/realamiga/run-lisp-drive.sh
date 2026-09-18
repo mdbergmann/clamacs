@@ -6,7 +6,8 @@
 # from lisp/clamacs.lisp on sample.lisp, and drive it through its own
 # ARexx port with verify/realamiga/drive.rexx -- the SAME script that
 # gates the C editor, told with `PHASE n' which legs the port has reached
-# (2 by default: the editor checks and the integration leg).  Then the
+# (3 by default: the editor checks, the integration leg and the
+# introspection leg).  Then the
 # shipped macro, a memory reading with the editor up, and quit.rexx.
 #
 # Modelled on run-fs-uae.sh (the C editor's run) with boot-override
@@ -24,7 +25,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
-PHASE="${2:-2}"
+PHASE="${2:-3}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 LOG="$ROOT/build/amiga/clamacs-test.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
@@ -169,8 +170,33 @@ OK previous-error went back to
 OK asked clamacs to quit
 OK CLAMACS is gone'
 
+# Phase 3 of the port: drive.rexx's introspection leg (its "phase 2").
+want_phase3='OK intro.lisp loaded
+OK the idle timer had the arglist ready
+OK M-. jumped to the definition of twice
+OK M-, returned to CursorY
+OK C-c RET expanded once
+OK C-c M-m expanded fully
+OK C-c C-d d prompted
+OK DESCRIBE opened
+OK the description carries the docstring
+OK C-c C-d a prompted
+OK APROPOS opened
+OK APROPOS tagged the function and the macro
+OK M-TAB completed twice-a in place
+OK C-M-i handed the candidates to the minibuffer
+OK TAB listed them
+OK TAB narrowed twice-a to one
+OK RET put the completion in the buffer'
+
+want="$want_phase2"
+if [ "$PHASE" -ge 3 ]; then
+	want="$want
+$want_phase3"
+fi
+
 missing=0
-echo "$want_phase2" | while IFS= read -r want; do
+echo "$want" | while IFS= read -r want; do
 	if ! grep -qF "$want" "$LOG"; then
 		echo "=== missing: $want ==="
 		exit 1

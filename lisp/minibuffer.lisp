@@ -67,8 +67,9 @@ cursor and returns true when PATTERN was found."))
 (defun prompt (doc label continuation &key (initial "") completer history)
   "Ask for a line of input.  CONTINUATION is called with DOC and the answer
 once the user accepts it; C-g abandons it.  COMPLETER, a function of the
-input returning what COMPLETE returns, is what TAB uses; HISTORY, a HISTORY,
-is what M-p and M-n walk and where the answer is recorded."
+input returning what COMPLETE returns (or :HANDLED when it completed and
+said so itself), is what TAB uses; HISTORY, a HISTORY, is what M-p and M-n
+walk and where the answer is recorded."
   (setf (doc-minibuffer doc)
         (make-minibuffer :prompt label continuation completer history))
   (doc-open-minibuffer doc label initial))
@@ -137,7 +138,11 @@ MUI String) asks here before giving one up."
         (doc-beep doc)
         (multiple-value-bind (matches common)
             (funcall completer (doc-minibuffer-text doc))
-          (cond ((null matches)
+          (cond ((eq matches :handled)
+                 ;; The completer did the whole job itself -- the symbol
+                 ;; completer, whose candidates come from clamiga later.
+                 )
+                ((null matches)
                  (doc-message doc "[No match]"))
                 (t
                  (doc-set-minibuffer-text doc common)

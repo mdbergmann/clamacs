@@ -1,6 +1,6 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 2 done; next phase 3, introspection)
+Status: IN PROGRESS (phase 3 done; next phase 4, the REPL, debugger and inspector)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -577,6 +577,28 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
 3. **Introspection.**  Arglist on the idle timer, completion with the
    minibuffer hand-off, `M-.`/`M-,`, describe and apropos windows,
    macroexpansion window.  Gate: the phase-2 leg.
+   **DONE 2026-09-18.**  Two pure modules: `lisp/symcache.lisp` (the
+   arglist cache, `src/rexx/symcache.c`'s cases) and
+   `lisp/introspect.lisp` (the port of `src/introspect.c`: the operator,
+   symbol and form at point over `sexp.lisp`; the arglist lookup with its
+   cache, its miss memory and its one-quiet-question-at-a-time rule;
+   `ARGLIST-IDLE`, the tick the frontend's timer calls; buffer completion
+   with the hand-off to a `Complete:` prompt whose completer answers
+   `:HANDLED` because its candidates come from clamiga later; `M-.` over
+   the location stack and `M-,`; describe, apropos and macroexpand into
+   scratch windows found or made by `ENSURE-SCRATCH-DOCUMENT`).  The
+   replies come back through `WIRE-DISPATCH` as before, one continuation
+   per request kind.  The frontend protocol grew `DOC-SHOW-ARGLIST` (the
+   status line's arglist field); the MUI frontend registers a
+   `MUI_InputHandlerNode` timer per text object in its Setup (the C
+   editor's `CKM_IdleTick`, 3/10 s, removed in Cleanup) and appends the
+   arglist to the status line.  Host tests: `tests/test-introspect.lisp`
+   walks drive.rexx's introspection leg request by request on the fake
+   frontend and fake transport, plus what only a host test can check (a
+   late reply, a lost port, an abandoned prompt, clamiga's cap); 389
+   tests in all.  Gate: `run-lisp-drive.sh 040 3` (now the
+   `test-lisp-amiga` default), the unchanged drive.rexx with `PHASE 3`.
+   No runtime change was needed.
 4. **REPL, debugger, inspector.**  `REPL-ATTACH` with the inbound
    `OUTPUT`/`READLINE`/`RESULT`/`DEBUGGER` verbs marshalled to the MUI
    task, the transcript buffer, buffer evals on the REPL thread, the
