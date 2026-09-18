@@ -614,6 +614,19 @@ gadget types a stray dead-key character (Alt-x gave `x' with a ring)."
   (and (/= 0 (logand (key-mods key) +mod-meta+))
        (<= #x20 (key-code key) #xFF)))
 
+(defvar *mini-trace* nil
+  "When true, what MUI hands the minibuffer's edit hook and its handler
+method is recorded in *MINI-TRACE-LOG*, newest first -- the C editor's
+CK_MINI_TRACE, but switchable from the running editor (`EVAL (setf
+clamacs::*mini-trace* t)' over the port, then read the log back the same
+way).  How the MUI 3.8 / MUI 4 key paths were established.")
+
+(defvar *mini-trace-log* '())
+
+(defun mini-trace (&rest record)
+  (when *mini-trace*
+    (push record *mini-trace-log*)))
+
 (defun mini-edit-hook-function (editor)
   "The MUIA_String_EditHook function.  MUI 3.8 calls it BEFORE the class's
 own edit hook and ignores the result, so a key we take is made invisible
@@ -622,16 +635,31 @@ cleared.  The action itself is deferred with MUIM_Application_PushMethod,
 since the class's hook may still write its work buffer back after us."
   (lambda (hook sgw msg)
     (cond ((or (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg)) 0)
-          ((/= (ffi:peek-u32 msg 0) intui:+sgh-key+) 0)
+          ((/= (ffi:peek-u32 msg 0) intui:+sgh-key+)
+           (when *mini-trace*
+             (mini-trace :hook-other (ffi:peek-u32 msg 0)))
+           0)
           (t
            (let* ((address (amiga.ffi:hook-data hook))
                   (doc (address-document editor address))
                   (ie-addr (ffi:peek-u32 sgw +sgw-ievent-offset+)))
+             (when *mini-trace*
+               (mini-trace :hook (and doc t) ie-addr
+                           (and (/= ie-addr 0)
+                                (let ((ie (ffi:make-foreign-pointer ie-addr)))
+                                  (list (ffi:peek-u8 ie +ie-class-offset+)
+                                        (ffi:peek-u16 ie +ie-code-offset+)
+                                        (ffi:peek-u16 ie +ie-qualifier-offset+)
+                                        (decode-input-event editor ie))))
+                           (ffi:peek-u16 sgw +sgw-code-offset+)
+                           (ffi:peek-u32 sgw +sgw-actions-offset+)))
              (when (and doc (/= ie-addr 0))
                (let* ((ie (ffi:make-foreign-pointer ie-addr))
                       (key (decode-input-event editor ie)))
                  (when (and key
                             (or (minibuffer-binds-p doc key) (meta-char-key-p key)))
+                   (when *mini-trace*
+                     (mini-trace :hook-taken key))
                    (let ((data (mui:inst-data (mui:custom-class-class (mui-editor-miniclass editor))
                                               (mdoc-mini doc))))
                      (ffi:poke-u32 data key +mini-hook-key-offset+)
@@ -678,6 +706,12 @@ since the class's hook may still write its work buffer back after us."
         (ffi:poke-u32 data seconds +mini-seen-seconds-offset+)
         (ffi:poke-u32 data micros +mini-seen-micros-offset+)))
     (let ((doc (object-document editor object)))
+      (when (and imsg *mini-trace*)
+        (mini-trace :handle-event (and doc t) (active-object-p object)
+                    (ffi:peek-u16 imsg +imsg-code-offset+)
+                    (ffi:peek-u16 imsg +imsg-qualifier-offset+)
+                    (decode-imsg editor imsg)
+                    (ffi:peek-u32 data +mini-hook-taken-offset+)))
       (when (and imsg doc (active-object-p object))
         (let ((key (decode-imsg editor imsg)))
           ;; An active String edits through the edit hook before the handler

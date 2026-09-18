@@ -14,20 +14,27 @@
     "token" "sexp" "indent" "commands" "minibuffer" "files"
     "diag" "wire" "port" "introspect"))
 
+;;; The checkout's root, as text: `..' is not a directory on AmigaDOS, and
+;;; the suite also runs on a real Amiga (`Clamacs:tests/run-tests.lisp').
+(defun cl-user::clamacs-root (here)
+  (let* ((s (namestring here))
+         (cut (search "tests/" s :from-end t)))
+    (if cut (subseq s 0 cut) "")))
+
 (let* ((here (or *load-truename* *load-pathname*))
+       (root (cl-user::clamacs-root here))
        (only (ext:getenv "CLAMACS_TEST"))
        (failures
          (handler-case
              (progn
-               (load (merge-pathnames "../lisp/load.lisp" here))
-               (load (merge-pathnames "framework.lisp" here))
-               (load (merge-pathnames "fake-frontend.lisp" here))
-               (load (merge-pathnames "fake-transport.lisp" here))
+               (load (concatenate 'string root "lisp/load.lisp"))
+               (load (concatenate 'string root "tests/framework.lisp"))
+               (load (concatenate 'string root "tests/fake-frontend.lisp"))
+               (load (concatenate 'string root "tests/fake-transport.lisp"))
                (dolist (name (if (and only (string/= only ""))
                                  (list only)
                                  cl-user::*clamacs-test-files*))
-                 (load (merge-pathnames
-                        (concatenate 'string "test-" name ".lisp") here)))
+                 (load (concatenate 'string root "tests/test-" name ".lisp")))
                (funcall (intern "RUN-TESTS" :clamacs)))
            (error (c)
              (format t "~&LOAD FAILED: ~A~%" c)

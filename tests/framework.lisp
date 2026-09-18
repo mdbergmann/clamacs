@@ -79,7 +79,7 @@
   (key-from-string spelling))
 
 (defun temp-path (name)
-  (let ((dir (or (ext:getenv "TMPDIR") "/tmp/")))
+  (let ((dir (or (ext:getenv "TMPDIR") #+amigaos "T:" #-amigaos "/tmp/")))
     (concatenate 'string dir
                  (if (and (> (length dir) 0)
                           (member (char dir (1- (length dir))) '(#\/ #\:)))
