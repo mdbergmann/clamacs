@@ -164,7 +164,10 @@ returns 0 to let the class's own node edit.  Everything else is
 `MUIM_TextEditor_SetBlock` with `HasChanged` saved around paints.
 
 The minibuffer is the same `String` subclass with the same edit-hook
-dance, including the MUI 4 double-dispatch recognition.  **Every item in
+dance -- the hook itself being the runtime's native
+`mui:make-string-key-hook`, since MUI 3.8 calls it on input.device's
+task (see Open, finding 1 of the Vampire run) -- including the MUI 4
+double-dispatch recognition.  **Every item in
 `clamacs-ide.md`'s "Answered during phase 1" and CLAUDE.md's "Phase 1
 facts" is a MUI fact, not a C fact, and is a line in the port's
 checklist.**  They cost a debugging cycle each the first time; they must
@@ -740,12 +743,28 @@ phases 0-5 plan, and why:
 ## Open
 
 - **Vampire run of phase 3 (2026-09-18, muimaster 19.35, TextEditor.mcc
-  15.50): 60 OK, two findings.**  (1) MUI never calls the Lisp editor's
-  `MUIA_String_EditHook`: `*mini-trace*` shows the handler node seeing
-  only key releases, so the HARDWARE leg's raw TAB, C-g, Alt-x and
-  isearch keys into the active minibuffer are lost, where the C editor's
-  identical hook is called on the same box.  The attribute reads back as
-  the hook that was set.  (2) A layout-dependent failure of FASL-loaded
+  15.50): 60 OK, two findings.**  (1, FIXED 2026-09-18 late) MUI *did*
+  call the Lisp editor's `MUIA_String_EditHook` -- from input.device's
+  task, once per key into the active String, where the runtime answers
+  a callback with 0 without running it (the foreign-task rule of
+  cl-amiga's `specs/mui-bindings.md` §10.3.2), so `*mini-trace*` saw
+  nothing and the handler node only key releases: the HARDWARE leg's
+  raw TAB, C-g, Alt-x and isearch keys into the active minibuffer were
+  lost, where the C editor's identical hook -- C, indifferent to the
+  task -- is called on the same box.  Proven with the runtime's new
+  `(ext:%ffi-foreign-task-calls)` over the port: 0 before, 8 after
+  typing eight characters into the prompt, 9 after TAB.  The fix is a
+  runtime feature, `mui:make-string-key-hook`: a hook that is C from
+  end to end, matching raw code + qualifiers against a table the editor
+  fills from the keymap once (`mini-hook-entries`: every raw code under
+  each of none / Shift / Control / Alt / their Shift combinations,
+  decoded by `rawkey-decode`, kept when `minibuffer-ever-binds-p` or a
+  Meta character) and pushing the key to the mini object as
+  `CKM_MiniKey` through `MUIM_Application_PushMethod`, back on the
+  application's task.  The Lisp edit-hook function, the `hook_taken` /
+  `hook_key` instance slots and the `:hook` trace records are gone with
+  it; `mui:string-key-hook-stats` on a document's hook is the
+  diagnostic now.  (2) A layout-dependent failure of FASL-loaded
   code on the box only: `complete`'s `mismatch` call saw a non-symbol
   where `:end1` should be, with a different garbage error each time;
   the FASL file is good (it loads and passes on the host), a fresh

@@ -60,6 +60,25 @@
     (dolist (key '("TAB" "M-p" "M-n" "a"))
       (is (not (minibuffer-binds-p doc (k key)))))))
 
+;; The union a frontend takes from an active input line before it knows
+;; the state (the MUI String's native key table): every key BINDS-P can
+;; say yes to, and nothing else.
+(deftest minibuffer-ever-binds-is-the-union-of-the-states
+  (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r"))
+    (is (minibuffer-ever-binds-p (k key))))
+  (dolist (key '("a" "RET" "C-f" "M-x" "S-TAB" "C-TAB"))
+    (is (not (minibuffer-ever-binds-p (k key)))))
+  ;; and it agrees with BINDS-P in both states
+  (let ((doc (make-fake "|")))
+    (prompt doc "P: " (lambda (d a) (declare (ignore d a))))
+    (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
+      (when (minibuffer-binds-p doc (k key))
+        (is (minibuffer-ever-binds-p (k key)))))
+    (type-keys doc "C-g C-s")
+    (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
+      (when (minibuffer-binds-p doc (k key))
+        (is (minibuffer-ever-binds-p (k key)))))))
+
 (deftest a-message-during-a-prompt-takes-the-label
   (let ((doc (make-fake "|")))
     (doc-message doc "before")

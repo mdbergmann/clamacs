@@ -115,22 +115,42 @@ name, so no completion, and the command history keeps it."
 ;;; Keys
 ;;; ------------------------------------------------------------------
 
+;;; The keys the minibuffer takes away from the input line.  This is the
+;;; one place that list lives -- MINIBUFFER-KEY acts on exactly these, and
+;;; a frontend whose input line sees keys first (an active MUI String)
+;;; asks here before giving one up.
+(defparameter *minibuffer-keys-always* (list (make-key 103 +mod-ctrl+))   ; C-g
+  "Taken whenever the minibuffer is open.")
+(defparameter *minibuffer-keys-isearch* (list (make-key 115 +mod-ctrl+)   ; C-s
+                                              (make-key 114 +mod-ctrl+))  ; C-r
+  "Taken in a search.")
+(defparameter *minibuffer-keys-prompt* (list +key-tab+
+                                             (make-key 112 +mod-meta+)    ; M-p
+                                             (make-key 110 +mod-meta+))   ; M-n
+  "Taken at a prompt: completion and the history.")
+
 (defun minibuffer-binds-p (doc key)
-  "Whether KEY is one the minibuffer takes away from the input line: C-g
-whenever it is open; C-s and C-r in a search; TAB and the history keys at a
-prompt.  This is the one place that list lives -- MINIBUFFER-KEY acts on
-exactly these, and a frontend whose input line sees keys first (an active
-MUI String) asks here before giving one up."
+  "Whether KEY is one the minibuffer takes away from the input line NOW:
+C-g whenever it is open; C-s and C-r in a search; TAB and the history keys
+at a prompt."
   (let ((mini (doc-minibuffer doc)))
     (and mini
-         (or (eql key (make-key 103 +mod-ctrl+)) ; C-g
-             (if (eq (minibuffer-kind mini) :isearch)
-                 (or (eql key (make-key 115 +mod-ctrl+))  ; C-s
-                     (eql key (make-key 114 +mod-ctrl+))) ; C-r
-                 (or (eql key +key-tab+)
-                     (eql key (make-key 112 +mod-meta+))    ; M-p
-                     (eql key (make-key 110 +mod-meta+))))) ; M-n
+         (or (member key *minibuffer-keys-always*)
+             (member key (if (eq (minibuffer-kind mini) :isearch)
+                             *minibuffer-keys-isearch*
+                             *minibuffer-keys-prompt*)))
          t)))
+
+(defun minibuffer-ever-binds-p (key)
+  "Whether KEY is one MINIBUFFER-BINDS-P answers T for in some state: the
+union of its lists.  A frontend that must decide which keys to take
+before the minibuffer is open -- the MUI String's key table, filled once
+from the keymap -- takes these, and MINIBUFFER-KEY reports the ones the
+current state does not bind as undefined."
+  (and (or (member key *minibuffer-keys-always*)
+           (member key *minibuffer-keys-isearch*)
+           (member key *minibuffer-keys-prompt*))
+       t))
 
 (defun minibuffer-complete (doc mini)
   (let ((completer (minibuffer-completer mini)))

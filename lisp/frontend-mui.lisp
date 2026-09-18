@@ -15,8 +15,14 @@
 ;;;;   - ClamacsMini subclasses String for the minibuffer: TAB, C-g and the
 ;;;;     history keys are taken through a MUIA_String_EditHook, because an
 ;;;;     active MUI 3.8 String edits its keys before the window's handler
-;;;;     list is consulted; MUI 4 never calls that hook and sends the keys
-;;;;     through MUIM_HandleEvent twice instead.  Both paths are here.
+;;;;     list is consulted -- and it edits them on input.device's task,
+;;;;     where no Lisp can run (a Lisp hook there is answered 0 by the
+;;;;     runtime, unseen: the Vampire's finding B, 2026-09-18).  So the
+;;;;     hook is the runtime's native one, MUI:MAKE-STRING-KEY-HOOK, given
+;;;;     a table of raw keys built here from the keymap; it pushes a taken
+;;;;     key to the mini object as CKM_MiniKey, which arrives on the
+;;;;     application's task.  MUI 4 never calls that hook and sends the
+;;;;     keys through MUIM_HandleEvent twice instead.  Both paths are here.
 ;;;;   - MUI hands a RAWKEY to every registered node: each class acts only
 ;;;;     when it is the window's active object.
 ;;;;   - RET, TAB and ESC are also MUI's window keys; each class switches
@@ -139,12 +145,6 @@
 (defconstant +ie-qualifier-offset+ 8)
 (defconstant +ie-eventaddress-offset+ 10)
 (defconstant +ieclass-rawkey+ 1)
-;; struct SGWork (intuition/sghooks.h): IEvent 20, Code 24, Actions 30, EditOp 42
-(defconstant +sgw-ievent-offset+ 20)
-(defconstant +sgw-code-offset+ 24)
-(defconstant +sgw-actions-offset+ 30)
-(defconstant +sgw-editop-offset+ 42)
-(defconstant +sgh-key-done+ #xFFFFFFFF)   ; "understood", sghooks.h: SGH_KEY is assumed
 ;; struct MUI_RenderInfo: mri_WindowObject first; mri_Screen at 4
 (defconstant +mri-window-object-offset+ 0)
 (defconstant +mri-screen-offset+ 4)
@@ -166,21 +166,30 @@
 (defconstant +text-eh-added-offset+ 60)
 (defconstant +text-ihn-offset+ 64)
 (defconstant +text-timer-added-offset+ 88)
-;;; Instance data of ClamacsMini: the handler node, the key the edit hook
-;;; last took, and the event MUIM_HandleEvent last saw.  The edit hook
-;;; itself is a Lisp object (MUI-EDITOR-MINI-HOOKS), not an address here:
-;;; FREE-HOOK takes the object MAKE-HOOK returned, and a pointer rebuilt
-;;; from an address is not owned and cannot be freed (finding A of the
-;;; 2026-09-18 Vampire run).  Offsets 24-27 are unused.
-(defconstant +mini-data-size+ 56)
+;;; Instance data of ClamacsMini: the handler node and the event
+;;; MUIM_HandleEvent last saw.  The edit hook itself is a Lisp object
+;;; (MUI-EDITOR-MINI-HOOKS), not an address here: FREE-STRING-KEY-HOOK
+;;; takes the object MAKE-STRING-KEY-HOOK returned, and a pointer rebuilt
+;;; from an address is not a live hook (finding A of the 2026-09-18
+;;; Vampire run).
+(defconstant +mini-data-size+ 44)
 (defconstant +mini-ehn-offset+ 0)
-(defconstant +mini-eh-added-offset+ 28)
-(defconstant +mini-hook-taken-offset+ 32)
-(defconstant +mini-hook-key-offset+ 36)
-(defconstant +mini-seen-imsg-offset+ 40)
-(defconstant +mini-seen-code-offset+ 44)
-(defconstant +mini-seen-seconds-offset+ 48)
-(defconstant +mini-seen-micros-offset+ 52)
+(defconstant +mini-eh-added-offset+ 24)
+(defconstant +mini-seen-imsg-offset+ 28)
+(defconstant +mini-seen-code-offset+ 32)
+(defconstant +mini-seen-seconds-offset+ 36)
+(defconstant +mini-seen-micros-offset+ 40)
+
+;;; The raw keys the minibuffer's String hands over (MAKE-STRING-KEY-HOOK):
+;;; every raw code with each of these qualifier sets is decoded through
+;;; the keymap once, and the ones that give a key the minibuffer binds in
+;;; some state, or Meta plus a character, go into the table.  The mask is
+;;; Shift, Control, Alt and the two Amiga keys (the right-hand Shift and
+;;; Alt are folded into the left before it applies): a press with an
+;;; Amiga key never matches, as RAWKEY-DECODE never decodes one.
+(defconstant +mini-hook-qual-mask+ #xD9)
+(defparameter *mini-hook-qualifiers* '(#x00 #x01 #x08 #x09 #x10 #x11)
+  "None, Shift, Control, Control-Shift, Alt, Alt-Shift.")
 
 ;;; The window keys switched off while the text has the focus: RET must
 ;;; not fire a default gadget, TAB not cycle, ESC neither deactivate nor
@@ -275,9 +284,11 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ie mapbuf
   ;; the MUIM_CallHook hooks, one per notification kind
   hooks
-  ;; mini object address -> the MUIA_String_EditHook MAKE-HOOK returned
-  ;; for it, kept as the object so OM_DISPOSE can FREE-HOOK it
+  ;; mini object address -> the MUIA_String_EditHook MAKE-STRING-KEY-HOOK
+  ;; returned for it, kept as the object so OM_DISPOSE can free it; and
+  ;; the key table every such hook is made from, built once
   (mini-hooks (make-hash-table))
+  (mini-hook-entries nil)
   ;; the document the port and the messages mean, and the activation
   ;; request that outranks late activation reports (see ACTIVATE-HOOK)
   active-doc activate-pending (activate-stamp 0)
@@ -460,14 +471,6 @@ class (see RAWKEY-DECODE)."
                                       0
                                       (ffi:peek-u32 (ffi:make-foreign-pointer iaddr) 0)))))))
 
-(defun decode-input-event (editor ie)
-  "The key of a struct InputEvent (the SGWork's), without the dead-key
-history: none of the keys the minibuffer binds is a composed character."
-  (rawkey-decode (ffi:peek-u16 ie +ie-code-offset+)
-                 (ffi:peek-u16 ie +ie-qualifier-offset+)
-                 (lambda (code qualifier)
-                   (map-raw-key editor code qualifier 0))))
-
 (defun handle-event-imsg (message)
   "The IntuiMessage of a MUIM_HandleEvent MESSAGE when it is a RAWKEY, else
 NIL."
@@ -621,11 +624,14 @@ gadget types a stray dead-key character (Alt-x gave `x' with a ring)."
        (<= #x20 (key-code key) #xFF)))
 
 (defvar *mini-trace* nil
-  "When true, what MUI hands the minibuffer's edit hook and its handler
-method is recorded in *MINI-TRACE-LOG*, newest first -- the C editor's
-CK_MINI_TRACE, but switchable from the running editor (`EVAL (setf
-clamacs::*mini-trace* t)' over the port, then read the log back the same
-way).  How the MUI 3.8 / MUI 4 key paths were established.")
+  "When true, what MUI hands the minibuffer's handler method, and every
+key its edit hook pushes, is recorded in *MINI-TRACE-LOG*, newest first
+-- the C editor's CK_MINI_TRACE, but switchable from the running editor
+\(`EVAL (setf clamacs::*mini-trace* t)' over the port, then read the log
+back the same way).  How the MUI 3.8 / MUI 4 key paths were established.
+The hook itself is native and records nothing; MUI:STRING-KEY-HOOK-STATS
+on a document's hook (MUI-EDITOR-MINI-HOOKS) says how often MUI called
+it and how many keys it took.")
 
 (defvar *mini-trace-log* '())
 
@@ -633,60 +639,26 @@ way).  How the MUI 3.8 / MUI 4 key paths were established.")
   (when *mini-trace*
     (push record *mini-trace-log*)))
 
-(defun mini-edit-hook-function (editor)
-  "The MUIA_String_EditHook function.  MUI 3.8 calls it BEFORE the class's
-own edit hook and ignores the result, so a key we take is made invisible
-to the class's hook: the event becomes a key release, the character is
-cleared.  The action itself is deferred with MUIM_Application_PushMethod,
-since the class's hook may still write its work buffer back after us."
-  (lambda (hook sgw msg)
-    (cond ((or (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg))
-           (mini-trace :hook-null (ffi:null-pointer-p sgw) (ffi:null-pointer-p msg))
-           0)
-          ((/= (ffi:peek-u32 msg 0) intui:+sgh-key+)
-           (when *mini-trace*
-             (mini-trace :hook-other (ffi:peek-u32 msg 0)))
-           0)
-          (t
-           (let* ((address (amiga.ffi:hook-data hook))
-                  (doc (address-document editor address))
-                  (ie-addr (ffi:peek-u32 sgw +sgw-ievent-offset+)))
-             (when *mini-trace*
-               (mini-trace :hook (and doc t) ie-addr
-                           (and (/= ie-addr 0)
-                                (let ((ie (ffi:make-foreign-pointer ie-addr)))
-                                  (list (ffi:peek-u8 ie +ie-class-offset+)
-                                        (ffi:peek-u16 ie +ie-code-offset+)
-                                        (ffi:peek-u16 ie +ie-qualifier-offset+)
-                                        (decode-input-event editor ie))))
-                           (ffi:peek-u16 sgw +sgw-code-offset+)
-                           (ffi:peek-u32 sgw +sgw-actions-offset+)))
-             (when (and doc (/= ie-addr 0))
-               (let* ((ie (ffi:make-foreign-pointer ie-addr))
-                      (key (decode-input-event editor ie)))
-                 (when (and key
-                            (or (minibuffer-binds-p doc key) (meta-char-key-p key)))
-                   (when *mini-trace*
-                     (mini-trace :hook-taken key))
-                   (let ((data (mui:inst-data (mui:custom-class-class (mui-editor-miniclass editor))
-                                              (mdoc-mini doc))))
-                     (ffi:poke-u32 data key +mini-hook-key-offset+)
-                     (ffi:poke-u32 data 1 +mini-hook-taken-offset+))
-                   ;; A release of no key, no qualifier, no character.
-                   (ffi:poke-u16 ie (logior +raw-up-prefix+ #x7F) +ie-code-offset+)
-                   (ffi:poke-u16 ie 0 +ie-qualifier-offset+)
-                   (ffi:poke-u16 sgw 0 +sgw-code-offset+)
-                   ;; And undo the default editing when it ran before us (MUI 4).
-                   (ffi:poke-u32 sgw
-                                 (logandc2 (ffi:peek-u32 sgw +sgw-actions-offset+)
-                                           (logior intui:+sga-use+ intui:+sga-end+ intui:+sga-beep+
-                                                   intui:+sga-reuse+ intui:+sga-nextactive+
-                                                   intui:+sga-prevactive+))
-                                 +sgw-actions-offset+)
-                   (ffi:poke-u16 sgw intui:+eo-noop+ +sgw-editop-offset+)
-                   (mui:do-method (mui-editor-app editor) m:+muim-application-push-method+
-                                  (mdoc-mini doc) 2 +ckm-mini-key+ key))))
-             +sgh-key-done+)))))
+(defun mini-hook-entries (editor)
+  "The key table for MAKE-STRING-KEY-HOOK: (code qual-mask qual-value key)
+for every raw code and qualifier set that the keymap decodes to a key the
+minibuffer binds in some state (MINIBUFFER-EVER-BINDS-P) or to Meta plus
+a character (META-CHAR-KEY-P).  The keymap is asked once per editor:
+some 750 MapRawKey calls, cached on the editor.  The hook pushes the KEY
+itself, which CKM_MiniKey hands to MINIBUFFER-KEY; a key the current
+state does not bind is reported undefined there, exactly as the C
+editor's hook reports Alt-x."
+  (or (mui-editor-mini-hook-entries editor)
+      (setf (mui-editor-mini-hook-entries editor)
+            (let ((entries '()))
+              (dotimes (code #x80)
+                (dolist (qualifier *mini-hook-qualifiers*)
+                  (let ((key (rawkey-decode code qualifier
+                                            (lambda (c q) (map-raw-key editor c q 0)))))
+                    (when (and key
+                               (or (minibuffer-ever-binds-p key) (meta-char-key-p key)))
+                      (push (list code +mini-hook-qual-mask+ qualifier key) entries)))))
+              (nreverse entries)))))
 
 (defun mini-key-undefined (doc key)
   (when (minibuffer-open-p doc)
@@ -718,17 +690,13 @@ since the class's hook may still write its work buffer back after us."
         (mini-trace :handle-event (and doc t) (active-object-p object)
                     (ffi:peek-u16 imsg +imsg-code-offset+)
                     (ffi:peek-u16 imsg +imsg-qualifier-offset+)
-                    (decode-imsg editor imsg)
-                    (ffi:peek-u32 data +mini-hook-taken-offset+)))
+                    (decode-imsg editor imsg)))
       (when (and imsg doc (active-object-p object))
+        ;; An active MUI 3.8 String edits through the edit hook before the
+        ;; handler list is consulted, and a key the hook took reaches it as
+        ;; a release of no key: only the keys the hook left alone, and on
+        ;; MUI 4 every key, arrive here as presses.
         (let ((key (decode-imsg editor imsg)))
-          ;; An active String edits through the edit hook before the handler
-          ;; list is consulted: when the hook has just taken this key, the
-          ;; node is seeing the same event again.
-          (when (/= 0 (ffi:peek-u32 data +mini-hook-taken-offset+))
-            (ffi:poke-u32 data 0 +mini-hook-taken-offset+)
-            (when (eql key (ffi:peek-u32 data +mini-hook-key-offset+))
-              (return-from mini-handle-event m:+mui-event-handler-rc-eat+)))
           (when key
             (when (minibuffer-key doc key)
               (after-command editor)
@@ -740,74 +708,78 @@ since the class's hook may still write its work buffer back after us."
     0))
 
 (defun make-mini-dispatcher (editor)
-  (let ((edit-function (mini-edit-hook-function editor)))
-    (lambda (class object message)
-      (let ((id (mui:method-id message)))
-        (cond ((= id m:+muim-handle-event+)
-               (mini-handle-event editor class object message))
-              ((= id +ckm-mini-key+)
-               ;; The key the edit hook took, now that the String's own
-               ;; handling is over and the contents may change safely.
-               (let ((doc (object-document editor object))
-                     (key (ffi:peek-u32 message 4)))
-                 (when doc
-                   (unless (minibuffer-key doc key)
-                     (mini-key-undefined doc key))
-                   (after-command editor))
-                 0))
-              ((= id intui:+om-new+)
-               (let ((self (mui:do-super-method class object message)))
-                 (when (/= self 0)
-                   ;; One hook per object, its h_Data the object's address,
-                   ;; which is how the hook finds the document.  The hook
-                   ;; OBJECT is kept, keyed by that address: only the
-                   ;; pointer ALLOC-FOREIGN returned owns its memory, so
-                   ;; only it can be freed.
-                   (let ((hook (amiga.ffi:make-hook edit-function :data self)))
-                     (setf (gethash self (mui-editor-mini-hooks editor)) hook)
-                     (mui:set-attrs (ffi:make-foreign-pointer self)
-                                    m:+muia-string-edit-hook+ hook)))
-                 self))
-              ((= id intui:+om-dispose+)
-               ;; The String is disposed of FIRST: it holds the hook, and
-               ;; FREE-HOOK releases the hook's callback stub as well as the
-               ;; struct -- "only after every object that holds the hook is
-               ;; disposed".  Forgotten before the free: a second dispose
-               ;; of the same object must not free it twice.
-               (let* ((table (mui-editor-mini-hooks editor))
-                      (address (object-address object))
-                      (hook (gethash address table)))
-                 (remhash address table)
-                 (prog1 (mui:do-super-method class object message)
-                   (amiga.ffi:free-hook hook))))
-              ((= id m:+muim-setup+)
-               (let ((ok (mui:do-super-method class object message)))
-                 (when (/= ok 0)
-                   (let ((data (mui:inst-data class object)))
-                     (add-handler (ffi:pointer+ data +mini-ehn-offset+) class object)
-                     (ffi:poke-u32 data 1 +mini-eh-added-offset+)))
-                 ok))
-              ((= id m:+muim-cleanup+)
-               (let ((data (mui:inst-data class object)))
-                 (when (/= 0 (ffi:peek-u32 data +mini-eh-added-offset+))
-                   (rem-handler (ffi:pointer+ data +mini-ehn-offset+) object)
-                   (ffi:poke-u32 data 0 +mini-eh-added-offset+)))
-               (mui:do-super-method class object message))
-              ;; TAB is MUI's cycle-chain key, acted on at the window level:
-              ;; while the minibuffer has the focus it is ours (completion).
-              ((= id m:+muim-go-active+)
-               (set-window-keys object *mini-window-keys*)
-               (mui:do-super-method class object message))
-              ((= id m:+muim-show+)
-               (let ((result (mui:do-super-method class object message)))
-                 (when (active-object-p object)
-                   (set-window-keys object *mini-window-keys*))
-                 result))
-              ((= id m:+muim-go-inactive+)
-               (ffi:poke-u32 (mui:inst-data class object) 0 +mini-hook-taken-offset+)
-               (set-window-keys object 0)
-               (mui:do-super-method class object message))
-              (t (mui:do-super-method class object message)))))))
+  (lambda (class object message)
+    (let ((id (mui:method-id message)))
+      (cond ((= id m:+muim-handle-event+)
+             (mini-handle-event editor class object message))
+            ((= id +ckm-mini-key+)
+             ;; The key the edit hook took, pushed by MUI's input loop now
+             ;; that the String's own handling is over and the contents
+             ;; may change safely.
+             (let ((doc (object-document editor object))
+                   (key (ffi:peek-u32 message 4)))
+               (mini-trace :mini-key (and doc t) key)
+               (when doc
+                 (unless (minibuffer-key doc key)
+                   (mini-key-undefined doc key))
+                 (after-command editor))
+               0))
+            ((= id intui:+om-new+)
+             (let ((self (mui:do-super-method class object message)))
+               (when (/= self 0)
+                 ;; One native hook per object, pushing the keys of the
+                 ;; table to this object as CKM_MiniKey.  The hook OBJECT
+                 ;; is kept, keyed by the object's address: only it can be
+                 ;; freed.
+                 (let ((hook (mui:make-string-key-hook
+                              (or (mui-editor-app editor)
+                                  (error "ClamacsMini made before the application object"))
+                              (ffi:make-foreign-pointer self)
+                              +ckm-mini-key+
+                              (mini-hook-entries editor))))
+                   (setf (gethash self (mui-editor-mini-hooks editor)) hook)
+                   (mui:set-attrs (ffi:make-foreign-pointer self)
+                                  m:+muia-string-edit-hook+ hook)))
+               self))
+            ((= id intui:+om-dispose+)
+             ;; The String is disposed of FIRST: it holds the hook, and the
+             ;; free releases the hook's entry code as well as the struct
+             ;; -- "only after every String that holds it is disposed".
+             ;; Forgotten before the free: a second dispose of the same
+             ;; object must not free it twice.
+             (let* ((table (mui-editor-mini-hooks editor))
+                    (address (object-address object))
+                    (hook (gethash address table)))
+               (remhash address table)
+               (prog1 (mui:do-super-method class object message)
+                 (mui:free-string-key-hook hook))))
+            ((= id m:+muim-setup+)
+             (let ((ok (mui:do-super-method class object message)))
+               (when (/= ok 0)
+                 (let ((data (mui:inst-data class object)))
+                   (add-handler (ffi:pointer+ data +mini-ehn-offset+) class object)
+                   (ffi:poke-u32 data 1 +mini-eh-added-offset+)))
+               ok))
+            ((= id m:+muim-cleanup+)
+             (let ((data (mui:inst-data class object)))
+               (when (/= 0 (ffi:peek-u32 data +mini-eh-added-offset+))
+                 (rem-handler (ffi:pointer+ data +mini-ehn-offset+) object)
+                 (ffi:poke-u32 data 0 +mini-eh-added-offset+)))
+             (mui:do-super-method class object message))
+            ;; TAB is MUI's cycle-chain key, acted on at the window level:
+            ;; while the minibuffer has the focus it is ours (completion).
+            ((= id m:+muim-go-active+)
+             (set-window-keys object *mini-window-keys*)
+             (mui:do-super-method class object message))
+            ((= id m:+muim-show+)
+             (let ((result (mui:do-super-method class object message)))
+               (when (active-object-p object)
+                 (set-window-keys object *mini-window-keys*))
+               result))
+            ((= id m:+muim-go-inactive+)
+             (set-window-keys object 0)
+             (mui:do-super-method class object message))
+            (t (mui:do-super-method class object message))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The class objects and the TextEditor.mcc version check

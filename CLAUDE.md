@@ -245,7 +245,18 @@ list under "Answered during phase 1".
   because the class's hook may write its work buffer back over a
   `MUIA_String_Contents` change.  `ck_doc_minibuffer_binds()` is the one
   list of minibuffer keys.  Only hardware shows any of this: `run-drive`
-  passes `HARDWARE` to `drive.rexx` for that leg.
+  passes `HARDWARE` to `drive.rexx` for that leg.  **And MUI 3.8 runs
+  that hook on input.device's task** (an active `String` is an
+  Intuition string gadget), which a C hook never notices and a Lisp one
+  cannot survive: clamiga answers a callback from a non-Lisp task with 0
+  without running it, silently unless `(ext:%ffi-foreign-task-calls)`
+  is asked (the Vampire's finding B, 2026-09-18: 8 keys typed, counter
+  8).  The Lisp port's hook is therefore the runtime's native
+  `mui:make-string-key-hook`, fed a table of raw keys that
+  `mini-hook-entries` decodes from the keymap once
+  (`minibuffer-ever-binds-p` + Meta-character), pushing the key to the
+  mini object as `CKM_MiniKey`; `mui:string-key-hook-stats` on a
+  document's hook says whether MUI called it and whether it matched.
 
 ## Phases
 
