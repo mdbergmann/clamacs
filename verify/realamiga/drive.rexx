@@ -164,6 +164,27 @@ IF POS('sample2.lisp', RESULT) > 0 THEN
 ELSE
     SAY 'FAIL active document is' RESULT
 
+/* Close it again over the port, then bring it back: a window reaped
+** from the event loop in the middle of a run, with the editor going on
+** afterwards.  On a Vampire this is where the Lisp editor froze the
+** machine on 2026-09-18 (its minibuffer class's OM_DISPOSE signalled and
+** the window was disposed of twice); quit.rexx then reads the editor's
+** exit log for any dispose that signalled.  The reopen restores the
+** state the legs below expect: sample2.lisp active, so that nothing
+** they type lands in a buffer the shipped macro later saves. */
+'EVAL kill-buffer'
+'GETFILE'
+IF POS('sample2.lisp', RESULT) = 0 THEN
+    SAY 'OK kill-buffer closed the second document; the active document is now' RESULT
+ELSE
+    SAY 'FAIL kill-buffer left' RESULT 'active'
+'OPEN FILE Clamacs:verify/realamiga/sample2.lisp LINE 2'
+'GETFILE'
+IF RC = 0 & POS('sample2.lisp', RESULT) > 0 THEN
+    SAY 'OK the second document is open again after kill-buffer'
+ELSE
+    SAY 'FAIL reopening after kill-buffer gave rc=' RC 'active=' RESULT
+
 /* ------------------------------------------------------------------ *
 ** The menu strip.  MENU <command> picks the item the way the mouse
 ** would (on the active document, only while it is enabled); MENU

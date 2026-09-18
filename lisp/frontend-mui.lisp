@@ -166,11 +166,14 @@
 (defconstant +text-eh-added-offset+ 60)
 (defconstant +text-ihn-offset+ 64)
 (defconstant +text-timer-added-offset+ 88)
-;;; Instance data of ClamacsMini: the handler node, the edit hook, the key
-;;; the hook last took, and the event MUIM_HandleEvent last saw.
+;;; Instance data of ClamacsMini: the handler node, the key the edit hook
+;;; last took, and the event MUIM_HandleEvent last saw.  The edit hook
+;;; itself is a Lisp object (MUI-EDITOR-MINI-HOOKS), not an address here:
+;;; FREE-HOOK takes the object MAKE-HOOK returned, and a pointer rebuilt
+;;; from an address is not owned and cannot be freed (finding A of the
+;;; 2026-09-18 Vampire run).  Offsets 24-27 are unused.
 (defconstant +mini-data-size+ 56)
 (defconstant +mini-ehn-offset+ 0)
-(defconstant +mini-hook-offset+ 24)
 (defconstant +mini-eh-added-offset+ 28)
 (defconstant +mini-hook-taken-offset+ 32)
 (defconstant +mini-hook-key-offset+ 36)
@@ -272,6 +275,9 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ie mapbuf
   ;; the MUIM_CallHook hooks, one per notification kind
   hooks
+  ;; mini object address -> the MUIA_String_EditHook MAKE-HOOK returned
+  ;; for it, kept as the object so OM_DISPOSE can FREE-HOOK it
+  (mini-hooks (make-hash-table))
   ;; the document the port and the messages mean, and the activation
   ;; request that outranks late activation reports (see ACTIVATE-HOOK)
   active-doc activate-pending (activate-stamp 0)
@@ -753,25 +759,27 @@ since the class's hook may still write its work buffer back after us."
                (let ((self (mui:do-super-method class object message)))
                  (when (/= self 0)
                    ;; One hook per object, its h_Data the object's address,
-                   ;; which is how the hook finds the document.
-                   (let* ((obj (ffi:make-foreign-pointer self))
-                          (data (mui:inst-data class obj))
-                          (hook (amiga.ffi:make-hook edit-function :data self)))
-                     (ffi:poke-u32 data (object-address hook) +mini-hook-offset+)
-                     (mui:set-attrs obj m:+muia-string-edit-hook+ hook)))
+                   ;; which is how the hook finds the document.  The hook
+                   ;; OBJECT is kept, keyed by that address: only the
+                   ;; pointer ALLOC-FOREIGN returned owns its memory, so
+                   ;; only it can be freed.
+                   (let ((hook (amiga.ffi:make-hook edit-function :data self)))
+                     (setf (gethash self (mui-editor-mini-hooks editor)) hook)
+                     (mui:set-attrs (ffi:make-foreign-pointer self)
+                                    m:+muia-string-edit-hook+ hook)))
                  self))
               ((= id intui:+om-dispose+)
                ;; The String is disposed of FIRST: it holds the hook, and
                ;; FREE-HOOK releases the hook's callback stub as well as the
                ;; struct -- "only after every object that holds the hook is
-               ;; disposed".  Read the pointer before the superclass frees
-               ;; the instance data.
-               (let* ((data (mui:inst-data class object))
-                      (hook (ffi:peek-u32 data +mini-hook-offset+)))
-                 (ffi:poke-u32 data 0 +mini-hook-offset+)
+               ;; disposed".  Forgotten before the free: a second dispose
+               ;; of the same object must not free it twice.
+               (let* ((table (mui-editor-mini-hooks editor))
+                      (address (object-address object))
+                      (hook (gethash address table)))
+                 (remhash address table)
                  (prog1 (mui:do-super-method class object message)
-                   (when (/= hook 0)
-                     (amiga.ffi:free-hook (ffi:make-foreign-pointer hook))))))
+                   (amiga.ffi:free-hook hook))))
               ((= id m:+muim-setup+)
                (let ((ok (mui:do-super-method class object message)))
                  (when (/= ok 0)

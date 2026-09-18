@@ -53,10 +53,15 @@ behaviour spec.  New editor work goes into `lisp/`:
   project icon becomes (cl-amiga's README, "Starting from Workbench"),
   so the editor has one path in for both.
 - `verify/realamiga/run-lisp-editor.sh [040|020]` is the Lisp editor's
-  FS-UAE smoke run: it types a defun with `sendkey`, saves and quits,
-  and the saved file must equal what the same keys produce on the host
+  FS-UAE smoke run: it types a defun with `sendkey`, saves and closes
+  the buffer with `C-x k` (the last window's close is the exit), and
+  the saved file must equal what the same keys produce on the host
   under the fake frontend (`verify/realamiga/lisp-editor-keys.lisp` is
-  the one list of keys).  Run it after touching `frontend-mui.lisp`.
+  the one list of keys).  It runs the editor with `*exit-trace*` on and
+  reads `T:clamacs-exit.log` back: a window dispose that signalled, or
+  a teardown that did not reach "application disposed", fails the run
+  (`quit.rexx` makes the same check at the end of the drive run).  Run
+  it after touching `frontend-mui.lisp`.
 - `verify/realamiga/run-lisp-drive.sh [040|020] [PHASE]` (`make -f
   Makefile.cross test-lisp-amiga`) is the Lisp editor's acceptance run:
   a target clamiga with its port, the editor on `sample.lisp`, and the

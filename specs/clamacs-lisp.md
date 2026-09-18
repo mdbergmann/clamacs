@@ -753,22 +753,28 @@ phases 0-5 plan, and why:
   it go away for the day.  A runtime item for cl-amiga; the suspects and
   the experiments run are in the session's memory note.  The editor's
   host suite now runs on the box (`Clamacs:tests/run-tests.lisp`), which
-  is the reproduction vehicle.  (3) Disposing a document window signals
-  on the box (FS-UAE never does): every exit left an orphan diagnostics
-  window, since the condition escaped `start`'s teardown before the
-  application was disposed of, and a `kill-buffer` over the port reaped
-  the same window twice and froze the machine.  The teardown now forgets
-  a window before disposing of it, catches what the dispose signals and
-  logs it to `T:clamacs-exit.log` (`*exit-trace*` logs every step there;
-  what a `Run >log` clamiga prints never reaches the log on AmigaOS), and
-  disposes of the diagnostics window itself.  The condition, read from
-  that log: `FFI:FREE-FOREIGN: pointer was not allocated by FFI` --
-  ClamacsMini's OM_DISPOSE keeps only the address of its edit hook and
-  rebuilds an unowned pointer to free it, which `free-foreign` refuses.
-  The fix to make: keep the hook object `make-hook` returned (a table on
-  the editor, keyed by the object's address) and free that after the
-  String's dispose.  With the teardown rework the exit already leaves no
-  window and no process behind.
+  is the reproduction vehicle.  (3, FIXED 2026-09-18) Disposing a
+  document window signalled, on the box and -- unseen, nobody looked at
+  the screen after a quit -- in FS-UAE: every exit left an orphan
+  diagnostics window, since the condition escaped `start`'s teardown
+  before the application was disposed of, and a `kill-buffer` over the
+  port reaped the same window twice and froze the machine.  The
+  condition, `FFI:FREE-FOREIGN: pointer was not allocated by FFI`:
+  ClamacsMini's OM_DISPOSE kept only the address of its edit hook and
+  rebuilt an unowned pointer to free it, which `free-foreign` refuses
+  (only the object `alloc-foreign` returned owns its memory).  The hook
+  object now lives in a table on the editor keyed by the mini object's
+  address, freed after the String's dispose; the teardown forgets a
+  window before disposing of it, catches what a dispose signals and logs
+  it to `T:clamacs-exit.log` (`*exit-trace*` logs every step there; what
+  a `Run >log` clamiga prints never reaches the log on AmigaOS), and
+  disposes of the diagnostics window itself.  Pinned by three checks:
+  `drive.rexx` closes the second document over the port and reopens it
+  (the mid-run reap), `quit.rexx` switches the trace on before the quit
+  and fails on any `signalled` line or a log that does not end with the
+  application disposed, and `run-lisp-editor.sh` closes its one buffer
+  with `C-x k` (the keyboard path; the last window's close is the exit)
+  and reads the same log.
 - The MorphOS run of phases 2 and 3.
 - The MorphOS column of the spike (box unreachable on 2026-09-16).
 - Whether the client thread or an asynchronous platform send is the

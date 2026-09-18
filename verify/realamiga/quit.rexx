@@ -21,6 +21,13 @@ IF PORT = '' THEN
     SAY 'INFO no clamacs port to quit'
 ELSE DO
     ADDRESS VALUE PORT
+    /* The Lisp editor's teardown trace (frontend-mui.lisp, *EXIT-TRACE*):
+    ** every step of START's exit goes to T:clamacs-exit.log, and a window
+    ** dispose that signals is written there whether the trace is on or
+    ** not.  Read back below, once the port is gone.  The C editor answers
+    ** `unknown command' to a form and writes no such log. */
+    'EVAL (setf clamacs::*exit-trace* t)'
+    traced = (RESULT = 'T')
     /* kill-emacs discards what the run typed into the fixtures without a
     ** requester nobody is here to answer (the Lisp editor asks on
     ** save-buffers-kill-emacs, as Emacs does); the C editor has no
@@ -29,6 +36,7 @@ ELSE DO
     IF RESULT = 'unknown command' THEN 'EVAL save-buffers-kill-emacs'
     SAY 'OK asked clamacs to quit'
     CALL waitgone PORT, 'clamacs'
+    IF traced THEN CALL checkexit
 END
 
 /* Only the clamiga this run itself started: arexx-host.lisp records its
@@ -74,6 +82,57 @@ waitgone: PROCEDURE
     ELSE
         SAY 'OK' port 'is gone'
     RETURN
+
+/* The Lisp editor's exit log, once the port is gone.  The port stops
+** BEFORE the windows and the application are disposed of, so the last
+** step is waited for.  The whole log is read, since a dispose that
+** signalled in the middle of the run (a kill-buffer's reap) lands there
+** too: on a Vampire that was the minibuffer class's OM_DISPOSE freeing
+** its edit hook through an unowned pointer, and the teardown then left an
+** orphan window behind (2026-09-18).  The run scripts delete the log
+** before the editor starts, so it is this run's alone.
+*/
+checkexit: PROCEDURE
+    path = 'T:clamacs-exit.log'
+    DO i = 1 TO 20
+        last = lastline(path)
+        IF last = 'clamacs: exit application disposed' THEN LEAVE
+        ADDRESS COMMAND 'C:Wait 1'
+    END
+    IF ~EXISTS(path) THEN DO
+        SAY 'FAIL the editor wrote no' path 'although its exit trace was on'
+        RETURN
+    END
+    bad = ''
+    IF ~OPEN('xf', path, 'R') THEN DO
+        SAY 'FAIL cannot read' path
+        RETURN
+    END
+    DO WHILE ~EOF('xf')
+        line = READLN('xf')
+        IF POS('signalled', line) > 0 & bad = '' THEN bad = line
+    END
+    CALL CLOSE('xf')
+    IF bad ~= '' THEN
+        SAY 'FAIL a window dispose signalled:' bad
+    ELSE IF last ~= 'clamacs: exit application disposed' THEN
+        SAY 'FAIL the exit log ends with `'last'`, not with the application disposed'
+    ELSE
+        SAY 'OK the teardown disposed the application and no dispose signalled'
+    RETURN
+
+/* The last non-empty line of a file, '' when it is not there. */
+lastline: PROCEDURE
+    PARSE ARG path
+    IF ~EXISTS(path) THEN RETURN ''
+    IF ~OPEN('lf', path, 'R') THEN RETURN ''
+    last = ''
+    DO WHILE ~EOF('lf')
+        line = STRIP(READLN('lf'))
+        IF line ~= '' THEN last = line
+    END
+    CALL CLOSE('lf')
+    RETURN last
 
 findport: PROCEDURE
     PARSE ARG base

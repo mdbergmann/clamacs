@@ -169,6 +169,8 @@ verify-amiga:
 	    'OK the menu saved the buffer' \
 	    'OK Save dimmed after the menu saved' \
 	    'OK Close Buffer closed it' \
+	    'OK kill-buffer closed the second document' \
+	    'OK the second document is open again after kill-buffer' \
 	    'OK the menu ran beginning-of-defun' \
 	    'OK Clear Transcript is dimmed outside the REPL' \
 	    'OK the Help menu has the HyperSpec' \

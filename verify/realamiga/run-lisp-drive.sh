@@ -61,6 +61,10 @@ IF WARN
 ENDIF
 echo "OK ARexx is running" >>build/amiga/clamacs-test.log
 stack 128000
+; The editor's exit log (quit.rexx reads it) must be this run's alone.
+IF EXISTS T:clamacs-exit.log
+  delete >NIL: T:clamacs-exit.log
+ENDIF
 ; The target clamiga first, with its development port (see boot-override).
 cd CLAmiga:
 run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
@@ -83,6 +87,10 @@ SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
 C:Wait 3
 echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
+echo "=== T:clamacs-exit.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS T:clamacs-exit.log
+  type T:clamacs-exit.log >>build/amiga/clamacs-test.log
+ENDIF
 echo "=== lisp-drive-editor.log ===" >>build/amiga/clamacs-test.log
 IF EXISTS build/amiga/lisp-drive-editor.log
   type build/amiga/lisp-drive-editor.log >>build/amiga/clamacs-test.log
@@ -143,6 +151,8 @@ OK INSERT and GETLINE round trip
 OK backward-sexp landed
 OK OPEN second file
 OK second document is active
+OK kill-buffer closed the second document
+OK the second document is open again after kill-buffer
 OK C-x is pending
 OK C-g cancelled the prefix
 OK C-x C-q reported
@@ -168,7 +178,8 @@ OK next-error jumped to the second error
 OK next-error stopped at the last diagnostic
 OK previous-error went back to
 OK asked clamacs to quit
-OK CLAMACS is gone'
+OK CLAMACS is gone
+OK the teardown disposed the application and no dispose signalled'
 
 # Phase 3 of the port: drive.rexx's introspection leg (its "phase 2").
 want_phase3='OK intro.lisp loaded
