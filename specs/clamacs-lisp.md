@@ -736,6 +736,22 @@ phases 0-5 plan, and why:
 
 ## Open
 
+- **Vampire run of phase 3 (2026-09-18, muimaster 19.35, TextEditor.mcc
+  15.50): 60 OK, two findings.**  (1) MUI never calls the Lisp editor's
+  `MUIA_String_EditHook`: `*mini-trace*` shows the handler node seeing
+  only key releases, so the HARDWARE leg's raw TAB, C-g, Alt-x and
+  isearch keys into the active minibuffer are lost, where the C editor's
+  identical hook is called on the same box.  The attribute reads back as
+  the hook that was set.  (2) A layout-dependent failure of FASL-loaded
+  code on the box only: `complete`'s `mismatch` call saw a non-symbol
+  where `:end1` should be, with a different garbage error each time;
+  the FASL file is good (it loads and passes on the host), a fresh
+  in-process compile is fine, the JIT is not involved, and a reboot made
+  it go away for the day.  A runtime item for cl-amiga; the suspects and
+  the experiments run are in the session's memory note.  The editor's
+  host suite now runs on the box (`Clamacs:tests/run-tests.lisp`), which
+  is the reproduction vehicle.
+- The MorphOS run of phases 2 and 3.
 - The MorphOS column of the spike (box unreachable on 2026-09-16).
 - Whether the client thread or an asynchronous platform send is the
   better shape; the spike did not exercise the wire.
