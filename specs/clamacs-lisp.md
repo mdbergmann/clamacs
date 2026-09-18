@@ -464,10 +464,35 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    find-file into this window / other window / the window that has the
    file, the unsaved-changes requester, save/write, new, kill-buffer,
    other-window, quit), both on the fake frontend: 289 tests.  That is
-   the whole phase-1 Emacs layer without a line of MUI.  Next:
-   `frontend-mui.lisp` (application, document window, `ClamacsText`, the
-   minibuffer class with its edit-hook dance) in FS-UAE, then the
-   command line and Workbench arguments.
+   the whole phase-1 Emacs layer without a line of MUI.
+   **The MUI frontend DONE 2026-09-18**: `lisp/frontend-mui.lisp`, the
+   one file that names `AMIGA.MUI` -- `ClamacsText` and `ClamacsMini` as
+   `CREATE-CUSTOM-CLASS` subclasses with Lisp dispatchers (own RAWKEY
+   node at priority 1, the pens in the instance data, the String edit
+   hook with the MUI 3.8 key-release trick and the MUI 4 double-dispatch
+   recognition, `DisableKeys` re-armed in Show), the document window
+   (text + sliders, status line, echo page group), every protocol method
+   over the class's own attributes and ARexx commands, the notification
+   hooks, the reap-from-the-loop window close and the loop with its
+   error handler.  Per-object state is a Lisp object found by the MUI
+   object's address; the strings MUI keeps pointers to live in
+   per-document foreign buffers.  `lisp/load.lisp` loads it on an
+   Amiga, `lisp/clamacs.lisp` runs the editor from source.
+   `verify/realamiga/run-lisp-editor.sh` is the FS-UAE smoke run: it
+   types a defun with `sendkey` (RET = newline-and-indent), saves with
+   `C-x C-s`, quits with `C-x C-c`, and the saved file must equal what
+   the SAME keys produce on the host under the fake frontend -- a
+   differential test of the two frontends.  First runs: 68040 leg,
+   window open in 10 s, saved file byte-identical, clean exit, 441 KB of
+   Fast RAM kept by the libraries and classes (the spike saw 413);
+   68020 leg, window open in 38 s, identical, the queued keys drained
+   about 110 s after `C-x C-c' (a RET is 2 s there, as the spike
+   measured) -- the editor works on the 68020, as the Non-goals ask,
+   and no faster.  Prompts
+   are not driven there (synthetic keys hold a MUI String's focus for
+   one key): the minibuffer's MUI dance is checked on hardware and,
+   from phase 2 on, through the port.  Next: the command line and
+   Workbench arguments, then the wire.
 
    What the port found for the runtime so far (cl-amiga commits):
    - **A GC-safety bug in the compiler's pre-scans, FIXED 2026-09-17.**

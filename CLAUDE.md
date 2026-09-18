@@ -36,7 +36,17 @@ behaviour spec.  New editor work goes into `lisp/`:
   nothing else, and `tests/fake-frontend.lisp` implements it over a
   string so they are host-tested too; `minibuffer.lisp` (a prompt is a
   continuation) and `files.lisp` extend the protocol the same way.  Only
-  `frontend-mui.lisp` may name `AMIGA.MUI`.
+  `frontend-mui.lisp` may name `AMIGA.MUI`: it is the two custom classes
+  and the document window, a port of `src/textclass.c` and the MUI half
+  of `src/document.c` (the "Phase 1 facts" below apply to it line by
+  line).  `load.lisp` loads it on an Amiga only; `lisp/clamacs.lisp`
+  runs the editor from source (`clamiga --heap 8M --non-interactive
+  --load Clamacs:lisp/clamacs.lisp`).
+- `verify/realamiga/run-lisp-editor.sh [040|020]` is the Lisp editor's
+  FS-UAE smoke run: it types a defun with `sendkey`, saves and quits,
+  and the saved file must equal what the same keys produce on the host
+  under the fake frontend (`verify/realamiga/lisp-editor-keys.lisp` is
+  the one list of keys).  Run it after touching `frontend-mui.lisp`.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),
   `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
   `make test-lisp` runs them under the superproject's

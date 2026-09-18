@@ -9,6 +9,14 @@
     "token" "sexp" "indent"
     "frontend" "commands" "minibuffer" "files"))
 
+;;; The frontend: the MUI one on an Amiga, none on the host (the tests
+;;; bring their own, tests/fake-frontend.lisp).  Bind it to NIL to load
+;;; the pure modules alone on an Amiga too.
+(defvar cl-user::*clamacs-frontend-files*
+  #+amigaos '("frontend-mui")
+  #-amigaos '())
+
 (let ((here (or *load-truename* *load-pathname*)))
-  (dolist (name cl-user::*clamacs-pure-files*)
+  (dolist (name (append cl-user::*clamacs-pure-files*
+                        cl-user::*clamacs-frontend-files*))
     (load (merge-pathnames (concatenate 'string name ".lisp") here))))
