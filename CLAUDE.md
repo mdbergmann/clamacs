@@ -41,7 +41,11 @@ behaviour spec.  New editor work goes into `lisp/`:
   of `src/document.c` (the "Phase 1 facts" below apply to it line by
   line).  `load.lisp` loads it on an Amiga only; `lisp/clamacs.lisp`
   runs the editor from source (`clamiga --heap 8M --non-interactive
-  --load Clamacs:lisp/clamacs.lisp`).
+  --load Clamacs:lisp/clamacs.lisp -- file ...`).  The files come after
+  `--`: clamiga loads a bare argument, and what follows the separator is
+  the runtime's `ext:*command-line-args*` -- also what a Workbench
+  project icon becomes (cl-amiga's README, "Starting from Workbench"),
+  so the editor has one path in for both.
 - `verify/realamiga/run-lisp-editor.sh [040|020]` is the Lisp editor's
   FS-UAE smoke run: it types a defun with `sendkey`, saves and quits,
   and the saved file must equal what the same keys produce on the host

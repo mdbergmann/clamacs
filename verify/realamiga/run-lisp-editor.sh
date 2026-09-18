@@ -57,8 +57,11 @@ cp "$ROOT/build/cross/sendkey" "$OUT/sendkey"
 TYPING=$(cat "$OUT/lisp-editor-typing")
 
 # The Amiga side's driver: load the editor, mark the window open, start
-# it on the file to save, mark the exit.  AmigaDOS makes `*' an escape
-# inside quotes, so this goes through a file, never an --eval.
+# it on the program's arguments -- the file to save is passed after `--'
+# on clamiga's command line, the way the release launcher and a Workbench
+# project icon hand files over (EXT:*COMMAND-LINE-ARGS*) -- and mark the
+# exit.  AmigaDOS makes `*' an escape inside quotes, so the forms go
+# through a file, never an --eval.
 cat > "$OUT/lisp-editor-driver.lisp" <<'PRE'
 (load "Clamacs:lisp/load.lisp")
 (push (lambda (editor)
@@ -67,7 +70,7 @@ cat > "$OUT/lisp-editor-driver.lisp" <<'PRE'
                            :direction :output :if-exists :supersede)
           (write-line "ready" s)))
       clamacs::*after-start-hooks*)
-(clamacs::start :files '("Clamacs:build/amiga/lisp-editor-out.lisp"))
+(clamacs::start :files ext:*command-line-args*)
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
                    :direction :output :if-exists :supersede)
   (write-line "done" s))
@@ -83,7 +86,7 @@ echo "=== avail before ===" >>build/amiga/lisp-editor-run.log
 avail >>build/amiga/lisp-editor-run.log
 stack 128000
 cd CLAmiga:
-run >Clamacs:build/amiga/lisp-editor-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/lisp-editor-driver.lisp
+run >Clamacs:build/amiga/lisp-editor-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/lisp-editor-driver.lisp -- Clamacs:build/amiga/lisp-editor-out.lisp
 cd Clamacs:
 set n 0
 LAB waitready

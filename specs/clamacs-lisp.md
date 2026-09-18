@@ -491,8 +491,21 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    and no faster.  Prompts
    are not driven there (synthetic keys hold a MUI String's focus for
    one key): the minibuffer's MUI dance is checked on hardware and,
-   from phase 2 on, through the port.  Next: the command line and
-   Workbench arguments, then the wire.
+   from phase 2 on, through the port.  **Command line and Workbench
+   arguments DONE 2026-09-18**, on the runtime side: clamiga loads a
+   bare argument, so `--` now ends its options and what follows is
+   `ext:*command-line-args*` (never loaded, set before `.clamigarc` and
+   the restore hooks -- the image start needs exactly that); a
+   Workbench start (argc 0, the `WBStartup` message) becomes a command
+   line from the icons' `ARGS`/`WINDOW` tool types with every project
+   icon one argument after `--`, `ext:*workbench-started-p*` says so,
+   and the 68k binary gives itself the 128K stack an icon does not
+   (cl-amiga's README "Program arguments" / "Starting from Workbench",
+   `tests/test_command_line_args.sh`, and `tests/amiga/wb-check.lisp`
+   started through `verify/realamiga/wbrun.c`, a real `WBStartup`
+   sender, in the FS-UAE suite).  `lisp/clamacs.lisp` starts on that
+   list; `run-lisp-editor.sh` passes its file after `--`.  Next: the
+   wire.
 
    What the port found for the runtime so far (cl-amiga commits):
    - **A GC-safety bug in the compiler's pre-scans, FIXED 2026-09-17.**
