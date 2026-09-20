@@ -1,7 +1,10 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 4 done on FS-UAE: the REPL, debugger and
-inspector; next: the Vampire and MorphOS runs of phases 2-4, then phase
+Status: IN PROGRESS (phase 5's editor side done on FS-UAE 2026-09-20: the
+menu strip, the window snapshot, the HyperSpec, `.clamacsrc`; next: the
+release image, the Vampire and MorphOS runs, the retirement of `src/`.
+Earlier: phase 4 done on FS-UAE: the REPL, debugger and
+inspector; the Vampire and MorphOS runs of phases 2-4 pending, then phase
 5, parity and release)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
@@ -669,6 +672,51 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    and MorphOS, plus the Non-goals' lowend-startup check.  Then the C
    sources are removed (tagged `c-final` first), the release script's
    cross-build step goes, and `clamacs-ide.md` gets a note pointing here.
+   **Editor side DONE 2026-09-20.**  Three pure modules: `lisp/winstore.lisp`
+   (the store, `test_winstore.c`'s cases), `lisp/snapshot.lisp` (a
+   document's ROLE chosen when it is made -- the lowest free `docN` for a
+   file window, so `open-document` passes the path in at creation now --
+   `snapshot-load` before the first window, `layout-place` for a
+   frontend creating one, `doc-geometry` / `editor-aux-windows` for the
+   command, `GETWINDOW`) and `lisp/menu.lisp` (the table as
+   `menu-entry`s with `:global`/`:lisp`/`:repl` maps, `menu-state` read
+   off the editor -- the modified flag, the path, the wire's connection
+   and error list, the REPL window, the debugger level, the location
+   stack -- `menu-enabled-items` for a frontend, `menu-pick`, the `MENU`
+   verb answering from that state, `clamacs-about` as a command of its
+   own with `editor-toolkit-lines` from the frontend, and
+   `clamacs-hyperspec` over `doc-open-url` answering `:opened` /
+   `:refused` / `:missing`, the requester with the address in the pure
+   half).  `.clamacsrc`: `bind-key` appends to the binding specs so every
+   document made afterwards has the key, and refuses a sequence that
+   clashes with a bound one (`binding-clash`: a command cannot become a
+   prefix, nor a prefix a command -- `keymap-bind-seq` alone replaces
+   silently); `*init-file*` and `*snapshot-files*` are chosen when the
+   file LOADs (`default-init-file`, `default-snapshot-files`), never by
+   `#+amigaos`, because the release compiles the FASLs with the host
+   binary and would settle it there (`verify-editor-image.lisp` checks
+   both values on the target); `load-init-file` runs the file
+   in `CLAMACS` with no handler around LOAD, so a broken form is
+   reported by LOAD and the rest still loads; `clamacs::run` is the
+   entry both `clamacs.lisp` and the image use.  The MUI frontend builds
+   the strip before the application object (`MUIA_Application_Menustrip`
+   is init-only), items carry the table index + 1 in `MUIA_UserData`,
+   `MUIA_Application_MenuAction` calls `menu-pick`, `menu-update` runs
+   from `after-command` (every key, hook, tick and reply) and after each
+   mailbox drain and sets only the items whose state changed; windows are
+   created with `window-place-tags`; `openurl.library`'s `URL_OpenA` is
+   called by offset (-30) through `amiga:call-library`.  Host tests:
+   `test-winstore.lisp`, `test-snapshot.lisp` (roles, the file, the
+   command writing both files and making the drawer, the second-editor
+   restore as a fresh editor reading the file), `test-menu.lisp` (the
+   table's three promises, the state, every `MENU` check of drive.rexx,
+   About, the HyperSpec, the init file): 479 tests, green and green under
+   GC stress.  Gate: `run-lisp-drive.sh 040 5` (now the default) -- the
+   whole of drive.rexx, its snapshot leg starting a second LISP editor
+   through the new `LISP <clamiga>` argument -- 124 `OK` lines, the
+   second editor up at `doc1 24 48 400 160` as the file said.
+   Still to do in this phase: the image in the release script, the
+   Vampire and MorphOS runs, the lowend check, the retirement of `src/`.
 
 Runtime work expected along the way, each a cl-amiga commit under its
 gates, none blocking phase 0:

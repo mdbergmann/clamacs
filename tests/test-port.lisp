@@ -3,30 +3,8 @@
 
 (in-package :clamacs)
 
-(defparameter *sample-text*
-  (lines "(in-package :cl-user)"
-         ""
-         "(defun frobnicate (x)"
-         "  \"A sample function, so the editor has real Lisp to colour and navigate.\""
-         "  (let ((y (* x 2)))"
-         "    (when (> y 10)"
-         "      (format t \"~a is big~%\" y))"
-         "    y))"
-         ""
-         "(defvar *sample* 42)"
-         ""))
-
-(defun sample-doc ()
-  "A wired fake showing the sample file, activated, as the boot script
-opens it."
-  (multiple-value-bind (doc tr wire) (make-wired-fake *sample-text*)
-    (setf (doc-path doc) "Clamacs:verify/realamiga/sample.lisp"
-          (doc-name doc) "sample.lisp")
-    (doc-activate doc)
-    (values doc tr wire)))
-
-(defmacro port (editor line)
-  `(multiple-value-list (port-command ,editor ,line)))
+;;; *SAMPLE-TEXT*, SAMPLE-DOC and PORT are in fake-transport.lisp: the menu
+;;; and snapshot tests drive the port too.
 
 ;;; --- arguments ---------------------------------------------------------------
 

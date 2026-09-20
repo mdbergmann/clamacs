@@ -29,6 +29,10 @@
    (arglist :initform "" :accessor fake-arglist)
    (active :initform 0 :accessor fake-activations)
    (window-open :initform t :accessor fake-window-open)
+   ;; Where the window "is" (snapshot.lisp): a test moves it by SETF.
+   (geometry :initform (list 0 11 640 200) :accessor fake-geometry)
+   ;; The URLs DOC-OPEN-URL was handed, newest first
+   (urls :initform '() :accessor fake-urls)
    ;; What the requesters will answer, a test's script: keywords for
    ;; DOC-ASK, paths (or NIL, cancel) for DOC-ASK-FILE; and what was asked.
    (answers :initform '() :accessor fake-answers)
@@ -53,7 +57,27 @@
   (dbg-locals '())
   ;; The inspector window
   (insp-open nil)
-  (insp-shown nil))              ; (type depth object parts)
+  (insp-shown nil)               ; (type depth object parts)
+  ;; What DOC-OPEN-URL answers: :OPENED, :REFUSED or :MISSING
+  (url-answer :opened))
+
+;;; --- window positions (snapshot.lisp) and the browser (menu.lisp)
+
+(defmethod doc-geometry ((doc fake-document))
+  (and (fake-window-open doc)
+       (values-list (fake-geometry doc))))
+
+(defmethod editor-aux-windows ((editor fake-editor))
+  (append (and (fake-editor-diag-open editor) '(("errors" 10 20 300 100)))
+          (and (fake-editor-insp-open editor) '(("inspector" 30 40 320 240)))
+          (and (fake-editor-dbg-open editor) '(("debugger" 50 60 400 300)))))
+
+(defmethod doc-open-url ((doc fake-document) url)
+  (push url (fake-urls doc))
+  (fake-editor-url-answer (doc-editor doc)))
+
+(defmethod editor-toolkit-lines ((editor fake-editor))
+  '("fake frontend 1.0"))
 
 ;;; --- the debugger and inspector windows (debugger.lisp, inspector.lisp)
 

@@ -74,6 +74,34 @@ PORT.  Three values: the document, the transport, the wire."
           (fake-transport-port tr) port)
     (values (make-fake text :editor editor) tr wire)))
 
+;;; --- the port (port.lisp): what test-port, test-menu and test-snapshot drive
+
+(defparameter *sample-text*
+  (lines "(in-package :cl-user)"
+         ""
+         "(defun frobnicate (x)"
+         "  \"A sample function, so the editor has real Lisp to colour and navigate.\""
+         "  (let ((y (* x 2)))"
+         "    (when (> y 10)"
+         "      (format t \"~a is big~%\" y))"
+         "    y))"
+         ""
+         "(defvar *sample* 42)"
+         ""))
+
+(defun sample-doc ()
+  "A wired fake showing the sample file, activated, as the boot script
+opens it: (values doc transport wire)."
+  (multiple-value-bind (doc tr wire) (make-wired-fake *sample-text*)
+    (setf (doc-path doc) "Clamacs:verify/realamiga/sample.lisp"
+          (doc-name doc) "sample.lisp")
+    (doc-activate doc)
+    (values doc tr wire)))
+
+(defmacro port (editor line)
+  "The port's answer to LINE, as a list: (rc text)."
+  `(multiple-value-list (port-command ,editor ,line)))
+
 ;;; --- the REPL window (repl.lisp): what test-repl and test-debugger start from
 
 (defun repl-fixture ()

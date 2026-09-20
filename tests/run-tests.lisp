@@ -13,7 +13,8 @@
     "killring" "minihist" "locstack" "symcache"
     "token" "sexp" "indent" "commands" "minibuffer" "files"
     "diag" "wire" "port" "introspect"
-    "replmsg" "repl" "debugger" "inspector"))
+    "replmsg" "repl" "debugger" "inspector"
+    "winstore" "snapshot" "menu"))
 
 ;;; The checkout's root, as text: `..' is not a directory on AmigaDOS, and
 ;;; the suite also runs on a real Amiga (`Clamacs:tests/run-tests.lisp').

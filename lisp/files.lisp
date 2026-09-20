@@ -211,7 +211,10 @@ file is there but cannot be read."
       (editor-make-document editor :name *unnamed* :lisp-mode t)
       (let ((text (read-file-text path)))
         (when (or text (not (probe-file path)))
+          ;; PATH goes in at creation: the window's role (snapshot.lisp)
+          ;; is a file window's from the start.
           (let ((doc (editor-make-document editor
+                                           :path path
                                            :name (path-basename path)
                                            :lisp-mode (lisp-path-p path))))
             (cond (text (show-file-text doc path text))
@@ -333,6 +336,35 @@ unattended run wants -- a requester nobody is there to answer would hold
 the editor -- and what the C editor's quit always did."
   (declare (ignore arg))
   (setf (editor-quitting (doc-editor doc)) :discard))
+
+;;; ------------------------------------------------------------------
+;;; The user's init file
+;;; ------------------------------------------------------------------
+
+;;; Asked when the file loads, not with #+amigaos: the release compiles this
+;;; file's FASL with the HOST binary, which reads `#+amigaos' as false, so the
+;;; shipped editor would look for the host's ~/.clamacsrc on the Amiga.
+(defun default-init-file ()
+  "S:.clamacsrc on an Amiga, .clamacsrc in the home directory elsewhere."
+  (if (member :amigaos *features*)
+      "S:.clamacsrc"
+      (namestring (merge-pathnames ".clamacsrc" (user-homedir-pathname)))))
+
+(defparameter *init-file* (default-init-file)
+  "Loaded by LOAD-INIT-FILE before the first window is made: DEFINE-COMMAND
+and BIND-KEY forms in the CLAMACS package, mostly.  It runs after an image
+restores, so EXT:*IMAGE-RESTORED-P* lets it skip loads the image holds.")
+
+(defun load-init-file (&optional (path *init-file*))
+  "LOAD PATH, the user's init file, when there is one, in the CLAMACS
+package: T when it loaded, NIL when there is none.  A form that signals
+is reported by LOAD itself, with the file and the line, and the forms
+after it still load -- deliberately outside any handler, since a
+HANDLER-CASE around LOAD would end the load at the first mistake instead."
+  (and (probe-file path)
+       (let ((*package* (find-package :clamacs)))
+         (load path)
+         t)))
 
 (defun quit-requested (editor)
   "A quit command set the flag: close every window, asking about each

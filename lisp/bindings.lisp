@@ -96,6 +96,55 @@
       (error "Cannot bind ~S to ~S in the ~A keymap."
              (first spec) (second spec) (keymap-name map)))))
 
+(defun binding-specs (map)
+  "The specs the keymap MAP names is built from: the REPL's is the Lisp
+map with its own laid over it."
+  (ecase map
+    (:global *global-bindings*)
+    (:lisp *lisp-bindings*)
+    (:repl (append *lisp-bindings* *repl-bindings*))))
+
+(defun binding-clash (keys specs)
+  "The first of SPECS that the key sequence KEYS cannot be bound beside, or
+NIL: KEYS runs through a key that spec binds to a command (which would have
+to become a prefix), or is a prefix of that spec's keys (binding it would
+throw the prefix's map away).  The same keys are no clash: that replaces."
+  (let ((new (split-key-sequence keys)))
+    (find-if (lambda (spec)
+               (let* ((old (split-key-sequence (first spec)))
+                      (at (mismatch new old)))
+                 (and old at (or (= at (length new)) (= at (length old))))))
+             specs)))
+
+(defun bind-key (keys command &optional (map :global))
+  "Bind the key sequence KEYS (\"C-c t\") to COMMAND, a command symbol, in
+the :GLOBAL, :LISP or :REPL bindings -- for the user's init file
+\(S:.clamacsrc), which runs before the first window is made: every
+document made afterwards gets the binding, and a later binding of the
+same keys replaces it.  Signals when KEYS cannot be bound: it does not
+parse, or it clashes with a binding already there -- it would run through
+a key bound to a command (\"C-c t x\" after \"C-c t\") or be the prefix of
+a bound sequence (\"C-x\" while \"C-x C-f\" is bound), which would throw
+that prefix's whole map away."
+  (unless (and (symbolp command) command)
+    (error "BIND-KEY: ~S is not a command symbol." command))
+  ;; A rehearsal on a scratch map, so a bad sequence fails here and not
+  ;; when the next document is made ...
+  (unless (keymap-bind-seq (make-keymap "probe") keys command)
+    (error "Cannot bind ~S to ~S." keys command))
+  ;; ... and against what is bound already, which the scratch map cannot
+  ;; know: KEYMAP-BIND-SEQ replaces silently, a prefix or a command alike.
+  (let ((clash (binding-clash keys (binding-specs map))))
+    (when clash
+      (error "BIND-KEY: ~S clashes with ~S (~S) in the ~(~A~) bindings: a key is either a command or a prefix, not both."
+             keys (first clash) (second clash) map)))
+  (let ((spec (list keys command)))
+    (ecase map
+      (:global (setq *global-bindings* (append *global-bindings* (list spec))))
+      (:lisp (setq *lisp-bindings* (append *lisp-bindings* (list spec))))
+      (:repl (setq *repl-bindings* (append *repl-bindings* (list spec))))))
+  command)
+
 (defun global-keymap ()
   "A fresh copy of the default global map."
   (add-bindings (make-keymap "global") *global-bindings*))

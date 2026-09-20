@@ -6,8 +6,9 @@
 # from lisp/clamacs.lisp on sample.lisp, and drive it through its own
 # ARexx port with verify/realamiga/drive.rexx -- the SAME script that
 # gates the C editor, told with `PHASE n' which legs the port has reached
-# (4 by default: the editor checks, the integration leg, the introspection,
-# REPL, debugger and inspector legs).  Then the
+# (5 by default, all of it: the editor checks, the menu strip, the window
+# snapshot with a second Lisp editor, the integration leg, the
+# introspection, REPL, debugger and inspector legs).  Then the
 # shipped macro, a memory reading with the editor up, and quit.rexx.
 #
 # Modelled on run-fs-uae.sh (the C editor's run) with boot-override
@@ -25,7 +26,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
-PHASE="${2:-4}"
+PHASE="${2:-5}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 LOG="$ROOT/build/amiga/clamacs-test.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
@@ -72,7 +73,7 @@ C:Wait 5
 ; The editor: a second clamiga running lisp/clamacs.lisp on the sample.
 run >Clamacs:build/amiga/lisp-drive-editor.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample.lisp
 cd Clamacs:
-SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx PHASE $PHASE >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx PHASE $PHASE LISP CLAmiga:build/cross/clamiga >>build/amiga/clamacs-test.log
 echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
 IF EXISTS build/amiga/clamiga.log
   type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
@@ -237,6 +238,36 @@ OK the inspector showed the object
 OK part 1 descended into the cdr
 OK Back came up to the list again'
 
+# Phase 5 of the port: the menu strip and the window snapshot legs, and
+# the MENU checks inside the integration, REPL and debugger legs -- the
+# rest of Makefile.cross's verify-amiga list.
+want_phase5='OK the menu strip has Open
+OK forward-char is not a menu item
+OK Save is dimmed for a clean buffer
+OK the first edit enabled Save
+OK the menu saved the buffer
+OK Save dimmed after the menu saved
+OK Close Buffer closed it
+OK the menu ran beginning-of-defun
+OK Clear Transcript is dimmed outside the REPL
+OK the Help menu has the HyperSpec
+OK GETWINDOW answered doc1
+OK the snapshot was taken
+OK the snapshot wrote ENV: and ENVARC:
+OK the file holds the active window
+OK ENVARC: holds the same line
+OK the file holds the error list
+OK a second editor is at
+OK a second editor came up where the file said
+OK the second editor quit
+OK the snapshot files are gone again
+OK the Clamiga menu woke up with the port
+OK Start clamiga is dimmed while connected
+OK Next Error woke up with the diagnostics
+OK Clear Transcript is live in the REPL window
+OK the Debugger item woke up with the debugger
+OK the Debugger item dimmed with the restart'
+
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then
 	want="$want
@@ -245,6 +276,10 @@ fi
 if [ "$PHASE" -ge 4 ]; then
 	want="$want
 $want_phase4"
+fi
+if [ "$PHASE" -ge 5 ]; then
+	want="$want
+$want_phase5"
 fi
 
 missing=0

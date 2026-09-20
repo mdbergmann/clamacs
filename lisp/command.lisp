@@ -128,5 +128,7 @@ longest common prefix, as COMPLETE returns them."
  clamacs-inspect clamacs-inspector-part clamacs-inspector-pop
  clamacs-debugger clamacs-debugger-abort clamacs-debugger-continue
  clamacs-debugger-restart clamacs-debugger-frame clamacs-debugger-eval
- ;; Window positions, and the HyperSpec in the user's browser.
- clamacs-snapshot-windows clamacs-hyperspec)
+ ;; Window positions, the HyperSpec in the user's browser, and the About
+ ;; requester -- a command here where the C editor had a menu-only item,
+ ;; so the menu stays an entrance to the command table and nothing else.
+ clamacs-snapshot-windows clamacs-hyperspec clamacs-about)

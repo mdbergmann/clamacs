@@ -6,8 +6,7 @@ editor with Emacs key handling that talks to a running
 port — load, compile, evaluate, a REPL, a debugger and an inspector in
 their own windows.
 
-**Status:** phases 1 to 4 run on AmigaOS 3 (MUI 3.8) and MorphOS (MUI 4) —
-the editor with Lisp mode, a menu strip and its own ARexx port,
+**Status:** the editor with Lisp mode, a menu strip and its own ARexx port,
 introspection (arglist, completion, jump to
 definition, describe, apropos, macroexpand) asked from clamiga, a REPL
 window (`C-c C-z`) fed by a REPL thread in clamiga that streams output,
@@ -16,8 +15,46 @@ window that opens when a form signals an error -- typed at that REPL or
 evaluated from a buffer with `C-c C-c` / `C-x C-e` (restarts,
 backtrace, locals, eval in a frame; the REPL thread stays parked on the
 erring stack until a restart is chosen), and an inspector window
-(`C-c I`) with a parts list and a Back button. See `CLAUDE.md` for the
-design and the phase plan, and `specs/clamacs-ide.md` for the full one.
+(`C-c I`) with a parts list and a Back button.  The editor is written in
+Common Lisp and runs as a clamiga instance of its own (`lisp/`,
+`specs/clamacs-lisp.md`); the C editor under `src/` is its predecessor
+and behaviour reference.  See `CLAUDE.md` for the design and the phase
+plan, and `specs/clamacs-ide.md` for the full one.
+
+## Starting the editor
+
+```
+clamiga --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- file.lisp ...
+```
+
+The files come after `--` (a bare argument before it is something for
+clamiga to load); without any, one unnamed Lisp buffer opens.  The binary
+release starts the same editor from a heap image instead (its `Clamacs`
+icon, or `clamiga --image clamacs.img --non-interactive --eval
+"(clamacs::run)" -- file.lisp`), which skips the load.
+
+## The init file
+
+`S:.clamacsrc` is loaded before the first window opens, in the `CLAMACS`
+package, so it can define commands and bind keys with the editor's own
+forms:
+
+```lisp
+(define-command insert-date (doc arg)
+  (declare (ignore arg))
+  (doc-insert doc (multiple-value-bind (s m h d mo y) (get-decoded-time)
+                    (declare (ignore s m h))
+                    (format nil "~D-~2,'0D-~2,'0D" y mo d))))
+(bind-key "C-c d" 'insert-date)            ; :global (the default), :lisp or :repl
+```
+
+A command is any function of the document and the numeric argument written
+against the frontend protocol (`lisp/frontend.lisp`, `lisp/commands.lisp`
+are the examples); `M-x`, the menu and the ARexx port's `EVAL` all find it
+by name.  `bind-key` refuses a key sequence that clashes with a binding
+already there (`C-c d x` after `C-c d`, or `C-x` on its own): a key is a
+command or a prefix, not both.  Binding the same keys again replaces the
+earlier binding.
 
 ## Files and evaluation
 
@@ -80,13 +117,16 @@ open at the time.
 ## Layout
 
 ```
-src/emacs/                 keymaps, raw-key decoding rules, command table, menu table, kill ring, minibuffer history, window positions
-src/lisp/                  tokenizer, sexp scanner, indenter
-src/rexx/                  diagnostic parser, request queue, the rc ladder, the REPL thread's messages
-src/*.c                    the MUI half: custom classes, windows, ARexx, introspection, the REPL, main
-tests/                     host unit tests for everything under emacs/ lisp/ rexx/
+lisp/                      the editor: the Emacs layer, Lisp mode, the wire to clamiga,
+                           the REPL/debugger/inspector, the menu table and window
+                           positions -- all pure Lisp over a frontend protocol --
+                           and frontend-mui.lisp, the one file that talks to MUI
+tests/                     host tests for the pure modules (tests/run-lisp-tests.sh),
+                           on a fake frontend and a fake transport
+scripts/                   the heap image the release starts from (save/verify)
 verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
                            sendkey.c injects real key events through input.device
+src/                       the C editor the Lisp one was ported from (frozen)
 docs/memory.md             what the editor costs on an 8 MB machine
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
 ```
@@ -100,17 +140,21 @@ fixes) as commits there under its gates.
 ## Building and testing
 
 ```
-make test                        # host unit tests for the portable core
+make test                        # host tests: the C core and the Lisp editor's pure modules
+make test-lisp                   # the Lisp editor's tests alone (CLAMACS_TEST=menu for one file)
+make test-lisp-gc-stress         # the same with a compaction at every allocation
 make -f Makefile.cross amiga     # cross-compile build/cross/clamacs (and sendkey)
-make -f Makefile.cross test-amiga # unattended FS-UAE run, then check the log
+make -f Makefile.cross test-lisp-amiga # the Lisp editor through drive.rexx in FS-UAE
+make -f Makefile.cross test-amiga # the C editor's unattended FS-UAE run
 make -f Makefile.mos             # MorphOS: native build on the box, see the file's header
 ```
 
-`make test` builds only the half of the editor that takes no MUI and no OS
-types. That split is a design rule, not a convenience: the keymap engine, the
-Lisp tokenizer, the sexp scanner, the indenter, the diagnostic parser and the
-request queue all run on the host, so a failing assertion costs a second
-instead of an emulator boot.
+The Lisp editor's tests run everything but `frontend-mui.lisp` on the host
+under cl-amiga's `build/host/clamiga`: the commands, the minibuffer, the
+wire, the REPL, the debugger, the menu and the window positions all work
+against a fake frontend and a fake transport, so a failing assertion costs
+a second instead of an emulator boot.  The FS-UAE run then drives the real
+thing through its ARexx port with the same script that gated the C editor.
 
 The FS-UAE run uses the clamiga runtime from the superproject (the
 `CLAmiga:` volume; the integration leg reads its `build/cross/clamiga`, so

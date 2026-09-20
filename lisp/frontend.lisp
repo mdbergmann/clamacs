@@ -46,7 +46,10 @@
   (repl nil)
   (debugger nil)
   (inspector nil)
-  (repl-history (make-history)))
+  (repl-history (make-history))
+  ;; Where the windows go (winstore.lisp, snapshot.lisp): read from the
+  ;; layout file at startup, written by `clamacs-snapshot-windows'.
+  (layout (make-winstore)))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.
@@ -78,12 +81,19 @@
    (intro :initform nil :accessor %doc-intro)
    ;; The listener state when this window is the REPL (repl.lisp), else
    ;; NIL: the transcript is read-only by way of the Emacs layer.
-   (repl :initform nil :accessor doc-repl)))
+   (repl :initform nil :accessor doc-repl)
+   ;; The role its window's position is stored under (snapshot.lisp):
+   ;; `doc1', `doc2', ... for a file window, `repl', `description', ... for
+   ;; a scratch window, NIL for one that stores no place.
+   (role :initform nil :accessor doc-role)))
 
 (defmethod initialize-instance :after ((doc document) &key)
   (setf (doc-keys doc)
         (make-keystate (global-keymap)
                        (and (doc-lisp-mode doc) (lisp-keymap))))
+  ;; The role is chosen among the documents there are BEFORE this one.
+  (setf (doc-role doc)
+        (next-document-role (doc-editor doc) (doc-path doc) (doc-name doc)))
   (push doc (editor-documents (doc-editor doc))))
 
 (defun doc-kill-ring (doc)

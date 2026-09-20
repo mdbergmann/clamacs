@@ -26,18 +26,28 @@ OPTIONS FAILAT 21
 ** introspection leg, 4 the REPL and debugger legs, 5 (the default: all of
 ** it, what the C editor answers) the menu strip and the window snapshot.
 ** The checks themselves are the same either way -- the script talks to a
-** port and reads a log, so it does not know which language answered. */
+** port and reads a log, so it does not know which language answered.
+**
+** `LISP <clamiga>' names the clamiga binary the snapshot leg starts its
+** SECOND editor with (the Lisp editor, from Clamacs:lisp/clamacs.lisp);
+** without it the second editor is the C binary, Clamacs:build/amiga/clamacs. */
 MODE = ''
 PHASE = 5
+CLAMIGA = ''
 PARSE UPPER ARG ARGS
 DO WHILE ARGS ~= ''
     PARSE VAR ARGS WORD ARGS
     SELECT
         WHEN WORD = 'HARDWARE' THEN MODE = 'HARDWARE'
         WHEN WORD = 'PHASE' THEN PARSE VAR ARGS PHASE ARGS
+        WHEN WORD = 'LISP' THEN PARSE VAR ARGS CLAMIGA ARGS
         OTHERWISE SAY 'INFO ignoring argument' WORD
     END
 END
+IF CLAMIGA = '' THEN
+    SECOND = 'Clamacs:build/amiga/clamacs Clamacs:verify/realamiga/sample2.lisp'
+ELSE
+    SECOND = CLAMIGA '--no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample2.lisp'
 
 /* MUI's startup on an emulated 14 MHz 68020 is not instant: the class
 ** scan, the config load and the first window layout all happen before the
@@ -637,7 +647,7 @@ IF WriteFile(CFG, '; written by drive.rexx' || '0A'x || '0A'x || WANT || '0A'x) 
     SAY 'OK wrote a file of our own:' WANT
 ELSE
     SAY 'FAIL could not write' CFG
-ADDRESS COMMAND 'Run >NIL: Clamacs:build/amiga/clamacs Clamacs:verify/realamiga/sample2.lisp'
+ADDRESS COMMAND 'Run >NIL:' SECOND
 PORT2 = ''
 DO i = 1 TO 120 WHILE PORT2 = ''
     IF SHOW('P', 'CLAMACS') & 'CLAMACS' ~= PORT THEN

@@ -49,18 +49,42 @@ behaviour spec.  New editor work goes into `lisp/`:
   shows the state through `editor-debugger-*` / `editor-inspector-open`
   and hands row numbers back) and `replmsg.lisp` (the parsers of
   `src/rexx/replmsg.c` + `dbgmsg.c`); `tests/fake-transport.lisp`'s
-  `fake-inbound` delivers what clamiga's REPL thread sends.  Only
+  `fake-inbound` delivers what clamiga's REPL thread sends.  `menu.lisp`
+  is the menu strip as data (`src/emacs/menudef.c`'s table with its
+  enable rules, `menu-state` read off the editor, the port's `MENU`
+  verb, `clamacs-about` -- a real command here, where C had a menu-only
+  item -- and `clamacs-hyperspec` over the `doc-open-url` generic);
+  `winstore.lisp` + `snapshot.lisp` are the window positions
+  (`src/emacs/winstore.c` + `src/snapshot.c`: a document gets its ROLE
+  when it is made, `snapshot-load` reads the layout file before the
+  first window, a frontend asks `layout-place` when it creates one,
+  `clamacs-snapshot-windows` reads `doc-geometry` /
+  `editor-aux-windows`, `GETWINDOW` for the port).  Only
   `frontend-mui.lisp` may name `AMIGA.MUI`: it is the two custom classes
   and the document window, a port of `src/textclass.c` and the MUI half
   of `src/document.c` (the "Phase 1 facts" below apply to it line by
   line), plus the diagnostics, debugger and inspector windows (plain MUI
-  Lists and buttons).  `load.lisp` loads it on an Amiga only; `lisp/clamacs.lisp`
-  runs the editor from source (`clamiga --heap 8M --non-interactive
-  --load Clamacs:lisp/clamacs.lisp -- file ...`).  The files come after
-  `--`: clamiga loads a bare argument, and what follows the separator is
-  the runtime's `ext:*command-line-args*` -- also what a Workbench
-  project icon becomes (cl-amiga's README, "Starting from Workbench"),
-  so the editor has one path in for both.
+  Lists and buttons), the menu strip (`build-menustrip` before the
+  application object, `menu-update` from `after-command` and after every
+  mailbox drain, only changed items set) and `openurl.library` called by
+  offset.  `load.lisp` loads it on an Amiga only, and takes a file's
+  FASL beside it when there is one that is not older than the source (the
+  release ships `lib/clamacs/` that way -- and compiles those FASLs with
+  the HOST binary, so a platform choice in the editor's sources is made
+  when the file loads, never with `#+amigaos`: `*init-file*` and
+  `*snapshot-files*` did that wrong once, and `verify-editor-image.lisp`
+  now checks both); `lisp/clamacs.lisp` runs the editor from source (`clamiga --heap
+  8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- file ...`)
+  through `clamacs::run`, which loads the user's `S:.clamacsrc` first
+  (`define-command` and `bind-key` forms; LOAD reports a broken form and
+  goes on) and then `start`s on the files.  The files come after `--`:
+  clamiga loads a bare argument, and what follows the separator is the
+  runtime's `ext:*command-line-args*` -- also what a Workbench project
+  icon becomes (cl-amiga's README, "Starting from Workbench"), so the
+  editor has one path in for both.  `scripts/save-editor-image.lisp` /
+  `verify-editor-image.lisp` are the heap image the release starts from
+  (`clamiga --image clamacs.img --non-interactive --eval "(clamacs::run)"
+  -- file ...`).
 - `verify/realamiga/run-lisp-editor.sh [040|020]` is the Lisp editor's
   FS-UAE smoke run: it types a defun with `sendkey`, saves and closes
   the buffer with `C-x k` (the last window's close is the exit), and
@@ -74,12 +98,15 @@ behaviour spec.  New editor work goes into `lisp/`:
 - `verify/realamiga/run-lisp-drive.sh [040|020] [PHASE]` (`make -f
   Makefile.cross test-lisp-amiga`) is the Lisp editor's acceptance run:
   a target clamiga with its port, the editor on `sample.lisp`, and the
-  SAME `drive.rexx` as the C editor with `PHASE n` (4 today: everything
-  but the menu strip and the window snapshot) selecting the legs the
-  port has reached; then the shipped macro and `quit.rexx`.  The script
-  checks the log itself.  Run it after touching `wire.lisp`,
-  `port.lisp`, `introspect.lisp`, `repl.lisp`, `debugger.lisp`,
-  `inspector.lisp`, `transport-arexx.lisp` or the event loop.
+  SAME `drive.rexx` as the C editor with `PHASE n` (5, the default: all
+  of it, 124 `OK` lines on 2026-09-20) selecting the legs the port has
+  reached, and `LISP <clamiga>` naming the binary the snapshot leg
+  starts its second editor with (without it the leg starts the C
+  binary); then the shipped macro and `quit.rexx`.  The script checks
+  the log itself.  Run it after touching `wire.lisp`, `port.lisp`,
+  `introspect.lisp`, `repl.lisp`, `debugger.lisp`, `inspector.lisp`,
+  `menu.lisp`, `snapshot.lisp`, `transport-arexx.lisp` or the event
+  loop.
   It needs the superproject's `build/cross/clamiga`, rebuilt after a
   runtime change -- a stale one is the first suspect for a red leg.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),

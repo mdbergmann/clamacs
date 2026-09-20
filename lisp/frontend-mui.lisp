@@ -316,7 +316,11 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   (dbg-selecting nil)
   ;; The inspector window (inspector.lisp), made on first use
   insp-window insp-object-obj insp-parts insp-back-btn
-  insp-title-buf insp-object-buf)
+  insp-title-buf insp-object-buf
+  ;; The menu strip (menu.lisp): the Menuitem object of each table entry
+  ;; (NIL for a title or a bar) and the enable state last set on it, so
+  ;; MENU-UPDATE touches only what changed.  NIL when no strip was built.
+  menustrip menu-items menu-enabled)
 
 (defvar *editor* nil
   "The running MUI editor, from START to its return.")
@@ -442,7 +446,10 @@ down) answers rc 20 instead.  Without, post and return at once."
             (mp:with-lock-held (lock)
               (setf (mail-values mail) values
                     (mail-done mail) t)
-              (mp:condition-broadcast cv))))))))
+              (mp:condition-broadcast cv))))
+        ;; A reply from clamiga or a port verb moved the state the menu
+        ;; shows (a port found, an error list filled, a DEBUGGER message).
+        (menu-update editor)))))
 
 (defun close-mailbox (editor)
   "No more calls: every waiter is woken with the shutdown answer, and a
@@ -579,8 +586,9 @@ method or hook that asked."
   (mui:return-id (mui-editor-app editor) (mui-editor-reap-id editor)))
 
 (defun after-command (editor)
-  "A command ran inside a method or a hook: a quit it asked for is the
-loop's to carry out."
+  "A command ran inside a method or a hook: the menu follows the state it
+left, and a quit it asked for is the loop's to carry out."
+  (menu-update editor)
   (when (editor-quitting editor)
     (wake-loop editor)))
 
@@ -1248,6 +1256,177 @@ Intuition says is active, else any."
   (active-document editor))
 
 ;;; ------------------------------------------------------------------
+;;; Window positions (snapshot.lisp): where a window is made, and where
+;;; it is.  The windows carry no MUIA_Window_ID on purpose -- MUI's own
+;;; snapshot would override the editor's, and MUI 3.8 has no way to take
+;;; one from code -- so the layout file is the one place a position
+;;; comes from.
+;;; ------------------------------------------------------------------
+
+(defun signed32 (unsigned)
+  (if (>= unsigned #x80000000) (- unsigned #x100000000) unsigned))
+
+(defun window-place-tags (editor role default-width default-height)
+  "The tags a window is created with for its place: the layout's
+LeftEdge/TopEdge/Width/Height when it stores ROLE, else the default size."
+  (multiple-value-bind (left top width height) (layout-place editor role)
+    (if left
+        (list m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
+              m:+muia-window-width+ width m:+muia-window-height+ height)
+        (list m:+muia-window-width+ default-width
+              m:+muia-window-height+ default-height))))
+
+(defun window-geometry (window)
+  "Left, top, width and height of WINDOW as MUI answers them for an open
+window; NIL when it is NIL or not open."
+  (when (and window (/= 0 (or (mui:get-attr m:+muia-window-open+ window) 0)))
+    (flet ((attr (attribute)
+             (signed32 (or (mui:get-attr attribute window) 0))))
+      (values (attr m:+muia-window-left-edge+) (attr m:+muia-window-top-edge+)
+              (attr m:+muia-window-width+) (attr m:+muia-window-height+)))))
+
+(defmethod doc-geometry ((doc mui-document))
+  (window-geometry (mdoc-window doc)))
+
+(defmethod editor-aux-windows ((editor mui-editor))
+  (loop for (role window) in (list (list "errors" (mui-editor-errors-window editor))
+                                   (list "inspector" (mui-editor-insp-window editor))
+                                   (list "debugger" (mui-editor-dbg-window editor)))
+        for geometry = (multiple-value-list (window-geometry window))
+        when (first geometry)
+          collect (cons role geometry)))
+
+;;; ------------------------------------------------------------------
+;;; The menu strip (menu.lisp): one strip for the whole application, so
+;;; every window -- documents, the REPL, the debugger, the inspector, the
+;;; error list -- shows the same menus, and an item acts on the active
+;;; document exactly as the port's EVAL does: through MENU-PICK and
+;;; RUN-COMMAND with the table index the item carries in MUIA_UserData.
+;;; The Emacs key of an item is shown in the shortcut column as a command
+;;; string (MUIA_Menuitem_CommandString): MUI displays it and, as the
+;;; autodoc says, does not check for it -- the keys are the Emacs layer's.
+;;; ------------------------------------------------------------------
+
+;;; MUIA_UserData of the item at table index I: non-zero, so an action of
+;;; 0 -- which MUI reports for items without user data -- is never taken
+;;; for the first entry.
+(defun menu-item-id (index) (1+ index))
+(defun menu-item-index (id) (1- id))
+
+;;; NM_BARLABEL, (STRPTR)-1: a separator, as libraries/gadtools.h spells it.
+(defconstant +nm-barlabel+ #xFFFFFFFF)
+
+(defun build-menustrip (editor)
+  "The strip from the table, or NIL -- with the reason on the console --
+when MUI would not build it: the editor still runs, keys and port intact."
+  (let ((strip nil))
+    (handler-case
+        (let* ((entries (menu-entries))
+               (items (make-array (length entries) :initial-element nil))
+               (menu nil))
+          (setq strip (mui:new-object :menustrip))
+          (loop for e in entries
+                for i from 0
+                do (ecase (menu-entry-kind e)
+                     (:title
+                      (setq menu (mui:new-object :menu m:+muia-menu-title+ (menu-entry-title e)))
+                      (mui:do-method strip m:+muim-family-add-tail+ menu))
+                     (:bar
+                      (mui:do-method menu m:+muim-family-add-tail+
+                                     (mui:new-object :menuitem
+                                                     m:+muia-menuitem-title+ +nm-barlabel+)))
+                     (:item
+                      (let ((item (if (menu-entry-keys e)
+                                      (mui:new-object :menuitem
+                                                      m:+muia-menuitem-title+ (menu-entry-title e)
+                                                      m:+muia-menuitem-shortcut+ (menu-entry-keys e)
+                                                      m:+muia-menuitem-command-string+ t
+                                                      m:+muia-user-data+ (menu-item-id i))
+                                      (mui:new-object :menuitem
+                                                      m:+muia-menuitem-title+ (menu-entry-title e)
+                                                      m:+muia-user-data+ (menu-item-id i)))))
+                        (mui:do-method menu m:+muim-family-add-tail+ item)
+                        (setf (aref items i) item)))))
+          (setf (mui-editor-menustrip editor) strip
+                (mui-editor-menu-items editor) items
+                (mui-editor-menu-enabled editor)
+                (make-array (length entries) :initial-element :unknown))
+          strip)
+      (error (e)
+        ;; The children added so far go with the strip.
+        (when strip (ignore-errors (mui:dispose-object strip)))
+        (setf (mui-editor-menustrip editor) nil
+              (mui-editor-menu-items editor) nil)
+        (format *error-output* "clamacs: the menu strip could not be built (~A) -- running without menus~%" e)
+        nil))))
+
+(defun attach-menustrip (editor)
+  "MUIA_Application_MenuAction carries the picked item's MUIA_UserData."
+  (when (mui-editor-menustrip editor)
+    (mui:notify (mui-editor-app editor) m:+muia-application-menu-action+ :every-time
+                :self m:+muim-call-hook+
+                (mui:pool-hook (lambda (hook object message)
+                                 (declare (ignore hook object))
+                                 (menu-pick editor (menu-item-index (ffi:peek-u32 message 0)))
+                                 (after-command editor)
+                                 0))
+                :trigger-value)
+    (menu-update editor)))
+
+(defun menu-update (editor)
+  "MUIA_Menuitem_Enabled of every item in step with MENU-STATE, set only
+where it changed.  Cheap enough to run after every command, activation,
+reply and debugger message -- which is how it is called, since there is no
+notification for \"the active document changed\" and polling at those
+points is the honest way."
+  (let ((items (mui-editor-menu-items editor)))
+    (when (and items (mui-editor-app editor) (not (editor-quitting editor)))
+      (let ((enabled (mui-editor-menu-enabled editor)))
+        (loop for flag in (menu-enabled-items editor)
+              for i from 0
+              for want = (and flag t)
+              for item = (aref items i)
+              when (and item (not (eq want (aref enabled i))))
+                do (mui:set-attrs item m:+muia-menuitem-enabled+ want)
+                   (setf (aref enabled i) want))))))
+
+;;; ------------------------------------------------------------------
+;;; About and the HyperSpec (menu.lisp)
+;;; ------------------------------------------------------------------
+
+(defmethod editor-toolkit-lines ((editor mui-editor))
+  (let ((base (amiga:open-library "muimaster.library" 0)))
+    (list (if (and base (not (ffi:null-pointer-p base)))
+              (unwind-protect
+                   (format nil "muimaster.library ~D.~D"
+                           (ffi:peek-u16 base 20) (ffi:peek-u16 base 22))
+                (amiga:close-library base))
+              "muimaster.library (not open)")
+          (format nil "TextEditor.mcc ~D.~D"
+                  (mui-editor-te-version editor) (mui-editor-te-revision editor)))))
+
+;;; URL_OpenA(url, tags) is openurl.library's first function -- `##bias
+;;; 30', url in a0, the tag list in a1 -- on every platform OpenURL exists
+;;; for; neither toolchain ships its headers, so the one entry is called
+;;; by offset.  The library knows which browser is configured, talks to a
+;;; running one over ARexx and starts one otherwise.  It is opened per
+;;; call: opening a URL is a rare act, and a base held for the session
+;;; would keep OpenURL and its prefs resident on a machine where memory
+;;; is the constraint.
+(defconstant +lvo-url-open-a+ -30)
+
+(defmethod doc-open-url ((doc mui-document) url)
+  (let ((base (amiga:open-library "openurl.library" 0)))
+    (cond ((or (null base) (ffi:null-pointer-p base)) :missing)
+          (t
+           (unwind-protect
+                (if (/= 0 (ffi:with-foreign-string (s url)
+                            (amiga:call-library base +lvo-url-open-a+ (list :a0 s :a1 nil))))
+                    :opened
+                    :refused)
+             (amiga:close-library base))))))
+
+;;; ------------------------------------------------------------------
 ;;; The diagnostics window: a plain MUI List, deliberately -- a fancier
 ;;; widget would add a second MCC dependency to the release for no gain.
 ;;; Selecting a row jumps to the file and line, which is the whole feature.
@@ -1265,12 +1444,13 @@ GetAttr hands back unsigned)."
                                    m:+muia-frame+ m:+muiv-frame-input-list+
                                    m:+muia-list-construct-hook+ m:+muiv-list-construct-hook-string+
                                    m:+muia-list-destruct-hook+ m:+muiv-list-destruct-hook-string+))
-             (window (mui:new-object :window
-                                     m:+muia-window-title+ "clamacs diagnostics"
-                                     m:+muia-window-width+ (mui:window-size-visible 60)
-                                     m:+muia-window-height+ (mui:window-size-visible 25)
-                                     m:+muia-window-root-object+
-                                     (mui:new-object :listview m:+muia-listview-list+ list))))
+             (window (apply #'mui:new-object :window
+                            m:+muia-window-title+ "clamacs diagnostics"
+                            m:+muia-window-root-object+
+                            (mui:new-object :listview m:+muia-listview-list+ list)
+                            (window-place-tags editor "errors"
+                                               (mui:window-size-visible 60)
+                                               (mui:window-size-visible 25)))))
         (setf (mui-editor-errors-window editor) window
               (mui-editor-errors-list editor) list)
         (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
@@ -1406,11 +1586,15 @@ on MUI 3.8)."
              (invoke-btn (make-button "Invoke restart" #\i))
              (continue-btn (make-button "Continue" #\c))
              (abort-btn (make-button "Abort" #\a))
-             (window (mui:new-object
+             (window (apply
+                      #'mui:new-object
                       :window
                       m:+muia-window-title+ (store-string title-buf "clamacs debugger")
-                      m:+muia-window-width+ (mui:window-size-visible 60)
-                      m:+muia-window-height+ (mui:window-size-visible 60)
+                      (append
+                       (window-place-tags editor "debugger"
+                                          (mui:window-size-visible 60)
+                                          (mui:window-size-visible 60))
+                       (list
                       m:+muia-window-root-object+
                       (mui:new-object
                        :group
@@ -1429,7 +1613,7 @@ on MUI 3.8)."
                        (mui:new-object :group m:+muia-group-horiz+ t
                                        m:+muia-group-child+ invoke-btn
                                        m:+muia-group-child+ continue-btn
-                                       m:+muia-group-child+ abort-btn)))))
+                                       m:+muia-group-child+ abort-btn)))))))
         (setf (mui-editor-dbg-window editor) window
               (mui-editor-dbg-condition-obj editor) condition
               (mui-editor-dbg-restarts editor) restarts
@@ -1535,20 +1719,24 @@ on MUI 3.8)."
              (parts-view (make-listview parts t))
              (part-btn (make-button "Inspect part" #\p))
              (back-btn (make-button "Back" #\b))
-             (window (mui:new-object
+             (window (apply
+                      #'mui:new-object
                       :window
                       m:+muia-window-title+ (store-string title-buf "clamacs inspector")
-                      m:+muia-window-width+ (mui:window-size-visible 50)
-                      m:+muia-window-height+ (mui:window-size-visible 40)
-                      m:+muia-window-root-object+
-                      (mui:new-object
-                       :group
-                       m:+muia-group-child+ object
-                       m:+muia-group-child+ parts-view
-                       m:+muia-group-child+
-                       (mui:new-object :group m:+muia-group-horiz+ t
-                                       m:+muia-group-child+ part-btn
-                                       m:+muia-group-child+ back-btn)))))
+                      (append
+                       (window-place-tags editor "inspector"
+                                          (mui:window-size-visible 50)
+                                          (mui:window-size-visible 40))
+                       (list
+                        m:+muia-window-root-object+
+                        (mui:new-object
+                         :group
+                         m:+muia-group-child+ object
+                         m:+muia-group-child+ parts-view
+                         m:+muia-group-child+
+                         (mui:new-object :group m:+muia-group-horiz+ t
+                                         m:+muia-group-child+ part-btn
+                                         m:+muia-group-child+ back-btn)))))))
         (setf (mui-editor-insp-window editor) window
               (mui-editor-insp-object-obj editor) object
               (mui-editor-insp-parts editor) parts
@@ -1719,15 +1907,17 @@ it from running under the vertical one."
                         m:+muia-group-child+ (mdoc-msgline doc)
                         m:+muia-group-child+ (mdoc-miniline doc))
         (mdoc-window doc)
-        (mui:new-object :window
-                        m:+muia-window-title+ (mdoc-title-buf doc)
-                        m:+muia-window-width+ (mui:window-size-screen 60)
-                        m:+muia-window-height+ (mui:window-size-screen 60)
-                        m:+muia-window-root-object+
-                        (mui:new-object :group
-                                        m:+muia-group-child+ (text-group doc)
-                                        m:+muia-group-child+ (mdoc-status doc)
-                                        m:+muia-group-child+ (mdoc-echo doc))))
+        (apply #'mui:new-object :window
+               m:+muia-window-title+ (mdoc-title-buf doc)
+               m:+muia-window-root-object+
+               (mui:new-object :group
+                               m:+muia-group-child+ (text-group doc)
+                               m:+muia-group-child+ (mdoc-status doc)
+                               m:+muia-group-child+ (mdoc-echo doc))
+               ;; Where the layout file puts a window of this role.
+               (window-place-tags editor (doc-role doc)
+                                  (mui:window-size-screen 60)
+                                  (mui:window-size-screen 60))))
   (setf (gethash (object-address (mdoc-window doc)) (mui-editor-objects editor)) doc)
   (mui:set-attrs (mdoc-text doc) +tea-slider+ (mdoc-slider doc))
   (when (mdoc-hslider doc)
@@ -1901,19 +2091,26 @@ function: an image is saved before it runs and restores into it."
     (error "Clamacs needs MUI (muimaster.library), which did not open."))
   (let ((editor (%make-mui-editor)))
     (setf *editor* editor)
+    ;; Where the windows go, before the first one is made.
+    (snapshot-load editor)
     (unwind-protect
          (mui:with-foreign-pool ()
            (setf (mui-editor-ie editor) (mui:pool-alloc +ie-size+)
                  (mui-editor-mapbuf editor) (mui:pool-alloc 8))
            (create-classes editor)
            (install-hooks editor)
-           ;; No MUIA_Application_Base: MUI would open an ARexx port of its
-           ;; own; the editor's port is AMIGA.AREXX's (phase 2).
-           (setf (mui-editor-app editor)
-                 (mui:new-object :application
-                                 m:+muia-application-title+ "Clamacs"
-                                 m:+muia-application-version+ "$VER: Clamacs (Lisp)"
-                                 m:+muia-application-description+ "Emacs-flavoured Common Lisp IDE"))
+           ;; The menu strip goes in at creation (MUIA_Application_Menustrip
+           ;; is an init-time attribute); without one the editor still
+           ;; runs.  No MUIA_Application_Base: MUI would open an ARexx port
+           ;; of its own; the editor's port is AMIGA.AREXX's (phase 2).
+           (let ((strip (build-menustrip editor)))
+             (setf (mui-editor-app editor)
+                   (apply #'mui:new-object :application
+                          m:+muia-application-title+ "Clamacs"
+                          m:+muia-application-version+ (format nil "$VER: Clamacs ~A" *clamacs-version*)
+                          m:+muia-application-description+ "Emacs-flavoured Common Lisp IDE"
+                          (and strip (list m:+muia-application-menustrip+ strip)))))
+           (attach-menustrip editor)
            (setup-mailbox editor)
            (unwind-protect
                 (progn
@@ -1930,6 +2127,7 @@ function: an image is saved before it runs and restores into it."
                         (error (e) (report-error editor e))))
                     (dolist (hook *after-start-hooks*)
                       (funcall hook editor))
+                    (menu-update editor)
                     (run-loop editor)))
              ;; Order: no more calls from the other threads (waiters are
              ;; woken with the shutdown answer), then the port and the
@@ -1949,9 +2147,21 @@ function: an image is saved before it runs and restores into it."
              (dispose-debugger-window editor)
              (dispose-inspector-window editor)
              (exit-note "debugger and inspector windows disposed")
+             ;; The strip belongs to the application and goes with it.
+             (setf (mui-editor-menu-items editor) nil)
              (mui:dispose-object (mui-editor-app editor))
              (exit-note "application disposed")
-             (setf (mui-editor-app editor) nil)
+             (setf (mui-editor-app editor) nil
+                   (mui-editor-menustrip editor) nil)
              (free-mailbox editor)))
       (setf *editor* nil))
     t))
+
+(defun run ()
+  "The editor as a program: the user's init file (S:.clamacsrc), then
+START on the program's own arguments -- what follows `--' on clamiga's
+command line, or the project icons of a Workbench start, both
+EXT:*COMMAND-LINE-ARGS*.  lisp/clamacs.lisp calls it after loading the
+editor from source; the image's restore hook calls it the same way."
+  (load-init-file)
+  (start :files ext:*command-line-args*))
