@@ -42,9 +42,14 @@ END
 /* MUI's startup on an emulated 14 MHz 68020 is not instant: the class
 ** scan, the config load and the first window layout all happen before the
 ** application object exists, and the port comes with it.  Wait for it
-** properly rather than assuming it is already there. */
-IF ~SHOW('L', 'rexxsupport.library') THEN
-    CALL ADDLIB('rexxsupport.library', 0, -30, 0)
+** properly rather than assuming it is already there.
+**
+** No rexxsupport.library here, and no DELAY() from it: on real OS 3.2
+** machines (rexxsupport.library 47.2 -- an A4000/060 and an A1200/040,
+** 2026-09-20) ANY call into that library zeroes five bytes of Intuition's
+** screen-font record, after which no MUI window opens and the machine may
+** freeze.  Every pause goes through `pause' below, a C Delay() in sendkey.
+** (FS-UAE's image has rexxsupport 34.9 and never showed it.) */
 
 /* MUI numbers the port it builds from MUIA_Application_Base, and on MUI 3.8
 ** the FIRST instance already comes up as CLAMACS.1 -- observed, not assumed.
@@ -60,7 +65,7 @@ DO i = 1 TO 120 WHILE PORT = ''
             LEAVE n
         END
     END
-    IF PORT = '' THEN CALL DELAY(25)    /* 1/2 second */
+    IF PORT = '' THEN CALL pause 25    /* 1/2 second */
 END
 
 IF PORT = '' THEN DO
@@ -403,14 +408,14 @@ ELSE DO
     /* OPEN activates the window; give Intuition a moment to make it so. */
     'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
     'EVAL beginning-of-buffer'
-    CALL DELAY(25)
+    CALL pause 25
 
     /* An unbound key falls through to the class: the arrow moves the
     ** cursor.  This is also the smoke test -- if the events do not arrive
     ** at all, everything below fails the same way, and sendkey's INFO line
     ** names the window that got them instead. */
     ADDRESS COMMAND SENDKEY '"<down>"'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETCURSOR LINE'
     IF RC = 0 & RESULT = 1 THEN
         SAY 'OK raw <down> reached the class, CursorY' RESULT
@@ -420,7 +425,7 @@ ELSE DO
     /* Control: the decoder must see C-n, not the 0x0E the keymap would
     ** have made of it. */
     ADDRESS COMMAND SENDKEY 'C-n'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETCURSOR LINE'
     IF RC = 0 & RESULT = 2 THEN
         SAY 'OK raw C-n ran next-line, CursorY' RESULT
@@ -434,7 +439,7 @@ ELSE DO
     'TE GETCURSOR LINE'
     LASTY = RESULT
     ADDRESS COMMAND SENDKEY '"M-<"'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETCURSOR LINE'
     IF RC = 0 & RESULT = 0 THEN
         SAY 'OK raw M-< (Alt as Meta) reached the top'
@@ -443,7 +448,7 @@ ELSE DO
 
     /* ESC as Meta: the same command by the other spelling. */
     ADDRESS COMMAND SENDKEY 'ESC ">"'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETCURSOR LINE'
     IF RC = 0 & RESULT = LASTY THEN
         SAY 'OK raw ESC > acted as Meta, CursorY' RESULT
@@ -452,7 +457,7 @@ ELSE DO
 
     /* A prefix key and an undefined completion, through the real path. */
     ADDRESS COMMAND SENDKEY 'C-x C-q'
-    CALL DELAY(10)
+    CALL pause 10
     'STATUS'
     IF POS('undefined', RESULT) > 0 THEN
         SAY 'OK raw C-x C-q went through the prefix map:' RESULT
@@ -474,23 +479,23 @@ ELSE DO
     IF MODE = 'HARDWARE' THEN DO
         'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
         'EVAL beginning-of-buffer'
-        CALL DELAY(25)
+        CALL pause 25
 
         /* TAB inside the active minibuffer completes instead of cycling
         ** the focus: the sole completion of `end-of-b' is reported, and
         ** RET then runs it. */
         ADDRESS COMMAND SENDKEY 'M-x'
-        CALL DELAY(10)
+        CALL pause 10
         ADDRESS COMMAND SENDKEY 'TEXT "end-of-b"'
         ADDRESS COMMAND SENDKEY 'TAB'
-        CALL DELAY(10)
+        CALL pause 10
         'STATUS'
         IF POS('completion', RESULT) > 0 THEN
             SAY 'OK raw TAB completed inside the active minibuffer:' RESULT
         ELSE
             SAY 'FAIL raw TAB in the active minibuffer gave' RESULT
         ADDRESS COMMAND SENDKEY 'RET'
-        CALL DELAY(10)
+        CALL pause 10
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT > 0 THEN
             SAY 'OK raw RET ran the completed command, CursorY' RESULT
@@ -500,9 +505,9 @@ ELSE DO
         /* Alt-x while a prompt is open: neither a stray `×' in the input nor
         ** a lost key -- it is reported undefined, and the prompt stays. */
         ADDRESS COMMAND SENDKEY 'M-x'
-        CALL DELAY(10)
+        CALL pause 10
         ADDRESS COMMAND SENDKEY 'M-x'
-        CALL DELAY(10)
+        CALL pause 10
         'STATUS'
         IF POS('undefined', RESULT) > 0 THEN
             SAY 'OK raw M-x inside the active minibuffer is undefined:' RESULT
@@ -511,7 +516,7 @@ ELSE DO
 
         /* C-g from the active minibuffer aborts the prompt. */
         ADDRESS COMMAND SENDKEY 'C-g'
-        CALL DELAY(10)
+        CALL pause 10
         'STATUS'
         IF RESULT = 'Quit' THEN
             SAY 'OK raw C-g aborted the active minibuffer'
@@ -523,20 +528,20 @@ ELSE DO
         ** the docstring and again in `*sample*' further down. */
         'EVAL beginning-of-buffer'
         ADDRESS COMMAND SENDKEY 'C-s'
-        CALL DELAY(10)
+        CALL pause 10
         ADDRESS COMMAND SENDKEY 'TEXT "sample"'
-        CALL DELAY(10)
+        CALL pause 10
         'TE GETCURSOR LINE'
         FIRSTHIT = RESULT
         ADDRESS COMMAND SENDKEY 'C-s'
-        CALL DELAY(10)
+        CALL pause 10
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT > FIRSTHIT THEN
             SAY 'OK raw C-s searched again from the active minibuffer, CursorY' RESULT
         ELSE
             SAY 'FAIL raw C-s in isearch left CursorY=' RESULT '(first hit' FIRSTHIT')'
         ADDRESS COMMAND SENDKEY 'C-g'
-        CALL DELAY(10)
+        CALL pause 10
         'STATUS'
         IF RESULT = 'Quit' THEN
             SAY 'OK raw C-g abandoned isearch from the active minibuffer'
@@ -549,17 +554,17 @@ ELSE DO
     ** through the class, with Shift wherever the characters need it. */
     'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
     'EVAL end-of-buffer'
-    CALL DELAY(25)
+    CALL pause 25
     ADDRESS COMMAND SENDKEY 'TEXT "(when x"'
     ADDRESS COMMAND SENDKEY 'RET'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETCURSOR COLUMN'
     IF RC = 0 & RESULT = 2 THEN
         SAY 'OK raw RET indented the new line to column' RESULT
     ELSE
         SAY 'FAIL raw RET left the cursor at column' RESULT
     ADDRESS COMMAND SENDKEY 'TEXT "(foo Bar)"'
-    CALL DELAY(10)
+    CALL pause 10
     'TE GETLINE'
     IF POS('(foo Bar)', RESULT) > 0 THEN
         SAY 'OK raw typing self-inserted:' RESULT
@@ -587,7 +592,7 @@ ARCHIVE = 'ENVARC:Clamacs/windows.cfg'
 ** beside the file windows; sample.lisp, opened at startup, is doc1. */
 'EVAL clamacs-show-errors'
 'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
-CALL DELAY(10)
+CALL pause 10
 'GETWINDOW'
 PLACE = RESULT
 PARSE VAR PLACE ROLE L T W H .
@@ -643,7 +648,7 @@ DO i = 1 TO 120 WHILE PORT2 = ''
             LEAVE n
         END
     END
-    IF PORT2 = '' THEN CALL DELAY(25)
+    IF PORT2 = '' THEN CALL pause 25
 END
 IF PORT2 = '' THEN
     SAY 'FAIL no second editor port appeared'
@@ -656,7 +661,7 @@ ELSE DO
     DO i = 1 TO 40 WHILE GOT = ''
         'GETWINDOW'
         IF RC = 0 & RESULT ~= '' THEN GOT = RESULT
-        ELSE CALL DELAY(25)
+        ELSE CALL pause 25
     END
     IF GOT = WANT THEN
         SAY 'OK a second editor came up where the file said:' GOT
@@ -664,7 +669,7 @@ ELSE DO
         SAY 'FAIL the second editor came up at' GOT '(wanted' WANT')'
     'EVAL save-buffers-kill-emacs'
     DO i = 1 TO 20 WHILE SHOW('P', PORT2)
-        CALL DELAY(25)
+        CALL pause 25
     END
     IF SHOW('P', PORT2) THEN
         SAY 'FAIL the second editor did not quit'
@@ -697,7 +702,7 @@ DO i = 1 TO 240 WHILE LISP = ''
             LEAVE n
         END
     END
-    IF LISP = '' THEN CALL DELAY(25)
+    IF LISP = '' THEN CALL pause 25
 END
 
 IF LISP = '' THEN DO
@@ -733,7 +738,7 @@ BEFORE = RESULT
 ANSWER = ''
 LAST = ''
 DO i = 1 TO 900
-    CALL DELAY(25)
+    CALL pause 25
     'STATUS'
     IF RESULT = '3' THEN DO
         ANSWER = RESULT
@@ -791,7 +796,7 @@ ELSE
 
 DIAGS = ''
 DO i = 1 TO 120
-    CALL DELAY(25)
+    CALL pause 25
     'STATUS'
     IF POS('error(s)', RESULT) > 0 THEN DO
         DIAGS = RESULT
@@ -862,7 +867,7 @@ IF PHASE < 3 THEN DO
     SIGNAL Done
 END
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'EVAL clamacs-load-buffer'
 LOADED = WaitEcho('error(s)', 120)
 IF POS('0 error(s)', LOADED) = 1 THEN
@@ -879,7 +884,7 @@ ELSE
 'GOTOLINE 24'
 'TE POSITION SOL'
 'KEY C-u 8 C-f'
-CALL DELAY(150)
+CALL pause 150
 'EVAL clamacs-arglist'
 'STATUS'
 ARGS = RESULT
@@ -918,7 +923,7 @@ ELSE
 ** then has the focus; C-c M-m expands it all the way.  twice-of expands to
 ** a with-twice, which expands to a let, so the two answers differ. */
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'GOTOLINE 22'
 'KEY C-c RET'
 LINE = WaitLine('(with-twice z 4 z)', 40)
@@ -929,7 +934,7 @@ ELSE
     SAY 'FAIL C-c RET gave' LINE 'in window' RESULT
 
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'GOTOLINE 22'
 'KEY C-c M-m'
 LINE = WaitLine('(let ((z (twice 4))) z)', 40)
@@ -944,7 +949,7 @@ ELSE
 ** in it -- the compiler keeping docstrings was the cl-amiga half of this
 ** phase. */
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'GOTOLINE 24'
 'KEY C-f'
 'KEY C-c C-d d'
@@ -970,7 +975,7 @@ ELSE
 ** APROPOS-LIST returns them.  The cursor is parked on the in-package line
 ** first, so the wait cannot match `twice' in intro.lisp itself. */
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'GOTOLINE 7'
 'KEY C-c C-d a'
 'STATUS'
@@ -995,7 +1000,7 @@ ELSE
 ** over to the minibuffer, where TAB narrows and RET puts the choice in the
 ** buffer.  M-TAB and C-M-i are the two spellings of the binding. */
 'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
-CALL DELAY(25)
+CALL pause 25
 'EVAL end-of-buffer'
 'KEY RET'
 'INSERT twice-a'
@@ -1053,7 +1058,7 @@ IF PHASE < 4 THEN DO
     SIGNAL Done
 END
 'OPEN FILE' INTRO
-CALL DELAY(25)
+CALL pause 25
 'KEY C-c C-z'
 'GETNAME'
 IF RESULT = '*clamacs-repl*' THEN DO
@@ -1152,7 +1157,7 @@ ELSE
 P = RESULT
 'INSERT (loop)'
 'KEY RET'
-CALL DELAY(50)
+CALL pause 50
 'KEY C-c C-c'
 Y = WaitCursorAt(P + 2, 60)
 'GOTOLINE' P + 2
@@ -1208,7 +1213,7 @@ ELSE
 'INSERT (sleep 6)'
 'KEY RET'
 'OPEN FILE' INTRO
-CALL DELAY(10)
+CALL pause 10
 'EVAL end-of-buffer'
 'KEY RET'
 'INSERT (twice-again 1'
@@ -1451,7 +1456,7 @@ END
 Done:
 ADDRESS VALUE PORT
 'OPEN FILE Clamacs:verify/realamiga/errors.lisp'
-CALL DELAY(25)
+CALL pause 25
 
 SAY 'DRIVE-DONE'
 EXIT 0
@@ -1472,7 +1477,7 @@ WaitEcho: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'STATUS'
         IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN RESULT
-        CALL DELAY(25)
+        CALL pause 25
     END
     RETURN ''
 
@@ -1486,7 +1491,7 @@ WaitLine: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'TE GETLINE'
         IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN RESULT
-        CALL DELAY(25)
+        CALL pause 25
     END
     RETURN ''
 
@@ -1499,7 +1504,7 @@ WaitCursor: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT ~= from THEN RETURN RESULT
-        CALL DELAY(25)
+        CALL pause 25
     END
     RETURN ''
 
@@ -1523,7 +1528,7 @@ WaitCursorPast: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT > y THEN RETURN RESULT
-        CALL DELAY(25)
+        CALL pause 25
     END
     RETURN ''
 
@@ -1537,7 +1542,7 @@ WaitCursorAt: PROCEDURE EXPOSE PORT
     DO i = 1 TO ticks
         'TE GETCURSOR LINE'
         IF RC = 0 & RESULT = y THEN RETURN RESULT
-        CALL DELAY(25)
+        CALL pause 25
     END
     RETURN ''
 
@@ -1624,4 +1629,12 @@ checkstores: PROCEDURE
         SAY 'OK' who 'keeps its stores on this launch'
     ELSE
         SAY 'INFO' who 'answered the CPU store question with:' RESULT
+    RETURN
+
+/* A pause of TICKS/50 s without rexxsupport.library (see the top of the
+** script): dos.library's Delay() through sendkey's WAIT option.  sendkey
+** is at the fixed place run-drive and the FS-UAE boot scripts put it. */
+pause: PROCEDURE
+    PARSE ARG ticks
+    ADDRESS COMMAND 'Clamacs:build/amiga/sendkey WAIT' ticks
     RETURN

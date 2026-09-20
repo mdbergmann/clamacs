@@ -4,6 +4,7 @@
  *     sendkey C-x C-q            press keys, spelled the way the editor
  *     sendkey M-< RET <down>     spells them (see src/emacs/keymap.c)
  *     sendkey TEXT "(foo Bar)"   type a string
+ *     sendkey WAIT 25            sleep 25 ticks (1/2 s) and nothing else
  *
  * The unattended test drives clamacs through its ARexx port, and the port's
  * KEY command stops one step short of a real keyboard: it feeds ck_keys to
@@ -55,9 +56,17 @@ static struct MsgPort  *port;
 static struct IOStdReq *io;
 static LONG             delay_ticks = 2;
 
-static const char template[] = "KEYS/M,TEXT/K,DELAY/K/N,DIAG/S";
+/* WAIT n: sleep n ticks (1/50 s) through dos.library's Delay() and do
+ * nothing else -- the pause the ARexx drive scripts use between a key and
+ * the check that follows it.  They used rexxsupport.library's DELAY(), and
+ * on real OS 3.2 machines (rexxsupport.library 47.2, A4000/060 and
+ * A1200/040, 2026-09-20) ANY call into that library zeroes five bytes of
+ * Intuition's screen-font record (ta_YSize/ta_Style/ta_Flags and the first
+ * byte of the font name): every MUI window then refuses to open, and on
+ * the A4000 the machine froze.  A C Delay() is clean. */
+static const char template[] = "KEYS/M,TEXT/K,DELAY/K/N,WAIT/K/N,DIAG/S";
 
-enum { ARG_KEYS, ARG_TEXT, ARG_DELAY, ARG_DIAG, ARG_COUNT };
+enum { ARG_KEYS, ARG_TEXT, ARG_DELAY, ARG_WAIT, ARG_DIAG, ARG_COUNT };
 
 static LONG diag = 0;
 
@@ -213,7 +222,7 @@ static void report_active_window(void)
 int main(void)
 {
     struct RDArgs *rdargs;
-    LONG           args[ARG_COUNT] = { 0, 0, 0, 0 };
+    LONG           args[ARG_COUNT] = { 0, 0, 0, 0, 0 };
     int            rc = RETURN_FAIL;
 
     KeymapBase    = OpenLibrary((STRPTR)"keymap.library", 37);
@@ -233,6 +242,17 @@ int main(void)
         delay_ticks = *(LONG *)args[ARG_DELAY];
     diag = args[ARG_DIAG];
 
+    /* WAIT alone is a pause and nothing else: no input.device, no report,
+     * so a script can call it a few dozen times without a line of output. */
+    if (args[ARG_WAIT] != 0 && args[ARG_KEYS] == 0 && args[ARG_TEXT] == 0) {
+        LONG ticks = *(LONG *)args[ARG_WAIT];
+        if (ticks > 0)
+            Delay(ticks);
+        FreeArgs(rdargs);
+        rc = RETURN_OK;
+        goto out;
+    }
+
     port = CreateMsgPort();
     io   = (struct IOStdReq *)CreateIORequest(port, sizeof(struct IOStdReq));
     if (port == NULL || io == NULL ||
@@ -244,6 +264,9 @@ int main(void)
 
     report_active_window();
     rc = RETURN_OK;
+
+    if (args[ARG_WAIT] != 0 && *(LONG *)args[ARG_WAIT] > 0)
+        Delay(*(LONG *)args[ARG_WAIT]);
 
     if (args[ARG_KEYS] != 0) {
         const char **keys = (const char **)args[ARG_KEYS];
