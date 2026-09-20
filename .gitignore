@@ -16,3 +16,8 @@ build/
 /tools/mos-sdk/
 __pycache__/
 *.pyc
+
+# The editor's FASLs beside the sources (lisp/load.lisp compiles them when
+# cl-user::*clamacs-compile-fasls* is bound; the release ships them under
+# lib/clamacs/) -- never committed, and never picked over a newer source.
+*.fasl
