@@ -58,12 +58,7 @@ static LONG             delay_ticks = 2;
 
 /* WAIT n: sleep n ticks (1/50 s) through dos.library's Delay() and do
  * nothing else -- the pause the ARexx drive scripts use between a key and
- * the check that follows it.  They used rexxsupport.library's DELAY(), and
- * on real OS 3.2 machines (rexxsupport.library 47.2, A4000/060 and
- * A1200/040, 2026-09-20) ANY call into that library zeroes five bytes of
- * Intuition's screen-font record (ta_YSize/ta_Style/ta_Flags and the first
- * byte of the font name): every MUI window then refuses to open, and on
- * the A4000 the machine froze.  A C Delay() is clean. */
+ * the check that follows it, so they need no rexxsupport.library. */
 static const char template[] = "KEYS/M,TEXT/K,DELAY/K/N,WAIT/K/N,DIAG/S";
 
 enum { ARG_KEYS, ARG_TEXT, ARG_DELAY, ARG_WAIT, ARG_DIAG, ARG_COUNT };

@@ -54,12 +54,8 @@ ELSE
 ** application object exists, and the port comes with it.  Wait for it
 ** properly rather than assuming it is already there.
 **
-** No rexxsupport.library here, and no DELAY() from it: on real OS 3.2
-** machines (rexxsupport.library 47.2 -- an A4000/060 and an A1200/040,
-** 2026-09-20) ANY call into that library zeroes five bytes of Intuition's
-** screen-font record, after which no MUI window opens and the machine may
-** freeze.  Every pause goes through `pause' below, a C Delay() in sendkey.
-** (FS-UAE's image has rexxsupport 34.9 and never showed it.) */
+** Every pause goes through `pause' below, a C Delay() in sendkey, so the
+** script needs no rexxsupport.library. */
 
 /* MUI numbers the port it builds from MUIA_Application_Base, and on MUI 3.8
 ** the FIRST instance already comes up as CLAMACS.1 -- observed, not assumed.

@@ -456,22 +456,12 @@ list under "Answered during phase 1".
   asks both ports for `:CPU-LOST-STORES` before driving anything and ends
   such a run with a FAIL that names it -- the run is void, start it
   again; never hunt a red leg on a launch the self-test flagged.
-- **No rexxsupport.library in the ARexx scripts** (2026-09-20).  On real
-  OS 3.2 machines -- an A4000/060 and an A1200/040, both with
-  rexxsupport.library 47.2 -- ANY call into that library (`DELAY()`,
-  `SHOWLIST()`, `FORBID()`/`PERMIT()`, even right after the `ADDLIB`)
-  zeroes five bytes of Intuition's screen-font record (`sc_Font`'s
-  TextAttr: ta_YSize, ta_Style, ta_Flags and the first byte of the font
-  name).  From then on no MUI window opens on that box (the Lisp editor
-  dies with "the document window would not open", the C editor's window
-  stays shut), and with another memory layout the A4000 froze outright.
-  A whole day went to clamiga, both editors, TextEditor.mcc and sendkey
-  before `RX "CALL DELAY(50)"` alone reproduced it; FS-UAE's image has
-  rexxsupport 34.9 and never showed it.  `drive.rexx` therefore pauses
-  through `sendkey WAIT <ticks>` (a C `Delay()`, see its `pause`
-  procedure) and loads no library; keep it that way.  If a box's MUI
-  windows suddenly refuse to open, that record is the first thing to
-  look at: read `ENV:sys/font.prefs` for the screen font's values and
-  poke them back (cl-amiga's memory note has the probe), no reboot
-  needed.
+- **Pauses in the ARexx drive scripts go through `sendkey WAIT <ticks>`**
+  (a C `Delay()`), not rexxsupport.library's `DELAY()`.  In September 2026
+  every external ARexx function call on the real A4000/A1200 zeroed
+  Intuition's screen-font record and no MUI window would open afterwards;
+  the cause was Roadie 1.3.7 registered as an ARexx function host, fixed by
+  Roadie 1.4.  If MUI windows ever stop opening on a box, that record
+  (`sc_Font`'s TextAttr, values in `ENV:sys/font.prefs`) is the first
+  thing to check.
 - LF line endings are forced by `.gitattributes`.
