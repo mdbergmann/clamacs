@@ -409,4 +409,14 @@ list under "Answered during phase 1".
   every `ADDRESS 'CLAMACS.1'`.  And never `IF EXISTS <volume>:` for a
   volume AmigaOS 3 may not have -- the "please insert volume" requester
   parks the script.
+  `verify/realamiga/run-lisp-drive` (`Execute ... PHASE n`) is the same
+  run for the Lisp editor (the cross-built clamiga under
+  `Clamacs:clamiga/`, `lisp/` in the drawer): it warms the FASL cache
+  with `warm.lisp`, deletes `T:clamacs-exit.log` first so `quit.rexx`
+  reads this run's log, and runs `drive.rexx HARDWARE PHASE n`.  **On a
+  Vampire about every second launch of clamiga loses memory stores**
+  (the 68080 defect, cl-amiga's README "CPU store self-test"): `drive.rexx`
+  asks both ports for `:CPU-LOST-STORES` before driving anything and ends
+  such a run with a FAIL that names it -- the run is void, start it
+  again; never hunt a red leg on a launch the self-test flagged.
 - LF line endings are forced by `.gitattributes`.

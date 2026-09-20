@@ -1,0 +1,79 @@
+.KEY PHASE
+.DEF PHASE 3
+.BRA {
+.KET }
+; run-lisp-drive -- the LISP editor's acceptance run on a REAL AmigaOS 3
+; machine (the Vampire): run-drive's sequence with the editor started from
+; lisp/clamacs.lisp and drive.rexx told HARDWARE PHASE n.  FS-UAE runs the
+; same thing through run-lisp-drive.sh.  Assigns in place:
+;
+;     Clamacs:            a drawer holding lisp/, verify/realamiga/,
+;                         examples/arexx/, tests/ and build/amiga/sendkey
+;                         (the checkout's layout)
+;     Clamacs:clamiga/    the cross-built clamiga with its lib/ beside it
+;
+; Start it detached (never a blocking exec through the box agent) and wait
+; for the sentinel:
+;
+;     Run >NIL: Execute Clamacs:verify/realamiga/run-lisp-drive PHASE 3
+;     ... until Clamacs:build/amiga/drive-done exists ...
+;     Type Clamacs:build/amiga/clamacs-test.log
+;
+; A launch of clamiga that loses memory stores (the 68080 defect; clamiga's
+; startup self-test says so, drive.rexx asks both ports) ends the drive with
+; a FAIL line naming it: the run is void, not red -- run it again.
+;
+; FAILAT 21 is not optional: the shipped macro ends with rc 10 when the file
+; it loads has errors -- which errors.lisp does, on purpose.
+failat 21
+cd Clamacs:
+Delete >NIL: build/amiga/drive-done
+; The editor's exit log (quit.rexx reads the WHOLE of it) must be this
+; run's alone -- T: survives between runs on a real machine.
+Delete >NIL: T:clamacs-exit.log
+echo "=== run start ===" >build/amiga/clamacs-test.log
+echo "hardware phase {PHASE}" >>build/amiga/clamacs-test.log
+date >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+stack 128000
+; A warm FASL cache first: the editor's files and the port's library.
+cd Clamacs:clamiga
+clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/warm.lisp >Clamacs:build/amiga/warm.log
+echo "=== warm.log ===" >>Clamacs:build/amiga/clamacs-test.log
+type Clamacs:build/amiga/warm.log >>Clamacs:build/amiga/clamacs-test.log
+; The target clamiga, with its development port.
+run >Clamacs:build/amiga/clamiga.log clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+cd Clamacs:
+C:Wait 15
+; The editor: a second clamiga running lisp/clamacs.lisp on the sample.
+run >Clamacs:build/amiga/lisp-drive-editor.log Clamacs:clamiga/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample.lisp
+; HARDWARE enables the leg that drives keys into the ACTIVE minibuffer,
+; which FS-UAE cannot (it deactivates the String after one injected key).
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx HARDWARE PHASE {PHASE} >>build/amiga/clamacs-test.log
+echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS build/amiga/clamiga.log
+  type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
+ENDIF
+echo "=== status ===" >>build/amiga/clamacs-test.log
+status >>build/amiga/clamacs-test.log
+echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
+echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+; quit.rexx: the editor with its exit trace on (the log must end with the
+; application disposed and carry no dispose that signalled), then the
+; target through arexx-host.lisp's flag.
+SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
+C:Wait 3
+echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
+avail >>build/amiga/clamacs-test.log
+echo "=== T:clamacs-exit.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS T:clamacs-exit.log
+  type T:clamacs-exit.log >>build/amiga/clamacs-test.log
+ENDIF
+echo "=== lisp-drive-editor.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS build/amiga/lisp-drive-editor.log
+  type build/amiga/lisp-drive-editor.log >>build/amiga/clamacs-test.log
+ENDIF
+echo "=== run end ===" >>build/amiga/clamacs-test.log
+echo "done" >build/amiga/drive-done

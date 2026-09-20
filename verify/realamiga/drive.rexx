@@ -74,6 +74,17 @@ SAY 'OK clamacs ARexx port is' PORT
 
 ADDRESS VALUE PORT
 
+/* A launch of clamiga whose CPU loses memory stores cannot be gated: the
+** Apollo 68080 drops a store depending on where the data hunk landed, so
+** about every second launch on a Vampire fails somewhere at random
+** (cl-amiga's README "CPU store self-test"; it was finding (C) of the
+** phase-3 hardware run, two days of hunting a bug that was not there).
+** clamiga's startup self-test puts :CPU-LOST-STORES on *FEATURES* on such
+** a launch; asked here, before anything is driven, so the log names the
+** cause and no leg below is chased.  Relaunch and rerun.  The C editor
+** answers `unknown command' to a form and has no such CPU under it. */
+CALL checkstores PORT, 'the editor'
+
 /* The file the boot script asked for should be the active document. */
 'GETFILE'
 IF RC = 0 & POS('sample.lisp', RESULT) > 0 THEN
@@ -695,6 +706,10 @@ IF LISP = '' THEN DO
     EXIT 0
 END
 SAY 'OK clamiga ARexx port is' LISP
+
+/* The target clamiga is a launch of its own, with a data hunk of its
+** own: the same check as for the editor (see the top). */
+CALL checkstores LISP, 'the target clamiga'
 
 /* C-x C-e: evaluate the last expression before point.  The spec's
 ** acceptance criterion is literally "C-x C-e on (+ 1 2) echoes 3". */
@@ -1576,3 +1591,29 @@ FindLine: PROCEDURE EXPOSE PORT
         IF RC = 0 & POS(needle, RESULT) > 0 THEN RETURN 1
     END
     RETURN 0
+
+/* Whether the clamiga behind PORT lost memory stores on this launch
+** (the 68080 defect, see the top): asks the port to evaluate a form.  A
+** T ends the run with a FAIL that names the cause -- every leg after it
+** would fail at random and mean nothing.  The C editor answers `unknown
+** command' and is left alone. */
+checkstores: PROCEDURE
+    PARSE ARG port, who
+    OPTIONS RESULTS
+    OPTIONS FAILAT 21
+    ADDRESS VALUE port
+    'EVAL (if (member :cpu-lost-stores *features*) "LOST-STORES" "STORES-OK")'
+    IF RC ~= 0 THEN DO
+        SAY 'INFO' who 'did not answer the CPU store question (rc' RC'):' RESULT
+        RETURN
+    END
+    IF POS('LOST-STORES', RESULT) > 0 THEN DO
+        SAY 'FAIL' who 'is a launch that LOSES MEMORY STORES (clamiga''s startup self-test, the 68080 defect): this run is void, relaunch it and run again'
+        SAY 'DRIVE-DONE'
+        EXIT 10
+    END
+    IF POS('STORES-OK', RESULT) > 0 THEN
+        SAY 'OK' who 'keeps its stores on this launch'
+    ELSE
+        SAY 'INFO' who 'answered the CPU store question with:' RESULT
+    RETURN

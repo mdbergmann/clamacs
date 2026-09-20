@@ -1,9 +1,8 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 3 done; next: the three Vampire findings under
-"Open" -- the window dispose that signals, the edit hook MUI never calls,
-the layout-dependent FASL failure -- then phase 4, the REPL, debugger and
-inspector)
+Status: IN PROGRESS (phase 3 done; the three Vampire findings under "Open"
+are closed -- two fixed, the third the 68080's own defect -- next: phase
+4, the REPL, debugger and inspector)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -764,15 +763,31 @@ phases 0-5 plan, and why:
   application's task.  The Lisp edit-hook function, the `hook_taken` /
   `hook_key` instance slots and the `:hook` trace records are gone with
   it; `mui:string-key-hook-stats` on a document's hook is the
-  diagnostic now.  (2) A layout-dependent failure of FASL-loaded
-  code on the box only: `complete`'s `mismatch` call saw a non-symbol
-  where `:end1` should be, with a different garbage error each time;
-  the FASL file is good (it loads and passes on the host), a fresh
-  in-process compile is fine, the JIT is not involved, and a reboot made
-  it go away for the day.  A runtime item for cl-amiga; the suspects and
-  the experiments run are in the session's memory note.  The editor's
-  host suite now runs on the box (`Clamacs:tests/run-tests.lisp`), which
-  is the reproduction vehicle.  (3, FIXED 2026-09-18) Disposing a
+  diagnostic now.  (2, CLOSED 2026-09-20: not a bug of ours) A
+  layout-dependent failure of FASL-loaded code on the box only:
+  `complete`'s `mismatch` call saw a non-symbol where `:end1` should be,
+  with a different garbage error each time; the FASL file was good, a
+  fresh in-process compile fine, the JIT not involved, and a reboot made
+  it go away for the day.  Two days of hunting in cl-amiga (the stack
+  swap, exec's context save, the GC roots -- all exonerated) ended at
+  the hardware: the Apollo 68080 core loses the last store of a
+  memory-to-memory `move.l <abs>,(aN)+` followed by further stores,
+  decided by the address of the absolute source modulo 64 -- so a data
+  hunk that LoadSeg placed differently flips the same binary between
+  sound and broken per LAUNCH, and the untouched C local of
+  `bi_mismatch` (its `key_fn`) showed whatever the previous frame left
+  there.  A real 68040 and a real 68060 are clean.  There is no software
+  fix; clamiga's startup self-test (`src/platform/cpu_store_probe_m68k.s`,
+  README "CPU store self-test") warns on such a launch and puts
+  `:CPU-LOST-STORES` on `*FEATURES*`, `verify/realamiga/apollo-repro.c`
+  is the report to the Apollo team.  Consequence for this port: a
+  hardware run on the Vampire is meaningful only on a launch the
+  self-test did not flag, so `drive.rexx` asks both ports for the
+  feature before driving anything and fails such a run by name
+  (`verify/realamiga/run-lisp-drive` is that run, in the repository now).
+  The editor's host suite on the box (`Clamacs:tests/run-tests.lisp`)
+  stays the reproduction vehicle for anything that survives that
+  filter.  (3, FIXED 2026-09-18) Disposing a
   document window signalled, on the box and -- unseen, nobody looked at
   the screen after a quit -- in FS-UAE: every exit left an orphan
   diagnostics window, since the condition escaped `start`'s teardown

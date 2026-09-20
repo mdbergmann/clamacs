@@ -140,6 +140,8 @@ grep -q '=== run end ===' "$LOG" || { echo "=== FAIL: the boot script did not fi
 grep -q 'clamiga ARexx port is' "$LOG" || { echo "=== FAIL: clamiga did not come up; the integration leg was skipped ==="; exit 1; }
 
 want_phase2='OK clamacs ARexx port is CLAMACS
+OK the editor keeps its stores on this launch
+OK the target clamiga keeps its stores on this launch
 OK GETFILE
 OK GOTOLINE 3 put the cursor
 OK EVAL end-of-buffer
