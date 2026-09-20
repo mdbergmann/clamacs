@@ -1,8 +1,8 @@
 # Clamacs in Lisp: the editor as a clamiga program
 
-Status: IN PROGRESS (phase 3 done; the three Vampire findings under "Open"
-are closed -- two fixed, the third the 68080's own defect -- next: phase
-4, the REPL, debugger and inspector)
+Status: IN PROGRESS (phase 4 done on FS-UAE: the REPL, debugger and
+inspector; next: the Vampire and MorphOS runs of phases 2-4, then phase
+5, parity and release)
 Date: 2026-09-16
 Supersedes: the "An editor written in Lisp" non-goal and the two-process
 rationale of `clamacs-ide.md` (2026-09-08).  Everything else in that spec
@@ -609,6 +609,56 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    task, the transcript buffer, buffer evals on the REPL thread, the
    debugger and inspector windows and their `M-x` commands.  Gate: the
    phase-3 and phase-4 legs.
+   **DONE 2026-09-20.**  Four pure modules, the ports of `src/repl.c`,
+   `src/debugwin.c`, `src/inspectwin.c` and `src/rexx/replmsg.c` +
+   `dbgmsg.c`: `lisp/replmsg.lisp` (the parsers), `lisp/repl.lisp` (the
+   REPL window: the session on the editor, the listener state on the
+   document -- the two indices are NIL, not -1, while a form runs --
+   `C-c C-z`, RET with `sexp-input-complete-p`, the history, the
+   read-only transcript by way of `run-command` and `handle-key` asking
+   `repl-allow-command` / `repl-unbound-key`, buffer evals on the REPL
+   thread so `wire-eval` goes through `repl-eval-from`, and the four
+   inbound verbs as `define-port-verb`s), `lisp/debugger.lisp` and
+   `lisp/inspector.lisp` (the state of each window, the commands, the
+   replies; the frontend shows the state through
+   `editor-debugger-open/-close/-raise/-frames/-select-frame/-locals`
+   and `editor-inspector-open`, and its lists and buttons call
+   `debug-frame-selected`, `debug-frame-clicked`,
+   `debug-restart-clicked`, `debug-eval-entered`, `inspect-part-clicked`
+   ... with a row number or a line).  `frontend-mui.lisp` grew the two
+   windows (plain MUI Lists, a String, KeyButtons made of Text objects;
+   the row texts stay on the Lisp side, so no `MUIM_List_GetEntry`),
+   disposed of at exit as the diagnostics window is.  Host tests:
+   `test-replmsg.lisp` (the C cases), `test-repl.lisp` and
+   `test-debugger.lisp` (drive.rexx's REPL and debugger legs step by
+   step on the fake frontend and transport, plus the lost port, the
+   window closed with a request out, a stale reply, the frame click),
+   `test-inspector.lisp`; 446 tests in all, green and green under GC
+   stress.  Gate: `run-lisp-drive.sh 040 4` (now the `test-lisp-amiga`
+   default), the unchanged drive.rexx with `PHASE 4` -- the three `MENU`
+   checks inside the REPL and debugger legs are gated on `PHASE >= 5`
+   now, and the buffer-eval leg saves and kills its RAM: buffer by
+   command name, which the C editor answers the same way.
+
+   What phase 4 found for the runtime (cl-amiga commit cdaed011):
+   - **`EXT.DEV` trims every command at both ends**, which is right for
+     `LOAD foo.lisp` and wrong for the REPL thread's `OUTPUT <chunk>`:
+     an indented line lost its indentation and a chunk ending in a
+     newline lost it, so the transcript's line bookkeeping broke.  The
+     C editor took the four inbound commands outside ReadArgs for that
+     reason; the Lisp editor's port is `EXT.DEV`, so the layer now has
+     `ext.dev:define-raw-command` -- the argument verbatim past the verb
+     and its one blank, `OUTPUT` alone the empty chunk -- and
+     `transport-arexx.lisp` registers `OUTPUT`, `RESULT` and `DEBUGGER`
+     that way (`*raw-port-verbs*`).  `tests/test_dev_commands.sh` pins
+     the cases of clamacs's `test_replmsg.c` from that side.
+   - The client thread now sends a job that is pending at the quit: the
+     `REPL-DETACH` the closing REPL window queued must reach clamiga, or
+     its REPL thread is left sending to a port about to vanish.
+   Noted: a form typed across lines at the prompt indents under its
+   first line as it stands on the prompt line (column 9 after
+   `CL-USER> `), as the C editor indents it; SLIME indents from the
+   input's start.  Cosmetic, left as is.
 5. **Parity and release.**  Menu strip from the ported table, window
    snapshot, HyperSpec URL through `openurl.library`, `.clamacsrc`.
    Editor image saved by `scripts/make-binary-release.sh` beside each

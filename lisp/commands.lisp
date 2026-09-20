@@ -25,7 +25,12 @@
 (defun run-command (doc command &optional (arg 1))
   "Run COMMAND, a command symbol, on DOC.  True when it ran."
   (let ((function (command-function command)))
-    (cond (function
+    (cond ((and (doc-repl doc) (not (repl-allow-command doc command)))
+           ;; In the REPL window the transcript is read-only; repl.lisp
+           ;; decides.
+           (setf (doc-last-command doc) command)
+           nil)
+          (function
            (funcall function doc arg)
            (setf (doc-last-command doc) command)
            t)
@@ -58,8 +63,10 @@ class's own arrows, selection and self-insert keep working."
          t)
         (t
          ;; Not ours, and ordinary typing ends a run of kills or yanks.
+         ;; In the REPL window a key that would edit the transcript is
+         ;; redirected or swallowed (repl.lisp).
          (setf (doc-last-command doc) nil)
-         nil)))))
+         (and (doc-repl doc) (repl-unbound-key doc key)))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The context: text the sexp scanner can trust

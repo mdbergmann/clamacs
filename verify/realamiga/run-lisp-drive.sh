@@ -6,8 +6,8 @@
 # from lisp/clamacs.lisp on sample.lisp, and drive it through its own
 # ARexx port with verify/realamiga/drive.rexx -- the SAME script that
 # gates the C editor, told with `PHASE n' which legs the port has reached
-# (3 by default: the editor checks, the integration leg and the
-# introspection leg).  Then the
+# (4 by default: the editor checks, the integration leg, the introspection,
+# REPL, debugger and inspector legs).  Then the
 # shipped macro, a memory reading with the editor up, and quit.rexx.
 #
 # Modelled on run-fs-uae.sh (the C editor's run) with boot-override
@@ -25,7 +25,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
-PHASE="${2:-3}"
+PHASE="${2:-4}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 LOG="$ROOT/build/amiga/clamacs-test.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
@@ -202,10 +202,49 @@ OK TAB listed them
 OK TAB narrowed twice-a to one
 OK RET put the completion in the buffer'
 
+# Phase 4 of the port: drive.rexx's REPL leg (its "phase 3") and its
+# debugger and inspector leg (its "phase 4"), without the menu checks.
+want_phase4='OK C-c C-z opened *clamacs-repl*
+OK the REPL prompt arrived
+OK RET evaluated (+ 1 2) at the prompt
+OK a new prompt followed the value
+OK output was streamed line by line before the value
+OK READLINE armed the input
+OK RET answered READ-LINE and the value came back
+OK C-c C-c interrupted (loop)
+OK the prompt followed IN-PACKAGE
+OK and back to CL-USER
+OK M-p brought back the last input
+OK a second M-p went one further back
+OK M-n came back to the empty input
+OK the port answered ARGLIST while the REPL ran a form
+OK C-c C-z raised the REPL again
+OK an error at the prompt opened the debugger
+OK RET at the prompt is refused while debugging
+OK clamacs-debugger-eval prompted
+OK the frame eval saw the locals by name
+OK an error in the frame eval nested the debugger
+OK ABORT returned to level 1
+OK RESTART 0 returned to the prompt
+OK the transcript says the form was aborted
+OK CERROR opened the debugger
+OK CONTINUE let the form finish
+OK Open... on a name no file has made a new buffer
+OK an error in a buffer eval opened the debugger
+OK Abort ended the buffer eval in its own echo area
+OK C-c I prompted
+OK the inspector showed the object
+OK part 1 descended into the cdr
+OK Back came up to the list again'
+
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then
 	want="$want
 $want_phase3"
+fi
+if [ "$PHASE" -ge 4 ]; then
+	want="$want
+$want_phase4"
 fi
 
 missing=0

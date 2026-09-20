@@ -41,11 +41,20 @@ behaviour spec.  New editor work goes into `lisp/`:
   `introspect.lisp` (arglist, completion, `M-.`, describe / apropos /
   macroexpand; `symcache.lisp` is its cache) are pure too, tested on
   `tests/fake-transport.lisp`; a reply is a continuation in
-  `wire-dispatch`, never waited for.  Only
+  `wire-dispatch`, never waited for.  So are `repl.lisp` (the REPL
+  window, `src/repl.c`: the transcript's two indices, the four inbound
+  verbs `OUTPUT`/`READLINE`/`RESULT`/`DEBUGGER` as port verbs, buffer
+  evals on the REPL thread), `debugger.lisp` and `inspector.lisp` (the
+  state of the two windows and their `M-x` commands; the frontend only
+  shows the state through `editor-debugger-*` / `editor-inspector-open`
+  and hands row numbers back) and `replmsg.lisp` (the parsers of
+  `src/rexx/replmsg.c` + `dbgmsg.c`); `tests/fake-transport.lisp`'s
+  `fake-inbound` delivers what clamiga's REPL thread sends.  Only
   `frontend-mui.lisp` may name `AMIGA.MUI`: it is the two custom classes
   and the document window, a port of `src/textclass.c` and the MUI half
   of `src/document.c` (the "Phase 1 facts" below apply to it line by
-  line).  `load.lisp` loads it on an Amiga only; `lisp/clamacs.lisp`
+  line), plus the diagnostics, debugger and inspector windows (plain MUI
+  Lists and buttons).  `load.lisp` loads it on an Amiga only; `lisp/clamacs.lisp`
   runs the editor from source (`clamiga --heap 8M --non-interactive
   --load Clamacs:lisp/clamacs.lisp -- file ...`).  The files come after
   `--`: clamiga loads a bare argument, and what follows the separator is
@@ -65,11 +74,12 @@ behaviour spec.  New editor work goes into `lisp/`:
 - `verify/realamiga/run-lisp-drive.sh [040|020] [PHASE]` (`make -f
   Makefile.cross test-lisp-amiga`) is the Lisp editor's acceptance run:
   a target clamiga with its port, the editor on `sample.lisp`, and the
-  SAME `drive.rexx` as the C editor with `PHASE n` (3 today) selecting
-  the legs the port has reached; then the shipped macro and
-  `quit.rexx`.  The script checks the log itself.  Run it after touching
-  `wire.lisp`, `port.lisp`, `introspect.lisp`, `transport-arexx.lisp` or
-  the event loop.
+  SAME `drive.rexx` as the C editor with `PHASE n` (4 today: everything
+  but the menu strip and the window snapshot) selecting the legs the
+  port has reached; then the shipped macro and `quit.rexx`.  The script
+  checks the log itself.  Run it after touching `wire.lisp`,
+  `port.lisp`, `introspect.lisp`, `repl.lisp`, `debugger.lisp`,
+  `inspector.lisp`, `transport-arexx.lisp` or the event loop.
   It needs the superproject's `build/cross/clamiga`, rebuilt after a
   runtime change -- a stale one is the first suspect for a red leg.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),

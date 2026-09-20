@@ -155,37 +155,51 @@
 
 ;;; --- the commands ------------------------------------------------------------
 
-(deftest eval-last-sexp-tells-the-package-first-and-echoes-the-value
+;;; A buffer eval runs on clamiga's REPL thread (repl.lisp, SLIME's model):
+;;; the first one attaches the REPL -- its window opens, the buffer keeps
+;;; the focus -- and the values come back as a RESULT command at the
+;;; editor's port, not as the reply.  tests/test-repl.lisp has the REPL
+;;; window itself; here is what the eval commands put on the wire.
+
+(deftest eval-last-sexp-attaches-the-repl-tells-the-package-and-echoes-the-value
   (multiple-value-bind (doc tr wire) (make-wired-fake "(+ 1 2)|")
     (run-command doc 'clamacs-eval-last-sexp)
-    ;; No (in-package ...) in the buffer means CL-USER, which is also where
-    ;; a fresh clamiga starts -- but not where it stays once another buffer
-    ;; has spoken, so it is said explicitly.
-    (is-equal (fake-last-sent tr) "IN-PACKAGE CL-USER")
-    (fake-deliver tr 0 "Package is now CL-USER")
-    (is-equal (fake-last-sent tr) "EVAL (+ 1 2)")
-    (fake-deliver tr 0 (lines "3" "0 error(s), 0 warning(s)"))
+    ;; The REPL window opened for the attach, and the eval came from DOC.
+    (is (repl-doc (doc-editor doc)))
+    (is (eq (editor-active-document (doc-editor doc)) doc))
+    (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
+    (is-equal (fake-last-message (repl-doc (doc-editor doc))) "Attaching the REPL to CLAMIGA ...")
+    (fake-deliver tr 0 "CL-USER")
+    ;; No (in-package ...) in the buffer means CL-USER -- and the attach
+    ;; reply just said the port is there, so it is not repeated (a buffer
+    ;; in another package says its own first: the test below).
+    (is-equal (fake-last-sent tr) "REPL-EVAL (+ 1 2)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "3"))
     (is-equal (fake-last-message doc) "3")
     (is-equal (wire-package wire) "CL-USER")
     ;; The same package is not repeated.
     (run-command doc 'clamacs-eval-last-sexp)
-    (is-equal (fake-last-sent tr) "EVAL (+ 1 2)")
-    (fake-deliver tr 0 (lines "3" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-sent tr) "REPL-EVAL (+ 1 2)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "3"))
     (is-equal (fake-sent-commands tr)
-              '("IN-PACKAGE CL-USER" "EVAL (+ 1 2)" "EVAL (+ 1 2)"))))
+              '("REPL-ATTACH CLAMACS DEBUG" "REPL-EVAL (+ 1 2)" "REPL-EVAL (+ 1 2)"))))
 
 (deftest the-buffer-package-is-what-in-package-says
   (multiple-value-bind (doc tr wire) (make-wired-fake (lines "(in-package :foo)" "(bar)|"))
     (declare (ignore wire))
     (run-command doc 'clamacs-eval-last-sexp)
+    (fake-answer-attach tr)
     (is-equal (fake-last-sent tr) "IN-PACKAGE foo")
     (fake-deliver tr 0 "Package is now FOO")
-    (is-equal (fake-last-sent tr) "EVAL (bar)")))
+    (is-equal (fake-last-sent tr) "REPL-EVAL (bar)")))
 
 (deftest a-failing-in-package-is-reported
   (multiple-value-bind (doc tr wire) (make-wired-fake (lines "(in-package :nope)" "(bar)|"))
     (declare (ignore wire))
     (run-command doc 'clamacs-eval-last-sexp)
+    (fake-answer-attach tr)
     (fake-deliver tr 10 "")
     (is-equal (fake-last-sent tr) "LASTRESULT")
     (fake-deliver tr 0 "ERROR: no such package: NOPE")
@@ -204,9 +218,11 @@
       (make-wired-fake (lines "(defun a ()" "  1|)" "" "(defun b () 2)"))
     (declare (ignore wire))
     (run-command doc 'clamacs-eval-defun)
+    (fake-answer-attach tr)
     (fake-deliver tr 0 "Package is now CL-USER")
-    (is-equal (fake-last-sent tr) (format nil "EVAL (defun a ()~%  1)"))
-    (fake-deliver tr 0 (lines "A" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-sent tr) (format nil "REPL-EVAL (defun a ()~%  1)"))
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "A"))
     (is-equal (fake-last-message doc) "A")))
 
 (deftest eval-defun-of-an-unbalanced-form
@@ -223,39 +239,43 @@
     (is-equal (fake-last-message doc) "No mark set in this buffer")
     (setf (doc-mark doc) 0)
     (run-command doc 'clamacs-eval-region)
+    (fake-answer-attach tr)
     (fake-deliver tr 0 "Package is now CL-USER")
-    (is-equal (fake-last-sent tr) "EVAL (list 1)")
-    (fake-deliver tr 0 (lines "(1)" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-sent tr) "REPL-EVAL (list 1)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "(1)"))
     (run-command doc 'clamacs-eval-expression)
     (is-equal (fake-prompt doc) "Eval: ")
     (type-text doc "(* 6 7)")
     (type-keys doc "RET")
-    (is-equal (fake-last-sent tr) "EVAL (* 6 7)")
-    (fake-deliver tr 0 (lines "42" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-sent tr) "REPL-EVAL (* 6 7)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "42"))
     (is-equal (fake-last-message doc) "42")))
 
-(deftest an-eval-error-goes-to-the-error-list
+(deftest an-eval-error-comes-back-as-a-failed-result
+  ;; Without the debugger (a phase-3 clamiga, or a form that is refused
+  ;; before it runs) the form ends with RESULT 10: the error text is the
+  ;; buffer's message, with a beep.
   (multiple-value-bind (doc tr wire) (make-wired-fake "(boom)|")
+    (declare (ignore wire))
     (run-command doc 'clamacs-eval-last-sexp)
+    (fake-answer-attach tr)
     (fake-deliver tr 0 "Package is now CL-USER")
-    (fake-deliver tr 10 "")
-    (fake-deliver tr 0 (lines "ERROR: Undefined function: BOOM" "1 error(s), 0 warning(s)" ""))
-    (is-equal (fake-last-message doc) "1 error(s), 0 warning(s)")
-    (is-equal (fake-editor-diag-rows (doc-editor doc)) '("ERROR: Undefined function: BOOM"))
-    (is (fake-editor-diag-open (doc-editor doc)))
-    ;; An unlocated diagnostic has nowhere to jump: its text is the message.
-    (run-command doc 'clamacs-next-error)
-    (is-equal (fake-last-message doc) "Undefined function: BOOM")
-    (is-equal (wire-error-row wire) 0)))
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 10 CL-USER" "ERROR: Undefined function: BOOM"))
+    (is-equal (fake-last-message doc) "ERROR: Undefined function: BOOM")
+    (is-equal (fake-beeps doc) 1)))
 
 (deftest an-eval-value-with-no-values
   (multiple-value-bind (doc tr wire) (make-wired-fake "(values)|")
     (declare (ignore wire))
     (run-command doc 'clamacs-eval-last-sexp)
+    (fake-answer-attach tr)
     (fake-deliver tr 0 "Package is now CL-USER")
-    (fake-deliver tr 0 "0 error(s), 0 warning(s)")
-    (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
-    (fake-deliver tr 0 "")))
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "; No values"))
+    (is-equal (fake-last-message doc) "; No values")))
 
 (deftest load-buffer-needs-a-file
   (multiple-value-bind (doc tr wire) (make-wired-fake "(x)|")

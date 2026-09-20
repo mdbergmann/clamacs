@@ -219,16 +219,21 @@
 ;;; ------------------------------------------------------------------
 
 (defconstant +string-buffer-size+ 256)
+(defconstant +wide-buffer-size+ 512)   ; a condition line, an inspected object
 
-(defun store-string (buffer string)
-  "Copy STRING into BUFFER, a +STRING-BUFFER-SIZE+ foreign block, cut to
-fit and NUL-terminated.  Characters above 255 become `?'."
-  (let ((n (min (length string) (1- +string-buffer-size+))))
+(defun store-text (buffer size string)
+  "Copy STRING into BUFFER, a foreign block of SIZE bytes, cut to fit and
+NUL-terminated.  Characters above 255 become `?'."
+  (let ((n (min (length string) (1- size))))
     (dotimes (i n)
       (let ((code (char-code (char string i))))
         (ffi:poke-u8 buffer (if (< code 256) code 63) i)))
     (ffi:poke-u8 buffer 0 n)
     buffer))
+
+(defun store-string (buffer string)
+  "STORE-TEXT into a +STRING-BUFFER-SIZE+ block."
+  (store-text buffer +string-buffer-size+ string))
 
 (defun take-foreign-string (address)
   "A string the class AllocVec'd for us (ExportText, ExportBlock): its
@@ -303,7 +308,15 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   errors-window errors-list
   ;; Set while EDITOR-SELECT-DIAGNOSTIC moves the list's cursor, so the
   ;; selection hook does not jump a second time
-  (selecting nil))
+  (selecting nil)
+  ;; The debugger window (debugger.lisp), made on first use: its objects
+  ;; and the strings MUI keeps pointers to; DBG-SELECTING as SELECTING
+  dbg-window dbg-condition-obj dbg-restarts dbg-frames dbg-locals
+  dbg-evalstr dbg-continue-btn dbg-title-buf dbg-condition-buf
+  (dbg-selecting nil)
+  ;; The inspector window (inspector.lisp), made on first use
+  insp-window insp-object-obj insp-parts insp-back-btn
+  insp-title-buf insp-object-buf)
 
 (defvar *editor* nil
   "The running MUI editor, from START to its return.")
@@ -1300,6 +1313,286 @@ GetAttr hands back unsigned)."
            (mui:set-attrs list m:+muia-list-active+ (or row m:+muiv-list-active-off+))
         (setf (mui-editor-selecting editor) nil)))))
 
+;;; ------------------------------------------------------------------
+;;; The debugger and inspector windows: the faces of debugger.lisp and
+;;; inspector.lisp, plain MUI Lists and buttons as the diagnostics window
+;;; is.  The state lives over there; these methods only show it, and the
+;;; hooks hand a row number or a line of text back.
+;;; ------------------------------------------------------------------
+
+(defun fill-list (list rows)
+  "ROWS, one string each, as the entries of LIST; nothing selected."
+  (mui:set-attrs list m:+muia-list-quiet+ t)
+  (mui:do-method list m:+muim-list-clear+)
+  (dolist (row rows)
+    (ffi:with-foreign-string (s row)
+      (mui:do-method list m:+muim-list-insert-single+ s m:+muiv-list-insert-bottom+)))
+  (mui:set-attrs list m:+muia-list-active+ m:+muiv-list-active-off+)
+  (mui:set-attrs list m:+muia-list-quiet+ nil))
+
+(defun make-string-list (&optional read-only)
+  (mui:new-object :list
+                  m:+muia-frame+ (if read-only m:+muiv-frame-read-list+ m:+muiv-frame-input-list+)
+                  m:+muia-list-construct-hook+ m:+muiv-list-construct-hook-string+
+                  m:+muia-list-destruct-hook+ m:+muiv-list-destruct-hook-string+))
+
+(defun make-listview (list &optional double-click)
+  (if double-click
+      (mui:new-object :listview m:+muia-listview-double-click+ t m:+muia-listview-list+ list)
+      (mui:new-object :listview m:+muia-listview-list+ list)))
+
+(defun make-framed-group (title weight child)
+  (mui:new-object :group
+                  m:+muia-frame+ m:+muiv-frame-group+
+                  m:+muia-frame-title+ title
+                  m:+muia-weight+ weight
+                  m:+muia-group-child+ child))
+
+(defun make-button (label control-char)
+  "MUI's KeyButton: a centred Text with a button frame and a keyboard
+shortcut."
+  (mui:new-object :text
+                  m:+muia-frame+ m:+muiv-frame-button+
+                  m:+muia-background+ m:+muii-button-back+
+                  m:+muia-input-mode+ m:+muiv-input-mode-rel-verify+
+                  m:+muia-text-contents+ label
+                  m:+muia-text-pre-parse+ (format nil "~Cc" (code-char 27))
+                  m:+muia-control-char+ (char-code control-char)
+                  m:+muia-cycle-chain+ t))
+
+(defun app-hook (editor function)
+  "A MUIM_CallHook hook that runs FUNCTION (of no arguments) on the
+application's task and lets the loop carry out a quit it asked for."
+  (mui:pool-hook (lambda (hook object message)
+                   (declare (ignore hook object message))
+                   (funcall function)
+                   (after-command editor)
+                   0)))
+
+(defun on-notify (editor object attribute trigger function)
+  (mui:notify object attribute trigger :application m:+muim-call-hook+
+              (app-hook editor function)))
+
+(defun dispose-aux-window (editor window what)
+  "An auxiliary window at exit: closed, taken out of the application and
+disposed of, as DISPOSE-ERRORS-WINDOW does (an orphan window otherwise,
+on MUI 3.8)."
+  (when window
+    (mui:set-attrs window m:+muia-window-open+ nil)
+    (mui:do-method (mui-editor-app editor) intui:+om-remmember+ window)
+    (dispose-window-object editor window what)))
+
+;;; --- the debugger
+
+(defun ensure-debugger-window (editor)
+  (or (mui-editor-dbg-window editor)
+      (let* ((title-buf (ffi:alloc-foreign +string-buffer-size+))
+             (condition-buf (ffi:alloc-foreign +wide-buffer-size+))
+             (condition (mui:new-object :text
+                                        m:+muia-text-contents+ (store-text condition-buf +wide-buffer-size+ "")
+                                        m:+muia-text-set-min+ nil
+                                        m:+muia-frame+ m:+muiv-frame-text+
+                                        m:+muia-background+ m:+muii-text-back+))
+             (restarts (make-string-list))
+             (frames (make-string-list))
+             (locals (make-string-list t))
+             ;; A double-click is the Listview's attribute, not the List's.
+             (restarts-view (make-listview restarts t))
+             (frames-view (make-listview frames t))
+             (evalstr (mui:new-object :string
+                                      m:+muia-frame+ m:+muiv-frame-string+
+                                      m:+muia-string-max-len+ 256
+                                      m:+muia-cycle-chain+ t))
+             (invoke-btn (make-button "Invoke restart" #\i))
+             (continue-btn (make-button "Continue" #\c))
+             (abort-btn (make-button "Abort" #\a))
+             (window (mui:new-object
+                      :window
+                      m:+muia-window-title+ (store-string title-buf "clamacs debugger")
+                      m:+muia-window-width+ (mui:window-size-visible 60)
+                      m:+muia-window-height+ (mui:window-size-visible 60)
+                      m:+muia-window-root-object+
+                      (mui:new-object
+                       :group
+                       m:+muia-group-child+ condition
+                       m:+muia-group-child+ (make-framed-group "Restarts" 40 restarts-view)
+                       m:+muia-group-child+ (make-framed-group "Backtrace" 100 frames-view)
+                       m:+muia-group-child+ (make-framed-group "Locals" 60 (make-listview locals))
+                       m:+muia-group-child+
+                       (mui:new-object :group m:+muia-group-horiz+ t
+                                       m:+muia-group-child+ (mui:new-object :text
+                                                                            m:+muia-text-contents+ "Eval in frame:"
+                                                                            m:+muia-text-set-min+ t
+                                                                            m:+muia-weight+ 0)
+                                       m:+muia-group-child+ evalstr)
+                       m:+muia-group-child+
+                       (mui:new-object :group m:+muia-group-horiz+ t
+                                       m:+muia-group-child+ invoke-btn
+                                       m:+muia-group-child+ continue-btn
+                                       m:+muia-group-child+ abort-btn)))))
+        (setf (mui-editor-dbg-window editor) window
+              (mui-editor-dbg-condition-obj editor) condition
+              (mui-editor-dbg-restarts editor) restarts
+              (mui-editor-dbg-frames editor) frames
+              (mui-editor-dbg-locals editor) locals
+              (mui-editor-dbg-evalstr editor) evalstr
+              (mui-editor-dbg-continue-btn editor) continue-btn
+              (mui-editor-dbg-title-buf editor) title-buf
+              (mui-editor-dbg-condition-buf editor) condition-buf)
+        (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
+        (on-notify editor window m:+muia-window-close-request+ t
+                   (lambda () (debug-window-closed editor)))
+        ;; Selecting a frame asks for its locals; a double-click opens its
+        ;; source.  Selecting a restart does nothing; a double-click or the
+        ;; Invoke button invokes it.
+        (on-notify editor frames m:+muia-list-active+ :every-time
+                   (lambda ()
+                     (unless (mui-editor-dbg-selecting editor)
+                       (debug-frame-selected editor (list-active-row frames)))))
+        (on-notify editor frames-view m:+muia-listview-double-click+ t
+                   (lambda () (debug-frame-clicked editor (list-active-row frames))))
+        (on-notify editor restarts-view m:+muia-listview-double-click+ t
+                   (lambda () (debug-restart-clicked editor (list-active-row restarts))))
+        (on-notify editor invoke-btn m:+muia-pressed+ nil
+                   (lambda () (debug-restart-clicked editor (list-active-row restarts))))
+        (on-notify editor continue-btn m:+muia-pressed+ nil
+                   (lambda () (debug-continue-clicked editor)))
+        (on-notify editor abort-btn m:+muia-pressed+ nil
+                   (lambda () (debug-abort-clicked editor)))
+        ;; RET in the eval line: the form goes to the selected frame and
+        ;; the line is cleared (the String copies what it is set to).
+        (on-notify editor evalstr m:+muia-string-acknowledge+ :every-time
+                   (lambda ()
+                     (let ((text (or (mui:get-attr-string m:+muia-string-contents+ evalstr) "")))
+                       (ffi:with-foreign-string (empty "")
+                         (mui:set-attrs evalstr m:+muia-string-contents+ empty))
+                       (debug-eval-entered editor text))))
+        window)))
+
+(defmethod editor-debugger-open ((editor mui-editor) dbg)
+  (let ((window (ensure-debugger-window editor)))
+    (mui:set-attrs (mui-editor-dbg-condition-obj editor) m:+muia-text-contents+
+                   (store-text (mui-editor-dbg-condition-buf editor) +wide-buffer-size+
+                               (debugger-condition dbg)))
+    (fill-list (mui-editor-dbg-restarts editor) (debugger-restarts dbg))
+    (mui:set-attrs (mui-editor-dbg-continue-btn editor) m:+muia-disabled+
+                   (not (debugger-has-continue dbg)))
+    (fill-list (mui-editor-dbg-frames editor) '())
+    (fill-list (mui-editor-dbg-locals editor) '())
+    (mui:set-attrs window m:+muia-window-title+
+                   (store-string (mui-editor-dbg-title-buf editor)
+                                 (format nil "clamacs debugger (level ~D)" (debugger-level dbg))))
+    ;; Opened, not activated: `M-x clamacs-debugger' gives it the focus.
+    (mui:set-attrs window m:+muia-window-open+ t)))
+
+(defmethod editor-debugger-close ((editor mui-editor))
+  (let ((window (mui-editor-dbg-window editor)))
+    (when window
+      (mui:set-attrs window m:+muia-window-open+ nil))))
+
+(defmethod editor-debugger-raise ((editor mui-editor))
+  (let ((window (ensure-debugger-window editor)))
+    (mui:set-attrs window m:+muia-window-open+ t)
+    (mui:set-attrs window m:+muia-window-activate+ t)))
+
+(defmethod editor-debugger-frames ((editor mui-editor) rows)
+  (fill-list (mui-editor-dbg-frames editor) rows))
+
+(defmethod editor-debugger-select-frame ((editor mui-editor) n)
+  (let ((list (mui-editor-dbg-frames editor)))
+    (when list
+      (setf (mui-editor-dbg-selecting editor) t)
+      (unwind-protect
+           (mui:set-attrs list m:+muia-list-active+ (or n m:+muiv-list-active-off+))
+        (setf (mui-editor-dbg-selecting editor) nil)))))
+
+(defmethod editor-debugger-locals ((editor mui-editor) rows)
+  (fill-list (mui-editor-dbg-locals editor) rows))
+
+(defun dispose-debugger-window (editor)
+  (let ((window (mui-editor-dbg-window editor)))
+    (when window
+      (setf (mui-editor-dbg-window editor) nil
+            (mui-editor-dbg-frames editor) nil)
+      (dispose-aux-window editor window "debugger window")
+      (ffi:free-foreign (mui-editor-dbg-title-buf editor))
+      (ffi:free-foreign (mui-editor-dbg-condition-buf editor))
+      (setf (mui-editor-dbg-title-buf editor) nil
+            (mui-editor-dbg-condition-buf editor) nil))))
+
+;;; --- the inspector
+
+(defun ensure-inspector-window (editor)
+  (or (mui-editor-insp-window editor)
+      (let* ((title-buf (ffi:alloc-foreign +string-buffer-size+))
+             (object-buf (ffi:alloc-foreign +wide-buffer-size+))
+             (object (mui:new-object :text
+                                     m:+muia-text-contents+ (store-text object-buf +wide-buffer-size+ "")
+                                     m:+muia-text-set-min+ nil
+                                     m:+muia-frame+ m:+muiv-frame-text+
+                                     m:+muia-background+ m:+muii-text-back+))
+             (parts (make-string-list))
+             (parts-view (make-listview parts t))
+             (part-btn (make-button "Inspect part" #\p))
+             (back-btn (make-button "Back" #\b))
+             (window (mui:new-object
+                      :window
+                      m:+muia-window-title+ (store-string title-buf "clamacs inspector")
+                      m:+muia-window-width+ (mui:window-size-visible 50)
+                      m:+muia-window-height+ (mui:window-size-visible 40)
+                      m:+muia-window-root-object+
+                      (mui:new-object
+                       :group
+                       m:+muia-group-child+ object
+                       m:+muia-group-child+ parts-view
+                       m:+muia-group-child+
+                       (mui:new-object :group m:+muia-group-horiz+ t
+                                       m:+muia-group-child+ part-btn
+                                       m:+muia-group-child+ back-btn)))))
+        (setf (mui-editor-insp-window editor) window
+              (mui-editor-insp-object-obj editor) object
+              (mui-editor-insp-parts editor) parts
+              (mui-editor-insp-back-btn editor) back-btn
+              (mui-editor-insp-title-buf editor) title-buf
+              (mui-editor-insp-object-buf editor) object-buf)
+        (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
+        ;; The close gadget only closes: the navigation stack in clamiga
+        ;; stays, and the next C-c I starts it over.
+        (mui:notify window m:+muia-window-close-request+ t
+                    window m:+muim-set+ m:+muia-window-open+ nil)
+        (on-notify editor parts-view m:+muia-listview-double-click+ t
+                   (lambda () (inspect-part-clicked editor (list-active-row parts))))
+        (on-notify editor part-btn m:+muia-pressed+ nil
+                   (lambda () (inspect-part-clicked editor (list-active-row parts))))
+        (on-notify editor back-btn m:+muia-pressed+ nil
+                   (lambda () (inspect-back-clicked editor)))
+        window)))
+
+(defmethod editor-inspector-open ((editor mui-editor) insp)
+  (let ((window (ensure-inspector-window editor)))
+    (mui:set-attrs (mui-editor-insp-object-obj editor) m:+muia-text-contents+
+                   (store-text (mui-editor-insp-object-buf editor) +wide-buffer-size+
+                               (inspector-object insp)))
+    (fill-list (mui-editor-insp-parts editor) (inspector-parts insp))
+    (mui:set-attrs window m:+muia-window-title+
+                   (store-string (mui-editor-insp-title-buf editor)
+                                 (format nil "clamacs inspector: ~A" (inspector-type insp))))
+    (mui:set-attrs (mui-editor-insp-back-btn editor) m:+muia-disabled+
+                   (<= (inspector-depth insp) 1))
+    (mui:set-attrs window m:+muia-window-open+ t)
+    (mui:set-attrs window m:+muia-window-activate+ t)))
+
+(defun dispose-inspector-window (editor)
+  (let ((window (mui-editor-insp-window editor)))
+    (when window
+      (setf (mui-editor-insp-window editor) nil
+            (mui-editor-insp-parts editor) nil)
+      (dispose-aux-window editor window "inspector window")
+      (ffi:free-foreign (mui-editor-insp-title-buf editor))
+      (ffi:free-foreign (mui-editor-insp-object-buf editor))
+      (setf (mui-editor-insp-title-buf editor) nil
+            (mui-editor-insp-object-buf editor) nil))))
+
 ;;; --- The notification hooks: one per kind, the document found from the
 ;;; text object's address the notification carries.
 
@@ -1653,6 +1946,9 @@ function: an image is saved before it runs and restores into it."
              (exit-note "documents reaped")
              (dispose-errors-window editor)
              (exit-note "diagnostics window disposed")
+             (dispose-debugger-window editor)
+             (dispose-inspector-window editor)
+             (exit-note "debugger and inspector windows disposed")
              (mui:dispose-object (mui-editor-app editor))
              (exit-note "application disposed")
              (setf (mui-editor-app editor) nil)

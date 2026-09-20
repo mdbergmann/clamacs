@@ -62,6 +62,12 @@
 (defmethod transport-find-port ((tr arexx-transport))
   (find-if #'port-exists-p *clamiga-port-names*))
 
+(defmethod transport-own-port ((tr arexx-transport))
+  "AMIGA.AREXX's port, CLAMACS on the first instance: what REPL-ATTACH
+names.  The C editor had to scan for the port MUI numbered for it; this
+one opened its own."
+  (and (amiga.arexx:running-p) (amiga.arexx:port-name)))
+
 (defmethod transport-send ((tr arexx-transport) port command)
   (mp:with-lock-held ((arexx-transport-lock tr))
     (setf (arexx-transport-pending tr) (cons port command))
@@ -79,7 +85,10 @@
                          do (mp:condition-wait cv lock 1))
                    (prog1 (arexx-transport-pending tr)
                      (setf (arexx-transport-pending tr) nil)))))
-        (when (arexx-transport-quit tr)
+        ;; A job pending at the quit still goes out: it is the REPL-DETACH
+        ;; the closing REPL window queued, and clamiga's REPL thread must be
+        ;; stopped rather than left sending to a port about to vanish.
+        (when (and (arexx-transport-quit tr) (null job))
           (return))
         (when job
           (multiple-value-bind (rc text lost)
@@ -199,11 +208,17 @@ two rapid launches) never share a file."
   "Every verb of port.lisp as an EXT.DEV command -- the same table the
 handler thread dispatches from, so the editor's port is served exactly as
 clamiga's.  EVAL replaces EXT.DEV's own: on this port it names an editor
-command, or a form for the editor's Lisp when it starts with `('."
+command, or a form for the editor's Lisp when it starts with `('.  The
+REPL thread's OUTPUT, RESULT and DEBUGGER (repl.lisp) are RAW verbs: a
+chunk of output keeps its blanks and its newline, where every other
+argument is trimmed."
   (dolist (verb (port-verb-names))
     (let ((verb verb))
-      (ext.dev:define-command verb (arg)
-        (editor-port-call verb arg)))))
+      (if (member verb *raw-port-verbs* :test #'string=)
+          (ext.dev:define-raw-command verb (arg)
+            (editor-port-call verb arg))
+          (ext.dev:define-command verb (arg)
+            (editor-port-call verb arg))))))
 
 (defun start-wire (editor)
   (let ((tr (%make-arexx-transport editor)))

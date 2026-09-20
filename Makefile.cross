@@ -136,10 +136,10 @@ test-amiga: $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
 	@$(MAKE) --no-print-directory -f Makefile.cross verify-amiga
 
 # The LISP editor (specs/clamacs-lisp.md) through the same drive.rexx, on
-# the 68040 config, for the legs its phase has reached (PHASE=3 default);
+# the 68040 config, for the legs its phase has reached (PHASE=4 default);
 # the runtime is the superproject's build/cross/clamiga.  The script
 # verifies the log itself.
-PHASE ?= 3
+PHASE ?= 4
 test-lisp-amiga: $(BUILDDIR)/sendkey
 	verify/realamiga/run-lisp-drive.sh 040 $(PHASE)
 

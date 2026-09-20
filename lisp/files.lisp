@@ -282,6 +282,11 @@ requester.  CONTINUATION gets DOC and the path, unless the user cancelled."
   "Close DOC's window, asking about unsaved changes first when ASK.  Saving
 an unnamed buffer needs a name: the prompt opens and the window stays."
   (unless (doc-closing doc)
+    ;; A transcript is not a file: the REPL window never asks to save, and
+    ;; closing it stops clamiga's REPL thread (repl.lisp).
+    (when (doc-repl doc)
+      (repl-closed doc)
+      (setq ask nil))
     (when (and ask (doc-modified-p doc))
       (case (doc-ask doc (format nil "~A has unsaved changes." (doc-name doc))
                      '(:save :discard :cancel))

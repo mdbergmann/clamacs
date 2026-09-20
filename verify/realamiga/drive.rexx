@@ -1058,11 +1058,13 @@ CALL DELAY(25)
 'GETNAME'
 IF RESULT = '*clamacs-repl*' THEN DO
     SAY 'OK C-c C-z opened' RESULT
-    'MENU clamacs-repl-clear STATE'
-    IF RESULT = 'enabled' THEN
-        SAY 'OK Clear Transcript is live in the REPL window'
-    ELSE
-        SAY 'FAIL Clear Transcript in the REPL window is' RESULT
+    IF PHASE >= 5 THEN DO
+        'MENU clamacs-repl-clear STATE'
+        IF RESULT = 'enabled' THEN
+            SAY 'OK Clear Transcript is live in the REPL window'
+        ELSE
+            SAY 'FAIL Clear Transcript in the REPL window is' RESULT
+    END
 END
 ELSE
     SAY 'FAIL C-c C-z gave window' RESULT
@@ -1251,12 +1253,15 @@ ELSE DO
     SAY 'FAIL no debugger for (dbg-fn 3 4); the echo area says' RESULT
 END
 
-/* The Windows menu's Debugger item follows the DEBUGGER messages. */
-'MENU clamacs-debugger STATE'
-IF RESULT = 'enabled' THEN
-    SAY 'OK the Debugger item woke up with the debugger'
-ELSE
-    SAY 'FAIL the Debugger item while debugging is' RESULT
+/* The Windows menu's Debugger item follows the DEBUGGER messages (the
+** menu strip is phase 5 of the Lisp port). */
+IF PHASE >= 5 THEN DO
+    'MENU clamacs-debugger STATE'
+    IF RESULT = 'enabled' THEN
+        SAY 'OK the Debugger item woke up with the debugger'
+    ELSE
+        SAY 'FAIL the Debugger item while debugging is' RESULT
+END
 CALL LispView 'level 1'
 
 /* The transcript is closed while the form is parked. */
@@ -1319,11 +1324,13 @@ CALL LispView 'after the abort'
 LINE = WaitLine('CL-USER> ', 40)
 IF LINE ~= '' THEN DO
     SAY 'OK RESTART 0 returned to the prompt'
-    'MENU clamacs-debugger STATE'
-    IF RESULT = 'disabled' THEN
-        SAY 'OK the Debugger item dimmed with the restart'
-    ELSE
-        SAY 'FAIL the Debugger item after the restart is' RESULT
+    IF PHASE >= 5 THEN DO
+        'MENU clamacs-debugger STATE'
+        IF RESULT = 'disabled' THEN
+            SAY 'OK the Debugger item dimmed with the restart'
+        ELSE
+            SAY 'FAIL the Debugger item after the restart is' RESULT
+    END
 END
 ELSE DO
     'STATUS'
@@ -1391,8 +1398,9 @@ ELSE DO
     'STATUS'
     SAY 'FAIL after Abort the buffer''s echo area says' RESULT
 END
-'MENU save-buffer'
-'MENU kill-buffer'
+/* By name, not through the menu: the same commands on both editors. */
+'EVAL save-buffer'
+'EVAL kill-buffer'
 'EVAL clamacs-repl'
 'EVAL end-of-buffer'
 

@@ -42,7 +42,54 @@
   (active nil)
   (diag-rows '())
   (diag-open nil)
-  (diag-selected nil))
+  (diag-selected nil)
+  ;; The debugger window: open or not, raised (given the keyboard) how
+  ;; often, and what it was told to show
+  (dbg-open nil)
+  (dbg-raised 0)
+  (dbg-shown nil)                ; (level condition restarts has-continue)
+  (dbg-frames '())
+  (dbg-selected nil)
+  (dbg-locals '())
+  ;; The inspector window
+  (insp-open nil)
+  (insp-shown nil))              ; (type depth object parts)
+
+;;; --- the debugger and inspector windows (debugger.lisp, inspector.lisp)
+
+(defmethod editor-debugger-open ((editor fake-editor) dbg)
+  (setf (fake-editor-dbg-open editor) t
+        (fake-editor-dbg-shown editor) (list (debugger-level dbg)
+                                             (debugger-condition dbg)
+                                             (debugger-restarts dbg)
+                                             (debugger-has-continue dbg))
+        (fake-editor-dbg-frames editor) '()
+        (fake-editor-dbg-selected editor) nil
+        (fake-editor-dbg-locals editor) '()))
+
+(defmethod editor-debugger-close ((editor fake-editor))
+  (setf (fake-editor-dbg-open editor) nil))
+
+(defmethod editor-debugger-raise ((editor fake-editor))
+  (setf (fake-editor-dbg-open editor) t)
+  (incf (fake-editor-dbg-raised editor)))
+
+(defmethod editor-debugger-frames ((editor fake-editor) rows)
+  (setf (fake-editor-dbg-frames editor) rows
+        (fake-editor-dbg-selected editor) nil))
+
+(defmethod editor-debugger-select-frame ((editor fake-editor) n)
+  (setf (fake-editor-dbg-selected editor) n))
+
+(defmethod editor-debugger-locals ((editor fake-editor) rows)
+  (setf (fake-editor-dbg-locals editor) rows))
+
+(defmethod editor-inspector-open ((editor fake-editor) insp)
+  (setf (fake-editor-insp-open editor) t
+        (fake-editor-insp-shown editor) (list (inspector-type insp)
+                                              (inspector-depth insp)
+                                              (inspector-object insp)
+                                              (inspector-parts insp))))
 
 (defmethod editor-active-document ((editor fake-editor))
   (let ((active (fake-editor-active editor)))

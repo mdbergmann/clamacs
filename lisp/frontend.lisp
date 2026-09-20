@@ -39,7 +39,14 @@
   ;; What clamiga said about a symbol's arglist, and where `M-.' came
   ;; from (introspect.lisp).
   (arglists (make-symcache))
-  (locations (make-locstack)))
+  (locations (make-locstack))
+  ;; The REPL window and clamiga's REPL thread (repl.lisp), the debugger
+  ;; window (debugger.lisp) and the inspector window (inspector.lisp):
+  ;; their state, made on first use; and the input history of the prompt.
+  (repl nil)
+  (debugger nil)
+  (inspector nil)
+  (repl-history (make-history)))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.
@@ -68,7 +75,10 @@
    (edit-serial :initform 0 :accessor doc-edit-serial)
    ;; What the editor asked clamiga about this text (introspect.lisp),
    ;; made on first use.
-   (intro :initform nil :accessor %doc-intro)))
+   (intro :initform nil :accessor %doc-intro)
+   ;; The listener state when this window is the REPL (repl.lisp), else
+   ;; NIL: the transcript is read-only by way of the Emacs layer.
+   (repl :initform nil :accessor doc-repl)))
 
 (defmethod initialize-instance :after ((doc document) &key)
   (setf (doc-keys doc)

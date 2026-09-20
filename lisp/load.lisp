@@ -8,7 +8,8 @@
     "killring" "locstack" "symcache"
     "token" "sexp" "indent"
     "frontend" "commands" "minibuffer" "files"
-    "diag" "wire" "port" "introspect"))
+    "diag" "wire" "port" "introspect"
+    "replmsg" "repl" "debugger" "inspector"))
 
 ;;; The frontend: the MUI one on an Amiga, with the ARexx transport and the
 ;;; editor's port behind it; none on the host (the tests bring their own,

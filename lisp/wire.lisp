@@ -45,6 +45,10 @@ the frontend's event loop; a port that is gone by then is reported with
   (:documentation "Start a clamiga with its development port, and wait a
 bounded time for the port to appear.  True when it did."))
 
+(defgeneric transport-own-port (transport)
+  (:documentation "The name of the editor's OWN port -- what clamiga's REPL
+thread is told to send to (REPL-ATTACH) -- or NIL while there is none."))
+
 ;;; ------------------------------------------------------------------
 ;;; Requests and the wire
 ;;; ------------------------------------------------------------------
@@ -113,7 +117,9 @@ gone -- it is announced, and the package is forgotten."
                  (wire-connected wire) t)
            (unless was
              (setf (wire-package wire) nil)
-             (wire-message wire nil "clamiga found on ~A" name))
+             (wire-message wire nil "clamiga found on ~A" name)
+             ;; A REPL window that lost its thread gets a new one.
+             (repl-reconnected (wire-editor wire)))
            t)
           (t
            (setf (wire-connected wire) nil)
@@ -181,7 +187,8 @@ thread."
                    (wire-queue wire) '())
              (wire-message wire (request-doc req)
                            "clamiga is not running (port ~A is gone)"
-                           (wire-port-name wire)))
+                           (wire-port-name wire))
+             (repl-disconnected (wire-editor wire)))
             ((and (/= rc +rc-ok+)
                   (not (request-auto req))
                   (not (eq (request-kind req) :lastresult)))
@@ -234,6 +241,14 @@ thread."
         :source-location :describe :apropos :macroexpand)
        ;; The questions about a symbol (introspect.lisp).
        (intro-reply wire kind doc (request-subject req) rc text))
+      ((:repl-attach :repl-eval :repl-input :repl-interrupt :repl-detach)
+       ;; The REPL window's own requests (repl.lisp).
+       (repl-reply wire kind doc rc text))
+      ((:dbg-backtrace :dbg-frame :dbg-frame-eval :dbg-restart)
+       ;; The debugger's (debugger.lisp).
+       (debug-reply wire kind doc rc text))
+      (:inspect
+       (inspect-reply wire doc rc text))
       (t
        (when (and doc text) (doc-message doc text))))))
 
@@ -321,12 +336,13 @@ already), unless it was told already."
         (setf (wire-package wire) package)))))
 
 (defun wire-eval (doc text)
-  "Send TEXT, one or more forms, for evaluation in DOC's package.  The
-first line of the reply -- the printed values -- lands in the echo area."
-  (let ((wire (require-wire doc)))
-    (when wire
-      (wire-ensure-package wire doc)
-      (wire-request wire doc :eval (concatenate 'string "EVAL " text)))))
+  "Send TEXT, one or more forms, for evaluation in DOC's package -- on
+clamiga's REPL thread (repl.lisp), so output streams into the transcript
+and an error opens the debugger; the first line of the values lands in
+DOC's echo area.  The handler thread's EVAL is for macros and the port,
+not for keys."
+  (when (require-wire doc)
+    (repl-eval-from doc text)))
 
 (defun wire-load (doc path)
   (let ((wire (require-wire doc)))
