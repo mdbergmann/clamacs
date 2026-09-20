@@ -2,15 +2,19 @@
 .DEF PHASE 5
 .BRA {
 .KET }
-; run-lisp-drive -- the LISP editor's acceptance run on a REAL AmigaOS 3
-; machine (the Vampire): run-drive's sequence with the editor started from
-; lisp/clamacs.lisp and drive.rexx told HARDWARE PHASE n.  FS-UAE runs the
-; same thing through run-lisp-drive.sh.  Assigns in place:
+; run-lisp-drive -- the LISP editor's acceptance run on a REAL machine (the
+; Vampire under AmigaOS 3, the MorphOS box): run-drive's sequence with the
+; editor started from lisp/clamacs.lisp and drive.rexx told HARDWARE PHASE
+; n.  FS-UAE runs the same thing through run-lisp-drive.sh.  Assigns in
+; place:
 ;
 ;     Clamacs:            a drawer holding lisp/, verify/realamiga/,
 ;                         examples/arexx/, tests/ and build/amiga/sendkey
-;                         (the checkout's layout)
-;     Clamacs:clamiga/    the cross-built clamiga with its lib/ beside it
+;                         (the checkout's layout; sendkey is the 68k build
+;                         on MorphOS too)
+;     Clamacs:clamiga/    a clamiga for this machine that finds its lib/
+;                         (beside it, or two levels up for a drawer inside
+;                         the cl-amiga checkout)
 ;
 ; Start it detached (never a blocking exec through the box agent) and wait
 ; for the sentinel:
@@ -36,6 +40,18 @@ echo "hardware phase {PHASE}" >>build/amiga/clamacs-test.log
 date >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
 stack 128000
+; The PPC clamiga wants the stack cl-amiga's own MorphOS scripts give it.
+; (A path on the boot volume, not `MOSSYS:': asking AmigaOS 3 for a volume
+; it does not have raises the "please insert volume" requester and parks
+; the script under it.)
+IF EXISTS SYS:MorphOS
+  stack 800000
+ENDIF
+; RX lives in SYS:Rexxc on AmigaOS 3 and on the command path on MorphOS.
+set rx RX
+IF EXISTS SYS:Rexxc/RX
+  set rx SYS:Rexxc/RX
+ENDIF
 ; A warm FASL cache first: the editor's files and the port's library.
 cd Clamacs:clamiga
 clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/warm.lisp >Clamacs:build/amiga/warm.log
@@ -50,7 +66,7 @@ run >Clamacs:build/amiga/lisp-drive-editor.log Clamacs:clamiga/clamiga --no-user
 ; HARDWARE enables the leg that drives keys into the ACTIVE minibuffer,
 ; which FS-UAE cannot (it deactivates the String after one injected key).
 ; LISP names the clamiga the snapshot leg starts its second editor with.
-SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx HARDWARE PHASE {PHASE} LISP Clamacs:clamiga/clamiga >>build/amiga/clamacs-test.log
+$rx Clamacs:verify/realamiga/drive.rexx HARDWARE PHASE {PHASE} LISP Clamacs:clamiga/clamiga >>build/amiga/clamacs-test.log
 echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
 IF EXISTS build/amiga/clamiga.log
   type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
@@ -58,13 +74,13 @@ ENDIF
 echo "=== status ===" >>build/amiga/clamacs-test.log
 status >>build/amiga/clamacs-test.log
 echo "=== examples/arexx/load-current-file.rexx ===" >>build/amiga/clamacs-test.log
-SYS:Rexxc/RX Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
+$rx Clamacs:examples/arexx/load-current-file.rexx >>build/amiga/clamacs-test.log
 echo "=== avail with clamacs running ===" >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
 ; quit.rexx: the editor with its exit trace on (the log must end with the
 ; application disposed and carry no dispose that signalled), then the
 ; target through arexx-host.lisp's flag.
-SYS:Rexxc/RX Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
+$rx Clamacs:verify/realamiga/quit.rexx >>build/amiga/clamacs-test.log
 C:Wait 3
 echo "=== avail after clamacs exited ===" >>build/amiga/clamacs-test.log
 avail >>build/amiga/clamacs-test.log
