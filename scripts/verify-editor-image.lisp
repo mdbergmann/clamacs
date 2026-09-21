@@ -53,14 +53,20 @@
   ;; The editor runs one turn: once its first window is open, the hook
   ;; counts the documents and asks for a quit that discards nothing (the
   ;; buffer is empty), and START returns when the last window is gone.
-  (push (lambda (editor)
-          (setf *editor-image-windows*
-                (length (funcall (find-symbol "LIVE-DOCUMENTS" :clamacs) editor)))
-          (setf (symbol-value (find-symbol "*MENU-STRIP-BUILT*" :cl-user))
-                (and (funcall (find-symbol "MUI-EDITOR-MENUSTRIP" :clamacs) editor) t))
-          (funcall (fdefinition (list 'setf (find-symbol "EDITOR-QUITTING" :clamacs)))
-                   :discard editor))
-        (symbol-value (find-symbol "*AFTER-START-HOOKS*" :clamacs)))
+  ;; The quit is a SETF of a structure accessor, compiled here from the
+  ;; symbol: whether a DEFSTRUCT accessor also has a (SETF name) FUNCTION
+  ;; is implementation-dependent (CLHS DEFSTRUCT), and clamiga has none,
+  ;; so FDEFINITION of it is an undefined function.
+  (let ((quit (compile nil `(lambda (editor)
+                              (setf (,(find-symbol "EDITOR-QUITTING" :clamacs) editor)
+                                    :discard)))))
+    (push (lambda (editor)
+            (setf *editor-image-windows*
+                  (length (funcall (find-symbol "LIVE-DOCUMENTS" :clamacs) editor)))
+            (setf (symbol-value (find-symbol "*MENU-STRIP-BUILT*" :cl-user))
+                  (and (funcall (find-symbol "MUI-EDITOR-MENUSTRIP" :clamacs) editor) t))
+            (funcall quit editor))
+          (symbol-value (find-symbol "*AFTER-START-HOOKS*" :clamacs))))
   (defvar cl-user::*menu-strip-built* nil)
   (editor-image-check "START did not run to a clean return"
                       (eq t (funcall (find-symbol "START" :clamacs))))
