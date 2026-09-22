@@ -18,6 +18,14 @@
 # config: 64 MB, JIT) is the gate; 020 is the lowend check of the
 # Non-goals and slow.
 #
+# IMAGE=1 runs the same legs against the editor the release ships: the
+# boot script first saves build/amiga/clamacs.img with
+# scripts/save-editor-image.lisp (binding tables shed), then starts the
+# editor from it the way the Clamacs launcher does, `--image clamacs.img
+# --eval "(clamacs::run)"`.  What the image lacks next to a source start
+# -- the raw OS names the editor never used -- fails a leg here.  The
+# verdict also wants the shed report and the saved image.
+#
 # Result: build/amiga/clamacs-test.log, build/amiga/clamiga.log (the
 # target's output), build/amiga/lisp-drive-editor.log (the editor's own).
 set -u
@@ -27,6 +35,7 @@ ROOT=$(cd "$HERE/../.." && pwd)
 SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
 PHASE="${2:-5}"
+IMAGE="${IMAGE:-0}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 LOG="$ROOT/build/amiga/clamacs-test.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
@@ -48,6 +57,27 @@ rm -f "$LOG" "$ROOT/build/amiga/clamiga.log" "$ROOT/build/amiga/lisp-drive-edito
 rm -f "$HERE"/*.uaem "$ROOT"/build/amiga/*.uaem
 cp "$ROOT/build/cross/sendkey" "$ROOT/build/amiga/sendkey"
 
+# The editor's start: from the source, or (IMAGE=1) from an image the boot
+# script saves first -- in its own directory, where save-editor-image.lisp
+# writes clamacs.img.
+rm -f "$ROOT/build/amiga/clamacs.img"
+if [ "$IMAGE" = 1 ]; then
+	SAVE_IMAGE='echo "=== saving the editor image ===" >>build/amiga/clamacs-test.log
+cd Clamacs:build/amiga
+CLAmiga:build/cross/clamiga --no-userinit --no-image --heap 8M --non-interactive --load Clamacs:lisp/load.lisp --load Clamacs:scripts/save-editor-image.lisp >>clamacs-test.log
+cd Clamacs:
+IF NOT EXISTS build/amiga/clamacs.img
+  echo "FAIL the editor image was not saved" >>build/amiga/clamacs-test.log
+ENDIF'
+	# No --load: an explicit --image that cannot be restored exits, and an
+	# image without the editor has no CLAMACS package, so the drive can
+	# only pass with the editor from the image.
+	EDITOR='--image Clamacs:build/amiga/clamacs.img --eval "(clamacs::run)"'
+else
+	SAVE_IMAGE=
+	EDITOR='--load Clamacs:lisp/clamacs.lisp'
+fi
+
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
 ; run-lisp-drive boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
 cd Clamacs:
@@ -66,12 +96,13 @@ stack 128000
 IF EXISTS T:clamacs-exit.log
   delete >NIL: T:clamacs-exit.log
 ENDIF
+$SAVE_IMAGE
 ; The target clamiga first, with its development port (see boot-override).
 cd CLAmiga:
 run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
 C:Wait 5
-; The editor: a second clamiga running lisp/clamacs.lisp on the sample.
-run >Clamacs:build/amiga/lisp-drive-editor.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample.lisp
+; The editor: a second clamiga running lisp/clamacs.lisp (or the image) on the sample.
+run >Clamacs:build/amiga/lisp-drive-editor.log build/cross/clamiga --no-userinit --heap 8M --non-interactive $EDITOR -- Clamacs:verify/realamiga/sample.lisp
 cd Clamacs:
 SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx PHASE $PHASE LISP CLAmiga:build/cross/clamiga >>build/amiga/clamacs-test.log
 echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
@@ -139,6 +170,10 @@ fi
 grep -q 'DRIVE-DONE' "$LOG" || { echo "=== FAIL: drive.rexx did not finish ==="; exit 1; }
 grep -q '=== run end ===' "$LOG" || { echo "=== FAIL: the boot script did not finish ==="; exit 1; }
 grep -q 'clamiga ARexx port is' "$LOG" || { echo "=== FAIL: clamiga did not come up; the integration leg was skipped ==="; exit 1; }
+if [ "$IMAGE" = 1 ]; then
+	grep -q 'SAVE-IMAGE: shed [0-9]* binding table' "$LOG" || { echo "=== FAIL: the editor image was saved without shedding the binding tables ==="; exit 1; }
+	grep -q 'Image saved to "clamacs.img"' "$LOG" || { echo "=== FAIL: the editor image was not saved ==="; exit 1; }
+fi
 
 want_phase2='OK clamacs ARexx port is CLAMACS
 OK the editor keeps its stores on this launch
@@ -295,5 +330,9 @@ fi
 if [ "$missing" -ne 0 ]; then
 	echo "=== FAIL: an expected OK line is missing ==="; exit 1
 fi
-echo "=== PASS: the Lisp editor passed drive.rexx PHASE $PHASE on the $LEG leg ==="
+if [ "$IMAGE" = 1 ]; then
+	echo "=== PASS: the Lisp editor, started from its image, passed drive.rexx PHASE $PHASE on the $LEG leg ==="
+else
+	echo "=== PASS: the Lisp editor passed drive.rexx PHASE $PHASE on the $LEG leg ==="
+fi
 exit 0

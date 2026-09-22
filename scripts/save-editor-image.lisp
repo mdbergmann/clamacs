@@ -33,4 +33,13 @@
 
 ;; Deferred: the dump runs at the top-level safe point after this load,
 ;; then the process exits (:quit t) -- with --non-interactive, right away.
-(ext:save-image "clamacs.img" :quit t)
+;;
+;; :shake-bindings sheds the binding tables of the amiga/raw/* modules the
+;; frontend loads (cl-amiga's specs/raw-bindings-footprint.md, Phase 3):
+;; about 2,000 names each, of which the editor uses a few dozen -- 254 KB
+;; of the image and of the heap it runs in.  The names the loaded code
+;; refers to are all in the image already; one it never named is gone from
+;; it, so an init file or a port EVAL that calls into the OS directly gets
+;; a reader error saying the table was shed (the README says how to get a
+;; module back).
+(ext:save-image "clamacs.img" :quit t :shake-bindings t)

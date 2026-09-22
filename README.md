@@ -56,6 +56,13 @@ already there (`C-c d x` after `C-c d`, or `C-x` on its own): a key is a
 command or a prefix, not both.  Binding the same keys again replaces the
 earlier binding.
 
+The heap image keeps only the Amiga OS names the editor uses itself (it is
+saved with `EXT:SAVE-IMAGE :SHAKE-BINDINGS`).  An init file that calls the
+OS directly (`amiga.raw.intuition:...`) can name one that is not in it,
+and gets a reader error saying the package's binding table was shed.
+Loading that module's FASL again, from the release's `lib/amiga/raw/`,
+brings the whole module back; a `--no-image` start has all of them.
+
 ## Files and evaluation
 
 **Project > New** opens an empty Lisp buffer in a window of its own;
