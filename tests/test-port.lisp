@@ -111,6 +111,68 @@
       (is-equal (port editor "EVAL port-test-command") '(0 ""))
       (is-equal (port editor "STATUS") '(0 "hi from the port")))))
 
+;;; What a form PRINTS is the answer for everything that reports instead of
+;;; returning -- ROOM, DESCRIBE, a redefinition warning.  The editor has no
+;;; console (Workbench start), so uncaptured output is lost, not misplaced.
+(deftest eval-of-a-form-answers-with-what-it-printed
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor doc)))
+      ;; Output with no newline of its own gets one before the values.
+      (is-equal (port editor "EVAL (princ \"hello\")") '(0 "hello
+\"hello\""))
+      ;; Output that ends in a newline is not given a second one.
+      (is-equal (port editor "EVAL (format t \"a~%\")") '(0 "a
+NIL"))
+      ;; *ERROR-OUTPUT* and *TRACE-OUTPUT* come back too.
+      (is-equal (port editor "EVAL (format *error-output* \"warned\")") '(0 "warned
+NIL"))
+      (is-equal (port editor "EVAL (format *trace-output* \"traced\")") '(0 "traced
+NIL"))
+      ;; Several forms: every one of them prints into the same answer.
+      (is-equal (port editor "EVAL (princ \"one\") (princ \"two\") 3") '(0 "onetwo
+3"))
+      ;; A form that prints nothing answers exactly as it did before capture.
+      (is-equal (port editor "EVAL (+ 40 2)") '(0 "42"))
+      (is-equal (port editor "EVAL (values)") '(0 "; no values"))
+      ;; Printed, then failed: the answer carries both, at rc 10.
+      (let ((answer (port editor "EVAL (progn (princ \"before\") (error \"nope\"))")))
+        (is-equal (first answer) 10)
+        (is-equal (second answer) "before
+ERROR: nope"))
+      ;; And the reader's own error still reads as one.
+      (is-equal (first (port editor "EVAL (car 1 2 3)")) 10))))
+
+;;; A result whose print method itself errors must not drop the output
+;;; already captured ahead of it -- printing the value is part of the
+;;; same protected extent as evaluating it, not a separate step outside.
+(deftest eval-of-a-form-keeps-its-output-when-the-result-cant-be-printed
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor doc)))
+      (port editor "EVAL (defclass port-test-unprintable () ())")
+      (port editor "EVAL (defmethod print-object ((x port-test-unprintable) s) (declare (ignore s)) (error \"cannot print\"))")
+      (let ((answer (port editor "EVAL (progn (princ \"before\") (make-instance (quote port-test-unprintable)))")))
+        (is-equal (first answer) 10)
+        (is-equal (second answer) "before
+ERROR: cannot print")))))
+
+;;; The point of the exercise: ROOM reports the EDITOR's heap.  It prints
+;;; from C (cl_write_cstring_to_stdout), which reaches a rebound
+;;; *STANDARD-OUTPUT* only because a string stream is a native stream --
+;;; so this pins the runtime path as much as the verb.
+(deftest eval-of-room-answers-with-the-heap-report
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let* ((editor (doc-editor doc))
+           (answer (port editor "EVAL (room)"))
+           (text (second answer)))
+      (is-equal (first answer) 0)
+      (is (search "Heap:" text))
+      (is (search "bytes used" text))
+      (is (search "bytes free" text))
+      (is (search "collections" text)))))
+
 (deftest insert-and-getline-round-trip
   (multiple-value-bind (doc tr wire) (sample-doc)
     (declare (ignore tr wire))

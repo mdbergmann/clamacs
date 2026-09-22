@@ -158,6 +158,35 @@ IF RESULT = 'unknown command' THEN
 ELSE
     SAY 'FAIL unknown command gave' RESULT
 
+/* An argument starting with `(' is a FORM, evaluated in the editor's own
+** Lisp -- the live-hacking door.  What the form PRINTS comes back in front
+** of its values, which is the whole point for everything that REPORTS
+** instead of returning: the editor has no console of its own, so without
+** the capture the report is not misplaced, it is lost.
+**
+** These two legs are the ONE place the script knows which language
+** answered: the C editor's EVAL looks a command name up and nothing else
+** (src/rexxport.c, ck_rx_eval_func), so a form there is simply an unknown
+** command.  It is frozen and will not grow the door, so the legs run only
+** for the Lisp editor -- the run that passed `LISP <clamiga>'. */
+IF CLAMIGA ~= '' THEN DO
+'EVAL (progn (princ "printed") 42)'
+IF RC = 0 & POS('printed', RESULT) > 0 & POS('42', RESULT) > 0 THEN
+    SAY 'OK EVAL of a form answered with what it printed and its value'
+ELSE
+    SAY 'FAIL EVAL of a printing form gave rc=' RC 'result=' RESULT
+
+/* And (room) on the editor's own heap, the reason a user reaches for this:
+** it prints from C (cl_write_cstring_to_stdout), so this leg is the one
+** that proves the runtime honours the editor's rebound *STANDARD-OUTPUT*
+** on the MUI task -- a per-thread binding, read from C. */
+'EVAL (room)'
+IF RC = 0 & POS('Heap:', RESULT) > 0 & POS('bytes free', RESULT) > 0 THEN
+    SAY 'OK EVAL (room) reported the editor heap,' LENGTH(RESULT) 'characters'
+ELSE
+    SAY 'FAIL EVAL (room) gave rc=' RC 'result=' RESULT
+END /* CLAMIGA ~= '': the form-eval legs, Lisp editor only */
+
 /* Insert text and read the line back. */
 'EVAL end-of-buffer'
 'INSERT (list 1 2 3)'

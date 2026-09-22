@@ -185,6 +185,8 @@ OK beginning-of-buffer moved
 OK beginning-of-defun found
 OK end-of-defun reached
 OK unknown command rejected
+OK EVAL of a form answered with what it printed and its value
+OK EVAL (room) reported the editor heap,
 OK INSERT and GETLINE round trip
 OK backward-sexp landed
 OK OPEN second file

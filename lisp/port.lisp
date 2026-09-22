@@ -12,7 +12,9 @@
 ;;;; `EVAL' runs an EDITOR command by name -- the namespace `M-x' uses, which
 ;;;; is the point of having a command table -- or, when the argument starts
 ;;;; with `(', evaluates a form in the editor's own Lisp: a macro can DEFUN a
-;;;; command into the running editor.  `KEY' goes through the keymaps, so
+;;;; command into the running editor, and `EVAL (room)' reads the editor's
+;;;; own heap, since what a form prints comes back with its values.  `KEY'
+;;;; goes through the keymaps, so
 ;;;; prefix keys, the C-u reader, C-g and the minibuffer all take part; `TE'
 ;;;; passes straight through to the text widget's own commands.
 ;;;;
@@ -174,21 +176,64 @@ is 1-based."
             (t (goto-line-1 doc line)
                (values +rc-ok+ ""))))))
 
+(defun port-eval-answer (output text)
+  "TEXT with OUTPUT, what the forms printed, in front of it.  A form that
+printed nothing answers exactly what it did before capture, so every
+client that reads a value out of this verb keeps working."
+  (let ((n (length output)))
+    (cond ((zerop n) text)
+          ((char= (char output (1- n)) #\Newline)
+           (concatenate 'string output text))
+          (t (concatenate 'string output (string #\Newline) text)))))
+
 (defun port-eval-form (editor text)
   "TEXT, one or more forms, evaluated in the editor's own Lisp, in
-CL-USER: the printed values of the last, or the error."
+CL-USER: what they printed, then the printed values of the last -- or
+what they printed, then the error.
+
+The three output streams are bound to a string because the editor has no
+console of its own: started from Workbench its stdout goes nowhere, and
+from a Shell it goes to a window nobody is looking at.  Without the
+capture the whole point of the verb is missing for everything that
+REPORTS rather than returns -- `EVAL (room)' answered a bare NIL with the
+heap figures dropped on the floor, and so did DESCRIBE, APROPOS and a
+redefinition warning.  The error is caught HERE, not left to PORT-VERB,
+so that a form which printed and then failed still answers with both --
+printing the result is inside the same protected extent, so an
+unprintable result loses only the value, never the output already
+captured ahead of it."
   (declare (ignore editor))
-  (let ((*package* (find-package :cl-user))
-        (eof (list :eof))
-        (results '()))
-    (with-input-from-string (in text)
-      (loop for form = (read in nil eof)
-            until (eq form eof)
-            do (setq results (multiple-value-list (eval form)))))
-    (values +rc-ok+
-            (if results
-                (format nil "~{~S~^ ; ~}" results)
-                "; no values"))))
+  (let* ((eof (list :eof))
+         (results '())
+         (failure nil)
+         (body nil)
+         (*package* (find-package :cl-user))
+         (output
+           (with-output-to-string (capture)
+             (let ((*standard-output* capture)
+                   (*error-output* capture)
+                   (*trace-output* capture))
+               (handler-case
+                   (progn
+                     (with-input-from-string (in text)
+                       (loop for form = (read in nil eof)
+                             until (eq form eof)
+                             do (setq results (multiple-value-list (eval form)))))
+                     (setq body
+                           (if results
+                               (format nil "~{~S~^ ; ~}" results)
+                               "; no values")))
+                 (error (e)
+                   (setq failure
+                         (handler-case (princ-to-string e)
+                           (error () "(unprintable condition)")))))))))
+    ;; The values are printed inside the CL-USER binding above, as they
+    ;; always were: a symbol answers FOO, not COMMON-LISP-USER::FOO.
+    (if failure
+        (values +rc-error+
+                (port-eval-answer output (format nil "ERROR: ~A" failure)))
+        (values +rc-ok+
+                (port-eval-answer output body)))))
 
 (define-port-verb "EVAL" (editor arg)
   (with-port-document (doc editor)

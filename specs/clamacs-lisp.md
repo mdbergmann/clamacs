@@ -553,7 +553,9 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    (the verbs: `OPEN SAVE GETFILE GETNAME GOTOLINE EVAL INSERT TE STATUS
    KEY`, a ReadArgs-shaped argument parser; `EVAL` of a `(`-form runs in
    the editor's own Lisp, so a macro can `define-command` into the running
-   editor).  `lisp/transport-arexx.lisp` is the Amiga half: the client
+   editor, and answers with what the form PRINTED in front of its values
+   -- the editor has no console, so an uncaptured report is lost, which
+   made `EVAL (room)` on the editor's own heap answer a bare `NIL`).  `lisp/transport-arexx.lisp` is the Amiga half: the client
    thread (one `AMIGA.AREXX:SEND` at a time, the reply posted to the MUI
    task), the port thread's verbs as `EXT.DEV:DEFINE-COMMAND`s that post
    to the MUI task and wait, the first instance's port being `CLAMACS`,

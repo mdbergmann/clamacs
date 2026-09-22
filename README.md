@@ -82,6 +82,24 @@ REPL again by itself (the echo area says `clamiga found on CLAMIGA`).
 Loading (`C-c C-k`, `C-c C-l`) stays what it was: every error in the file
 becomes a row in the diagnostics window.
 
+Those keys all run the form on the *other* clamiga, the one the editor
+drives.  To reach **the editor's own image** -- to redefine one of its
+functions while it runs, or to read its heap -- send a form to its ARexx
+port, where an argument starting with `(` is evaluated in the editor
+itself:
+
+```rexx
+address 'CLAMACS'
+'EVAL (room)'                       /* the editor's own heap, as text */
+say RESULT
+'EVAL (clamacs:define-command hello (doc arg) (clamacs::doc-message doc "hi"))'
+```
+
+What the form prints comes back in front of its values, so anything that
+reports rather than returns -- `room`, `describe`, a redefinition warning
+-- is readable from a macro; replies are capped at 8 KB.  See
+`tests/test-port.lisp` for the whole verb set.
+
 ## Screenshots
 
 Taken on a Vampire V4 (AmigaOS 3.2, MUI 3.8, 1280x720) driving the
