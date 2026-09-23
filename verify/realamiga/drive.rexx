@@ -322,6 +322,58 @@ ELSE
 END /* PHASE >= 5: the menu strip */
 
 /* ------------------------------------------------------------------ *
+** The Buffers menu (the Lisp editor only, which LISP names: the C editor
+** has none).  BUFFERS reads the menu's items back from MUI -- one line
+** per item, `>' before the ticked one, `-' for the bar between the files
+** and the tool buffers -- and BUFFERS <label> picks an item through the
+** id it carries, as the MenuAction hook would.  sample.lisp is active
+** from the leg above and is left active again.
+** ------------------------------------------------------------------ */
+IF CLAMIGA ~= '' & PHASE >= 5 THEN DO
+NL = '0A'X
+'BUFFERS'
+B = RESULT
+IF POS('> sample.lisp' || NL, B || NL) > 0 & POS('  sample2.lisp' || NL, B || NL) > 0 THEN
+    SAY 'OK the Buffers menu lists the files, sample.lisp ticked'
+ELSE
+    SAY 'FAIL BUFFERS gave' TRANSLATE(B, '|', NL)
+'BUFFERS sample2.lisp'
+R = RESULT
+'GETFILE'
+IF R = '' & POS('sample2.lisp', RESULT) > 0 THEN
+    SAY 'OK picking sample2.lisp in the Buffers menu activated it'
+ELSE
+    SAY 'FAIL BUFFERS sample2.lisp gave' R', active' RESULT
+'BUFFERS'
+IF POS('> sample2.lisp' || NL, RESULT || NL) > 0 & POS('> sample.lisp', RESULT) = 0 THEN
+    SAY 'OK the tick moved to sample2.lisp'
+ELSE
+    SAY 'FAIL after the pick BUFFERS gave' TRANSLATE(RESULT, '|', NL)
+/* A tool buffer goes below a bar. */
+'MENU clamacs-room'
+'BUFFERS'
+B = RESULT
+BAR = POS(NL || '-' || NL, B)
+IF BAR > 0 & POS('> *clamacs-room*', B) > BAR & POS('sample.lisp', B) < BAR THEN
+    SAY 'OK *clamacs-room* is a tool buffer below the bar'
+ELSE
+    SAY 'FAIL with *clamacs-room* open BUFFERS gave' TRANSLATE(B, '|', NL)
+'BUFFERS nothing-by-that-name'
+IF RESULT = 'no such buffer' THEN
+    SAY 'OK BUFFERS refused an unknown buffer'
+ELSE
+    SAY 'FAIL BUFFERS nothing-by-that-name gave' RESULT
+/* Closed, it leaves the menu. */
+'MENU kill-buffer'
+'BUFFERS'
+IF POS('*clamacs-room*', RESULT) = 0 THEN
+    SAY 'OK a closed buffer left the Buffers menu'
+ELSE
+    SAY 'FAIL after kill-buffer BUFFERS gave' TRANSLATE(RESULT, '|', NL)
+'BUFFERS sample.lisp'
+END /* CLAMIGA ~= '' & PHASE >= 5: the Buffers menu */
+
+/* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.
 **
 ** Everything above went in through the ARexx commands, which walk straight

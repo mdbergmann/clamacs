@@ -28,7 +28,8 @@
 ;;; ------------------------------------------------------------------
 
 (defstruct (menu-entry (:constructor make-menu-entry (kind rule command title keys map)))
-  kind                      ; :title, :item or :bar
+  kind                      ; :title, :item, :bar, or :buffers -- the place the
+                            ; open buffers go (BUFFER-MENU), filled at run time
   rule                      ; when an item is enabled, see MENU-RULE-HOLDS-P
   command                   ; the command symbol, or NIL
   title                     ; the label; the menu's name for a :title
@@ -142,6 +143,10 @@
      (bar)
      (item 'clamacs-snapshot-windows    :always        "Snapshot Windows"       nil       :global)
 
+     ;; One item per open buffer, made and remade as windows come and go.
+     (title "Buffers")
+     (make-menu-entry :buffers :always nil nil nil nil)
+
      (title "Help")
      (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global))))
 
@@ -253,6 +258,113 @@ True when it ran."
           (t
            (menu-pick editor index)
            (values +rc-ok+ "")))))
+
+;;; ------------------------------------------------------------------
+;;; The Buffers menu
+;;; ------------------------------------------------------------------
+
+;;; Every open buffer, to switch to with the mouse: the source buffers
+;;; first -- files and unnamed buffers, in the order they were opened --
+;;; then a bar, then the tool buffers the editor makes for itself (the REPL,
+;;; *clamacs-description*, *clamacs-apropos*, ...).  One document is one
+;;; window, so picking a buffer activates its window, as `C-x o' would.
+;;; A frontend remakes the menu's items whenever BUFFER-MENU answers
+;;; something else than what it shows, and ticks the active document's.
+
+(defun tool-document-p (doc)
+  "A buffer the editor made for itself: no file behind it and a name in
+stars, as Emacs spells its own (*clamacs-repl*)."
+  (let ((name (doc-name doc)))
+    (and (null (doc-path doc))
+         (> (length name) 1)
+         (char= (char name 0) #\*))))
+
+(defun buffer-labels (docs)
+  "The label of each of DOCS, in order.  A name that two buffers share
+gets the file's directory when it has one (\"x.lisp  (Work:a/)\"), else
+Emacs's `<2>', `<3>' ... from the second on."
+  ;; A handful of buffers, asked after every input event: counted in the
+  ;; list, no tables made.
+  (let ((names (mapcar #'doc-name docs)))
+    (loop for doc in docs
+          for i from 0
+          collect
+              (let* ((name (doc-name doc))
+                     (path (doc-path doc))
+                     (n (1+ (count name names :end i :test #'string=))))
+                (cond ((= (count name names :test #'string=) 1) name)
+                      (path
+                       (let ((dir (subseq path 0 (- (length path)
+                                                    (length (path-basename path))))))
+                         (if (string= dir "")
+                             name
+                             (format nil "~A  (~A)" name dir))))
+                      ((= n 1) name)
+                      (t (format nil "~A<~D>" name n)))))))
+
+(defun buffer-menu (editor)
+  "The Buffers menu as it should be now: a list of (LABEL . DOC) for each
+open buffer and :BAR between the sources and the tools -- only when there
+are both."
+  (let* ((docs (live-documents editor))
+         (sources (remove-if #'tool-document-p docs))
+         (tools (remove-if-not #'tool-document-p docs))
+         (all (append sources tools))
+         (entries (mapcar #'cons (buffer-labels all) all)))
+    (if (and sources tools)
+        (append (subseq entries 0 (length sources))
+                (list :bar)
+                (nthcdr (length sources) entries))
+        entries)))
+
+(defun buffer-menu-equal (a b)
+  "Whether the Buffers menus A and B show the same items for the same
+documents -- what a frontend asks before remaking its items."
+  (and (= (length a) (length b))
+       (every (lambda (x y)
+                (if (eq x :bar)
+                    (eq y :bar)
+                    (and (consp y) (eq (cdr x) (cdr y)) (string= (car x) (car y)))))
+              a b)))
+
+(defun buffer-menu-pick (editor doc)
+  "Switch to DOC's window, as its item in the Buffers menu does.  True
+when DOC is still open."
+  (when (and doc (member doc (live-documents editor)))
+    (doc-activate doc)
+    t))
+
+(defgeneric editor-buffer-menu-lines (editor)
+  (:documentation "The Buffers menu as the frontend shows it, one string
+per item: the label, with `> ' before the ticked one and `  ' before the
+others, and `-' for the bar.  A frontend with real menu items reads them
+back; this method says what they should be.")
+  (:method ((editor editor))
+    (let ((active (editor-active-document editor)))
+      (mapcar (lambda (e)
+                (cond ((eq e :bar) "-")
+                      ((eq (cdr e) active) (format nil "> ~A" (car e)))
+                      (t (format nil "  ~A" (car e)))))
+              (buffer-menu editor)))))
+
+(defgeneric editor-buffer-menu-pick (editor label)
+  (:documentation "Pick the Buffers menu's item LABEL as the mouse would.
+True when there was one.  A frontend with real menu items goes through the
+item it made.")
+  (:method ((editor editor) label)
+    (let ((e (find-if (lambda (e) (and (consp e) (string= (car e) label)))
+                      (buffer-menu editor))))
+      (and e (buffer-menu-pick editor (cdr e))))))
+
+;;; BUFFERS [label]: the Buffers menu from a macro.  Without an argument it
+;;; answers EDITOR-BUFFER-MENU-LINES; with one it picks the item with that
+;;; label, answering "" or "no such buffer".
+(define-port-verb "BUFFERS" (editor arg)
+  (cond ((string= arg "")
+         (values +rc-ok+ (format nil "~{~A~^~%~}" (editor-buffer-menu-lines editor))))
+        ((editor-buffer-menu-pick editor arg)
+         (values +rc-ok+ ""))
+        (t (values +rc-ok+ "no such buffer"))))
 
 ;;; ------------------------------------------------------------------
 ;;; About

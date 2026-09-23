@@ -143,6 +143,17 @@ echo area:
 
 ![The diagnostics window](docs/screenshots/diagnostics.png)
 
+## Buffers
+
+The **Buffers** menu lists every open buffer; picking one brings its
+window to the front, and the active one is ticked. Your files and unnamed
+buffers come first, in the order you opened them. Below a separator are
+the editor's own tool buffers: the REPL, `*clamacs-description*`,
+`*clamacs-apropos*`, `*clamacs-room*` and so on. When two files share a
+name, each entry also shows its directory. A macro can read the menu with
+`BUFFERS` and pick from it with `BUFFERS <name>`. See
+`tests/test-menu.lisp`.
+
 ## Window positions
 
 Arrange the windows, then pick **Windows > Snapshot Windows** (or `M-x

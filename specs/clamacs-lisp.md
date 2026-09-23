@@ -720,6 +720,22 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    Still to do in this phase: the image in the release script, the
    Vampire and MorphOS runs, the lowend check, the retirement of `src/`.
 
+   **Beyond parity: the Buffers menu (2026-09-23).**  A `:buffers` slot
+   in the table (its own "Buffers" title) is filled at run time from
+   `buffer-menu` (menu.lisp): the source buffers in opening order, a bar,
+   then the tool buffers (`tool-document-p`: no path, a name in stars);
+   a shared name gets its directory, or Emacs's `<n>` without a file.  The
+   MUI frontend remakes the items only when `buffer-menu-equal` says the
+   list changed, and ticks the active document's (CHECKIT items, ids from
+   `+buffer-item-id-base+` up) -- from `housekeeping` in the event loop,
+   NEVER from the MenuAction hook: remaking items remakes Intuition's
+   strip, which MUI may still be walking (`NextSelect`) when the hook
+   runs.  Live changes are bracketed in `MUIM_Menustrip_InitChange` /
+   `ExitChange` (MUI 4 needs it; MUI 3.8 answers 0 and changes as it
+   goes).  The port's `BUFFERS [label]` reads the items back from MUI and
+   picks through an item's `MUIA_UserData`; drive.rexx runs it under
+   `LISP` only (the C editor has no Buffers menu).
+
    **Beyond parity: the editor's own Lisp (2026-09-23).**  The editor is
    a clamiga, so the wire can talk to it instead of to clamiga:
    `lisp/transport-self.lisp` is a third transport, portable (MP and

@@ -45,9 +45,15 @@
                   (push command seen))
                 (is (member (menu-entry-rule e) *menu-rules*))
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
-                (incf items))))
+                (incf items))
+               (:buffers
+                ;; The place of the open buffers: a menu of its own.
+                (is (and (> i 0) (eq (menu-entry-kind (nth (1- i) entries)) :title)))
+                (is-equal (menu-entry-title (nth (1- i) entries)) "Buffers")
+                (is (or (null next) (eq (menu-entry-kind next) :title))))))
+    (is-equal (count :buffers entries :key #'menu-entry-kind) 1)
     (is-equal (menu-count) (length entries))
-    (is-equal titles 6)
+    (is-equal titles 7)
     (is (> items 30))))
 
 (deftest menu-find-returns-the-item
@@ -252,7 +258,116 @@
     (is (not (menu-pick editor nil)))
     (is (not (menu-pick editor 0)))         ; a title
     ;; A pick over the port without a document is still answered.
-    (is-equal (port editor "MENU find-file STATE") '(0 "enabled"))))
+    (is-equal (port editor "MENU find-file STATE") '(0 "enabled"))
+    ;; The Buffers menu's slot is no item to pick.
+    (is (not (menu-pick editor (position :buffers (menu-entries) :key #'menu-entry-kind))))))
+
+;;; --- the Buffers menu --------------------------------------------------------
+
+(defun named-fake (editor name &optional path)
+  (let ((doc (make-fake "|" :editor editor)))
+    (setf (doc-name doc) name (doc-path doc) path)
+    doc))
+
+(deftest the-buffers-menu-puts-sources-before-tools
+  (let* ((editor (make-fake-editor))
+         (a (named-fake editor "a.lisp" "Work:a.lisp"))
+         (repl (named-fake editor "*clamacs-repl*"))
+         (u (make-fake "|" :editor editor))
+         (desc (named-fake editor "*clamacs-description*")))
+    ;; Sources in the order they were opened, a bar, then the tools.
+    (is-equal (buffer-menu editor)
+              (list (cons "a.lisp" a) (cons "(unnamed)" u) :bar
+                    (cons "*clamacs-repl*" repl) (cons "*clamacs-description*" desc)))
+    (is (tool-document-p repl))
+    (is (not (tool-document-p a)))
+    (is (not (tool-document-p u)))
+    ;; A closed buffer leaves the menu; without tools there is no bar.
+    (close-document repl nil)
+    (close-document desc nil)
+    (is-equal (buffer-menu editor) (list (cons "a.lisp" a) (cons "(unnamed)" u)))
+    ;; Only tools: no bar either.
+    (close-document a nil)
+    (close-document u nil)
+    (let ((apropos (named-fake editor "*clamacs-apropos*")))
+      (is-equal (buffer-menu editor) (list (cons "*clamacs-apropos*" apropos))))))
+
+(deftest a-name-in-stars-with-a-file-is-a-source
+  ;; What makes a tool is having no file: a file called *x* is a source.
+  (let* ((editor (make-fake-editor))
+         (odd (named-fake editor "*x*" "T:*x*"))
+         (star (named-fake editor "*")))
+    (is (not (tool-document-p odd)))
+    ;; A lone star is no Emacs-style name.
+    (is (not (tool-document-p star)))
+    (is-equal (mapcar #'car (buffer-menu editor)) '("*x*" "*"))))
+
+(deftest buffers-with-the-same-name-are-told-apart
+  (let* ((editor (make-fake-editor))
+         (x1 (named-fake editor "x.lisp" "Work:a/x.lisp"))
+         (x2 (named-fake editor "x.lisp" "Work:b/x.lisp"))
+         (u1 (make-fake "|" :editor editor))
+         (u2 (make-fake "|" :editor editor))
+         (y (named-fake editor "y.lisp" "y.lisp")))
+    (declare (ignore x1 x2 u1 u2))
+    (is-equal (mapcar #'car (buffer-menu editor))
+              '("x.lisp  (Work:a/)" "x.lisp  (Work:b/)"
+                "(unnamed)" "(unnamed)<2>" "y.lisp"))
+    ;; A relative path with no directory has nothing to add.
+    (let ((y2 (named-fake editor "y.lisp" "Work:y.lisp")))
+      (declare (ignore y2))
+      (is-equal (last (mapcar #'car (buffer-menu editor)) 2)
+                '("y.lisp" "y.lisp  (Work:)")))
+    (close-document y nil)))
+
+(deftest buffer-menu-equal-compares-labels-and-documents
+  (let* ((editor (make-fake-editor))
+         (a (named-fake editor "a.lisp" "T:a.lisp"))
+         (b (named-fake editor "*clamacs-repl*"))
+         (menu (buffer-menu editor)))
+    (is (buffer-menu-equal menu (buffer-menu editor)))
+    (is (buffer-menu-equal '() '()))
+    (is (not (buffer-menu-equal menu (butlast menu))))
+    (is (not (buffer-menu-equal menu '())))
+    ;; Same documents, a label changed (a buffer saved under a new name).
+    (setf (doc-name a) "c.lisp" (doc-path a) "T:c.lisp")
+    (is (not (buffer-menu-equal menu (buffer-menu editor))))
+    ;; Same labels, another document.
+    (is (not (buffer-menu-equal (list (cons "x" a)) (list (cons "x" b)))))
+    (is (not (buffer-menu-equal (list :bar) (list (cons "x" b)))))
+    (is (not (buffer-menu-equal (list (cons "x" b)) (list :bar))))))
+
+(deftest buffer-menu-pick-switches-windows
+  (let* ((editor (make-fake-editor))
+         (a (named-fake editor "a.lisp" "T:a.lisp"))
+         (b (named-fake editor "b.lisp" "T:b.lisp")))
+    (doc-activate a)
+    (is (buffer-menu-pick editor b))
+    (is (eq (editor-active-document editor) b))
+    (is-equal (fake-activations b) 1)
+    ;; A buffer closed since the menu was made is not activated.
+    (close-document a nil)
+    (is (not (buffer-menu-pick editor a)))
+    (is-equal (fake-activations a) 1)
+    (is (not (buffer-menu-pick editor nil)))))
+
+(deftest buffers-verb-lists-and-picks
+  (multiple-value-bind (source repl tr wire) (repl-fixture)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor source)))
+      ;; C-c C-z left the REPL active.
+      (is-equal (port editor "BUFFERS")
+                (list 0 (lines "  intro.lisp" "-" "> *clamacs-repl*")))
+      (is-equal (port editor "BUFFERS intro.lisp") '(0 ""))
+      (is (eq (editor-active-document editor) source))
+      (is-equal (port editor "BUFFERS")
+                (list 0 (lines "> intro.lisp" "-" "  *clamacs-repl*")))
+      (is-equal (port editor "BUFFERS *clamacs-repl*") '(0 ""))
+      (is (eq (editor-active-document editor) repl))
+      ;; The label is matched exactly.
+      (is-equal (port editor "BUFFERS INTRO.LISP") '(0 "no such buffer"))
+      (is-equal (port editor "BUFFERS nothing") '(0 "no such buffer"))
+      (is (eq (editor-active-document editor) repl)))))
 
 ;;; --- About and the HyperSpec ---------------------------------------------------
 

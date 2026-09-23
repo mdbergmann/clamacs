@@ -320,7 +320,14 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; The menu strip (menu.lisp): the Menuitem object of each table entry
   ;; (NIL for a title or a bar) and the enable state last set on it, so
   ;; MENU-UPDATE touches only what changed.  NIL when no strip was built.
-  menustrip menu-items menu-enabled)
+  menustrip menu-items menu-enabled
+  ;; The Buffers menu (BUFFER-MENU): its Menu object, the Menuitem of each
+  ;; entry shown with the foreign title it points to (NIL for the bar's),
+  ;; the entries shown, a vector of their documents by item id, and the
+  ;; document whose item is ticked (:UNKNOWN once Intuition may have ticked
+  ;; one itself).
+  buffers-menu (buffer-items '()) (buffers-shown '()) (buffer-docs #())
+  (buffers-checked :unknown))
 
 (defvar *editor* nil
   "The running MUI editor, from START to its return.")
@@ -1335,6 +1342,8 @@ when MUI would not build it: the editor still runs, keys and port intact."
                       (mui:do-method menu m:+muim-family-add-tail+
                                      (mui:new-object :menuitem
                                                      m:+muia-menuitem-title+ +nm-barlabel+)))
+                     (:buffers
+                      (setf (mui-editor-buffers-menu editor) menu))
                      (:item
                       (let ((item (if (menu-entry-keys e)
                                       (mui:new-object :menuitem
@@ -1356,7 +1365,8 @@ when MUI would not build it: the editor still runs, keys and port intact."
         ;; The children added so far go with the strip.
         (when strip (ignore-errors (mui:dispose-object strip)))
         (setf (mui-editor-menustrip editor) nil
-              (mui-editor-menu-items editor) nil)
+              (mui-editor-menu-items editor) nil
+              (mui-editor-buffers-menu editor) nil)
         (format *error-output* "clamacs: the menu strip could not be built (~A) -- running without menus~%" e)
         nil))))
 
@@ -1367,7 +1377,10 @@ when MUI would not build it: the editor still runs, keys and port intact."
                 :self m:+muim-call-hook+
                 (mui:pool-hook (lambda (hook object message)
                                  (declare (ignore hook object))
-                                 (menu-pick editor (menu-item-index (ffi:peek-u32 message 0)))
+                                 (let ((id (ffi:peek-u32 message 0)))
+                                   (if (>= id +buffer-item-id-base+)
+                                       (buffer-item-picked editor (- id +buffer-item-id-base+))
+                                       (menu-pick editor (menu-item-index id))))
                                  (after-command editor)
                                  0))
                 :trigger-value)
@@ -1389,6 +1402,120 @@ points is the honest way."
               when (and item (not (eq want (aref enabled i))))
                 do (mui:set-attrs item m:+muia-menuitem-enabled+ want)
                    (setf (aref enabled i) want))))))
+
+;;; The Buffers menu (menu.lisp's BUFFER-MENU): its items are made and
+;;; disposed as buffers come and go, so they carry ids of their own above
+;;; the table's, the position in BUFFER-DOCS plus this base.
+(defconstant +buffer-item-id-base+ #x10000)
+
+(defun buffer-item-picked (editor n)
+  (let ((docs (mui-editor-buffer-docs editor)))
+    ;; Intuition ticks a picked CHECKIT item itself: say what is ticked now.
+    (setf (mui-editor-buffers-checked editor) :unknown)
+    (when (< -1 n (length docs))
+      (buffer-menu-pick editor (aref docs n)))))
+
+(defun free-buffer-items (editor)
+  "Take the Buffers menu's items out and dispose of them, with their
+titles."
+  (let ((menu (mui-editor-buffers-menu editor)))
+    (dolist (entry (mui-editor-buffer-items editor))
+      (mui:do-method menu m:+muim-family-remove+ (car entry))
+      (mui:dispose-object (car entry))
+      (when (cdr entry) (ffi:free-foreign (cdr entry))))
+    (setf (mui-editor-buffer-items editor) '()
+          (mui-editor-buffers-shown editor) '()
+          (mui-editor-buffer-docs editor) #()
+          (mui-editor-buffers-checked editor) :unknown)))
+
+(defun rebuild-buffer-items (editor want active)
+  (let* ((strip (mui-editor-menustrip editor))
+         (menu (mui-editor-buffers-menu editor))
+         (docs (make-array (count-if #'consp want)))
+         ;; MUI 4 wants a live strip's changes bracketed; MUI 3 makes them
+         ;; as they come and does not know the method (it answers 0).
+         (bracketed (/= 0 (mui:do-method strip m:+muim-menustrip-init-change+))))
+    (unwind-protect
+         (let ((n 0))
+           (free-buffer-items editor)
+           (dolist (e want)
+             (let ((entry
+                     (if (eq e :bar)
+                         (cons (mui:new-object :menuitem m:+muia-menuitem-title+ +nm-barlabel+)
+                               nil)
+                         (let ((title (ffi:foreign-string (car e))))
+                           (cons (handler-case
+                                     (mui:new-object :menuitem
+                                                     m:+muia-menuitem-title+ title
+                                                     m:+muia-menuitem-checkit+ t
+                                                     m:+muia-menuitem-checked+ (eq (cdr e) active)
+                                                     m:+muia-user-data+ (+ +buffer-item-id-base+ n))
+                                   (error (c) (ffi:free-foreign title) (error c)))
+                                 title)))))
+               (mui:do-method menu m:+muim-family-add-tail+ (car entry))
+               (push entry (mui-editor-buffer-items editor))
+               (when (consp e)
+                 (setf (aref docs n) (cdr e))
+                 (incf n))))
+           (setf (mui-editor-buffers-shown editor) want
+                 (mui-editor-buffer-docs editor) docs
+                 (mui-editor-buffers-checked editor) active))
+      (when bracketed
+        (mui:do-method strip m:+muim-menustrip-exit-change+)))))
+
+(defun buffers-menu-sync (editor)
+  "The Buffers menu in step with BUFFER-MENU, the active buffer ticked.
+Only from the event loop, never from a hook: remaking the items remakes
+Intuition's menu strip, and MUI may still be walking the picked items of
+the old one when the MenuAction hook runs."
+  (when (and (mui-editor-buffers-menu editor) (mui-editor-app editor)
+             (not (editor-quitting editor)))
+    (let ((want (buffer-menu editor))
+          (active (editor-active-document editor)))
+      (cond ((not (buffer-menu-equal want (mui-editor-buffers-shown editor)))
+             (handler-case (rebuild-buffer-items editor want active)
+               (error (e)
+                 ;; Not again until the buffers change: the loop runs this
+                 ;; after every input event.
+                 (setf (mui-editor-buffers-shown editor) want)
+                 (format *error-output* "clamacs: the Buffers menu could not be made (~A)~%" e))))
+            ((not (eq active (mui-editor-buffers-checked editor)))
+             (loop for entry in (reverse (mui-editor-buffer-items editor))
+                   for e in want
+                   when (consp e)
+                     do (mui:set-attrs (car entry) m:+muia-menuitem-checked+ (eq (cdr e) active)))
+             (setf (mui-editor-buffers-checked editor) active))))))
+
+;;; The port's BUFFERS reads the items back from MUI, and picks through the
+;;; id an item carries, so drive.rexx checks what the menu shows and the id
+;;; the MenuAction hook would get.  The port's verbs run from the mailbox,
+;;; not inside a menu pick, so the menu is brought up to date first.
+(defmethod editor-buffer-menu-lines ((editor mui-editor))
+  (if (null (mui-editor-buffers-menu editor))
+      (call-next-method)
+      (progn
+        (buffers-menu-sync editor)
+        (loop for (item . title) in (reverse (mui-editor-buffer-items editor))
+              collect (if (null title)
+                          "-"
+                          (format nil "~A ~A"
+                                  (if (/= 0 (or (mui:get-attr m:+muia-menuitem-checked+ item) 0))
+                                      ">" " ")
+                                  (mui:get-attr-string m:+muia-menuitem-title+ item)))))))
+
+(defmethod editor-buffer-menu-pick ((editor mui-editor) label)
+  (if (null (mui-editor-buffers-menu editor))
+      (call-next-method)
+      (progn
+        (buffers-menu-sync editor)
+        (let ((entry (find-if (lambda (entry)
+                                (and (cdr entry)
+                                     (equal (mui:get-attr-string m:+muia-menuitem-title+ (car entry))
+                                            label)))
+                              (mui-editor-buffer-items editor))))
+          (and entry
+               (buffer-item-picked
+                editor (- (mui:get-attr m:+muia-user-data+ (car entry)) +buffer-item-id-base+)))))))
 
 ;;; ------------------------------------------------------------------
 ;;; About and the HyperSpec (menu.lisp)
@@ -2050,6 +2177,7 @@ quit.  True when the last window is gone and the loop must leave."
     (reap editor))
   (when (editor-quitting editor)
     (quit-requested editor))
+  (buffers-menu-sync editor)
   (null (live-documents editor)))
 
 (defun run-loop (editor)
@@ -2137,6 +2265,7 @@ function: an image is saved before it runs and restores into it."
                     (dolist (hook *after-start-hooks*)
                       (funcall hook editor))
                     (menu-update editor)
+                    (buffers-menu-sync editor)
                     (run-loop editor)))
              ;; Order: no more calls from the other threads (waiters are
              ;; woken with the shutdown answer), then the port and the
@@ -2161,7 +2290,12 @@ function: an image is saved before it runs and restores into it."
              (mui:dispose-object (mui-editor-app editor))
              (exit-note "application disposed")
              (setf (mui-editor-app editor) nil
-                   (mui-editor-menustrip editor) nil)
+                   (mui-editor-menustrip editor) nil
+                   (mui-editor-buffers-menu editor) nil)
+             ;; The Buffers menu's items went with it; their titles are ours.
+             (dolist (entry (mui-editor-buffer-items editor))
+               (when (cdr entry) (ffi:free-foreign (cdr entry))))
+             (setf (mui-editor-buffer-items editor) '())
              (free-mailbox editor)))
       (setf *editor* nil))
     t))

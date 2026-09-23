@@ -288,6 +288,12 @@ OK Close Buffer closed it
 OK the menu ran beginning-of-defun
 OK Clear Transcript is dimmed outside the REPL
 OK the Help menu has the HyperSpec
+OK the Buffers menu lists the files, sample.lisp ticked
+OK picking sample2.lisp in the Buffers menu activated it
+OK the tick moved to sample2.lisp
+OK *clamacs-room* is a tool buffer below the bar
+OK BUFFERS refused an unknown buffer
+OK a closed buffer left the Buffers menu
 OK GETWINDOW answered doc1
 OK the snapshot was taken
 OK the snapshot wrote ENV: and ENVARC:
