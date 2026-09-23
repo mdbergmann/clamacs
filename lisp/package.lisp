@@ -24,4 +24,5 @@
            #:keymap-bind-seq
            #:global-keymap
            #:lisp-keymap
-           #:repl-keymap))
+           #:repl-keymap
+           #:in-editor))

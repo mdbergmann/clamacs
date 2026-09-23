@@ -46,7 +46,9 @@
     :repl-window            ; the active document is the REPL window
     :debugging              ; clamiga's REPL thread is parked in the debugger
     :diagnostics            ; the error list is not empty
-    :can-pop))              ; `M-.' has been used: there is a place to go back to
+    :can-pop                ; `M-.' has been used: there is a place to go back to
+    :self                   ; the wire talks to the editor's own Lisp
+    :not-self))
 
 ;;; The order is the order on screen.  Project first, as on any Amiga; the
 ;;; key in the shortcut column is the one a user would learn next.
@@ -108,6 +110,9 @@
      (item 'clamacs-connect             :always        "Connect"                nil       :global)
      (item 'run-lisp                    :not-connected "Start clamiga"          nil       :global)
      (bar)
+     (item 'clamacs-connect-self        :not-self      "Talk to the Editor Itself" nil    :global)
+     (item 'clamacs-connect-clamiga     :self          "Talk to clamiga"        nil       :global)
+     (bar)
      (item 'clamacs-load-buffer         :connected     "Load Buffer"            "C-c C-k" :lisp)
      (item 'clamacs-load-file           :connected     "Load File..."           "C-c C-l" :lisp)
      (item 'clamacs-compile-file        :doc-has-path  "Compile File"           nil       :lisp)
@@ -127,6 +132,7 @@
      (item 'clamacs-repl                :connected     "REPL"                   "C-c C-z" :global)
      (item 'clamacs-inspect             :connected     "Inspect..."             "C-c I"   :lisp)
      (item 'clamacs-debugger            :debugging     "Debugger"               nil       :global)
+     (item 'clamacs-room                :always        "Editor Memory"          nil       :global)
      (bar)
      (item 'clamacs-repl-clear          :repl-window   "Clear Transcript"       "C-c M-o" :repl)
      (item 'clamacs-repl-previous-input :repl-window   "Previous Input"         "M-p"     :repl)
@@ -165,7 +171,7 @@ NIL."
 
 (defstruct (menu-state (:constructor make-menu-state ()))
   (doc-changed nil) (doc-has-path nil) (connected nil) (repl-window nil)
-  (debugging nil) (diagnostics nil) (can-pop nil))
+  (debugging nil) (diagnostics nil) (can-pop nil) (self nil))
 
 (defun menu-rule-holds-p (rule state)
   (ecase rule
@@ -177,7 +183,9 @@ NIL."
     (:repl-window (menu-state-repl-window state))
     (:debugging (menu-state-debugging state))
     (:diagnostics (menu-state-diagnostics state))
-    (:can-pop (menu-state-can-pop state))))
+    (:can-pop (menu-state-can-pop state))
+    (:self (menu-state-self state))
+    (:not-self (not (menu-state-self state)))))
 
 (defun menu-state (editor)
   "The flags the rules are evaluated against, read off EDITOR now."
@@ -191,7 +199,8 @@ NIL."
     (setf (menu-state-connected state) (and wire (wire-connected wire) t)
           (menu-state-diagnostics state) (and wire (> (diaglist-count (wire-diags wire)) 0))
           (menu-state-debugging state) (debugger-active-p editor)
-          (menu-state-can-pop state) (> (locstack-depth (editor-locations editor)) 0))
+          (menu-state-can-pop state) (> (locstack-depth (editor-locations editor)) 0)
+          (menu-state-self state) (wire-self-p wire))
     state))
 
 (defun menu-enabled-items (editor)

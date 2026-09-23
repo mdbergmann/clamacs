@@ -43,14 +43,7 @@ answered with PACKAGE: the prompt's package, as clamiga replies."
 as the transport would: OUTPUT, READLINE, RESULT, DEBUGGER -- LINE is the
 raw command, verbatim after the verb's one blank, as EXT.DEV hands a raw
 verb its argument.  The verb's answer, (values RC TEXT)."
-  (multiple-value-bind (verb end)
-      (let ((end (or (position-if (lambda (c) (member c '(#\Space #\Newline))) line)
-                     (length line))))
-        (values (string-upcase (subseq line 0 end)) end))
-    (port-verb editor verb
-               (if (and (< end (length line)) (char= (char line end) #\Space))
-                   (subseq line (1+ end))
-                   (subseq line end)))))
+  (port-raw-command editor line))
 
 (defun fake-deliver (tr rc text &key lost)
   "clamiga's reply to the command on the wire."

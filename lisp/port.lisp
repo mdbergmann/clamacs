@@ -51,6 +51,20 @@ The verb is case-insensitive; the argument keeps its internal spacing."
                            verb (port-verb-names))))
           (t (port-verb editor verb arg)))))
 
+(defun port-raw-command (editor line)
+  "Run LINE as the REPL thread sends it (OUTPUT, READLINE, RESULT,
+DEBUGGER): the verb, then after ONE blank the argument verbatim -- as
+EXT.DEV hands a raw verb its argument, blanks and newlines kept.  How the
+self transport (transport-self.lisp) delivers in-process what would
+otherwise arrive at the ARexx port: (values RC TEXT)."
+  (let ((end (or (position-if (lambda (c) (member c '(#\Space #\Tab #\Newline #\Return))) line)
+                 (length line))))
+    (port-verb editor
+               (string-upcase (subseq line 0 end))
+               (if (and (< end (length line)) (char= (char line end) #\Space))
+                   (subseq line (1+ end))
+                   (subseq line end)))))
+
 (defun port-verb (editor verb arg)
   "Run VERB with ARG.  An error inside a verb is its answer, not the
 editor's end: rc 10 and the condition's text."

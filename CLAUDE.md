@@ -59,7 +59,14 @@ behaviour spec.  New editor work goes into `lisp/`:
   when it is made, `snapshot-load` reads the layout file before the
   first window, a frontend asks `layout-place` when it creates one,
   `clamacs-snapshot-windows` reads `doc-geometry` /
-  `editor-aux-windows`, `GETWINDOW` for the port).  Only
+  `editor-aux-windows`, `GETWINDOW` for the port).
+  `transport-self.lisp` is the wire's third transport, to the editor's
+  OWN image (`clamacs-connect-self` / `clamacs-connect-clamiga`,
+  `wire-switch` in `wire.lisp`): EXT.DEV run in the editor on a worker
+  thread, the REPL thread's inbound verbs delivered in-process through a
+  wrapped `EXT.DEV:*REPL-SEND*`, `clamacs:in-editor` for code that must
+  run on the MUI task; `tests/test-self.lisp` runs the real REPL thread
+  with the test thread standing in for the MUI task.  Only
   `frontend-mui.lisp` may name `AMIGA.MUI`: it is the two custom classes
   and the document window, a port of `src/textclass.c` and the MUI half
   of `src/document.c` (the "Phase 1 facts" below apply to it line by
@@ -105,8 +112,8 @@ behaviour spec.  New editor work goes into `lisp/`:
   binary); then the shipped macro and `quit.rexx`.  The script checks
   the log itself.  Run it after touching `wire.lisp`, `port.lisp`,
   `introspect.lisp`, `repl.lisp`, `debugger.lisp`, `inspector.lisp`,
-  `menu.lisp`, `snapshot.lisp`, `transport-arexx.lisp` or the event
-  loop.
+  `menu.lisp`, `snapshot.lisp`, `transport-arexx.lisp`,
+  `transport-self.lisp` or the event loop.
   It needs the superproject's `build/cross/clamiga`, rebuilt after a
   runtime change -- a stale one is the first suspect for a red leg.
 - `tests/test-*.lisp` are their tests (the C cases plus what C missed),

@@ -83,10 +83,26 @@ Loading (`C-c C-k`, `C-c C-l`) stays what it was: every error in the file
 becomes a row in the diagnostics window.
 
 Those keys all run the form on the *other* clamiga, the one the editor
-drives.  To reach **the editor's own image** -- to redefine one of its
-functions while it runs, or to read its heap -- send a form to its ARexx
-port, where an argument starting with `(` is evaluated in the editor
-itself:
+drives.  The editor is a clamiga too, and **Clamiga > Talk to the Editor
+Itself** (`M-x clamacs-connect-self`) points all of it at the editor's
+own image instead: the REPL window, the debugger and inspector, arglist,
+completion, describe, apropos, `M-.` and loading.  Redefine one of the
+editor's functions at that prompt, or load one of its source files, and
+the running editor has it.  Forms run on the REPL's own thread, so
+`C-c C-c` interrupts them and an error opens the debugger; wrap anything
+that touches a window or a buffer in `clamacs:in-editor`, which runs it
+on the editor's own task:
+
+```lisp
+(clamacs:in-editor (clamacs::doc-name (clamacs::editor-active-document clamacs::*editor*)))
+```
+
+**Clamiga > Talk to clamiga** switches back.  **Windows > Editor Memory**
+(`M-x clamacs-room`) shows the editor's heap next to the system's free
+memory.  See `tests/test-self.lisp`.
+
+A macro reaches the editor's image through its ARexx port as well, where
+an argument starting with `(` is evaluated in the editor itself:
 
 ```rexx
 address 'CLAMACS'

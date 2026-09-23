@@ -1405,6 +1405,15 @@ points is the honest way."
           (format nil "TextEditor.mcc ~D.~D"
                   (mui-editor-te-version editor) (mui-editor-te-revision editor)))))
 
+(defmethod editor-memory-lines ((editor mui-editor))
+  (flet ((avail (flags) (amiga.exec:avail-mem flags)))
+    (list (format nil "Free:  ~:D bytes (chip ~:D, fast ~:D)"
+                  (avail amiga.exec:+memf-any+)
+                  (avail amiga.exec:+memf-chip+)
+                  (avail amiga.exec:+memf-fast+))
+          (format nil "Largest free block: ~:D bytes"
+                  (avail amiga.exec:+memf-largest+)))))
+
 ;;; URL_OpenA(url, tags) is openurl.library's first function -- `##bias
 ;;; 30', url in a0, the tag list in a1 -- on every platform OpenURL exists
 ;;; for; neither toolchain ships its headers, so the one entry is called

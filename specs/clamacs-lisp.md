@@ -720,6 +720,33 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    Still to do in this phase: the image in the release script, the
    Vampire and MorphOS runs, the lowend check, the retirement of `src/`.
 
+   **Beyond parity: the editor's own Lisp (2026-09-23).**  The editor is
+   a clamiga, so the wire can talk to it instead of to clamiga:
+   `lisp/transport-self.lisp` is a third transport, portable (MP and
+   `EXT.DEV`, no MUI).  A command goes to a worker thread that runs
+   `EXT.DEV:HANDLE-COMMAND` in the editor and posts the reply to the MUI
+   task; `EXT.DEV:*REPL-SEND*` is wrapped so the REPL thread's `OUTPUT`,
+   `READLINE`, `RESULT` and `DEBUGGER` for the port name `CLAMACS-SELF`
+   reach the editor's verbs in-process (`port-raw-command`); `LASTRESULT`
+   is answered from the transport's own last reply.  `wire.lisp` keeps
+   both transports (`wire-home`, `wire-self`) and switches between them
+   (`wire-switch`): only when nothing is in flight or queued, after a
+   `REPL-DETACH` of the old side, and an open REPL window re-attaches to
+   the new side (`repl-switched`).  Commands `clamacs-connect-self` /
+   `clamacs-connect-clamiga` (Clamiga menu, rules `:self`/`:not-self`)
+   and `clamacs-room` (Windows > Editor Memory: `ROOM` plus exec's
+   `AvailMem` through `editor-memory-lines`).  Self-REPL forms run on the
+   REPL thread, not the MUI task -- the REPL thread needs the MUI task to
+   deliver its `OUTPUT`, so a form running there could never print --
+   and `clamacs:in-editor` is the explicit way onto the task (output
+   captured and printed on the caller's thread, an error re-signalled
+   there).  The first host run found a runtime race: dev-repl sent
+   `RESULT` before it marked itself idle, so an editor that sends the
+   next form at once was told the REPL was busy (fixed in cl-amiga,
+   `%repl-run` finishes the job first).  Host tests:
+   `tests/test-self.lisp`, the real EXT.DEV and REPL thread with the test
+   thread as the MUI task; drive.rexx has a Lisp-editor-only leg.
+
 Runtime work expected along the way, each a cl-amiga commit under its
 gates, none blocking phase 0:
 

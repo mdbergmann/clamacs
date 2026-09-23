@@ -84,10 +84,19 @@ LASTRESULT; else the command itself."
   ;; The diagnostic `C-x `' last visited: -1 for a fresh list.
   (error-row -1)
   ;; What was sent, newest first: the tests read it.
-  (sent '()))
+  (sent '())
+  ;; The transport the wire was made with -- clamiga's -- and the one to
+  ;; the editor's own Lisp once `clamacs-connect-self' has made it
+  ;; (transport-self.lisp).  TRANSPORT is whichever of the two is in use;
+  ;; SWITCH-TO the one WIRE-SWITCH is waiting to change to.
+  (home nil)
+  (self nil)
+  (switch-to nil))
 
 (defun make-wire (editor transport)
-  (setf (editor-wire editor) (%make-wire editor transport)))
+  (let ((wire (%make-wire editor transport)))
+    (setf (wire-home wire) transport
+          (editor-wire editor) wire)))
 
 (defun doc-wire (doc)
   (editor-wire (doc-editor doc)))
@@ -155,7 +164,10 @@ whether to start clamiga; a quiet caller (DOC NIL) just fails."
 ;;; ------------------------------------------------------------------
 
 (defun wire-pump (wire)
-  "Put the head of the queue on the wire, if nothing is in flight."
+  "Put the head of the queue on the wire, if nothing is in flight -- or,
+with nothing in flight or queued, make the switch WIRE-SWITCH asked for."
+  (when (and (wire-switch-to wire) (null (wire-inflight wire)) (null (wire-queue wire)))
+    (wire-swap wire))
   (when (and (null (wire-inflight wire)) (wire-queue wire))
     (let ((req (pop (wire-queue wire))))
       (setf (wire-inflight wire) req)
@@ -203,6 +215,51 @@ thread."
             (t
              (wire-dispatch wire req rc text)))))
   (wire-pump wire))
+
+;;; ------------------------------------------------------------------
+;;; Switching between clamiga and the editor's own Lisp
+;;; ------------------------------------------------------------------
+
+(defun wire-self-p (wire)
+  "Whether WIRE talks to the editor's own Lisp now."
+  (and wire (wire-self wire) (eq (wire-transport wire) (wire-self wire)) t))
+
+(defun wire-switch (wire transport)
+  "Talk to TRANSPORT from now on.  The switch waits until nothing is on
+the wire or queued -- a reply always goes back to the transport that was
+asked -- and a REPL attached to the old side is detached first, so its
+thread does not go on sending to a window that now belongs to the other
+side.  True when the switch was made at once."
+  (setf (wire-switch-to wire) transport)
+  (let ((editor (wire-editor wire)))
+    (when (and (wire-connected wire)
+               (repl-session-attached (repl-session editor)))
+      (repl-detach editor)))
+  (wire-pump wire)
+  (null (wire-switch-to wire)))
+
+(defun wire-swap (wire)
+  "Make the switch: forget everything learned from the old side (its
+package, its version, its arglists) and attach an open REPL window to the
+new one."
+  (let ((editor (wire-editor wire))
+        (to (wire-switch-to wire)))
+    (setf (wire-transport wire) to
+          (wire-switch-to wire) nil
+          (wire-connected wire) nil
+          (wire-port-name wire) nil
+          (wire-package wire) nil
+          (wire-version wire) nil)
+    (symcache-clear (editor-arglists editor))
+    (let ((name (transport-find-port to)))
+      (when name
+        (setf (wire-port-name wire) name
+              (wire-connected wire) t))
+      (let ((news (if name
+                      (format nil "Now talking to ~A" name)
+                      "Now talking to clamiga, which is not running (Start clamiga)")))
+        (wire-message wire nil "~A" news)
+        (repl-switched editor news)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Continuations

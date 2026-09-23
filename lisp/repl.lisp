@@ -676,6 +676,28 @@ stops clamiga's REPL thread."
         (repl-note doc "clamiga is gone (it is attached again when it comes back)")
         (repl-prompt doc)))))
 
+(defun repl-switched (editor news)
+  "The wire now talks to the other side (WIRE-SWITCH): whatever the old
+side's REPL thread was doing is over, and an open REPL window attaches to
+the new side at once, NEWS in its transcript."
+  (let ((session (repl-session editor))
+        (doc (repl-doc editor)))
+    (setf (repl-session-attached session) nil
+          (repl-session-attaching session) nil
+          (repl-session-origin session) nil)
+    (repl-clear-pending session)
+    (debug-left editor)
+    (when doc
+      (let ((state (doc-repl doc)))
+        (setf (repl-window-busy state) nil
+              (repl-window-reading state) nil
+              (repl-window-prompt-start state) nil
+              (repl-window-input-start state) nil))
+      (repl-note doc "~A" news)
+      (if (wire-connected (editor-wire editor))
+          (repl-attach doc)
+          (repl-prompt doc)))))
+
 (defun repl-reconnected (editor)
   "The port is back.  A REPL window that lost its thread gets a new one
 without being asked: the transcript says so, and the next RET at the

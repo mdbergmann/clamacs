@@ -237,7 +237,12 @@ still inside a send to a clamiga that never replies cannot be helped:
 that is the ARexx rule, and the editor does not wait for it forever."
   (handler-case (amiga.arexx:stop)
     (error (e) (report-error editor e)))
-  (let ((tr (wire-transport (editor-wire editor))))
+  ;; The editor's own Lisp first: its REPL thread sends through the
+  ;; mailbox, which is closed by now, and its worker may be in a LOAD.
+  (let ((self (wire-self (editor-wire editor))))
+    (when self
+      (self-transport-stop self)))
+  (let ((tr (wire-home (editor-wire editor))))
     (mp:with-lock-held ((arexx-transport-lock tr))
       (setf (arexx-transport-quit tr) t)
       (mp:condition-notify (arexx-transport-cv tr)))
@@ -247,4 +252,11 @@ that is the ARexx rule, and the editor does not wait for it forever."
             do (sleep 0.1)))))
 
 (setf *wire-starter* #'start-wire
-      *wire-stopper* #'stop-wire)
+      *wire-stopper* #'stop-wire
+      ;; `clamacs-connect-self': the wire to the editor's own Lisp reaches
+      ;; the MUI task through the same mailbox as everything else.
+      *self-transport-maker*
+      (lambda (editor)
+        (make-self-transport editor
+                             (lambda (thunk wait)
+                               (call-in-editor editor thunk :wait wait)))))

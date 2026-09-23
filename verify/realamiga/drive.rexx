@@ -1485,6 +1485,74 @@ ELSE DO
 END
 'EVAL clamacs-repl'
 
+/* ------------------------------------------------------------------ *
+** The editor's own Lisp (the Lisp editor only: the C editor has no such
+** item).  Clamiga > Talk to the Editor Itself switches the wire over: the
+** REPL window is detached from clamiga and attached to the EDITOR's image
+** -- loading dev-repl into the editor on this first attach, so the wait
+** is long -- and a form at that prompt runs in the editor.  (room) there
+** reports the editor's heap, IN-EDITOR reaches the MUI task and answers
+** with the active window, and Talk to clamiga switches back.
+** ------------------------------------------------------------------ */
+IF CLAMIGA ~= '' & PHASE >= 5 THEN DO
+'MENU clamacs-connect-self STATE'
+IF RESULT = 'enabled' THEN
+    SAY 'OK Talk to the Editor Itself is live while talking to clamiga'
+ELSE
+    SAY 'FAIL Talk to the Editor Itself is' RESULT
+'MENU clamacs-connect-self'
+ECHO = WaitEcho('REPL attached to the editor itself', 360)
+IF ECHO ~= '' THEN
+    SAY 'OK the REPL moved to the editor itself:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL the REPL did not attach to the editor itself; the echo area says' RESULT
+END
+'EVAL end-of-buffer'
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (room)'
+'KEY RET'
+/* ROOM's lines stream in ahead of RESULT and move the cursor with them:
+** the form is done only when the cursor sits on the next prompt. */
+Y = WaitCursorPast(P + 2, 120)
+IF Y ~= '' THEN Y = WaitLine('CL-USER> ', 120)
+'GOTOLINE' P + 2
+L = GetLine()
+IF Y ~= '' & POS('Heap:', L) > 0 THEN
+    SAY 'OK (room) at the self REPL reported the editor heap:' L
+ELSE DO
+    'STATUS'
+    SAY 'FAIL (room) at the self REPL gave' L '(cursor' Y'); the echo area says' RESULT
+    DO i = P - 2 TO P + 4
+        'GOTOLINE' i
+        SAY 'INFO self REPL line' i':' GetLine()
+    END
+END
+'EVAL end-of-buffer'
+'TE GETCURSOR LINE'
+P = RESULT
+'INSERT (clamacs:in-editor (clamacs::doc-name (clamacs::editor-active-document clamacs::*editor*)))'
+'KEY RET'
+Y = WaitCursorAt(P + 2, 120)
+'GOTOLINE' P + 2
+L = GetLine()
+IF Y ~= '' & POS('*clamacs-repl*', L) > 0 THEN
+    SAY 'OK IN-EDITOR ran on the MUI task and named the active window:' L
+ELSE
+    SAY 'FAIL IN-EDITOR gave' L '(cursor' Y')'
+'EVAL end-of-buffer'
+'MENU clamacs-connect-clamiga'
+ECHO = WaitEcho('REPL attached to CLAMIGA', 120)
+IF ECHO ~= '' THEN
+    SAY 'OK Talk to clamiga moved the REPL back:' ECHO
+ELSE DO
+    'STATUS'
+    SAY 'FAIL the REPL did not come back to clamiga; the echo area says' RESULT
+END
+'EVAL end-of-buffer'
+END /* CLAMIGA ~= '' & PHASE >= 5: the editor's own Lisp */
+
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp
 ** is what verify-amiga expects. */

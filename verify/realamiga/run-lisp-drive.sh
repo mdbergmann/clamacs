@@ -303,7 +303,12 @@ OK Start clamiga is dimmed while connected
 OK Next Error woke up with the diagnostics
 OK Clear Transcript is live in the REPL window
 OK the Debugger item woke up with the debugger
-OK the Debugger item dimmed with the restart'
+OK the Debugger item dimmed with the restart
+OK Talk to the Editor Itself is live while talking to clamiga
+OK the REPL moved to the editor itself
+OK (room) at the self REPL reported the editor heap
+OK IN-EDITOR ran on the MUI task and named the active window
+OK Talk to clamiga moved the REPL back'
 
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then
