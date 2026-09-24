@@ -20,7 +20,7 @@ cm_url="https://esm.sh/codemirror@6.0.1/es2020/codemirror.bundle.mjs"
 # sha256 of that bundle.  esm.sh rebuilds bundles, so the version in the URL
 # alone does not fix the bytes.  Empty = not recorded yet: the build warns and
 # prints the hash of what it got; paste it here to make the check fail closed.
-cm_sha256=""
+cm_sha256="93ae29421c7475361389344a759c316f2b79561fec664760f30e496985efee49"
 
 sha256() {
     if command -v sha256sum >/dev/null 2>&1; then
