@@ -30,6 +30,39 @@
     (is (not called))
     (is-equal (fake-last-message doc) "Quit")))
 
+;; ESC abandons a prompt like C-g.  Left to the input line it was MUI's
+;; GADGET_OFF + WINDOW_CLOSE, and one ESC at "Inspect value: " closed the
+;; document window -- the exit, with one document open.  So the
+;; minibuffer takes it, in every state, and the continuation never runs.
+(deftest esc-abandons-a-prompt-like-c-g
+  (let ((doc (make-fake "ab|c"))
+        (called nil))
+    (prompt doc "Inspect value (evaluated): "
+            (lambda (d a) (declare (ignore d a)) (setq called t)))
+    (is (minibuffer-binds-p doc (k "ESC")))
+    (type-text doc "(+ 1")
+    (type-keys doc "ESC")
+    (is (not (minibuffer-open-p doc)))
+    (is (not called))
+    (is-equal (fake-last-message doc) "Quit")
+    (is-equal (fake-prompt doc) nil)
+    ;; Neither the ESC nor the typed text reached the buffer.
+    (is-equal (fake-state doc) "ab|c")
+    ;; Closed, the minibuffer no longer claims it: in the text ESC is Meta.
+    (is (not (minibuffer-binds-p doc (k "ESC"))))
+    (is (not (minibuffer-key doc (k "ESC"))))))
+
+(deftest esc-abandons-a-search-back-to-the-anchor
+  (let ((doc (make-fake "|one two one")))
+    (type-keys doc "C-s")
+    (is (minibuffer-binds-p doc (k "ESC")))
+    (type-text doc "two")
+    (is-equal (fake-state doc) "one two| one")
+    (type-keys doc "ESC")
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (fake-state doc) "|one two one")
+    (is-equal (fake-last-message doc) "Quit")))
+
 (deftest a-continuation-may-prompt-again
   (let ((doc (make-fake "|"))
         (answers '()))
@@ -50,12 +83,12 @@
     (is (not (minibuffer-binds-p doc (k "C-g"))))
     (is (not (minibuffer-key doc (k "C-g"))))
     (prompt doc "P: " (lambda (d a) (declare (ignore d a))))
-    (dolist (key '("C-g" "TAB" "M-p" "M-n"))
+    (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n"))
       (is (minibuffer-binds-p doc (k key))))
     (dolist (key '("C-s" "C-r" "a" "RET" "C-f"))
       (is (not (minibuffer-binds-p doc (k key)))))
     (type-keys doc "C-g C-s")
-    (dolist (key '("C-g" "C-s" "C-r"))
+    (dolist (key '("C-g" "ESC" "C-s" "C-r"))
       (is (minibuffer-binds-p doc (k key))))
     (dolist (key '("TAB" "M-p" "M-n" "a"))
       (is (not (minibuffer-binds-p doc (k key)))))))
@@ -64,18 +97,18 @@
 ;; the state (the MUI String's native key table): every key BINDS-P can
 ;; say yes to, and nothing else.
 (deftest minibuffer-ever-binds-is-the-union-of-the-states
-  (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r"))
+  (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "C-s" "C-r"))
     (is (minibuffer-ever-binds-p (k key))))
-  (dolist (key '("a" "RET" "C-f" "M-x" "S-TAB" "C-TAB"))
+  (dolist (key '("a" "RET" "C-f" "M-x" "S-TAB" "C-TAB" "M-ESC" "C-ESC"))
     (is (not (minibuffer-ever-binds-p (k key)))))
   ;; and it agrees with BINDS-P in both states
   (let ((doc (make-fake "|")))
     (prompt doc "P: " (lambda (d a) (declare (ignore d a))))
-    (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
+    (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
       (when (minibuffer-binds-p doc (k key))
         (is (minibuffer-ever-binds-p (k key)))))
     (type-keys doc "C-g C-s")
-    (dolist (key '("C-g" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
+    (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "C-s" "C-r" "a" "RET"))
       (when (minibuffer-binds-p doc (k key))
         (is (minibuffer-ever-binds-p (k key)))))))
 

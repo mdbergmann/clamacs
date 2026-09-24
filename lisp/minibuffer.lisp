@@ -66,7 +66,7 @@ cursor and returns true when PATTERN was found."))
 
 (defun prompt (doc label continuation &key (initial "") completer history)
   "Ask for a line of input.  CONTINUATION is called with DOC and the answer
-once the user accepts it; C-g abandons it.  COMPLETER, a function of the
+once the user accepts it; C-g or ESC abandons it.  COMPLETER, a function of the
 input returning what COMPLETE returns (or :HANDLED when it completed and
 said so itself), is what TAB uses; HISTORY, a HISTORY, is what M-p and M-n
 walk and where the answer is recorded."
@@ -119,7 +119,12 @@ name, so no completion, and the command history keeps it."
 ;;; one place that list lives -- MINIBUFFER-KEY acts on exactly these, and
 ;;; a frontend whose input line sees keys first (an active MUI String)
 ;;; asks here before giving one up.
-(defparameter *minibuffer-keys-always* (list (make-key 103 +mod-ctrl+))   ; C-g
+;;; ESC abandons a prompt as C-g does.  In the text ESC is a Meta prefix,
+;;; but the input line has no key state to be a prefix in, and an ESC
+;;; the minibuffer leaves alone is MUI's: GADGET_OFF and WINDOW_CLOSE,
+;;; which closed the window (see *MINI-WINDOW-KEYS* in the MUI frontend).
+(defparameter *minibuffer-keys-always* (list (make-key 103 +mod-ctrl+)    ; C-g
+                                             +key-esc+)
   "Taken whenever the minibuffer is open.")
 (defparameter *minibuffer-keys-isearch* (list (make-key 115 +mod-ctrl+)   ; C-s
                                               (make-key 114 +mod-ctrl+))  ; C-r
@@ -131,8 +136,8 @@ name, so no completion, and the command history keeps it."
 
 (defun minibuffer-binds-p (doc key)
   "Whether KEY is one the minibuffer takes away from the input line NOW:
-C-g whenever it is open; C-s and C-r in a search; TAB and the history keys
-at a prompt."
+C-g and ESC whenever it is open; C-s and C-r in a search; TAB and the
+history keys at a prompt."
   (let ((mini (doc-minibuffer doc)))
     (and mini
          (or (member key *minibuffer-keys-always*)
@@ -175,7 +180,8 @@ current state does not bind as undefined."
 reach the input line."
   (when (minibuffer-binds-p doc key)
     (let ((mini (doc-minibuffer doc)))
-      (cond ((eql key (make-key 103 +mod-ctrl+))
+      (cond ((or (eql key (make-key 103 +mod-ctrl+))
+                 (eql key +key-esc+))
              (minibuffer-abort doc))
             ((eq (minibuffer-kind mini) :isearch)
              ;; C-s or C-r: search again, in that direction.

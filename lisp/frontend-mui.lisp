@@ -193,11 +193,19 @@
 
 ;;; The window keys switched off while the text has the focus: RET must
 ;;; not fire a default gadget, TAB not cycle, ESC neither deactivate nor
-;;; close.  The minibuffer keeps TAB for completion.
+;;; close.  The minibuffer keeps TAB for completion, and ESC as well:
+;;; ESC is both GADGET_OFF and WINDOW_CLOSE to MUI, and with only
+;;; GADGET_NEXT off (as the C editor had it) one ESC at a prompt first
+;;; deactivated the String and then, the mini's GoInactive having
+;;; re-enabled every key, reached the window as WINDOW_CLOSE -- which
+;;; with one document open was the editor's exit.  The mini keeps RET:
+;;; that is how the String accepts the input.
 (defparameter *text-window-keys*
   (logior m:+muikeyf-press+ m:+muikeyf-gadget-next+ m:+muikeyf-gadget-prev+
           m:+muikeyf-gadget-off+ m:+muikeyf-window-close+))
-(defparameter *mini-window-keys* m:+muikeyf-gadget-next+)
+(defparameter *mini-window-keys*
+  (logior m:+muikeyf-gadget-next+ m:+muikeyf-gadget-off+
+          m:+muikeyf-window-close+))
 
 ;;; Eight pens for MUIA_TextEditor_ColorMap.  A SetBlock colour value of N
 ;;; means pen N-1 of this table, 0 the normal pen; the token kinds map onto
