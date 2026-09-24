@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clamacs host spike</title>
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd;
+               font: 13px -apple-system, system-ui, sans-serif; }
+  #wrap { display: flex; flex-direction: column; height: 100%; }
+  #editor { flex: 1; overflow: auto; }
+  .cm-editor { height: 100%; font-size: 14px; }
+  .cm-scroller { font-family: "SF Mono", Menlo, monospace; }
+  #status { padding: 3px 8px; background: #2d2d30; border-top: 1px solid #444;
+            color: #9cdcfe; white-space: pre; }
+  #echo { padding: 3px 8px; background: #252526; min-height: 1.2em; white-space: pre; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="editor"></div>
+  <div id="status">(no arglist)</div>
+  <div id="echo"></div>
+</div>
+<script type="module">

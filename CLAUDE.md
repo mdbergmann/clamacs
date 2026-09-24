@@ -16,7 +16,11 @@ FS-UAE.app -- are not tracked in git; they live in the superproject's
 `verify/realamiga`, see Testing.)
 
 The full design and phase plan is `specs/clamacs-ide.md`; this file is the
-short version.
+short version.  The **host frontend** (macOS/Linux/Windows: webview +
+CodeMirror 6 over the same frontend protocol, the editor's own image as
+the first Lisp, TCP to a separate clamiga second) is `specs/clamacs-host.md`
+-- decisions, the page/Lisp interface, phases H0-H6, one session each;
+`spike/host-webview/` is its proof of concept.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

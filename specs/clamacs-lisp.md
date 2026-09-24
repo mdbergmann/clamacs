@@ -847,6 +847,11 @@ stays.
 
 ## A host frontend (Mac)
 
+**Superseded 2026-09-24 by `specs/clamacs-host.md`**: the webview +
+CodeMirror decision of 2026-09-21, the page/Lisp interface and the
+session-by-session plan (H0-H6) live there; what follows is the
+2026-09-16 assessment, kept for the reasoning.
+
 Asked on 2026-09-16: could Clamacs also run on the Mac?  Nothing in the
 Emacs layer, the wire protocol or the runtime prevents it, and the two
 abstractions above are exactly what it takes.  What is *not* in the
