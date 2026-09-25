@@ -637,11 +637,11 @@ each, with the KeyboardEvent fields a real key would carry."
         (host-log editor "JS error: x is not defined (line 3)")))
     (is-equal (doc-message-text doc) "Page: JS error: x is not defined (line 3)")))
 
-(deftest host-panel-state-reaches-the-editor-without-a-dock
-  ;; The dock is phase H3; until then every panel generic has a method
-  ;; that keeps the state flowing.  Without one, the REPL window's close
-  ;; at quit signalled "no applicable method" out of EDITOR-DEBUGGER-CLOSE
-  ;; before the document was marked closing, and the editor could not quit.
+(deftest host-every-panel-generic-has-a-method
+  ;; Every panel generic has a method on the host editor.  Without one,
+  ;; the REPL window's close at quit signalled "no applicable method" out
+  ;; of EDITOR-DEBUGGER-CLOSE before the document was marked closing, and
+  ;; the editor could not quit (the H2 drive).
   (let* ((editor (host-test-editor))
          (doc (host-test-document editor "x")))
     (with-entry (editor)
@@ -660,6 +660,373 @@ each, with the KeyboardEvent fields a real key would carry."
       (run-command doc 'kill-emacs)
       (is (housekeeping editor)))
     (is-equal (live-documents editor) '())))
+
+;;; --- the dock: the tool buffers and the panels (phase H3) --------------------------
+
+(defparameter *host-dbg-announce*
+  (lines "DEBUGGER 1 CL-USER" "SIMPLE-ERROR: bad 12" "0: ABORT Return to the REPL")
+  "What clamiga sends when (dbg-fn 3 4) errs at the prompt (test-debugger.lisp has the same).")
+
+(defparameter *host-cons-reply*
+  (lines "CONS 1 2" "(1 (2 3))" "0: Car = 1" "1: Cdr = (2 3)")
+  "The INSPECT reply for (list 1 (list 2 3)) (test-inspector.lisp has the same).")
+
+(defun host-wired-editor (&optional (text "") path)
+  "A host editor without a window, a document on it, and a wire over a
+fake transport that finds CLAMIGA: (values editor doc tr wire)."
+  (let* ((editor (host-test-editor))
+         (tr (make-fake-transport))
+         (wire (make-wire editor tr)))
+    (setf (fake-transport-wire tr) wire
+          (fake-transport-port tr) "CLAMIGA")
+    (let ((doc (host-test-document editor text path)))
+      (with-entry (editor) (wire-find-port wire))
+      (host-take-evals editor)
+      (values editor doc tr wire))))
+
+(defmacro host-deliver (editor tr rc text)
+  "A reply delivered inside an entry, so the batch it makes goes out."
+  `(with-entry (,editor) (fake-deliver ,tr ,rc ,text)))
+
+(deftest host-tool-buffers-are-dock-tabs
+  (multiple-value-bind (editor doc tr) (host-wired-editor "(twice 21)")
+    (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+    (is-equal (editor-aux-windows editor) '())
+    ;; C-c C-z: the REPL buffer is a tool buffer, so its tab is the dock's
+    (with-entry (editor) (run-command doc 'clamacs-repl))
+    (let ((repl (repl-doc editor))
+          (js (host-take-evals editor)))
+      (is (search "CK.makeDoc(\"doc2\",\"*clamacs-repl*\",\"tool\");" js))
+      (is (search "CK.activateDoc(\"doc2\");" js))
+      (is (eq (editor-active-document editor) repl))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+      ;; The dock is a window of its own to the snapshot: the bottom of
+      ;; the native window's frame
+      (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200)))
+      (with-entry (editor) (fake-answer-attach tr))
+      ;; Going back to the source leaves the dock open on the REPL
+      (with-entry (editor) (doc-activate doc))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+      ;; Closing the last dock item collapses the dock
+      (with-entry (editor) (run-command repl 'kill-buffer))
+      (is (doc-closing repl))
+      (is (search "CK.removeDoc(\"doc2\");" (host-take-evals editor)))
+      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+      (is-equal (editor-aux-windows editor) '()))))
+
+(deftest host-diagnostics-panel-shows-the-rows-and-a-pick-jumps
+  (let ((path (temp-file "host-errors.lisp"
+                         (lines ";;; errors" "" "(defun ok ())" "" "" "" "(error \"first\")" ""
+                                "(no-such-function)" ""))))
+    (multiple-value-bind (editor doc tr wire) (host-wired-editor "" path)
+      (with-entry (editor) (run-command doc 'clamacs-load-buffer))
+      (is-equal (fake-last-sent tr) (format nil "LOAD ~A" path))
+      (host-take-evals editor)
+      (host-deliver editor tr 10 "")
+      (is-equal (fake-last-sent tr) "LASTRESULT")
+      (host-deliver editor tr 0 (lines (format nil "~A:7: ERROR: first deliberate error" path)
+                                       (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path)
+                                       "2 error(s), 0 warning(s)" ""))
+      (is-equal (doc-message-text doc) "2 error(s), 0 warning(s)")
+      ;; The rows went to the panel, which opened without a selection
+      (let ((js (host-take-evals editor)))
+        (is (search (format nil "CK.showDiagnostics([~S,~S],true);"
+                            (format nil "~A:7: ERROR: first deliberate error" path)
+                            (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path))
+                    js)))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 2 selected none")
+      (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
+      (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200) ("errors" 0 400 800 200)))
+      ;; C-x ` selects the row it jumps to
+      (with-entry (editor) (run-command doc 'clamacs-next-error))
+      (is-equal (doc-index-line doc (doc-point doc)) 6)
+      (is (search "CK.selectDiagnostic(0);" (host-take-evals editor)))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 2 selected 0")
+      ;; A row picked in the panel is visited, and nothing is pushed back
+      (with-entry (editor) (host-diag-pick editor 1))
+      (is-equal (doc-index-line doc (doc-point doc)) 8)
+      (is-equal (doc-message-text doc) "Undefined function: NO-SUCH-FUNCTION")
+      (is-equal (wire-error-row wire) 1)
+      (is (not (search "selectDiagnostic" (host-take-evals editor))))
+      ;; Nothing selected, and a row that is not there: nothing happens
+      (with-entry (editor) (host-diag-pick editor nil))
+      (with-entry (editor) (host-diag-pick editor 7))
+      (is-equal (doc-index-line doc (doc-point doc)) 8)
+      ;; The panel's close only takes it off the screen; the rows stay
+      (with-entry (editor) (host-panel-close editor "diagnostics"))
+      (is-equal (host-panel-state :diagnostics editor) "closed rows 2 selected none")
+      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+      (is-equal (editor-aux-windows editor) '())
+      ;; C-c ! l shows it again, rows or no rows
+      (with-entry (editor) (run-command doc 'clamacs-show-errors))
+      (is (search "CK.showDiagnostics([" (host-take-evals editor)))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
+      ;; A fresh load empties the list; with nothing to show it stays open
+      (with-entry (editor) (run-command doc 'clamacs-load-buffer))
+      (host-deliver editor tr 0 (lines (format nil "; loading ~A" path) "0 error(s), 0 warning(s)"))
+      (is (search "CK.showDiagnostics([],false);" (host-take-evals editor)))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 0 selected none"))
+    (delete-file path)))
+
+(defun host-repl-fixture (&optional (text "(twice 21)"))
+  "A host editor with its REPL buffer open and attached, the REPL active:
+(values editor doc repl tr wire)."
+  (multiple-value-bind (editor doc tr wire) (host-wired-editor text)
+    (with-entry (editor) (run-command doc 'clamacs-repl))
+    (with-entry (editor) (fake-answer-attach tr))
+    (host-take-evals editor)
+    (values editor doc (repl-doc editor) tr wire)))
+
+(deftest host-debugger-panel-follows-the-session
+  (multiple-value-bind (editor doc repl tr) (host-repl-fixture)
+    (declare (ignore doc))
+    (is-equal (host-panel-state :debugger editor)
+              "closed level 0 restarts 0 continue no frames 0 frame none locals 0 condition ")
+    ;; (dbg-fn 3 4) RET at the prompt, then clamiga's DEBUGGER 1
+    (host-type-text editor "(dbg-fn 3 4)")
+    (host-type editor "RET")
+    (is-equal (fake-last-sent tr) "REPL-EVAL (dbg-fn 3 4)")
+    (host-deliver editor tr 0 "")
+    (host-take-evals editor)
+    (with-entry (editor) (port-raw-command editor *host-dbg-announce*))
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.dbgOpen(1,\"SIMPLE-ERROR: bad 12\",[\"0: ABORT Return to the REPL\"],false);" js))
+      (is (not (search "dbgRaise" js))))
+    (is-equal (fake-last-sent tr) "BACKTRACE")
+    (is-equal (host-panel-state :debugger editor)
+              "open level 1 restarts 1 continue no frames 0 frame none locals 0 condition SIMPLE-ERROR: bad 12")
+    (is-equal (host-panel-state :dock editor) "open height 200 shown debugger")
+    (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200) ("debugger" 0 400 800 200)))
+    (is-equal (doc-message-text repl) "Debugger level 1: SIMPLE-ERROR: bad 12")
+    ;; The frames come, frame 0 is selected and its locals asked for
+    (host-deliver editor tr 0 (lines "0: dbg-fn  T:dbg.lisp:27" "1: <anonymous>"))
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.dbgFrames([\"0: dbg-fn  T:dbg.lisp:27\",\"1: <anonymous>\"]);" js))
+      (is (search "CK.dbgSelectFrame(0);" js))
+      (is (search "CK.dbgLocals([]);" js)))
+    (is-equal (fake-last-sent tr) "FRAME 0")
+    (host-deliver editor tr 0 (lines "ARG0 = 3" "ARG1 = 4"))
+    (is (search "CK.dbgLocals([\"ARG0 = 3\",\"ARG1 = 4\"]);" (host-take-evals editor)))
+    (is-equal (doc-message-text repl) "Debugger level 1, frame 0: ARG0 = 3")
+    (is-equal (host-panel-state :debugger editor)
+              "open level 1 restarts 1 continue no frames 2 frame 0 locals 2 condition SIMPLE-ERROR: bad 12")
+    ;; The panel's lists and buttons: a frame selected asks for its
+    ;; locals; Invoke with no restart selected complains; the eval line
+    ;; goes to the selected frame; Abort and Continue send their verbs
+    (with-entry (editor) (debug-frame-selected editor 1))
+    (is-equal (fake-last-sent tr) "FRAME 1")
+    (is (search "CK.dbgLocals([]);" (host-take-evals editor)))
+    (is-equal (host-panel-state :debugger editor)
+              "open level 1 restarts 1 continue no frames 2 frame 1 locals 0 condition SIMPLE-ERROR: bad 12")
+    ;; One request in flight: each is answered before the next goes out
+    (host-deliver editor tr 0 "X = 1")
+    (is (search "CK.dbgLocals([\"X = 1\"]);" (host-take-evals editor)))
+    (is-equal (host-panel-state :debugger editor)
+              "open level 1 restarts 1 continue no frames 2 frame 1 locals 1 condition SIMPLE-ERROR: bad 12")
+    (with-entry (editor) (debug-restart-clicked editor nil))
+    (is-equal (doc-message-text repl) "Select a restart first")
+    (is-equal (host-editor-beeps editor) 1)
+    (with-entry (editor) (debug-eval-entered editor "(list arg0 arg1)"))
+    (is-equal (fake-last-sent tr) "FRAME-EVAL 1 (list arg0 arg1)")
+    (host-deliver editor tr 0 "")
+    (with-entry (editor) (host-dbg-button editor "continue"))
+    (is-equal (fake-last-sent tr) "CONTINUE")
+    (host-deliver editor tr 0 "")
+    (with-entry (editor) (host-dbg-button editor "abort"))
+    (is-equal (fake-last-sent tr) "ABORT")
+    (host-deliver editor tr 0 "")
+    (with-entry (editor) (host-dbg-button editor "nope"))
+    (is (search "no button" (doc-message-text repl)))
+    ;; The tab's close hides the panel; the REPL is still parked, and
+    ;; M-x clamacs-debugger raises it again
+    (with-entry (editor) (host-panel-close editor "debugger"))
+    (is (search "CK.dbgClose();" (host-take-evals editor)))
+    (is (search "still in the debugger" (doc-message-text repl)))
+    (is (debugger-active-p editor))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    (is (not (member '("debugger" 0 400 800 200) (editor-aux-windows editor) :test #'equal)))
+    (with-entry (editor) (run-command repl 'clamacs-debugger))
+    (is (search "CK.dbgRaise();" (host-take-evals editor)))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown debugger")
+    ;; Invoke with restart 0 selected, and the level leaves
+    (with-entry (editor) (debug-restart-clicked editor 0))
+    (is-equal (fake-last-sent tr) "RESTART 0")
+    (host-deliver editor tr 0 "")
+    (with-entry (editor) (port-raw-command editor "DEBUGGER 0 CL-USER"))
+    (is (search "CK.dbgClose();" (host-take-evals editor)))
+    (is-equal (host-panel-state :debugger editor)
+              "closed level 0 restarts 1 continue no frames 2 frame none locals 1 condition SIMPLE-ERROR: bad 12")
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    ;; Closed twice is closed once: nothing more goes to the page
+    (with-entry (editor) (editor-debugger-close editor))
+    (is-equal (host-take-evals editor) "")))
+
+(deftest host-inspector-panel-shows-the-object-and-descends
+  (multiple-value-bind (editor doc tr) (host-wired-editor "")
+    (with-entry (editor) (inspect-form doc "(list 1 (list 2 3))"))
+    (is-equal (fake-last-sent tr) "IN-PACKAGE CL-USER")
+    (host-deliver editor tr 0 "Package is now CL-USER")
+    (is-equal (fake-last-sent tr) "INSPECT (list 1 (list 2 3))")
+    (host-take-evals editor)
+    (host-deliver editor tr 0 *host-cons-reply*)
+    (is (search "CK.inspOpen(\"CONS\",1,\"(1 (2 3))\",[\"0: Car = 1\",\"1: Cdr = (2 3)\"]);"
+                (host-take-evals editor)))
+    (is-equal (host-panel-state :inspector editor) "open type CONS depth 1 parts 2 object (1 (2 3))")
+    (is-equal (host-panel-state :dock editor) "open height 200 shown inspector")
+    (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200) ("inspector" 0 400 800 200)))
+    (is-equal (doc-message-text doc) "Inspecting CONS: (1 (2 3))")
+    ;; Back at the first object is refused; a part descends; Back pops
+    (with-entry (editor) (inspect-back-clicked editor))
+    (is-equal (doc-message-text doc) "Already at the object the inspector started from")
+    (with-entry (editor) (inspect-part-clicked editor nil))
+    (is-equal (doc-message-text doc) "Not a part")
+    (with-entry (editor) (inspect-part-clicked editor 1))
+    (is-equal (fake-last-sent tr) "PART 1")
+    (host-deliver editor tr 0 (lines "CONS 2 2" "((2 3))" "0: Car = (2 3)" "1: Cdr = NIL"))
+    (is (search "CK.inspOpen(\"CONS\",2,\"((2 3))\",[\"0: Car = (2 3)\",\"1: Cdr = NIL\"]);"
+                (host-take-evals editor)))
+    (is-equal (host-panel-state :inspector editor) "open type CONS depth 2 parts 2 object ((2 3))")
+    (with-entry (editor) (inspect-back-clicked editor))
+    (is-equal (fake-last-sent tr) "POP")
+    ;; The tab's close hides the panel; the next C-c I shows it again
+    (with-entry (editor) (host-panel-close editor "inspector"))
+    (is-equal (host-panel-state :inspector editor) "closed type CONS depth 2 parts 2 object ((2 3))")
+    (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+    (host-deliver editor tr 0 *host-cons-reply*)
+    (is-equal (host-panel-state :dock editor) "open height 200 shown inspector")))
+
+(deftest host-a-panel-tab-the-user-picks-is-the-docks-shown-item
+  ;; The REPL is displayed, Diagnostics and Debugger are open, and the user
+  ;; clicks a panel's tab: the page displays it and says so
+  ;; (clamacsDockShown), so closing the REPL afterwards leaves the dock on
+  ;; that panel on both sides instead of moving Lisp's mirror to the first
+  ;; open panel.
+  (multiple-value-bind (editor doc repl) (host-repl-fixture)
+    (declare (ignore doc))
+    (with-entry (editor) (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+    (with-entry (editor) (editor-debugger-open editor (make-debugger)))
+    (with-entry (editor) (doc-activate repl))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    (host-take-evals editor)
+    ;; Not an open panel, a tool buffer's id, JSON null, a number: nothing
+    (with-entry (editor) (host-dock-shown editor "inspector"))
+    (with-entry (editor) (host-dock-shown editor "doc2"))
+    (with-entry (editor) (host-dock-shown editor :null))
+    (with-entry (editor) (host-dock-shown editor 7))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    ;; The Debugger tab, then the Diagnostics tab, then the Debugger's again
+    (with-entry (editor) (host-dock-shown editor "debugger"))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown debugger")
+    (with-entry (editor) (host-dock-shown editor "diagnostics"))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
+    (with-entry (editor) (host-dock-shown editor "debugger"))
+    ;; A tab pick tells the page nothing: it displays the tab already
+    (is-equal (host-take-evals editor) "")
+    ;; A second tool buffer displayed, the Debugger tab picked over it, and
+    ;; that buffer closed: the dock stays on the picked panel instead of
+    ;; moving to the first open one
+    (let ((desc nil))
+      (with-entry (editor) (setq desc (ensure-scratch-document editor "*clamacs-description*" nil)))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown doc3")
+      (with-entry (editor) (host-dock-shown editor "debugger"))
+      (with-entry (editor) (run-command desc 'kill-buffer))
+      (is (doc-closing desc))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown debugger"))
+    ;; The panel not displayed closes without moving the dock; the displayed
+    ;; one hands the dock to the next open item, the REPL
+    (with-entry (editor) (host-panel-close editor "diagnostics"))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown debugger")
+    (with-entry (editor) (editor-debugger-close editor))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    ;; The REPL's close takes the session's debugger with it (its window
+    ;; is the session's): nothing open, the dock collapses
+    (with-entry (editor) (run-command repl 'kill-buffer))
+    (is (doc-closing repl))
+    (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")))
+
+(deftest host-a-tool-buffer-saved-to-a-file-stays-a-dock-tab
+  ;; C-x C-w gives *clamacs-description* a path and the file's name, so
+  ;; TOOL-DOCUMENT-P says no from then on -- but the page made its tab in
+  ;; the dock and keeps it there.  The dock's mirror follows the tab, not
+  ;; the name: activating the saved buffer shows the dock, another item
+  ;; closing shows it, closing it collapses the dock.
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "x"))
+         (path (temp-file "host-description.txt"))
+         (desc nil)
+         (saved nil))
+    (host-take-evals editor)
+    (with-entry (editor)
+      (setq desc (ensure-scratch-document editor "*clamacs-description*" nil)))
+    (is (search "CK.makeDoc(\"doc2\",\"*clamacs-description*\",\"tool\");" (host-take-evals editor)))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    (with-entry (editor) (doc-set-text desc "some description"))
+    (with-entry (editor) (setq saved (save-file desc path)))
+    (is saved)
+    (is (not (tool-document-p desc)))
+    (is-equal (doc-name desc) (path-basename path))
+    (is (not (doc-modified-p desc)))
+    ;; Source and dock are different regions: the dock stays on it
+    (with-entry (editor) (doc-activate doc))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    ;; A panel over it, and closing the panel shows the saved buffer's tab
+    ;; again, as the page does
+    (with-entry (editor) (editor-show-diagnostics editor '() :open t))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
+    (with-entry (editor) (host-panel-close editor "diagnostics"))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    ;; Activating it (its tab picked) keeps the dock on it; closing it
+    ;; collapses the dock
+    (with-entry (editor) (doc-activate desc))
+    (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+    (with-entry (editor) (run-command desc 'kill-buffer))
+    (is (doc-closing desc))
+    (is (search "CK.removeDoc(\"doc2\");" (host-take-evals editor)))
+    (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+    (is-equal (editor-aux-windows editor) '())
+    (delete-file path)))
+
+(deftest host-dock-height-comes-from-the-layout-and-the-splitter
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "x"))
+         (cfg (temp-file "host-dock.cfg")))
+    (host-take-evals editor)
+    ;; Nothing stored: nothing said
+    (with-entry (editor) (place-dock editor))
+    (is-equal (host-take-evals editor) "")
+    (winstore-set (editor-layout editor) "dock" 0 400 800 260)
+    (with-entry (editor) (place-dock editor))
+    (is-equal (host-take-evals editor) "CK.setDock(260);")
+    (is-equal (host-editor-dock-height editor) 260)
+    ;; The splitter dragged: the new height is what the snapshot stores
+    (with-entry (editor) (host-dock-resized editor 310))
+    (is-equal (host-editor-dock-height editor) 310)
+    ;; A page at a fractional zoom reports a float: rounded, not dropped
+    (with-entry (editor) (host-dock-resized editor 310.4))
+    (is-equal (host-editor-dock-height editor) 310)
+    (with-entry (editor) (host-dock-resized editor 312.6))
+    (is-equal (host-editor-dock-height editor) 313)
+    (with-entry (editor) (host-dock-resized editor 310))
+    (with-entry (editor) (host-dock-resized editor 0))
+    (with-entry (editor) (host-dock-resized editor -5.5))
+    (with-entry (editor) (host-dock-resized editor "x"))
+    (is-equal (host-editor-dock-height editor) 310)
+    (with-entry (editor) (editor-show-diagnostics editor '() :open t))
+    (is-equal (editor-aux-windows editor) '(("dock" 0 290 800 310) ("errors" 0 290 800 310)))
+    (let ((*snapshot-files* (list cfg)))
+      (with-entry (editor) (run-command doc 'clamacs-snapshot-windows))
+      (is-equal (doc-message-text doc)
+                (format nil "Saved the positions of 3 window(s) to ~A" cfg))
+      (let ((text (read-file-text cfg)))
+        (is (search (format nil "~%doc1 0 0 800 600~%") text))
+        (is (search (format nil "~%dock 0 290 800 310~%") text))
+        (is (search (format nil "~%errors 0 290 800 310~%") text))))
+    ;; What the page reports is kept as it came
+    (is-equal (host-page-panels editor) "no report")
+    (with-entry (editor) (host-panels-report editor "{\"dock\":{\"open\":true}}"))
+    (is-equal (host-page-panels editor) "{\"dock\":{\"open\":true}}")
+    (is-equal (host-panel-state :dock nil) "no editor")
+    (delete-file cfg)))
 
 ;;; --- the program's command line ------------------------------------------------
 

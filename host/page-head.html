@@ -40,7 +40,6 @@
           border-bottom: 1px solid var(--line); overflow-x: auto; user-select: none; }
   .tab { padding: 4px 10px; border-right: 1px solid var(--line); cursor: default;
          white-space: nowrap; }
-  .tab.active { background: var(--tab-active); }
   .tab.modified span:first-child::after { content: " *"; color: var(--dim); }
   .tab .close { margin-left: 8px; color: var(--dim); cursor: pointer; }
   .tab .close:hover { color: var(--fg); }
@@ -63,10 +62,41 @@
   .ck-symbol { color: var(--c-symbol); }
   .ck-paren-match { background: var(--c-paren-match); }
   .ck-paren-bad { background: var(--c-paren-bad); }
+  /* The dock: the tool buffers and the three panels as tabs below a
+     splitter, collapsed until something is shown in it.  A tab that is
+     displayed in its region but does not hold the keyboard is `shown';
+     the one with the keyboard is `active'. */
+  .tab.shown { background: var(--tab-active); }
+  .tab.active { background: var(--tab-active); border-bottom: 2px solid var(--status-fg); }
   #splitter { flex: none; height: 5px; background: var(--bar); border-top: 1px solid var(--line);
-              border-bottom: 1px solid var(--line); cursor: row-resize; }
+              border-bottom: 1px solid var(--line); cursor: row-resize; display: none; }
+  #splitter.open { display: block; }
   #dock { flex: none; display: none; flex-direction: column; height: 200px; min-height: 40px; }
   #dock.open { display: flex; }
+  #dock-views { flex: 1; position: relative; overflow: hidden; }
+  .panel { position: absolute; inset: 0; display: none; flex-direction: column; overflow: hidden;
+           font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
+  .panel.active { display: flex; }
+  .panel-head { flex: none; padding: 3px 8px; background: var(--echo-bg); color: var(--dim);
+                border-bottom: 1px solid var(--line); white-space: pre; overflow: hidden; }
+  .panel-line { flex: none; padding: 3px 8px; white-space: pre; overflow: hidden;
+                border-bottom: 1px solid var(--line); }
+  .panel-body { flex: 1; display: flex; min-height: 0; }
+  .panel-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .panel-col + .panel-col { border-left: 1px solid var(--line); }
+  .panel-label { flex: none; padding: 2px 8px; color: var(--dim); background: var(--gutter-bg);
+                 border-bottom: 1px solid var(--line); font-family: -apple-system, system-ui, sans-serif; }
+  .list { flex: 1; overflow: auto; outline: none; }
+  .list .row { padding: 1px 8px; white-space: pre; cursor: default; }
+  .list .row.selected { background: var(--selection); }
+  .panel-foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 3px 8px;
+                background: var(--echo-bg); border-top: 1px solid var(--line); }
+  .panel-foot input { flex: 1; min-width: 60px; border: 1px solid var(--line); border-radius: 3px;
+                      padding: 2px 4px; background: var(--bg); color: var(--fg); font: inherit; }
+  .panel-foot button { font: 12px -apple-system, system-ui, sans-serif; padding: 2px 10px;
+                       border: 1px solid var(--line); border-radius: 4px; background: var(--bar);
+                       color: var(--bar-fg); }
+  .panel-foot button:disabled { color: var(--dim); }
   #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
             border-top: 1px solid var(--line); white-space: pre; overflow: hidden;
             font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
@@ -87,7 +117,43 @@
   <div id="splitter"></div>
   <div id="dock">
     <div id="dock-tabs" class="tabs"></div>
-    <div id="dock-views" class="views"></div>
+    <div id="dock-views">
+      <div id="panel-diagnostics" class="panel">
+        <div id="diag-list" class="list" tabindex="0"></div>
+      </div>
+      <div id="panel-debugger" class="panel">
+        <div id="dbg-condition" class="panel-line"></div>
+        <div class="panel-body">
+          <div class="panel-col">
+            <div class="panel-label">Restarts</div>
+            <div id="dbg-restarts" class="list" tabindex="0"></div>
+          </div>
+          <div class="panel-col">
+            <div class="panel-label">Backtrace</div>
+            <div id="dbg-frames" class="list" tabindex="0"></div>
+          </div>
+          <div class="panel-col">
+            <div class="panel-label">Locals</div>
+            <div id="dbg-locals" class="list" tabindex="0"></div>
+          </div>
+        </div>
+        <div class="panel-foot">
+          <span>Eval in frame:</span><input id="dbg-eval" type="text" spellcheck="false">
+          <button id="dbg-invoke" title="Invoke the selected restart">Invoke restart</button>
+          <button id="dbg-continue">Continue</button>
+          <button id="dbg-abort">Abort</button>
+        </div>
+      </div>
+      <div id="panel-inspector" class="panel">
+        <div id="insp-head" class="panel-head"></div>
+        <div id="insp-object" class="panel-line"></div>
+        <div id="insp-parts" class="list" tabindex="0"></div>
+        <div class="panel-foot">
+          <button id="insp-part" title="Inspect the selected part">Inspect part</button>
+          <button id="insp-back">Back</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="status"></div>
   <div id="echo"><span id="mini-label"></span><input id="mini" type="text" spellcheck="false"><span id="message"></span></div>

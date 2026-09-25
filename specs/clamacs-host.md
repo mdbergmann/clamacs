@@ -373,7 +373,10 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsDiagPick` | `row` | a diagnostics row selected |
 | `clamacsDbgFrame` / `clamacsDbgFrameOpen` / `clamacsDbgRestart` / `clamacsDbgEval` / `clamacsDbgButton` | `n` / `n` / `n` / `text` / `"continue"\|"abort"` | the debugger panel |
 | `clamacsInspPart` / `clamacsInspBack` | `n` / -- | the inspector panel |
+| `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
+| `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
 | `clamacsDockResized` | `height` | for the snapshot |
+| `clamacsPanels` | `json` | what the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
 | `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document |
 
 Every binding runs on the main thread inside `webview_dispatch`'s turn;
@@ -587,6 +590,35 @@ with the memory note updated.
   state through `EVAL (clamacs::host-panel-state ...)`.
 - Done when: the drive's REPL / debugger / inspector legs pass with the
   panels open, and the user has clicked through a debugger session.
+- **Done 2026-09-25** (branch `host-h3`): 598 Lisp tests (38 for the host
+  frontend: the dock's tabs, the three panels driven through
+  `port-raw-command` and the fake transport with the batch read back,
+  the dock's height from the layout file and the splitter, the snapshot
+  with `dock` and `errors` lines), `run-drive.sh` green with 152
+  `OK` lines (124 in H2) -- the debugger, inspector and diagnostics legs now check
+  the panels on both sides of the page boundary, and the snapshot leg
+  the `errors` and `dock` lines the Amiga leg checks -- and `run-smoke.sh`
+  / `host-keys.sh` still green.  What it settled: a tool buffer
+  (`tool-document-p`) is a tab of the dock and the panels are tabs
+  beside it, one displayed item per region and one `active` item
+  holding the keyboard; the dock's rule on both sides is that showing an
+  item opens the dock and hiding the displayed one shows the next open
+  item or collapses it -- what Lisp does not show itself the page tells
+  (`clamacsActivate` for a tool buffer's tab, `clamacsDockShown` for a
+  panel's), and which documents are dock tabs is decided once, when the
+  tab is made (`hdoc-dock-p`), because a saved tool buffer stops being a
+  `tool-document-p` while its tab stays in the dock.
+  `editor-aux-windows` answers the dock (the
+  bottom `dock-height` pixels of the window's frame) under the role
+  `dock` and each open panel under the MUI window's role with that frame,
+  so `clamacs-snapshot-windows` keeps every role the Amiga file has, and
+  `layout-place "dock"` sizes the dock at startup.  The debugger's and
+  the inspector's rows and selection are read off their structs
+  (`debugger-frame` is set by the panel's click and by `M-x
+  clamacs-debugger-frame` alike); the host editor mirrors only what the
+  structs do not hold -- the open flags and the diagnostics selection.
+  The page's report (`clamacsPanels`, above) came out of the drive's
+  needs: without it the run could only check what Lisp said.
 
 ### H4 -- polish to par
 

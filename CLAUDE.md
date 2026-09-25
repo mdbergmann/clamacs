@@ -58,8 +58,26 @@ a client of its own, walks the legs of `drive.rexx` over the port (124
 wrote.  Run it after touching `transport-host.lisp`, `transport-self.lisp`,
 `port.lisp`, `wire.lisp`, the REPL/debugger/inspector files or the event
 loop.  Every panel generic of debugger.lisp and inspector.lisp has a
-method on `host-editor` (no-ops until the H3 dock): a missing one aborted
-the REPL window's close at quit and the editor could not exit.
+method on `host-editor`: a missing one aborted the REPL window's close at
+quit and the editor could not exit.  Phase H3 (same day) is the dock:
+the tool buffers (`tool-document-p`) are tabs below the splitter, the
+Diagnostics, Debugger and Inspector panels are tabs beside them, and the
+panel generics tell the page what to show (`CK.dbgOpen` and friends,
+`host/page-app.js`) while the page hands rows and lines back
+(`clamacsDbgFrame`, `clamacsDiagPick`, ...).  Two rules there: the
+debugger's and inspector's rows and selection are read off their structs
+(`debugger-frame`), never mirrored twice -- the host editor mirrors only
+the open flags and the diagnostics selection, which `host-panel-state`
+answers; and the page reports what its panels show after every change
+(`clamacsPanels` -> `host-page-panels`), so `drive.lisp` checks both
+sides of the page boundary through `EVAL`.  A tool buffer or a panel
+shown opens the dock, hiding the displayed one shows the next or
+collapses it, and `editor-aux-windows` answers the dock and each open
+panel to the snapshot (`dock`, `errors`, `debugger`, `inspector` lines).
+A tab the user picks is told to Lisp (`clamacsActivate` for a tool
+buffer, `clamacsDockShown` for a panel), and whether a document is a dock
+tab is `hdoc-dock-p`, fixed when its tab is made: `tool-document-p` asked
+later says no once `C-x C-w` gave the buffer a file.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

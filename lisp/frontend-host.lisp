@@ -61,6 +61,10 @@ it.")
 ;;; The editor and its documents
 ;;; ------------------------------------------------------------------
 
+(defconstant +dock-default-height+ 200
+  "The dock's height in pixels until the layout file or the splitter says
+otherwise; the page's stylesheet starts from the same figure.")
+
 (defstruct (host-editor (:include editor)
                         (:constructor %make-host-editor ()))
   ;; The two libraries and the webview: NIL for an editor without a
@@ -94,7 +98,20 @@ it.")
   (clipboard nil)
   (urls '())
   ;; Keys still to push through the page (HOST-INJECT-KEYS)
-  (inject '()))
+  (inject '())
+  ;; The dock and the panels as Lisp told the page to show them (see "The
+  ;; dock" below): whether the dock is open and what it displays, the
+  ;; dock's height, each panel's open flag and selection.  PAGE-PANELS is
+  ;; the page's own last report of the same (clamacsPanels), JSON text.
+  (dock-open nil)
+  (dock-shown nil)
+  (dock-height +dock-default-height+)
+  (diag-open nil)
+  (diag-rows '())
+  (diag-selected nil)
+  (dbg-open nil)
+  (insp-open nil)
+  (page-panels nil))
 
 (defclass host-document (document)
   ((id :initarg :id :reader hdoc-id)
@@ -110,7 +127,12 @@ it.")
    (mini-text :initform nil :accessor hdoc-mini-text)
    (package :initform "CL-USER" :accessor hdoc-package)
    (arglist :initform "" :accessor hdoc-arglist)
-   (title :initform "" :accessor hdoc-title)))
+   (title :initform "" :accessor hdoc-title)
+   ;; Whether the page made this document a tab of the dock.  Decided once,
+   ;; when the tab was made (EDITOR-MAKE-DOCUMENT), because the page fixes it
+   ;; there: TOOL-DOCUMENT-P asked later says no once a save gave the buffer
+   ;; a file, while the page still holds it in the dock.
+   (dock-p :initform nil :accessor hdoc-dock-p)))
 
 (defvar *editor* nil
   "The running host editor, from START to its return.")
@@ -759,8 +781,9 @@ page holds the result already."
                                             :name (or name *unnamed*)
                                             :lisp-mode lisp-mode
                                             :id id)))
-    (setf (gethash id (host-editor-docs editor)) doc)
-    (ck editor "makeDoc" id (doc-name doc) (if (tool-document-p doc) "tool" "source"))
+    (setf (gethash id (host-editor-docs editor)) doc
+          (hdoc-dock-p doc) (tool-document-p doc))
+    (ck editor "makeDoc" id (doc-name doc) (if (hdoc-dock-p doc) "tool" "source"))
     (doc-set-title doc (doc-name doc))
     (doc-activate doc)
     doc))
@@ -768,6 +791,8 @@ page holds the result already."
 (defmethod doc-activate ((doc host-document))
   (let ((editor (doc-editor doc)))
     (setf (host-editor-active-doc editor) doc)
+    (when (hdoc-dock-p doc)
+      (dock-note-shown editor (hdoc-id doc)))
     (ck editor "activateDoc" (hdoc-id doc))
     (show-echo-state doc)))
 
@@ -775,6 +800,8 @@ page holds the result already."
   (let ((editor (doc-editor doc)))
     (remhash (hdoc-id doc) (host-editor-docs editor))
     (ck editor "removeDoc" (hdoc-id doc))
+    (when (hdoc-dock-p doc)
+      (dock-note-hidden editor (hdoc-id doc)))
     (when (eq (host-editor-active-doc editor) doc)
       (setf (host-editor-active-doc editor) nil)
       (let ((next (first (live-documents editor))))
@@ -866,9 +893,34 @@ while a native dialog runs its own loop."
              (window-frame editor)
              (values 0 0 800 600)))))
 
+(defun dock-frame (editor)
+  "Where the dock is, as a window of its own would be: the bottom
+DOCK-HEIGHT pixels of the native window's frame."
+  (multiple-value-bind (left top width height)
+      (if (host-editor-win editor) (window-frame editor) (values 0 0 800 600))
+    (let ((dock (min (host-editor-dock-height editor) height)))
+      (values left (+ top (- height dock)) width dock))))
+
 (defmethod editor-aux-windows ((editor host-editor))
-  ;; The dock and the panels come with phase H3.
-  '())
+  "The dock, when it is open, under the role `dock' -- the layout file's
+entry for its height -- and each open panel under the role the MUI
+frontend's window has, with the dock's frame, so a snapshot taken here
+keeps every role the Amiga file has."
+  (when (host-editor-dock-open editor)
+    (let ((frame (multiple-value-list (dock-frame editor))))
+      (append (list (cons "dock" frame))
+              (when (host-editor-diag-open editor) (list (cons "errors" frame)))
+              (when (host-editor-dbg-open editor) (list (cons "debugger" frame)))
+              (when (host-editor-insp-open editor) (list (cons "inspector" frame)))))))
+
+(defun place-dock (editor)
+  "The dock's height from the layout file's `dock' entry, told to the
+page before anything opens it."
+  (multiple-value-bind (left top width height) (layout-place editor "dock")
+    (declare (ignore left top width))
+    (when (and height (> height 0))
+      (setf (host-editor-dock-height editor) height)
+      (ck editor "setDock" height))))
 
 ;;; --- About, the browser (menu.lisp)
 
@@ -887,47 +939,207 @@ while a native dialog runs its own loop."
            :opened)
           (t :refused))))
 
-;;; --- the panels of phase H3: diagnostics, debugger, inspector.  The
-;;; state behind them (diag.lisp, debugger.lisp, inspector.lisp) is kept
-;;; and its echo lines are shown; what these do is show it in the dock,
-;;; which does not exist yet.  A missing method here is not harmless: a
+;;; ------------------------------------------------------------------
+;;; The dock: the tool buffers and the three panels as tabs
+;;; ------------------------------------------------------------------
+;;;
+;;; What the MUI frontend opens as windows of their own -- the error list,
+;;; the debugger, the inspector, and the tool buffers (the REPL, a
+;;; description, ...) -- the page holds as tabs of the dock below the
+;;; splitter.  The state behind the panels lives in diag.lisp,
+;;; debugger.lisp and inspector.lisp; the methods here only tell the page
+;;; what to show, and the bindings hand a row number or a line of text
+;;; back, as the MUI hooks do.  A missing method here is not harmless: a
 ;;; "no applicable method" out of EDITOR-DEBUGGER-CLOSE aborted the REPL
 ;;; window's close before the document was marked closing, and the editor
 ;;; could not quit (the H2 drive, 2026-09-25).
+;;;
+;;; The editor keeps a mirror of what it told the page -- the open flags
+;;; and the diagnostics selection; the debugger's and the inspector's rows
+;;; and selection are their structs' -- which is what HOST-PANEL-STATE
+;;; answers and what the snapshot reads.  The page reports what it shows
+;;; after every change (clamacsPanels), kept verbatim for
+;;; HOST-PAGE-PANELS, so a script can check the page against the mirror.
+;;; The dock's rule, on both sides: showing an item opens the dock; hiding
+;;; the item it displays shows the next open one, or collapses it.  What
+;;; Lisp does not show itself, the page tells: a tool buffer's tab is a
+;;; clamacsActivate, a panel's tab clamacsDockShown.  Which documents are
+;;; tabs of the dock is HDOC-DOCK-P, fixed when the tab was made.
+
+(defun dock-note-shown (editor name)
+  (setf (host-editor-dock-open editor) t
+        (host-editor-dock-shown editor) name))
+
+(defun dock-open-items (editor)
+  "The names of the dock's open items, panels first, as the page keeps
+them: which one takes over when the displayed item goes."
+  (append (when (host-editor-diag-open editor) (list "diagnostics"))
+          (when (host-editor-dbg-open editor) (list "debugger"))
+          (when (host-editor-insp-open editor) (list "inspector"))
+          (loop for doc in (live-documents editor)
+                when (hdoc-dock-p doc) collect (hdoc-id doc))))
+
+(defun dock-note-hidden (editor name)
+  (when (equal (host-editor-dock-shown editor) name)
+    (let ((next (first (dock-open-items editor))))
+      (setf (host-editor-dock-shown editor) next
+            (host-editor-dock-open editor) (and next t)))))
+
+;;; --- the diagnostics panel
 
 (defmethod editor-show-diagnostics ((editor host-editor) rows &key open)
-  (declare (ignore rows open))
-  nil)
+  (setf (host-editor-diag-rows editor) rows
+        (host-editor-diag-selected editor) nil)
+  (ck editor "showDiagnostics" (coerce rows 'vector) (and (or open rows) t))
+  (when (or open rows)
+    (setf (host-editor-diag-open editor) t)
+    (dock-note-shown editor "diagnostics")))
 
 (defmethod editor-select-diagnostic ((editor host-editor) row)
-  (declare (ignore row))
-  nil)
+  (setf (host-editor-diag-selected editor) row)
+  (ck editor "selectDiagnostic" row))
 
-(defmethod editor-debugger-open ((editor host-editor) debugger)
-  (declare (ignore debugger))
-  nil)
+(defun row-arg (n)
+  "A row number from the page: a non-negative integer, or NIL for
+anything else (JSON null, the reader's :NULL, is `nothing selected')."
+  (and (integerp n) (>= n 0) n))
+
+(defun host-diag-pick (editor row)
+  "The clamacsDiagPick binding: a row selected in the list is visited.  A
+row the list does not have (a stale page) selects nothing."
+  (let ((wire (editor-wire editor))
+        (row (and row (< row (length (host-editor-diag-rows editor))) row)))
+    (setf (host-editor-diag-selected editor) row)
+    (when (and wire row)
+      (diagnostic-jump wire row))))
+
+;;; --- the debugger panel
+
+(defmethod editor-debugger-open ((editor host-editor) dbg)
+  (setf (host-editor-dbg-open editor) t)
+  (ck editor "dbgOpen" (debugger-level dbg) (debugger-condition dbg)
+      (coerce (debugger-restarts dbg) 'vector) (and (debugger-has-continue dbg) t))
+  ;; Shown, not given the keyboard: it arrives while the user may be typing.
+  (dock-note-shown editor "debugger"))
 
 (defmethod editor-debugger-close ((editor host-editor))
-  nil)
+  (when (host-editor-dbg-open editor)
+    (setf (host-editor-dbg-open editor) nil)
+    (ck editor "dbgClose")
+    (dock-note-hidden editor "debugger")))
 
 (defmethod editor-debugger-raise ((editor host-editor))
-  nil)
+  (setf (host-editor-dbg-open editor) t)
+  (ck editor "dbgRaise")
+  (dock-note-shown editor "debugger"))
 
 (defmethod editor-debugger-frames ((editor host-editor) rows)
-  (declare (ignore rows))
-  nil)
+  (ck editor "dbgFrames" (coerce rows 'vector)))
 
 (defmethod editor-debugger-select-frame ((editor host-editor) n)
-  (declare (ignore n))
-  nil)
+  (ck editor "dbgSelectFrame" n))
 
 (defmethod editor-debugger-locals ((editor host-editor) rows)
-  (declare (ignore rows))
-  nil)
+  (ck editor "dbgLocals" (coerce rows 'vector)))
 
-(defmethod editor-inspector-open ((editor host-editor) inspector)
-  (declare (ignore inspector))
-  nil)
+(defun host-dbg-button (editor which)
+  "The clamacsDbgButton binding: `continue' or `abort'."
+  (cond ((equal which "continue") (debug-continue-clicked editor))
+        ((equal which "abort") (debug-abort-clicked editor))
+        (t (error "The debugger panel has no button ~S" which))))
+
+(defun host-panel-close (editor name)
+  "The clamacsPanelClose binding: the panel's tab was closed.  The
+debugger's close is DEBUG-WINDOW-CLOSED, which says the REPL is still
+parked; the other two only go off the screen."
+  (cond ((equal name "debugger")
+         (debug-window-closed editor))
+        ((equal name "diagnostics")
+         (setf (host-editor-diag-open editor) nil)
+         (dock-note-hidden editor name))
+        ((equal name "inspector")
+         (setf (host-editor-insp-open editor) nil)
+         (dock-note-hidden editor name))
+        (t (error "The dock has no panel ~S" name))))
+
+(defun host-dock-shown (editor name)
+  "The clamacsDockShown binding: the user clicked the tab of the panel NAME
+and the page displays it.  Told to the dock's mirror as any other showing
+is, so the next hide of the displayed item follows the page.  A name that
+is no open panel (a stale page, JSON null) changes nothing; a tool
+buffer's tab is clamacsActivate's."
+  (when (and (member name '("diagnostics" "debugger" "inspector") :test #'equal)
+             (member name (dock-open-items editor) :test #'equal))
+    (dock-note-shown editor name)))
+
+;;; --- the inspector panel
+
+(defmethod editor-inspector-open ((editor host-editor) insp)
+  (setf (host-editor-insp-open editor) t)
+  (ck editor "inspOpen" (inspector-type insp) (inspector-depth insp)
+      (inspector-object insp) (coerce (inspector-parts insp) 'vector))
+  (dock-note-shown editor "inspector"))
+
+;;; --- the dock's height, and what the page reports
+
+(defun host-dock-resized (editor height)
+  "The clamacsDockResized binding: the splitter was dragged.  A page at a
+fractional zoom reports a fractional height; it is rounded to whole pixels."
+  (when (and (realp height) (> height 0))
+    (setf (host-editor-dock-height editor) (round height))))
+
+(defun host-panels-report (editor json)
+  "The clamacsPanels binding: what the page shows, kept verbatim."
+  (when (stringp json)
+    (setf (host-editor-page-panels editor) json)))
+
+;;; --- for a script: what the panels show
+
+(defun host-panel-state (panel &optional (editor *editor*))
+  "What the editor told the page to show for PANEL -- :DOCK, :DIAGNOSTICS,
+:DEBUGGER or :INSPECTOR -- as one line of words, for a script's `EVAL
+\(clamacs::host-panel-state :debugger)' over the port."
+  (unless editor
+    (return-from host-panel-state "no editor"))
+  (flet ((open-word (flag) (if flag "open" "closed"))
+         (row-word (n) (if n (princ-to-string n) "none")))
+    (ecase panel
+      (:dock
+       (format nil "~A height ~D shown ~A"
+               (open-word (host-editor-dock-open editor))
+               (host-editor-dock-height editor)
+               (or (host-editor-dock-shown editor) "nothing")))
+      (:diagnostics
+       (format nil "~A rows ~D selected ~A"
+               (open-word (host-editor-diag-open editor))
+               (length (host-editor-diag-rows editor))
+               (row-word (host-editor-diag-selected editor))))
+      (:debugger
+       (let ((dbg (editor-debugger-state editor)))
+         (format nil "~A level ~D restarts ~D continue ~A frames ~D frame ~A locals ~D condition ~A"
+                 (open-word (host-editor-dbg-open editor))
+                 (debugger-level dbg)
+                 (length (debugger-restarts dbg))
+                 (if (debugger-has-continue dbg) "yes" "no")
+                 (length (debugger-frames dbg))
+                 (row-word (debugger-frame dbg))
+                 (length (debugger-locals dbg))
+                 (debugger-condition dbg))))
+      (:inspector
+       (let ((insp (editor-inspector-state editor)))
+         (format nil "~A type ~A depth ~D parts ~D object ~A"
+                 (open-word (host-editor-insp-open editor))
+                 (inspector-type insp)
+                 (inspector-depth insp)
+                 (length (inspector-parts insp))
+                 (inspector-object insp)))))))
+
+(defun host-page-panels (&optional (editor *editor*))
+  "The page's own last report of what its dock and panels show
+\(clamacsPanels), as the JSON text it sent; \"no report\" before the
+first."
+  (or (and editor (host-editor-page-panels editor))
+      "no report"))
 
 ;;; ------------------------------------------------------------------
 ;;; An entry into Lisp: a binding, a drain, a turn of the loop
@@ -1032,7 +1244,21 @@ ticks can arrive then."
         (lambda (doc-id)
           (let ((doc (host-document-by-id editor doc-id)))
             (when doc (close-document doc)))))
-  (bind editor "clamacsTick" (lambda () (host-tick editor))))
+  (bind editor "clamacsTick" (lambda () (host-tick editor)))
+  ;; The dock and the panels (phase H3).  A row number the page sends for
+  ;; "nothing selected" is JSON null: ROW-ARG makes it NIL.
+  (bind editor "clamacsDiagPick" (lambda (row) (host-diag-pick editor (row-arg row))))
+  (bind editor "clamacsDbgFrame" (lambda (n) (debug-frame-selected editor (row-arg n))))
+  (bind editor "clamacsDbgFrameOpen" (lambda (n) (debug-frame-clicked editor (row-arg n))))
+  (bind editor "clamacsDbgRestart" (lambda (n) (debug-restart-clicked editor (row-arg n))))
+  (bind editor "clamacsDbgEval" (lambda (text) (debug-eval-entered editor text)))
+  (bind editor "clamacsDbgButton" (lambda (which) (host-dbg-button editor which)))
+  (bind editor "clamacsInspPart" (lambda (n) (inspect-part-clicked editor (row-arg n))))
+  (bind editor "clamacsInspBack" (lambda () (inspect-back-clicked editor)))
+  (bind editor "clamacsPanelClose" (lambda (name) (host-panel-close editor name)))
+  (bind editor "clamacsDockShown" (lambda (name) (host-dock-shown editor name)))
+  (bind editor "clamacsDockResized" (lambda (height) (host-dock-resized editor height)))
+  (bind editor "clamacsPanels" (lambda (json) (host-panels-report editor json))))
 
 ;;; ------------------------------------------------------------------
 ;;; Keys through the page, for the harness (verify/host/host-keys.sh)
@@ -1183,6 +1409,7 @@ last tab closes."
            (unwind-protect
                 (progn
                   (with-entry (editor)
+                    (place-dock editor)
                     (if files
                         (dolist (path files)
                           (unless (open-document editor path)

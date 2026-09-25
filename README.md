@@ -48,8 +48,17 @@ prompts, the requesters.  What is there today is the document window --
 files, editing, colouring, search, the minibuffer -- and the Lisp behind
 it: the REPL, the debugger, the inspector, introspection and LOAD all
 work against the editor's own image (`C-c C-z`, `C-x C-e`, `M-.`, ...),
-with a separate clamiga to follow; the dock that shows the debugger and
-inspector panels and the menu bar follow phase by phase.  `host/build.sh`
+with a separate clamiga to follow.  What the Amiga opens as windows of
+their own lives in the **dock** below the splitter: the tool buffers
+(the REPL, a description, an apropos) as tabs, and the Diagnostics,
+Debugger and Inspector panels beside them -- a diagnostics row jumps to
+the error, a frame shows its locals (a double-click opens its source),
+a restart is invoked by double-click or the Invoke button, the eval
+line evaluates in the selected frame, a part descends and Back comes up;
+a panel's close takes it off the screen and `M-x clamacs-debugger` /
+`C-c I` bring it back.  The dock collapses when nothing is shown in it,
+and its height is part of the window snapshot (`dock` in
+`~/.clamacs-windows.cfg`).  The menu bar follows.  `host/build.sh`
 needs the network once, for the webview library and the CodeMirror
 packages (both pinned and checked); the editor itself does not.  The init
 file is `~/.clamacsrc`, the window layout `~/.clamacs-windows.cfg`.

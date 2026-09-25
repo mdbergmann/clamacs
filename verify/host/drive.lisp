@@ -207,6 +207,57 @@ Moves the cursor."
 (defun result-is (want) (and (= *rc* 0) (string= *result* want)))
 (defun result-has (needle) (and (search needle *result*) t))
 
+(defun file-has-prefix (path prefix)
+  (with-open-file (in path :if-does-not-exist nil)
+    (and in
+         (loop for line = (read-line in nil nil)
+               while line
+               thereis (and (>= (length line) (length prefix))
+                            (string= line prefix :end1 (length prefix)))))))
+
+;;; The dock's panels (phase H3): what the editor told the page to show,
+;;; and what the page says it shows, both read through EVAL.  The page's
+;;; report follows the batch that changed it by one turn of the loop, so
+;;; both are polled.
+
+(defun wait-eval (form needle ticks)
+  "EVAL FORM until its answer contains NEEDLE; \"\" after TICKS half-seconds."
+  (dotimes (i ticks "")
+    (cmd (concatenate 'string "EVAL " form))
+    (when (and (= *rc* 0) (search needle *result*))
+      (return *result*))
+    (pause 25)))
+
+(defun panel-state (panel needle &optional (ticks 20))
+  "The editor's own account of PANEL once it says NEEDLE, or \"\"."
+  (wait-eval (format nil "(clamacs::host-panel-state ~S)" panel) needle ticks))
+
+(defun escape-quotes (text)
+  "TEXT as EVAL prints a string value: every quote escaped."
+  (with-output-to-string (out)
+    (loop for c across text
+          do (when (char= c #\") (write-char #\\ out))
+             (write-char c out))))
+
+(defun page-panels (needle &optional (ticks 20))
+  "The page's report once it says NEEDLE (JSON text, spelled unescaped
+here), or \"\"."
+  (wait-eval "(clamacs::host-page-panels)" (escape-quotes needle) ticks))
+
+(defun check-panels (what state-needle page-needle)
+  "WHAT is (panel step): one OK for the editor's account of the panel
+and one for the page's report.  (SECOND is this file's own function --
+the second editor's mode -- so the list is taken apart by hand.)"
+  (destructuring-bind (panel step) what
+    (let ((state (panel-state panel state-needle)))
+      (if (string/= state "")
+          (ok "~A: the editor shows the ~A panel ~A" step panel state-needle)
+          (fail "~A: the editor's ~A panel says ~A (wanted ~A)" step panel *result* state-needle)))
+    (let ((page (page-panels page-needle)))
+      (if (string/= page "")
+          (ok "~A: the page reports ~A" step page-needle)
+          (fail "~A: the page reports ~A (wanted ~A)" step *result* page-needle)))))
+
 ;;; ------------------------------------------------------------------
 ;;; The main run
 ;;; ------------------------------------------------------------------
@@ -488,7 +539,15 @@ Moves the cursor."
     (if (file-has-line *cfg* place)
         (ok "the file holds the active window as ~A" place)
         (fail "no line ~A in ~A" place *cfg*))
-    (info "the error list is a dock panel of phase H3; no errors line is expected yet")
+    ;; The error list is a panel of the dock here: clamacs-show-errors
+    ;; opened the dock, so the file holds the dock and the panel.
+    (if (file-has-prefix *cfg* "errors ")
+        (ok "the file holds the error list")
+        (fail "no errors line in ~A" *cfg*))
+    (if (file-has-prefix *cfg* "dock ")
+        (ok "the file holds the dock")
+        (fail "no dock line in ~A" *cfg*))
+    (check-panels '(:diagnostics "clamacs-show-errors") "open rows 0" "\"diagnostics\":{\"open\":true,\"rows\":0")
     ;; The file the second editor (run-drive.sh, the SECOND mode below)
     ;; comes up against.
     (if (write-file *cfg* (format nil "; written by drive.lisp~%~%~A~%" *want*))
@@ -543,11 +602,15 @@ Moves the cursor."
   (if (string= *result* "enabled")
       (ok "Next Error woke up with the diagnostics")
       (fail "Next Error with two diagnostics is ~A" *result*))
+  (check-panels '(:diagnostics "the load's diagnostics") "open rows 2 selected none"
+                "\"diagnostics\":{\"open\":true,\"rows\":2,\"selected\":null")
   (cmd "EVAL clamacs-next-error")
   (cmd "TE GETCURSOR LINE")
   (if (result-is "6")
       (ok "next-error jumped to the first error, CursorY ~A" *result*)
       (fail "next-error CursorY= ~A" *result*))
+  (check-panels '(:diagnostics "next-error") "open rows 2 selected 0"
+                "\"diagnostics\":{\"open\":true,\"rows\":2,\"selected\":0")
   (cmd "EVAL clamacs-next-error")
   (cmd "TE GETCURSOR LINE")
   (if (result-is "8")
@@ -847,6 +910,24 @@ Moves the cursor."
         (ok "the Debugger item woke up with the debugger")
         (fail "the Debugger item while debugging is ~A" *result*))
     (info "clamiga's own view (RESTARTS, BACKTRACE over its port) is the editor's own image here; not asked")
+    ;; The dock's debugger panel: open on level 1 with frame 0 selected
+    ;; and its locals in, on both sides of the page boundary.
+    (check-panels '(:debugger "the debugger panel") "open level 1" "\"debugger\":{\"open\":true,\"level\":1,")
+    ;; How many locals frame 0 has is the runtime's business (ARG0 and
+    ;; ARG1 are among them); that there are some, and that frame 0 is the
+    ;; one selected, is the panel's.
+    (let ((state (panel-state :debugger "frame 0 locals ")))
+      (if (and (string/= state "") (not (search "locals 0 " state)))
+          (ok "the panel has the frames, frame 0 selected with its locals: ~A" state)
+          (fail "the panel's frames and locals are ~A" *result*)))
+    (let ((page (page-panels "\"frame\":0,\"locals\":")))
+      (if (and (string/= page "") (not (search "\\\"locals\\\":0" page)))
+          (ok "the page shows frame 0 selected with its locals")
+          (fail "the page's debugger panel reports ~A" *result*)))
+    (cmd "EVAL (clamacs::host-panel-state :dock)")
+    (if (result-has "open")
+        (ok "the dock is open: ~A" *result*)
+        (fail "the dock says ~A" *result*))
 
     (cmd "KEY RET")
     (cmd "STATUS")
@@ -877,12 +958,14 @@ Moves the cursor."
           (ok "an error in the frame eval nested the debugger: ~A" echo)
           (progn (cmd "STATUS")
                  (fail "no nested debugger; the echo area says ~A" *result*))))
+    (check-panels '(:debugger "the nested level") "open level 2" "\"debugger\":{\"open\":true,\"level\":2,")
     (cmd "EVAL clamacs-debugger-abort")
     (let ((echo (wait-echo "Debugger level 1, frame 0: ARG0 = 3" 40)))
       (if (string/= echo "")
           (ok "ABORT returned to level 1: ~A" echo)
           (progn (cmd "STATUS")
                  (fail "ABORT from level 2 left the echo area at ~A" *result*))))
+    (check-panels '(:debugger "back at level 1") "open level 1" "\"debugger\":{\"open\":true,\"level\":1,")
 
     (cmd "EVAL clamacs-debugger-restart")
     (cmd "KEY 0")
@@ -892,7 +975,8 @@ Moves the cursor."
            (cmd "MENU clamacs-debugger STATE")
            (if (string= *result* "disabled")
                (ok "the Debugger item dimmed with the restart")
-               (fail "the Debugger item after the restart is ~A" *result*)))
+               (fail "the Debugger item after the restart is ~A" *result*))
+           (check-panels '(:debugger "after the restart") "closed level 0" "\"debugger\":{\"open\":false,"))
           (t (cmd "STATUS")
              (fail "no prompt after RESTART 0; the echo area says ~A" *result*)))
     (let ((q (cursor-line)))
@@ -958,6 +1042,8 @@ Moves the cursor."
         (ok "the inspector showed the object: ~A" echo)
         (progn (cmd "STATUS")
                (fail "the inspector did not answer; the echo area says ~A" *result*))))
+  (check-panels '(:inspector "C-c I") "open type CONS depth 1 parts 2 object (1 (2 3))"
+                "\"inspector\":{\"open\":true,\"type\":\"CONS\",\"depth\":1,\"object\":\"(1 (2 3))\",\"parts\":2")
   (cmd "EVAL clamacs-repl")
   (cmd "EVAL clamacs-inspector-part")
   (cmd "KEY 1")
@@ -967,6 +1053,7 @@ Moves the cursor."
         (ok "part 1 descended into the cdr: ~A" echo)
         (progn (cmd "STATUS")
                (fail "PART 1 gave ~A" *result*))))
+  (check-panels '(:inspector "part 1") "open type CONS depth 2" "\"inspector\":{\"open\":true,\"type\":\"CONS\",\"depth\":2,")
   (cmd "EVAL clamacs-repl")
   (cmd "EVAL clamacs-inspector-pop")
   (let ((echo (wait-echo "Inspecting CONS: (1 (2 3))" 40)))
@@ -974,7 +1061,15 @@ Moves the cursor."
         (ok "Back came up to the list again: ~A" echo)
         (progn (cmd "STATUS")
                (fail "POP gave ~A" *result*))))
-  (cmd "EVAL clamacs-repl"))
+  (check-panels '(:inspector "Back") "open type CONS depth 1" "\"inspector\":{\"open\":true,\"type\":\"CONS\",\"depth\":1,")
+  ;; The REPL is a tab of the dock too: raising it leaves the panels
+  ;; open, the dock showing the REPL.
+  (cmd "EVAL clamacs-repl")
+  (cmd "GETNAME")
+  (if (string= *result* "*clamacs-repl*")
+      (ok "the REPL tab is active again")
+      (fail "after clamacs-repl the active window is ~A" *result*))
+  (check-panels '(:dock "the REPL tab") "open height" "\"dock\":{\"open\":true,\"shown\":\"doc"))
 
 (defun leg-own-lisp ()
   ;; On the host the wire's home IS the editor's own image: the item to
