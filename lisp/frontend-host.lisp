@@ -123,6 +123,11 @@ sets it; without it the editor runs alone.")
 (defvar *wire-stopper* nil
   "Its counterpart at exit.")
 
+(defvar *host-bind* nil
+  "The address `--bind ADDR' (after `--') asked the editor's own port to
+listen on (\"\" when the option had no address), or NIL for 127.0.0.1.
+transport-host.lisp reads it and refuses any value.")
+
 (defvar *after-start-hooks* '()
   "Functions of the editor, called once its first documents are open and
 before the event loop runs.")
@@ -882,10 +887,13 @@ while a native dialog runs its own loop."
            :opened)
           (t :refused))))
 
-;;; --- the windows of phase H3: diagnostics, debugger, inspector.  The
-;;; wire is not made before phase H2, so nothing reaches these yet; they
-;;; keep a reply from a future wire from signalling "no applicable
-;;; method".
+;;; --- the panels of phase H3: diagnostics, debugger, inspector.  The
+;;; state behind them (diag.lisp, debugger.lisp, inspector.lisp) is kept
+;;; and its echo lines are shown; what these do is show it in the dock,
+;;; which does not exist yet.  A missing method here is not harmless: a
+;;; "no applicable method" out of EDITOR-DEBUGGER-CLOSE aborted the REPL
+;;; window's close before the document was marked closing, and the editor
+;;; could not quit (the H2 drive, 2026-09-25).
 
 (defmethod editor-show-diagnostics ((editor host-editor) rows &key open)
   (declare (ignore rows open))
@@ -893,6 +901,32 @@ while a native dialog runs its own loop."
 
 (defmethod editor-select-diagnostic ((editor host-editor) row)
   (declare (ignore row))
+  nil)
+
+(defmethod editor-debugger-open ((editor host-editor) debugger)
+  (declare (ignore debugger))
+  nil)
+
+(defmethod editor-debugger-close ((editor host-editor))
+  nil)
+
+(defmethod editor-debugger-raise ((editor host-editor))
+  nil)
+
+(defmethod editor-debugger-frames ((editor host-editor) rows)
+  (declare (ignore rows))
+  nil)
+
+(defmethod editor-debugger-select-frame ((editor host-editor) n)
+  (declare (ignore n))
+  nil)
+
+(defmethod editor-debugger-locals ((editor host-editor) rows)
+  (declare (ignore rows))
+  nil)
+
+(defmethod editor-inspector-open ((editor host-editor) inspector)
+  (declare (ignore inspector))
   nil)
 
 ;;; ------------------------------------------------------------------
@@ -1175,9 +1209,24 @@ last tab closes."
       (setf *editor* nil))
     t))
 
+(defun parse-command-line (args)
+  "The files among ARGS, in order, with the editor's own options taken
+out: `--bind ADDR' sets *HOST-BIND* to ADDR as given, or to \"\" when
+nothing follows it.  No judgement is passed here -- a wildcard, a missing
+address and a non-loopback one are all refused by HOST-PORT-START with a
+message, so the editor comes up without its port and says why, never on
+loopback as if the option had not been given."
+  (let ((files '()))
+    (loop while args
+          do (let ((arg (pop args)))
+               (if (string= arg "--bind")
+                   (setf *host-bind* (or (pop args) ""))
+                   (push arg files))))
+    (nreverse files)))
+
 (defun run ()
   "The editor as a program: the user's init file (~/.clamacsrc), then
 START on the program's own arguments -- what follows `--' on clamiga's
 command line."
   (load-init-file)
-  (start :files ext:*command-line-args*))
+  (start :files (parse-command-line ext:*command-line-args*)))

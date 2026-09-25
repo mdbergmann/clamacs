@@ -21,7 +21,7 @@
 (defvar cl-user::*clamacs-frontend-files*
   (if (member :amigaos *features*)
       '("frontend-mui" "transport-arexx")
-      '("frontend-host")))
+      '("frontend-host" "transport-host")))
 
 (load (merge-pathnames "load.lisp" (or *load-truename* *load-pathname*)))
 

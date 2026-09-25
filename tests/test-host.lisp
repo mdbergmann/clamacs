@@ -636,3 +636,53 @@ each, with the KeyboardEvent fields a real key would carry."
       (let ((*error-output* (make-broadcast-stream)))
         (host-log editor "JS error: x is not defined (line 3)")))
     (is-equal (doc-message-text doc) "Page: JS error: x is not defined (line 3)")))
+
+(deftest host-panel-state-reaches-the-editor-without-a-dock
+  ;; The dock is phase H3; until then every panel generic has a method
+  ;; that keeps the state flowing.  Without one, the REPL window's close
+  ;; at quit signalled "no applicable method" out of EDITOR-DEBUGGER-CLOSE
+  ;; before the document was marked closing, and the editor could not quit.
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "x")))
+    (with-entry (editor)
+      (editor-show-diagnostics editor '() :open t)
+      (editor-select-diagnostic editor 0)
+      (editor-debugger-open editor (make-debugger))
+      (editor-debugger-frames editor '("0: (foo)"))
+      (editor-debugger-select-frame editor 0)
+      (editor-debugger-locals editor '("A = 1"))
+      (editor-debugger-raise editor)
+      (editor-debugger-close editor)
+      (editor-inspector-open editor (make-inspector)))
+    (is-equal (doc-message-text doc) "")
+    ;; kill-emacs ends the loop's housekeeping with every document closed.
+    (with-entry (editor)
+      (run-command doc 'kill-emacs)
+      (is (housekeeping editor)))
+    (is-equal (live-documents editor) '())))
+
+;;; --- the program's command line ------------------------------------------------
+
+(deftest host-command-line-keeps-the-files-in-order-and-takes-bind-out
+  (let ((*host-bind* nil))
+    (is-equal (parse-command-line '()) '())
+    (is-equal (parse-command-line '("a.lisp" "b.lisp")) '("a.lisp" "b.lisp"))
+    (is (null *host-bind*))
+    ;; `--bind ADDR' is consumed with its address, wherever it stands.
+    (is-equal (parse-command-line '("a.lisp" "--bind" "192.168.1.5" "b.lisp"))
+              '("a.lisp" "b.lisp"))
+    (is-equal *host-bind* "192.168.1.5")
+    (is-equal (parse-command-line '("--bind" "10.0.0.7" "c.lisp")) '("c.lisp"))
+    (is-equal *host-bind* "10.0.0.7")))
+
+(deftest host-command-line-hands-a-wildcard-or-a-missing-address-on-to-be-refused
+  ;; Not dropped: a `--bind' that named a wildcard, or nothing, must not
+  ;; become "no option" (a port on loopback and no word about it).
+  ;; HOST-PORT-START refuses these with a message; see test-transport-host.
+  (dolist (addr '("0.0.0.0" "::" "*" ""))
+    (let ((*host-bind* nil))
+      (is-equal (parse-command-line (list "x.lisp" "--bind" addr)) '("x.lisp"))
+      (is-equal *host-bind* addr)))
+  (let ((*host-bind* nil))
+    (is-equal (parse-command-line '("x.lisp" "--bind")) '("x.lisp"))
+    (is-equal *host-bind* "")))

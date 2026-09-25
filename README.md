@@ -45,11 +45,35 @@ host/run.sh file.lisp ...        # builds what is missing, then starts the edito
 Everything Emacs about it is the same code as on the Amiga: the keys
 (Option is Meta, ESC too; Command keys stay the system's), Lisp mode, the
 prompts, the requesters.  What is there today is the document window --
-files, editing, colouring, search, the minibuffer -- with the port, the
-REPL, the debugger, the inspector and the menu bar following phase by
-phase.  `host/build.sh` needs the network once, for the webview library
-and the CodeMirror packages (both pinned and checked); the editor itself
-does not.  The init file is `~/.clamacsrc`.
+files, editing, colouring, search, the minibuffer -- and the Lisp behind
+it: the REPL, the debugger, the inspector, introspection and LOAD all
+work against the editor's own image (`C-c C-z`, `C-x C-e`, `M-.`, ...),
+with a separate clamiga to follow; the dock that shows the debugger and
+inspector panels and the menu bar follow phase by phase.  `host/build.sh`
+needs the network once, for the webview library and the CodeMirror
+packages (both pinned and checked); the editor itself does not.  The init
+file is `~/.clamacsrc`, the window layout `~/.clamacs-windows.cfg`.
+
+The editor's own port -- what `drive.rexx`'s macros talk to on the Amiga
+-- is a TCP listener on `127.0.0.1` here, serving the same verbs on a
+length-framed line protocol (`specs/clamacs-host.md`, "The wire").  It
+answers nothing before `AUTH <token>`: the session's token and the port
+number are in `$TMPDIR/clamacs-token` and `$TMPDIR/clamacs-port`
+(`$XDG_RUNTIME_DIR` when set; both files mode 0600, gone at exit), so a
+script of your own reads them and talks:
+
+```
+request:  "<n>\n" then n characters: the command line   (GETFILE, EVAL end-of-buffer, ...)
+reply:    "<rc> <n>\n" then n characters: the text
+```
+
+`<n>` counts characters, not bytes: the text is UTF-8 on the wire (the
+editor's own text is 8-bit, so `é` is one character and two bytes), and a
+client that is not clamiga decodes before it counts.
+
+`verify/host/drive.lisp` is such a script -- the acceptance run --
+and `CLAMACS_PORT=4010` picks a fixed port (0, the default, lets the OS
+choose).
 
 ## The init file
 
@@ -199,7 +223,8 @@ tests/                     host tests for the pure modules (tests/run-lisp-tests
 scripts/                   the heap image the release starts from (save/verify)
 verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
                            sendkey.c injects real key events through input.device
-verify/host/               the host frontend's unattended runs (smoke, keys through the page)
+verify/host/               the host frontend's unattended runs (smoke, keys through the
+                           page, the acceptance drive over the editor's own port)
 src/                       the C editor the Lisp one was ported from (frozen)
 docs/memory.md             what the editor costs on an 8 MB machine
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
@@ -223,6 +248,7 @@ make -f Makefile.cross test-amiga # the C editor's unattended FS-UAE run
 make -f Makefile.mos             # MorphOS: native build on the box, see the file's header
 verify/host/run-smoke.sh         # the host frontend's ground: window, page, shim, wake
 verify/host/host-keys.sh         # the host editor typed into through its page, unattended
+verify/host/run-drive.sh         # the host editor's acceptance run over its own port
 ```
 
 The Lisp editor's tests run everything but `frontend-mui.lisp` on the host

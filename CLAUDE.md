@@ -41,7 +41,25 @@ host frontend keeps that the fake does not show: an edit is noticed by
 the mirror's text IDENTITY (`note-text-if-changed`, what MUI's
 ContentsChanged hook does), since a command's edit calls no hook; and a
 page-initiated change (`clamacsUpdate`) is applied to the mirror as one
-`mirror-replace` and never pushed back.
+`mirror-replace` and never pushed back.  Phase H2 (same day) is
+`lisp/transport-host.lisp`: the wire's home transport on the host is the
+SELF transport (the editor's own image answers the REPL, the debugger,
+the inspector, introspection and LOAD; `Talk to the Editor Itself` and
+`Talk to clamiga` are the same transport until the TCP one of phase H5),
+and the editor's own port is a TCP listener on 127.0.0.1 -- a
+length-framed line protocol, `AUTH <token>` before anything else, the
+token from `/dev/urandom` and the port number in 0600 files under
+`$TMPDIR` (or `$XDG_RUNTIME_DIR`), every verb run on the editor's task
+through the mailbox.  `tests/test-transport-host.lisp` drives it over a
+real loopback socket (the refused connections included), and
+`verify/host/run-drive.sh` is the acceptance run: `verify/host/drive.lisp`,
+a client of its own, walks the legs of `drive.rexx` over the port (124
+`OK` lines) and a second editor is started against the layout file it
+wrote.  Run it after touching `transport-host.lisp`, `transport-self.lisp`,
+`port.lisp`, `wire.lisp`, the REPL/debugger/inspector files or the event
+loop.  Every panel generic of debugger.lisp and inspector.lisp has a
+method on `host-editor` (no-ops until the H3 dock): a missing one aborted
+the REPL window's close at quit and the editor could not exit.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

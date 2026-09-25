@@ -15,7 +15,7 @@
     "commands" "minibuffer" "files"
     "diag" "wire" "port" "mailbox" "introspect"
     "replmsg" "repl" "debugger" "inspector"
-    "winstore" "snapshot" "menu" "self" "host"))
+    "winstore" "snapshot" "menu" "self" "host" "transport-host"))
 
 ;;; The checkout's root, as text: `..' is not a directory on AmigaDOS, and
 ;;; the suite also runs on a real Amiga (`Clamacs:tests/run-tests.lisp').

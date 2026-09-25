@@ -251,12 +251,23 @@ written to `$TMPDIR/clamacs-port`; the session token beside it in
 script talks to (it reads the token file) and what `REPL-ATTACH
 tcp:...` names.
 
-Protocol, both directions, bytes in Latin-1:
+Protocol, both directions:
 
 ```
-request:  "<n>\n" then n bytes: the command line  (VERB argument)
-reply:    "<rc> <n>\n" then n bytes: the text
+request:  "<n>\n" then n characters: the command line  (VERB argument)
+reply:    "<rc> <n>\n" then n characters: the text
 ```
+
+`<n>` counts **characters**, and the bytes are **UTF-8**: the host
+runtime's socket streams encode every character above 127 (and decode
+on the way in), so `(length text)` is what a Lisp end writes and reads.
+The editor's text is 8-bit, so a Latin-1 character is one in `<n>` and
+two bytes on the wire; a client in another language decodes before it
+counts, and characters above 255 are outside what the editor can hold.
+`write-wire-text` sends every string as UTF-8 whether it is an 8-bit or a
+wide one (`write-string` of an 8-bit string alone would put out one byte
+per character); `tests/test-transport-host.lisp` reads a reply back with
+`read-byte` and sends a request with `write-byte`.
 
 No quoting, no escaping, newlines inside the text are the text's; `rc`
 is the ARexx ladder of `wire.lisp`.  A closed connection is the port
@@ -268,7 +279,10 @@ frame within 5 seconds, a length above the 1 KB an `AUTH` needs -- is
 answered `20 <n>\nauthentication required` (nothing of the request is
 run, echoed or logged) and the connection is closed.  `AUTH` is not a
 verb of `port.lisp` or `ext.dev`: the listener owns it, so no command
-can be reached around it.
+can be reached around it.  After `AUTH` a command longer than 16 MiB
+(`*host-frame-limit*`) is answered `20 <n>\nERROR: the command is too long`, its body
+is read and dropped, and the connection stays (leaving the body on the
+wire would have it read as the next header).
 
 ### Who may connect
 
@@ -279,7 +293,13 @@ keep the same three rules:
   runtime's `:host` argument and the editor's `--bind ADDR` (after `--`),
   each spelled out by whoever starts the process: no default, no
   environment variable and no config file turns it on, and neither
-  accepts a wildcard address.  A Mac driving an Amiga clamiga over the
+  accepts a wildcard address.  (`EXT:SOCKET-LISTEN` knows loopback or
+  every address today, so `--bind` is refused -- no port, a message --
+  until R1 gives the runtime a named bind: whatever address it names, a
+  wildcard one included, and also when it names none; `parse-command-line`
+  passes all of them on and `host-port-start` refuses, so an option that
+  was not honoured is never taken for one that was not given.)  A Mac
+  driving an Amiga clamiga over the
   LAN needs both -- the clamiga listening for the editor, the editor
   listening for the clamiga's REPL leg.  A non-loopback bind is for a
   trusted network: the token authenticates, it does not encrypt -- every
@@ -295,9 +315,10 @@ keep the same three rules:
   an `open` with the mode, never a `chmod` afterwards, so there is no
   window in which it is readable -- and removes them at shutdown.  Where
   `$TMPDIR` is shared between users (Linux `/tmp`) the files go in
-  `$XDG_RUNTIME_DIR` instead, and the editor refuses to start if it can
-  do neither.  A token `start` drew itself is printed to that clamiga's
-  own standard output, once; one it was given (`:token`) is not.
+  `$XDG_RUNTIME_DIR` instead, and the editor starts without its port,
+  saying so, if it can do neither.  A token `start` drew itself is
+  printed to that clamiga's own standard output, once; one it was given
+  (`:token`) is not.
 
 Each of the three rules has a test.  `tests/test_dev_tcp.sh` (runtime) and
 `tests/test-transport-host.lisp` (editor) both check that a connection
@@ -530,6 +551,29 @@ with the memory note updated.
   image; the same `OK` lines, the same `want` lists minus the Amiga-only
   ones.  `intro.lisp`, `errors.lisp`, `eval.lisp` reused as fixtures.
 - Done when: `run-drive.sh` passes unattended on the Mac.
+- **Done 2026-09-25** (branch `host-h2`): 585 Lisp tests (17 for the
+  port, on a real loopback socket with the fake editor behind a pumped
+  mailbox), `run-drive.sh` green with 124 `OK` lines -- the count the
+  Amiga drive reached on 2026-09-20 -- and `run-smoke.sh` / `host-keys.sh`
+  still green.  `verify/host/drive.lisp` is a client of its own (forty
+  lines of protocol, none of the editor's code), so the run proves the
+  port from the outside; a second editor comes up where the layout file
+  says, read over ITS port with a `TMPDIR` of its own.  What it settled:
+  the token is read from `/dev/urandom` and the two files are created
+  under a `umask` of 077 (one libc call through the FFI; the runtime
+  needed nothing), their mode checked by the script with `stat`; every
+  limit a connection thread reads is a slot of the port, copied from the
+  special when it starts, since a dynamic binding is the starting
+  thread's alone.  What it found: the host editor had no methods for the
+  debugger and inspector generics yet, and a "no applicable method" out
+  of `editor-debugger-close` aborted the REPL window's close before the
+  document was marked closing -- the editor could not quit; the
+  `host-editor` now carries a method for every panel generic (no-ops
+  until H3), pinned by `tests/test-host.lisp`.  Two rules above bent to
+  what exists: `--bind` is parsed and refused (no port, a message) until
+  the runtime can bind a named address (R1, phase H5), and without a
+  private directory for the files the editor starts *without its port*
+  and says so, rather than not at all.
 
 ### H3 -- the dock: diagnostics, debugger, inspector, REPL as tabs
 
