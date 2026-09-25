@@ -150,6 +150,25 @@
     (is (mirror-edit m :backspace))
     (is-equal (mirror-state m) "|")))
 
+(deftest mirror-replace-is-one-undo-step
+  (let ((m (mirror-from "one |three")))
+    (mirror-replace m 4 4 "two ")
+    (is-equal (mirror-state m) "one two |three")
+    (mirror-replace m 0 3 "1")
+    (is-equal (mirror-state m) "1| two three")
+    (is (mirror-modified m))
+    ;; Each replace was one step
+    (is (mirror-edit m :undo))
+    (is-equal (mirror-state m) "one two |three")
+    (is (mirror-edit m :undo))
+    (is-equal (mirror-state m) "one |three")
+    (is (not (mirror-edit m :undo)))
+    ;; A pure deletion, and an empty replace that changes nothing
+    (mirror-replace m 0 4 "")
+    (is-equal (mirror-state m) "|three")
+    (mirror-replace m 5 5 "")
+    (is-equal (mirror-state m) "three|")))
+
 (deftest mirror-selection
   (let ((m (mirror-from "ab|")))
     (is-equal (mirror-selection m) nil)

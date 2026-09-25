@@ -20,9 +20,12 @@
     "menu" "snapshot" "transport-self"))
 
 ;;; The frontend: the MUI one on an Amiga, with the ARexx transport and the
-;;; editor's port behind it; none on the host (the tests bring their own,
-;;; tests/fake-frontend.lisp and tests/fake-transport.lisp).  Bind it to
-;;; NIL to load the pure modules alone on an Amiga too.
+;;; editor's port behind it; none by default on the host (the tests bring
+;;; their own, tests/fake-frontend.lisp and tests/fake-transport.lisp;
+;;; tests/test-host.lisp loads frontend-host.lisp itself).  lisp/clamacs.lisp
+;;; binds it to the webview frontend ("frontend-host") off the Amiga
+;;; before loading this file.  Bind it to NIL to load the pure modules
+;;; alone on an Amiga too.
 (defvar cl-user::*clamacs-frontend-files*
   #+amigaos '("frontend-mui" "transport-arexx")
   #-amigaos '())

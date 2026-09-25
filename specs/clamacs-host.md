@@ -100,7 +100,9 @@ binding is a promise on the JS side, so the page cannot ask synchronously
 either.  Therefore:
 
 - the page `preventDefault`s **every** key except IME composition
-  (`isComposing`), keys with the Command key (the host's Amiga key: left
+  (`isComposing`), a dead key without Alt (with Alt, macOS reports
+  Option-N/E/I/U/` as `Dead`, and the decoder reads the letter from
+  `code`: `M-n`), keys with the Command key (the host's Amiga key: left
   to the OS and to CodeMirror -- Cmd-C/V/X/A/Z stay native), and modifier
   presses, and sends it to Lisp (`clamacsKey`);
 - Lisp decodes it (`host-decode-key`, the browser's `KeyboardEvent`
@@ -361,8 +363,10 @@ its handler is bracketed by the batch flush and `after-command`
 
 `makeDoc(id, name, kind)` (`kind` "source" or "tool"), `removeDoc(id)`,
 `activateDoc(id)`, `setText(id, text)`, `applyEdit(id, from, to, text,
-head)`, `setPoint(id, head, anchor)`, `setColours(id, [[y, [[x0, x1,
-kind], ...]], ...])`, `setTitle(id, title)`, `setModified(id, flag)`,
+head)`, `setPoint(id, head, anchor)`, `colour(id, records)` (a record
+`[y, [[x0, x1, kind], ...]]` replaces line `y`'s runs, `[y, x0, x1,
+kind]` paints one run over what is there, `kind` false clears),
+`setTitle(id, title)`, `setModified(id, flag)`,
 `setStatus(text)`, `setEcho(text)`, `openMini(label, text)`,
 `closeMini()`, `setMiniText(text)`, `setMiniLabel(label)`,
 `setMenus(json)`, `menuEnable(index, flag)`, `setBuffers(json)`,
@@ -372,9 +376,16 @@ condition, restarts, hasContinue)`, `dbgClose()`, `dbgRaise()`,
 depth, object, parts)`, `setDock(height)`, `terminate()` (the page asks
 nothing further).
 
-Colours are per line: the page keeps a map from line to runs and a
-`StateField` of mark decorations rebuilt for the lines that changed.
-Token kinds map to CSS classes (`ck-comment`, `ck-string`, ...,
+Colours are mark decorations in a `StateField`, mapped through every
+change so they travel with the text as SetBlock's do; Lisp keeps none
+across entries.  Within one entry `doc-colour`'s runs are coalesced: the
+whole-line clear `colour-one-line` starts with opens a line record the
+later runs are painted into, and a run on a line not cleared in that
+entry is a run record -- so `colour-all` is one call with one record per
+line.  The page applies a call's records in order, the run records oldest
+first and the line records after them, so a range cleared and painted
+again in one entry (the paren highlight) ends up painted.  Token kinds map
+to CSS classes (`ck-comment`, `ck-string`, `ck-char`, ...,
 `ck-paren-match`); the palette is the page's, light and dark.
 
 ### The page
@@ -482,6 +493,24 @@ with the memory note updated.
   frontend's text.
 - Done when: the editor is usable by hand on a file (the user tries the
   window), and `host-keys.sh` passes unattended.
+- **Done 2026-09-25** (branch `host-h1`): 562 Lisp tests (23 for the
+  host frontend), `host-keys.sh` green (also `GCSTRESS=1`), `run-smoke.sh`
+  still green on the H1 page.  What it settled: the requester stays
+  native -- an `NSAlert` raised from inside a binding callback (`C-x k`
+  on a modified buffer) ran its loop, was dismissed, and the callback's
+  `webview_return` and the page's later calls went through; the mailbox
+  wake from a worker thread ends the step as designed.  What it found:
+  a command's edit calls no hook (the fake's `type-keys` only notes the
+  widget's own inserts), so the host notices an edit by the mirror's
+  text identity after every key and every entry
+  (`note-text-if-changed`), which is what MUI's ContentsChanged hook
+  does; and `clamacsUpdate`'s changes come in the coordinates of the
+  text before them, so they are applied in order with a running delta
+  as one `mirror-replace` each.  The input line edits itself for plain
+  keys (the `input` event reports, `clamacsMiniInput`) and sends
+  Control, Alt, Escape, Tab, Enter and every synthetic key to Lisp, so
+  the port's `KEY` and the harness type into a prompt through
+  `doc-minibuffer-edit`.
 
 ### H2 -- the port, the wire on the self transport, the drive
 
@@ -592,7 +621,10 @@ with the memory note updated.
   to deliver a `webview_return` across it, the requester moves to the
   page (an HTML dialog with a Lisp-side continuation) and `doc-ask`
   becomes a prompt-style continuation for the two callers that need it
-  (`release-text`, `close-document`).  Decided in H1.
+  (`release-text`, `close-document`).  Decided in H1: WebKit delivers
+  it; the requester is native.  While it is up, bindings that arrive
+  (the timer's ticks) are dropped, and the batch is flushed before it
+  opens so the page shows the state the question is about.
 - **Large pastes**: `clamacsUpdate` carries the pasted text through a
   JSON argument; `ffi:foreign-to-string` reads to the NUL since
   a0188bd6.  A 1 MB paste is a 1 MB string copy: acceptable.

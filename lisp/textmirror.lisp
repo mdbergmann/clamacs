@@ -165,6 +165,18 @@ on the conses; HISTORY itself is returned."
                                        (subseq old end))
           (mirror-point m) start)))
 
+(defun mirror-replace (m start end text)
+  "Replace START to END with TEXT as ONE undo step; the point ends after
+TEXT.  What a change the widget made on its own (a paste, a drag) is
+applied as: one edit, whatever it replaced."
+  (mirror-record-undo m)
+  (let ((old (mirror-text m)))
+    (setf (mirror-text m) (concatenate 'simple-string
+                                       (subseq old 0 start)
+                                       text
+                                       (subseq old end))
+          (mirror-point m) (+ start (length text)))))
+
 (defun mirror-set-text (m text)
   "Replace the whole text, as a file load does: point at 0, no undo, not
 modified."

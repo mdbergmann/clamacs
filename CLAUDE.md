@@ -27,7 +27,21 @@ text model, which `tests/fake-frontend.lisp` now runs on) and
 with tests; `host/` holds the native shim, the page and `build.sh`
 (webview at a pinned commit, the CodeMirror bundle from a lockfile with
 its sha256 checked, the page kept pure ASCII); `verify/host/run-smoke.sh`
-is its gate.  Run it after touching `host/`.
+is its gate.  Phase H1 (same day) is `lisp/frontend-host.lisp`, the
+document window: a `host-document` over the mirror, the key decoder, the
+batch (one `webview_eval` per entry into Lisp, colour runs coalesced per
+line), the stepped loop, the requesters through the shim; `lisp/clamacs.lisp`
+picks it on a non-Amiga host and `host/run.sh` starts it.
+`tests/test-host.lisp` drives it with the page stubbed (the batch read
+back), and `verify/host/host-keys.sh` types `lisp-editor-keys.lisp`
+through the page's `simulateKey` and compares the saved file with the
+fake frontend's -- the host twin of `run-lisp-editor.sh`.  Run both
+scripts after touching `host/` or `frontend-host.lisp`.  Two rules the
+host frontend keeps that the fake does not show: an edit is noticed by
+the mirror's text IDENTITY (`note-text-if-changed`, what MUI's
+ContentsChanged hook does), since a command's edit calls no hook; and a
+page-initiated change (`clamacsUpdate`) is applied to the mirror as one
+`mirror-replace` and never pushed back.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

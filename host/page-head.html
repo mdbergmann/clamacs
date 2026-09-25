@@ -41,6 +41,7 @@
   .tab { padding: 4px 10px; border-right: 1px solid var(--line); cursor: default;
          white-space: nowrap; }
   .tab.active { background: var(--tab-active); }
+  .tab.modified span:first-child::after { content: " *"; color: var(--dim); }
   .tab .close { margin-left: 8px; color: var(--dim); cursor: pointer; }
   .tab .close:hover { color: var(--fg); }
   #sources { flex: 1; display: flex; flex-direction: column; min-height: 60px; }
@@ -55,6 +56,7 @@
   .cm-selectionBackground, ::selection { background: var(--selection) !important; }
   .ck-comment { color: var(--c-comment); }
   .ck-string { color: var(--c-string); }
+  .ck-char { color: var(--c-string); }
   .ck-number { color: var(--c-number); }
   .ck-keyword { color: var(--c-keyword); }
   .ck-defining { color: var(--c-defining); }

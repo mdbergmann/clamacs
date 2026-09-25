@@ -33,6 +33,24 @@ release starts the same editor from a heap image instead (its `Clamacs`
 icon, or `clamiga --image clamacs.img --non-interactive --eval
 "(clamacs::run)" -- file.lisp`), which skips the load.
 
+## On the host (macOS)
+
+The same editor runs on a Mac, in one native window with the buffers as
+tabs (webview + CodeMirror 6; `specs/clamacs-host.md`):
+
+```
+host/run.sh file.lisp ...        # builds what is missing, then starts the editor
+```
+
+Everything Emacs about it is the same code as on the Amiga: the keys
+(Option is Meta, ESC too; Command keys stay the system's), Lisp mode, the
+prompts, the requesters.  What is there today is the document window --
+files, editing, colouring, search, the minibuffer -- with the port, the
+REPL, the debugger, the inspector and the menu bar following phase by
+phase.  `host/build.sh` needs the network once, for the webview library
+and the CodeMirror packages (both pinned and checked); the editor itself
+does not.  The init file is `~/.clamacsrc`.
+
 ## The init file
 
 `S:.clamacsrc` is loaded before the first window opens, in the `CLAMACS`
@@ -172,12 +190,16 @@ open at the time.
 lisp/                      the editor: the Emacs layer, Lisp mode, the wire to clamiga,
                            the REPL/debugger/inspector, the menu table and window
                            positions -- all pure Lisp over a frontend protocol --
-                           and frontend-mui.lisp, the one file that talks to MUI
+                           and frontend-mui.lisp, the one file that talks to MUI;
+                           frontend-host.lisp is the same protocol over the page
+host/                      the host frontend's native shim, page and build.sh; run.sh
 tests/                     host tests for the pure modules (tests/run-lisp-tests.sh),
-                           on a fake frontend and a fake transport
+                           on a fake frontend and a fake transport, and for the
+                           host frontend with the page stubbed
 scripts/                   the heap image the release starts from (save/verify)
 verify/realamiga/          unattended FS-UAE run, driven through the ARexx port;
                            sendkey.c injects real key events through input.device
+verify/host/               the host frontend's unattended runs (smoke, keys through the page)
 src/                       the C editor the Lisp one was ported from (frozen)
 docs/memory.md             what the editor costs on an 8 MB machine
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
@@ -199,6 +221,8 @@ make -f Makefile.cross amiga     # cross-compile build/cross/clamacs (and sendke
 make -f Makefile.cross test-lisp-amiga # the Lisp editor through drive.rexx in FS-UAE
 make -f Makefile.cross test-amiga # the C editor's unattended FS-UAE run
 make -f Makefile.mos             # MorphOS: native build on the box, see the file's header
+verify/host/run-smoke.sh         # the host frontend's ground: window, page, shim, wake
+verify/host/host-keys.sh         # the host editor typed into through its page, unattended
 ```
 
 The Lisp editor's tests run everything but `frontend-mui.lisp` on the host
