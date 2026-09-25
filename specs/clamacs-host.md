@@ -157,8 +157,12 @@ The other threads -- the self transport's worker, the REPL thread, the
 port's connection threads -- never touch a document: they post a closure
 to the **mailbox** (`call-in-editor`, the MUI frontend's, moved to a
 shared `lisp/mailbox.lisp` with the wake function as a parameter) and
-the loop runs it.  The wake is `webview_dispatch`, thread-safe by
-contract, so a post is served before the step's timeout.  While a modal
+the loop runs it.  The wake is the shim's `clamacs_host_wake`: an
+application-defined `NSEvent` posted from any thread, which ends the
+step in progress so the loop returns to Lisp and drains -- the drain
+stays in `run-loop`, on no nested stack.  (`webview_dispatch` would
+serve the same purpose, but its block runs inside whatever loop is
+current, a modal dialog's included; H0 chose the event.)  While a modal
 dialog is up, a drain is deferred (`*in-modal*`), never run inside the
 dialog's nested loop.
 
@@ -177,7 +181,8 @@ frameworks; no other toolchain).  Its C API, called through
 
 | Function | For |
 |---|---|
-| `int clamacs_host_step(void *w, int ms)` | one turn of the event loop |
+| `int clamacs_host_step(void *w, int ms)` | one turn of the event loop: wait up to `ms` for the first event, deliver what is pending, return |
+| `void clamacs_host_wake(void)` | from any thread: end the step in progress (the mailbox's wake) |
 | `int clamacs_host_ask(void *win, const char *text, const char *buttons)` | `doc-ask`: an `NSAlert`, buttons `"Save\|Discard\|Cancel"`, answers the index, -1 for Escape |
 | `char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)` | `doc-ask-file`: `NSOpenPanel` / `NSSavePanel`, a malloc'd path or NULL |
 | `void clamacs_host_free(void *p)` | frees it |
@@ -186,6 +191,7 @@ frameworks; no other toolchain).  Its C API, called through
 | `int clamacs_host_open_url(const char *url)` | `doc-open-url`: `NSWorkspace` |
 | `void clamacs_host_get_frame(void *win, int32_t out[4])` / `set_frame(win, l, t, w, h)` | `doc-geometry`, `layout-place` (top-left origin, flipped from Cocoa's) |
 | `void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)` | the window's close button asks the editor (`save-buffers-kill-emacs`) instead of ending the loop; a delegate that forwards everything else to webview's |
+| `const char *clamacs_host_toolkit(void)` | the toolkit line for About ("Cocoa/WebKit on macOS 27.0.0") |
 
 Linux (GTK) and Windows (Win32) implementations go behind `#ifdef` in the
 same file when those hosts are taken up; every entry has a "not
@@ -312,6 +318,19 @@ as `store-text` does for MUI.  Lisp → JS: the JS string writer escapes
 every code above 127 as `\u00XX`, so the C string handed to
 `webview_eval` is ASCII.  Files stay Latin-1 (`files.lisp`).
 
+The **page itself is pure ASCII**, and `host/build.sh` fails the build
+otherwise.  Found in H0: `ffi:foreign-string` writes one byte per
+character and takes narrow strings only, while a file read with the
+default external format decodes UTF-8 into code points -- so a page with
+an arrow in a CodeMirror doc comment reached WebKit as invalid UTF-8,
+`stringWithUTF8String` answered nil, and the window showed an EMPTY page
+with no error anywhere.  esbuild's `--charset=ascii --minify-whitespace`
+makes the bundle ASCII (strings escaped, comments gone; the licences are
+in the packages), and the Lisp reads the page with `:external-format
+:latin-1`, byte for byte, so the file is what WebKit gets.  The page
+reports its own failures: `window.onerror` and unhandled rejections go
+to the `clamacsLog` binding, registered before the bundle runs.
+
 ## The interface between the page and the Lisp
 
 ### Bindings (page → Lisp, `webview_bind`; arguments a JSON array)
@@ -319,6 +338,7 @@ every code above 127 as `\u00XX`, so the C string handed to
 | Binding | Arguments | Meaning |
 |---|---|---|
 | `clamacsReady` | `userAgent` | the page is up: Lisp builds the menus, opens the first documents |
+| `clamacsLog` | `text` | a JavaScript error or rejection in the page; Lisp reports it |
 | `clamacsKey` | `docId, key, code, ctrl, alt, meta, shift, target` | a key in a view (`target` "text") or the input line ("mini") |
 | `clamacsUpdate` | `docId, [[from, to, inserted], ...], head` | a change CodeMirror made on its own |
 | `clamacsCursor` | `docId, head, anchor` | the selection moved on its own (mouse) |
@@ -392,8 +412,11 @@ lisp/transport-host.lisp   the editor's own port over TCP; the wire on the self 
 lisp/transport-tcp.lisp    the wire to a clamiga over TCP (phase H5)
 tests/test-json.lisp       the reader and writer
 tests/test-textmirror.lisp the model, shared with the fake
+tests/test-mailbox.lisp    post, drain, wait, close, across threads
 tests/test-host.lisp       the frontend with the page stubbed (the batch buffer read back)
 tests/test-transport-host.lisp  the port over a real socket
+verify/host/smoke.lisp     H0's ground end to end (the page, the shim, the wake)
+verify/host/run-smoke.sh   builds, runs it, reads the verdict; GCSTRESS=1 under gc-stress
 verify/host/drive.lisp     the acceptance run, over the port
 verify/host/run-drive.sh   builds, starts the editor, runs the drive, checks the log
 verify/host/host-keys.sh   the differential smoke run: keys through the page
@@ -432,6 +455,12 @@ with the memory note updated.
   and the page, and a `verify/host/smoke.lisp` run (`--eval`) opens the
   window, gets `clamacsReady`, asks the shim for a beep and the frame,
   and terminates -- unattended, `SMOKE: PASS` as the last line.
+- **Done 2026-09-25** (branch `host-h0`): 536 Lisp tests, the FS-UAE
+  `run-lisp-editor.sh` run green on the MUI frontend over the shared
+  mailbox, `run-smoke.sh` green (also `GCSTRESS=1`).  What it found:
+  the ASCII rule above; and runtime item R0 -- `ffi:close-library` on
+  the host was the AmigaOS stub (fixed in cl-amiga with a regression
+  test, needed before the smoke can close its libraries).
 
 ### H1 -- the document window
 
@@ -528,6 +557,14 @@ with the memory note updated.
 - A host `clamacs.img` (`--image`) and a `Clamacs.app` / launcher.
 
 ## Runtime items (commits in cl-amiga, each under every gate)
+
+- **R0** (done 2026-09-25) `ffi:close-library` on the host: `AMIGA` uses
+  `FFI`, so the AmigaOS host stub registered under the same name replaced
+  the real `dlclose` entry; `tests/test_ffi.c` pins it.  Two more
+  observations from the same hunt, open: `(setf char)` of a character
+  above 255 into a narrow string silently stores the low byte, and
+  `ffi:foreign-string` answers "argument must be a string" for a wide
+  string -- both should say what happened.
 
 - **R1** `lib/dev-tcp.lisp`: the development port over TCP (H5), with the
   `AUTH` gate, the loopback default, the entropy-drawn token and the

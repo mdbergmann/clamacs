@@ -1,0 +1,15 @@
+{
+  "name": "clamacs-host-page",
+  "private": true,
+  "description": "The CodeMirror 6 bundle of the Clamacs host frontend (specs/clamacs-host.md); built by host/build.sh, never published.",
+  "scripts": {
+    "bundle": "esbuild page-entry.mjs --bundle --format=iife --target=es2020 --charset=ascii --minify-whitespace --log-level=warning"
+  },
+  "dependencies": {
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

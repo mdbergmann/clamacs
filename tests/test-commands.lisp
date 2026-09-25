@@ -344,7 +344,7 @@
   (let ((doc (make-fake (lines "(when x" "|  (y))"))))
     (type-keys doc "TAB")
     (is-equal (fake-state doc) (lines "(when x" "  |(y))"))
-    (is-equal (fake-undo-list doc) '()))
+    (is-equal (mirror-undo (fake-mirror doc)) '()))
   ;; A tab in the indentation counts as whitespace to replace.
   (is-equal (after-keys (format nil "(when x~%~C(y|))" #\Tab) "TAB")
             (lines "(when x" "  (y|))")))

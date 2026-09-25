@@ -307,11 +307,9 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   active-doc activate-pending (activate-stamp 0)
   ;; the return ID that wakes the loop to reap closed windows
   (reap-id 1)
-  ;; The mailbox: what the other threads (the port's, the client's) hand
-  ;; the MUI task -- see CALL-IN-EDITOR.  The task and the signal bit the
-  ;; loop waits on beside MUI's own.
+  ;; The mailbox (mailbox.lisp, EDITOR-MAILBOX) is woken by an Exec
+  ;; signal: the task and the signal bit the loop waits on beside MUI's own.
   task (signal-bit -1) (signal-mask 0)
-  mailbox-lock mailbox-cv (mailbox '()) (mailbox-closed nil)
   ;; The diagnostics window, made on first use, and its list
   errors-window errors-list
   ;; Set while EDITOR-SELECT-DIAGNOSTIC moves the list's cursor, so the
@@ -390,90 +388,33 @@ init file may open what it likes.")
 ;;; ------------------------------------------------------------------
 ;;;
 ;;; The port's handler thread and the client thread never call a method;
-;;; they post a closure here, raise the editor's signal, and the event loop
-;;; runs it between two MUI inputs.  A waiting caller (a port command that
-;;; needs the answer) blocks on the condition variable until the loop has
-;;; run its closure; a fire-and-forget one (a reply arriving from clamiga)
-;;; just posts.  Exec signals are sticky, so a post while the loop is busy
-;;; is picked up on its next wait.
-
-(defstruct (mail (:constructor make-mail (thunk wait)))
-  thunk wait (done nil) (values nil))
+;;; they post a closure to the editor's mailbox (mailbox.lisp,
+;;; CALL-IN-EDITOR), which raises the editor's signal, and the event loop
+;;; runs it between two MUI inputs.  Exec signals are sticky, so a post
+;;; while the loop is busy is picked up on its next wait.
 
 (defun setup-mailbox (editor)
   (let ((bit (exec:alloc-signal -1)))
     (when (< bit 0)
       (error "Clamacs: no free signal bit for the editor's mailbox."))
-    (setf (mui-editor-task editor) (exec:find-task nil)
-          (mui-editor-signal-bit editor) bit
-          (mui-editor-signal-mask editor) (ash 1 bit)
-          (mui-editor-mailbox-lock editor) (mp:make-lock "clamacs-mailbox")
-          (mui-editor-mailbox-cv editor) (mp:make-condition-variable "clamacs-mailbox")
-          (mui-editor-mailbox editor) '()
-          (mui-editor-mailbox-closed editor) nil)))
+    (let ((task (exec:find-task nil))
+          (mask (ash 1 bit)))
+      (setf (mui-editor-task editor) task
+            (mui-editor-signal-bit editor) bit
+            (mui-editor-signal-mask editor) mask
+            (editor-mailbox editor)
+            (make-mailbox :wake (lambda () (exec:signal task mask))
+                          :on-error (lambda (e) (report-error editor e))
+                          ;; A reply from clamiga or a port verb moved the
+                          ;; state the menu shows (a port found, an error
+                          ;; list filled, a DEBUGGER message).
+                          :after-drain (lambda () (menu-update editor)))))))
 
 (defun free-mailbox (editor)
   (when (>= (mui-editor-signal-bit editor) 0)
     (exec:free-signal (mui-editor-signal-bit editor))
     (setf (mui-editor-signal-bit editor) -1
           (mui-editor-signal-mask editor) 0)))
-
-(defun call-in-editor (editor thunk &key (wait t))
-  "From any thread: have the MUI task call THUNK.  With WAIT, block until
-it has run and return its values; a closed mailbox (the editor is shutting
-down) answers rc 20 instead.  Without, post and return at once."
-  (let ((lock (mui-editor-mailbox-lock editor))
-        (cv (mui-editor-mailbox-cv editor))
-        (mail (make-mail thunk wait)))
-    (mp:with-lock-held (lock)
-      (when (mui-editor-mailbox-closed editor)
-        (return-from call-in-editor
-          (values +rc-fatal+ "ERROR: the editor is shutting down")))
-      (push mail (mui-editor-mailbox editor)))
-    (exec:signal (mui-editor-task editor) (mui-editor-signal-mask editor))
-    (when wait
-      (mp:with-lock-held (lock)
-        (loop until (or (mail-done mail) (mui-editor-mailbox-closed editor))
-              do (mp:condition-wait cv lock 1)))
-      (if (mail-done mail)
-          (values-list (mail-values mail))
-          (values +rc-fatal+ "ERROR: the editor is shutting down")))))
-
-(defun drain-mailbox (editor)
-  "The MUI task: run everything posted since the last drain."
-  (let ((lock (mui-editor-mailbox-lock editor))
-        (cv (mui-editor-mailbox-cv editor)))
-    (loop
-      (let ((batch (mp:with-lock-held (lock)
-                     (prog1 (nreverse (mui-editor-mailbox editor))
-                       (setf (mui-editor-mailbox editor) '())))))
-        (when (null batch)
-          (return))
-        (dolist (mail batch)
-          (let ((values (handler-case (multiple-value-list (funcall (mail-thunk mail)))
-                          (error (e)
-                            (if (mail-wait mail)
-                                (list +rc-fatal+
-                                      (format nil "ERROR: ~A"
-                                              (handler-case (princ-to-string e)
-                                                (error () "(unprintable condition)"))))
-                                (progn (report-error editor e) nil))))))
-            (mp:with-lock-held (lock)
-              (setf (mail-values mail) values
-                    (mail-done mail) t)
-              (mp:condition-broadcast cv))))
-        ;; A reply from clamiga or a port verb moved the state the menu
-        ;; shows (a port found, an error list filled, a DEBUGGER message).
-        (menu-update editor)))))
-
-(defun close-mailbox (editor)
-  "No more calls: every waiter is woken with the shutdown answer, and a
-later post is refused."
-  (let ((lock (mui-editor-mailbox-lock editor)))
-    (when lock
-      (mp:with-lock-held (lock)
-        (setf (mui-editor-mailbox-closed editor) t)
-        (mp:condition-broadcast (mui-editor-mailbox-cv editor))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Raw keys: the one OS call rawkey.lisp is parameterised over
@@ -2213,7 +2154,7 @@ the next keystroke."
                        (when (logtest got dos:+sigbreakf-ctrl-c+)
                          (return-from run-loop))
                        (when (logtest got mailbox)
-                         (drain-mailbox editor)
+                         (mailbox-drain (editor-mailbox editor))
                          (when (housekeeping editor nil)
                            (return-from run-loop))))))))
         (error (e)
@@ -2279,7 +2220,7 @@ function: an image is saved before it runs and restores into it."
              ;; woken with the shutdown answer), then the port and the
              ;; client thread, then the windows.
              (exit-note "loop left")
-             (close-mailbox editor)
+             (mailbox-close (editor-mailbox editor))
              (when (and *wire-stopper* (editor-wire editor))
                (handler-case (funcall *wire-stopper* editor)
                  (error (e) (report-error editor e))))

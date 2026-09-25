@@ -20,7 +20,14 @@ short version.  The **host frontend** (macOS/Linux/Windows: webview +
 CodeMirror 6 over the same frontend protocol, the editor's own image as
 the first Lisp, TCP to a separate clamiga second) is `specs/clamacs-host.md`
 -- decisions, the page/Lisp interface, phases H0-H6, one session each;
-`spike/host-webview/` is its proof of concept.
+`spike/host-webview/` is its proof of concept.  Phase H0 landed
+2026-09-25: `lisp/json.lisp`, `lisp/textmirror.lisp` (the fake frontend's
+text model, which `tests/fake-frontend.lisp` now runs on) and
+`lisp/mailbox.lisp` (the MUI frontend's mailbox, shared) are pure modules
+with tests; `host/` holds the native shim, the page and `build.sh`
+(webview at a pinned commit, the CodeMirror bundle from a lockfile with
+its sha256 checked, the page kept pure ASCII); `verify/host/run-smoke.sh`
+is its gate.  Run it after touching `host/`.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

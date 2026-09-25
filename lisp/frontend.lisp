@@ -49,7 +49,10 @@
   (repl-history (make-history))
   ;; Where the windows go (winstore.lisp, snapshot.lisp): read from the
   ;; layout file at startup, written by `clamacs-snapshot-windows'.
-  (layout (make-winstore)))
+  (layout (make-winstore))
+  ;; What the other threads post for the editor's task (mailbox.lisp);
+  ;; NIL until the frontend's loop is about to run.
+  (mailbox nil))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.

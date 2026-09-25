@@ -13,9 +13,9 @@
 (defvar cl-user::*clamacs-pure-files*
   '("package" "keymap" "rawkey" "minihist" "command" "bindings"
     "killring" "locstack" "symcache" "winstore"
-    "token" "sexp" "indent"
+    "token" "sexp" "indent" "json" "textmirror"
     "frontend" "commands" "minibuffer" "files"
-    "diag" "wire" "port" "introspect"
+    "diag" "wire" "port" "mailbox" "introspect"
     "replmsg" "repl" "debugger" "inspector"
     "menu" "snapshot" "transport-self"))
 

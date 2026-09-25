@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clamacs</title>
+<style>
+  /* The layout of specs/clamacs-host.md, "One native window, tabs and a
+     dock": the source tabs on top, the dock below a splitter, one status
+     line and one echo/minibuffer row for the active document.  Two
+     palettes, picked by the system's setting. */
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1f1f1f; --dim: #6a6a6a;
+    --bar: #ececec; --bar-fg: #333; --tab-active: #ffffff; --line: #d0d0d0;
+    --status-bg: #e4e8f0; --status-fg: #1a3a6a;
+    --echo-bg: #f4f4f4; --echo-fg: #1f1f1f;
+    --cursor: #1f1f1f; --selection: #b8d4ff; --active-line: #f6f8fc;
+    --gutter-bg: #f7f7f7; --gutter-fg: #9a9a9a;
+    --c-comment: #7a7a7a; --c-string: #a31515; --c-number: #098658;
+    --c-keyword: #0000ff; --c-defining: #795e26; --c-symbol: #1f1f1f;
+    --c-paren-match: #c8e6c9; --c-paren-bad: #ffcdd2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --fg: #d4d4d4; --dim: #8a8a8a;
+      --bar: #2d2d30; --bar-fg: #cccccc; --tab-active: #1e1e1e; --line: #3c3c3c;
+      --status-bg: #223047; --status-fg: #9cdcfe;
+      --echo-bg: #252526; --echo-fg: #d4d4d4;
+      --cursor: #d4d4d4; --selection: #264f78; --active-line: #232323;
+      --gutter-bg: #1e1e1e; --gutter-fg: #6e6e6e;
+      --c-comment: #6a9955; --c-string: #ce9178; --c-number: #b5cea8;
+      --c-keyword: #569cd6; --c-defining: #dcdcaa; --c-symbol: #d4d4d4;
+      --c-paren-match: #2f5f2f; --c-paren-bad: #6f2f2f;
+    }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 13px -apple-system, system-ui, sans-serif; overflow: hidden; }
+  #wrap { display: flex; flex-direction: column; height: 100%; }
+  .tabs { display: flex; flex: none; background: var(--bar); color: var(--bar-fg);
+          border-bottom: 1px solid var(--line); overflow-x: auto; user-select: none; }
+  .tab { padding: 4px 10px; border-right: 1px solid var(--line); cursor: default;
+         white-space: nowrap; }
+  .tab.active { background: var(--tab-active); }
+  .tab .close { margin-left: 8px; color: var(--dim); cursor: pointer; }
+  .tab .close:hover { color: var(--fg); }
+  #sources { flex: 1; display: flex; flex-direction: column; min-height: 60px; }
+  #views { flex: 1; position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+  .cm-editor { height: 100%; font-size: 14px; }
+  .cm-scroller { font-family: "SF Mono", Menlo, monospace; line-height: 1.35; }
+  .cm-content { caret-color: var(--cursor); }
+  .cm-gutters { background: var(--gutter-bg); color: var(--gutter-fg); border-right: 1px solid var(--line); }
+  .cm-activeLine { background: var(--active-line); }
+  .cm-selectionBackground, ::selection { background: var(--selection) !important; }
+  .ck-comment { color: var(--c-comment); }
+  .ck-string { color: var(--c-string); }
+  .ck-number { color: var(--c-number); }
+  .ck-keyword { color: var(--c-keyword); }
+  .ck-defining { color: var(--c-defining); }
+  .ck-symbol { color: var(--c-symbol); }
+  .ck-paren-match { background: var(--c-paren-match); }
+  .ck-paren-bad { background: var(--c-paren-bad); }
+  #splitter { flex: none; height: 5px; background: var(--bar); border-top: 1px solid var(--line);
+              border-bottom: 1px solid var(--line); cursor: row-resize; }
+  #dock { flex: none; display: none; flex-direction: column; height: 200px; min-height: 40px; }
+  #dock.open { display: flex; }
+  #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
+            border-top: 1px solid var(--line); white-space: pre; overflow: hidden;
+            font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
+  #echo { flex: none; display: flex; padding: 3px 8px; min-height: 1.3em; background: var(--echo-bg);
+          color: var(--echo-fg); white-space: pre; font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
+  #mini-label { flex: none; }
+  #mini { flex: 1; border: 0; outline: 0; padding: 0; margin: 0; background: transparent;
+          color: inherit; font: inherit; display: none; }
+  #mini.open { display: block; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="sources">
+    <div id="source-tabs" class="tabs"></div>
+    <div id="views"></div>
+  </div>
+  <div id="splitter"></div>
+  <div id="dock">
+    <div id="dock-tabs" class="tabs"></div>
+    <div id="dock-views" class="views"></div>
+  </div>
+  <div id="status"></div>
+  <div id="echo"><span id="mini-label"></span><input id="mini" type="text" spellcheck="false"><span id="message"></span></div>
+</div>
+<script>
+// What goes wrong in the page is reported to Lisp (the clamacsLog
+// binding), never lost in a console nobody sees: registered before the
+// CodeMirror bundle, so a failure there is reported too.
+window.addEventListener("error", (e) => {
+  if (window.clamacsLog) clamacsLog("JS error: " + e.message + " (line " + e.lineno + ")");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  if (window.clamacsLog) clamacsLog("JS rejection: " + (e.reason && e.reason.message || e.reason));
+});

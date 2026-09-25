@@ -11,8 +11,9 @@
 (defparameter cl-user::*clamacs-test-files*
   '("keymap" "rawkey" "command" "bindings"
     "killring" "minihist" "locstack" "symcache"
-    "token" "sexp" "indent" "commands" "minibuffer" "files"
-    "diag" "wire" "port" "introspect"
+    "token" "sexp" "indent" "json" "textmirror"
+    "commands" "minibuffer" "files"
+    "diag" "wire" "port" "mailbox" "introspect"
     "replmsg" "repl" "debugger" "inspector"
     "winstore" "snapshot" "menu" "self"))
 

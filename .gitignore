@@ -21,3 +21,6 @@ __pycache__/
 # cl-user::*clamacs-compile-fasls* is bound; the release ships them under
 # lib/clamacs/) -- never committed, and never picked over a newer source.
 *.fasl
+
+# The host frontend's npm packages (host/build.sh installs them from the lockfile)
+host/node_modules/
