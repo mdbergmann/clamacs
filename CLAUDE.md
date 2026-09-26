@@ -94,7 +94,27 @@ tests' plain one) syncs nothing and answers `BUFFERS` from the model.
 `MEMTRACK=1 verify/host/run-drive.sh` runs both editors under the
 superproject's `DEBUG_MEM_TRACK` build and fails on any off-heap block
 still allocated at exit -- the shutdown criterion; run it after touching
-`host-open`/`host-close`, the port or the callbacks.
+`host-open`/`host-close`, the port or the callbacks.  Phase H5
+(2026-09-26) is `lisp/transport-tcp.lisp`, the wire's home on the host:
+a separate clamiga over cl-amiga's `lib/dev-tcp.lisp` port (`AUTH
+<token>` first, the same frames as the editor's own port), found through
+`CLAMACS_CLAMIGA` / `CLAMACS_CLAMIGA_TOKEN` or started by `Start clamiga`
+on the binary the editor runs on (`ext:executable-path`; the token in the
+child's environment, its port number through a file in the private
+directory, its output in `clamacs-clamiga.log` there, `(ext.dev.tcp:wait)`
+keeping it up until the editor's exit sends `EVAL (ext.dev.tcp:stop)`),
+with the self transport made on the first `Talk to the Editor Itself`.
+The REPL attaches with `REPL-ATTACH tcp:HOST:PORT/TOKEN` -- the editor's
+port and token, handed over on the authenticated connection -- and
+clamiga's REPL thread connects back to the port.  Two rules: a failed
+connect is not retried for two seconds (the idle timer asks often), and
+the editor stops only a clamiga it started.  `tests/test-transport-tcp.lisp`
+runs against a dev-tcp server in the test image and launches a real
+second clamiga once; `run-drive.sh` drives every Lisp leg against a
+clamiga the editor started and checks that it stopped with the editor.
+`--bind ADDR` is honoured now (the runtime binds a named address).  A
+clamiga change this needs (`ext.dev.tcp`, `ext:socket-listen` with an
+address, `ext:executable-path`) is on cl-amiga's `feat/dev-tcp`.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

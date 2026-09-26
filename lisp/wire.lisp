@@ -49,6 +49,15 @@ bounded time for the port to appear.  True when it did."))
   (:documentation "The name of the editor's OWN port -- what clamiga's REPL
 thread is told to send to (REPL-ATTACH) -- or NIL while there is none."))
 
+(defgeneric transport-launch-problem (transport)
+  (:documentation "Why the last TRANSPORT-LAUNCH failed, as text for the
+echo area, or NIL when it has nothing to add to `Cannot start clamiga'.")
+  (:method (transport) (declare (ignore transport)) nil))
+
+(defun launch-failure-text (wire)
+  (format nil "Cannot start clamiga~@[: ~A~]"
+          (transport-launch-problem (wire-transport wire))))
+
 ;;; ------------------------------------------------------------------
 ;;; Requests and the wire
 ;;; ------------------------------------------------------------------
@@ -151,12 +160,12 @@ whether to start clamiga; a quiet caller (DOC NIL) just fails."
   (cond ((wire-ready-p wire) t)
         ((null doc) nil)
         ((not (eq (doc-ask doc
-                           "No clamiga ARexx port was found. Start clamiga in its own console window?"
+                           "No running clamiga was found. Start one?"
                            '(:start :cancel))
                   :start))
          nil)
         ((wire-launch wire) t)
-        (t (doc-message doc "Cannot start clamiga")
+        (t (doc-message doc (launch-failure-text wire))
            nil)))
 
 ;;; ------------------------------------------------------------------
@@ -488,7 +497,7 @@ not for keys."
     (when wire
       (if (wire-launch wire)
           (doc-message doc "Started clamiga")
-          (doc-message doc "Cannot start clamiga")))))
+          (doc-message doc (launch-failure-text wire))))))
 
 (define-command clamacs-show-errors (doc arg)
   (declare (ignore arg))

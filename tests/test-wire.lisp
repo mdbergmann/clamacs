@@ -125,7 +125,7 @@
     (push :cancel (fake-answers doc))
     (is (null (wire-request wire doc :ping "PING")))
     (is-equal (first (fake-asked doc))
-              '("No clamiga ARexx port was found. Start clamiga in its own console window?"
+              '("No running clamiga was found. Start one?"
                 (:start :cancel)))
     (is-equal (fake-transport-launched tr) 0)
     (is (null (fake-transport-sent tr)))))

@@ -5,16 +5,17 @@
 ;;;; transport-arexx.lisp do there is done here in two parts
 ;;;; (specs/clamacs-host.md, "The wire" and "Who may connect"):
 ;;;;
-;;;;   - The WIRE's home transport is the self transport (transport-self.lisp):
-;;;;     the REPL, the debugger, the inspector, introspection and LOAD all
-;;;;     work against the editor's own image from the first session, and
-;;;;     `Talk to the Editor Itself' / `Talk to clamiga' are the same
-;;;;     transport twice until the TCP one exists (phase H5).
-;;;;   - The editor's OWN PORT is a TCP listener on 127.0.0.1: what a macro
-;;;;     and verify/host/drive.lisp talk to, and what REPL-ATTACH names.  A
-;;;;     thread accepts, a thread per connection reads frames, and every
-;;;;     verb of port.lisp runs on the editor's task through CALL-IN-EDITOR
-;;;;     (the mailbox), as the ARexx port's did on the MUI task.
+;;;;   - The WIRE's home transport is the TCP one to a separate clamiga
+;;;;     (transport-tcp.lisp, phase H5), the self transport
+;;;;     (transport-self.lisp) the other side of `Talk to the Editor
+;;;;     Itself': the REPL, the debugger, the inspector, introspection and
+;;;;     LOAD all work against the editor's own image too.
+;;;;   - The editor's OWN PORT (this file) is a TCP listener on 127.0.0.1:
+;;;;     what a macro and verify/host/drive.lisp talk to, and what
+;;;;     REPL-ATTACH names.  A thread accepts, a thread per connection reads
+;;;;     frames, and every verb of port.lisp runs on the editor's task
+;;;;     through CALL-IN-EDITOR (the mailbox), as the ARexx port's did on
+;;;;     the MUI task.
 ;;;;
 ;;;; The protocol, both directions.  <n> counts CHARACTERS and the bytes on
 ;;;; the wire are UTF-8 (the runtime's socket streams encode every character
@@ -46,12 +47,12 @@
 ;;;; TMPDIR of its own.
 ;;;;
 ;;;; `--bind ADDR' (after `--') is parsed by frontend-host.lisp, which
-;;;; judges nothing; the runtime cannot yet bind a named address
-;;;; (EXT:SOCKET-LISTEN knows loopback or every address, and a wildcard is
-;;;; not allowed), so until the TCP transport's runtime work (phase H5,
-;;;; item R1) HOST-PORT-START refuses the option, whatever it names or
-;;;; when it names nothing (BIND-REFUSAL) -- no port, a message -- rather
-;;;; than listen somewhere else.
+;;;; judges nothing: HOST-PORT-START binds that one address (a Mac driving
+;;;; an Amiga clamiga over the LAN needs the clamiga to reach the editor's
+;;;; port for the REPL leg), refuses a wildcard or a missing address
+;;;; (BIND-REFUSAL) -- no port, a message -- and reports an address no
+;;;; interface has as the runtime's error.  The port file still holds the
+;;;; number alone; a client on this machine connects to the bound address.
 ;;;;
 ;;;; Portable Lisp: EXT sockets, MP threads, one libc call (umask) through
 ;;;; the FFI.  tests/test-transport-host.lisp drives the port over a real
@@ -249,6 +250,7 @@ the header is not a reply's."
   editor
   listener
   (number 0)                ; the port bound
+  (host "127.0.0.1")        ; the address bound
   token
   dir                       ; where the two files are, or NIL
   (quit nil)
@@ -266,7 +268,7 @@ the header is not a reply's."
   "The running port, or NIL.")
 
 (defun host-port-address (hp)
-  (format nil "127.0.0.1:~D" (host-port-number hp)))
+  (format nil "~A:~D" (host-port-host hp) (host-port-number hp)))
 
 (defun refuse (stream)
   "The one answer an unauthenticated connection gets, then the end of it."
@@ -393,26 +395,32 @@ the next header and not the tail of this one; :CLOSED when it cannot be."
                      (host-port-workers hp))))))))
 
 (defun bind-refusal (addr)
-  "Why the port will not listen where `--bind ADDR' says, as a message.
-ADDR is \"\" when the option came without an address."
+  "Why the port will not listen where `--bind ADDR' says, as a message, or
+NIL for an address worth trying.  ADDR is \"\" when the option came
+without an address.  A wildcard is `*' or an address of nothing but zeros
+however it is spelled: the runtime's parser takes leading zeros, so
+`00.0.0.0' and `0.0.0.000' are INADDR_ANY as much as `0.0.0.0' and `::'."
   (cond ((string= addr "")
          "--bind needs an address")
-        ((member addr '("0.0.0.0" "::" "*") :test #'string=)
+        ((or (string= addr "*")
+             (every (lambda (c) (find c "0.:")) addr))
          (format nil "--bind ~A: a wildcard address is not allowed" addr))
-        (t
-         (format nil "--bind ~A: the port can only listen on 127.0.0.1 in this version" addr))))
+        (t nil)))
 
 (defun host-port-start (editor &key (number (or (parse-integer (or (ext:getenv "CLAMACS_PORT") "")
                                                                 :junk-allowed t)
                                                  0))
                                     (dir (private-dir))
-                                    (token (random-hex)))
-  "Listen on 127.0.0.1 port NUMBER (0: one the OS picks), write the token
-and the port to DIR, and serve.  Signals when there is no token, no
-directory or no port, or when `--bind' was given (*HOST-BIND*), whatever
-it named."
-  (when *host-bind*
-    (error "~A; not started" (bind-refusal *host-bind*)))
+                                    (token (random-hex))
+                                    (host (or *host-bind* "127.0.0.1")))
+  "Listen on HOST (127.0.0.1, or the one address `--bind' named) port
+NUMBER (0: one the OS picks), write the token and the port to DIR, and
+serve.  Signals when there is no token, no directory or no port, or when
+`--bind' named a wildcard, nothing, or an address this machine does not
+have."
+  (let ((why (and *host-bind* (bind-refusal *host-bind*))))
+    (when why
+      (error "~A; not started" why)))
   (unless token
     (error "no entropy source for the port's token (~A): not started" *entropy-source*))
   (unless dir
@@ -420,7 +428,11 @@ it named."
   (let ((hp (%make-host-port editor)))
     (setf (host-port-token hp) token
           (host-port-dir hp) dir
-          (host-port-listener hp) (ext:socket-listen number t)
+          (host-port-host hp) host
+          (host-port-listener hp)
+          (handler-case (ext:socket-listen number host)
+            (error (e)
+              (error "cannot listen on ~A: ~A; not started" host e)))
           (host-port-number hp) (ext:socket-local-port (host-port-listener hp)))
     (unless (and (write-private-file (concatenate 'string dir *token-file-name*)
                                      (format nil "~A~%" token))
@@ -456,7 +468,7 @@ it named."
   "Stop accepting, end every connection, remove the files."
   (setf (host-port-quit hp) t)
   ;; A connection of our own ends the accept the listener thread is in.
-  (ignore-errors (close (ext:open-tcp-stream "127.0.0.1" (host-port-number hp) 1)))
+  (ignore-errors (close (ext:open-tcp-stream (host-port-host hp) (host-port-number hp) 1)))
   (when (host-port-thread hp)
     (wait-for-threads (list (host-port-thread hp)) 3))
   (ignore-errors (close (host-port-listener hp)))
@@ -499,35 +511,15 @@ connection is gone."
   (read-reply stream))
 
 ;;; ------------------------------------------------------------------
-;;; The wire
+;;; The editor's own Lisp
 ;;; ------------------------------------------------------------------
 
 (defun make-host-self-transport (editor)
+  "`clamacs-connect-self': the wire to the editor's own Lisp reaches the
+editor's task through the same mailbox as everything else.  The wire's
+home is transport-tcp.lisp's, which also starts and stops the port."
   (make-self-transport editor
                        (lambda (thunk wait)
                          (call-in-editor editor thunk :wait wait))))
 
-(defun start-host-wire (editor)
-  "The wire on the self transport, then the port."
-  (let ((tr (make-host-self-transport editor)))
-    (let ((wire (make-wire editor tr)))
-      ;; The same transport twice: `clamacs-connect-self' has nothing to
-      ;; switch to, and says so.
-      (setf (wire-self wire) tr)))
-  (host-port-start editor))
-
-(defun stop-host-wire (editor)
-  "The port first (its threads may be parked in CALL-IN-EDITOR; the closed
-mailbox has answered them), then the editor's own Lisp."
-  (when *host-port*
-    (handler-case (host-port-stop *host-port*)
-      (error (e) (report-error editor e))))
-  (let ((wire (editor-wire editor)))
-    (when wire
-      (let ((self (wire-self wire)))
-        (when self
-          (self-transport-stop self))))))
-
-(setf *wire-starter* #'start-host-wire
-      *wire-stopper* #'stop-host-wire
-      *self-transport-maker* #'make-host-self-transport)
+(setf *self-transport-maker* #'make-host-self-transport)

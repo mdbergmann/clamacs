@@ -3,11 +3,13 @@
 ;;;; verify/realamiga/drive.rexx transcribed leg by leg, the same OK lines
 ;;;; and the same wants, minus what only an Amiga has (ARexx ports,
 ;;;; sendkey's raw keys, ENVARC:) -- each such leg is an INFO line here,
-;;;; not a silent gap.  The Lisp the legs talk to is the editor's OWN
-;;;; image: the wire's home transport on the host is the self transport,
-;;;; so the integration, introspection, REPL, debugger and inspector legs
-;;;; run against the editor itself and `Talk to the Editor Itself' has
-;;;; nothing to switch to.
+;;;; not a silent gap.  The Lisp the legs talk to is a SECOND clamiga
+;;;; process: the editor starts it (`Start clamiga', the TCP transport of
+;;;; phase H5) on the binary it runs on, so the integration,
+;;;; introspection, REPL, debugger and inspector legs run against a
+;;;; separate clamiga, and the own-Lisp leg switches to the editor itself
+;;;; and back, as drive.rexx's phase 5 does on the Amiga.  The editor
+;;;; stops that clamiga at its own exit; run-drive.sh checks its log.
 ;;;;
 ;;;;   clamiga --non-interactive --load verify/host/drive.lisp -- main
 ;;;;   clamiga --non-interactive --load verify/host/drive.lisp -- second
@@ -618,7 +620,7 @@ the second editor's mode -- so the list is taken apart by hand.)"
   (let ((before *result*) (answer "") (last "") (n 0))
     (cmd "EVAL clamacs-eval-last-sexp")
     ;; The first eval attaches the REPL, which loads dev-repl into the
-    ;; editor's own image.
+    ;; clamiga the editor started.
     (dotimes (i 240)
       (pause 25)
       (setq n (1+ i))
@@ -900,6 +902,18 @@ the second editor's mode -- so the list is taken apart by hand.)"
               (fail "the interrupt gave ~A (cursor ~A)" l y))))
       (cmd "EVAL end-of-buffer"))
 
+    ;; A separate process: the editor's package is not there.
+    (let ((p (cursor-line)))
+      (cmd "INSERT (find-package :clamacs)")
+      (cmd "KEY RET")
+      (let ((y (wait-cursor-at (+ p 2) 40)))
+        (cmd (format nil "GOTOLINE ~D" (+ p 2)))
+        (let ((l (get-line)))
+          (if (and y (string= l "NIL"))
+              (ok "the REPL runs in a clamiga of its own: no CLAMACS package there")
+              (fail "(find-package :clamacs) at the clamiga REPL gave ~A (cursor ~A)" l y))))
+      (cmd "EVAL end-of-buffer"))
+
     ;; IN-PACKAGE moves the prompt.
     (cmd "INSERT (in-package :ext.dev)")
     (cmd "KEY RET")
@@ -1128,23 +1142,68 @@ the second editor's mode -- so the list is taken apart by hand.)"
       (fail "after clamacs-repl the active window is ~A" *result*))
   (check-panels '(:dock "the REPL tab") "open height" "\"dock\":{\"open\":true,\"shown\":\"doc"))
 
-(defun leg-own-lisp ()
-  ;; On the host the wire's home IS the editor's own image: the item to
-  ;; switch there is dimmed, the REPL is attached there already, and the
-  ;; two forms of the Amiga leg run at this prompt.
-  (cmd "MENU clamacs-connect-self STATE")
+(defun leg-start-clamiga ()
+  "`Start clamiga': the editor starts a second clamiga on the binary it
+runs on, the token in the child's environment, and connects to it."
+  (cmd "MENU clamacs-eval-defun STATE")
   (if (string= *result* "disabled")
-      (ok "Talk to the Editor Itself is dimmed: the wire's home is the editor itself")
-      (fail "Talk to the Editor Itself is ~A" *result*))
-  (cmd "MENU clamacs-connect-clamiga")
+      (ok "the Clamiga menu is dimmed while no clamiga is connected")
+      (fail "Eval Defun without a clamiga is ~A" *result*))
+  (cmd "MENU run-lisp STATE")
+  (if (string= *result* "enabled")
+      (ok "Start clamiga is live while no clamiga is connected")
+      (fail "Start clamiga without a clamiga is ~A" *result*))
+  ;; The pick returns once the clamiga's port is up (the launch waits for
+  ;; its port file), or with the reason it is not.
+  (cmd "MENU run-lisp")
   (cmd "STATUS")
-  (if (result-has "Already talking to clamiga")
-      (ok "Talk to clamiga has nothing to switch to: ~A" *result*)
-      (fail "Talk to clamiga said ~A" *result*))
+  (if (string= *result* "Started clamiga")
+      (ok "Start clamiga started a clamiga: ~A" *result*)
+      (fail "Start clamiga said ~A" *result*))
+  (cmd "EVAL (clamacs::tcp-transport-launched (clamacs::wire-home (clamacs::editor-wire clamacs::*editor*)))")
+  (if (result-is "T")
+      (ok "the wire's home transport knows it started that clamiga")
+      (fail "the transport's launched flag is ~A" *result*))
+  (cmd "EVAL (clamacs::wire-port-name (clamacs::editor-wire clamacs::*editor*))")
+  (if (and (= *rc* 0) (search "\"127.0.0.1:" *result*))
+      (ok "the editor is connected to it at ~A" (string-trim "\"" *result*))
+      (fail "the wire's port name is ~A" *result*))
+  (cmd "MENU run-lisp STATE")
+  (if (string= *result* "disabled")
+      (ok "Start clamiga is dimmed once connected")
+      (fail "Start clamiga while connected is ~A" *result*))
+  ;; The token went through the child's environment: no file of the
+  ;; launch is left, and its log is where the editor said.
+  (if (and (null (probe-file (concatenate 'string *dir* "clamacs-clamiga.lisp")))
+           (null (probe-file (concatenate 'string *dir* "clamacs-clamiga-port"))))
+      (ok "the launch left no preamble and no port file behind")
+      (fail "the launch's files are still under ~A" *dir*))
+  (if (probe-file (concatenate 'string *dir* "clamacs-clamiga.log"))
+      (ok "the started clamiga logs to ~Aclamacs-clamiga.log" *dir*)
+      (fail "no clamacs-clamiga.log under ~A" *dir*)))
+
+(defun leg-own-lisp ()
+  ;; The editor's own Lisp (drive.rexx's phase 5): Talk to the Editor
+  ;; Itself switches the wire over -- the REPL window is detached from
+  ;; clamiga and attached to the EDITOR's image, loading dev-repl into the
+  ;; editor on this first attach, so the wait is long -- and a form at that
+  ;; prompt runs in the editor; Talk to clamiga switches back.
+  (cmd "MENU clamacs-connect-self STATE")
+  (if (string= *result* "enabled")
+      (ok "Talk to the Editor Itself is live while talking to clamiga")
+      (fail "Talk to the Editor Itself is ~A" *result*))
+  (cmd "MENU clamacs-connect-self")
+  (let ((echo (wait-echo "REPL attached to the editor itself" 360)))
+    (if (string/= echo "")
+        (ok "the REPL moved to the editor itself: ~A" echo)
+        (progn (cmd "STATUS")
+               (fail "the REPL did not attach to the editor itself; the echo area says ~A" *result*))))
   (cmd "EVAL end-of-buffer")
   (let ((p (cursor-line)))
     (cmd "INSERT (room)")
     (cmd "KEY RET")
+    ;; ROOM's lines stream in ahead of RESULT and move the cursor with
+    ;; them: the form is done only when the cursor sits on the next prompt.
     (let ((y (wait-cursor-past (+ p 2) 120)))
       (when y (setq y (wait-line "CL-USER> " 120)))
       (cmd (format nil "GOTOLINE ~D" (+ p 2)))
@@ -1163,7 +1222,14 @@ the second editor's mode -- so the list is taken apart by hand.)"
         (if (and y (search "*clamacs-repl*" l))
             (ok "IN-EDITOR ran on the editor's task and named the active window: ~A" l)
             (fail "IN-EDITOR gave ~A (cursor ~A)" l y))))
-    (cmd "EVAL end-of-buffer")))
+    (cmd "EVAL end-of-buffer"))
+  (cmd "MENU clamacs-connect-clamiga")
+  (let ((echo (wait-echo "REPL attached to 127.0.0.1:" 120)))
+    (if (string/= echo "")
+        (ok "Talk to clamiga moved the REPL back: ~A" echo)
+        (progn (cmd "STATUS")
+               (fail "the REPL did not come back to clamiga; the echo area says ~A" *result*))))
+  (cmd "EVAL end-of-buffer"))
 
 (defun quit-editor ()
   "kill-emacs: what the run typed into the fixtures is discarded, no
@@ -1188,6 +1254,7 @@ requester asked.  Then wait for the port to go."
   (leg-buffers)
   (leg-keys)
   (leg-snapshot)
+  (leg-start-clamiga)
   (leg-integration)
   (leg-introspection)
   (leg-repl)

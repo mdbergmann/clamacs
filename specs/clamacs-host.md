@@ -293,12 +293,12 @@ keep the same three rules:
   runtime's `:host` argument and the editor's `--bind ADDR` (after `--`),
   each spelled out by whoever starts the process: no default, no
   environment variable and no config file turns it on, and neither
-  accepts a wildcard address.  (`EXT:SOCKET-LISTEN` knows loopback or
-  every address today, so `--bind` is refused -- no port, a message --
-  until R1 gives the runtime a named bind: whatever address it names, a
-  wildcard one included, and also when it names none; `parse-command-line`
-  passes all of them on and `host-port-start` refuses, so an option that
-  was not honoured is never taken for one that was not given.)  A Mac
+  accepts a wildcard address.  (Since H5 `EXT:SOCKET-LISTEN` takes the
+  one dotted-quad address to bind -- R1 -- so `--bind ADDR` listens
+  there; a wildcard, a missing address and an address no interface has
+  are refused with a message and no port: `parse-command-line` passes
+  every spelling on and `host-port-start` judges, so an option that was
+  not honoured is never taken for one that was not given.)  A Mac
   driving an Amiga clamiga over the
   LAN needs both -- the clamiga listening for the editor, the editor
   listening for the clamiga's REPL leg.  A non-loopback bind is for a
@@ -450,6 +450,7 @@ tests/test-textmirror.lisp the model, shared with the fake
 tests/test-mailbox.lisp    post, drain, wait, close, across threads
 tests/test-host.lisp       the frontend with the page stubbed (the batch buffer read back)
 tests/test-transport-host.lisp  the port over a real socket
+tests/test-transport-tcp.lisp   the wire to a dev-tcp server in the test process, and a real launch
 verify/host/smoke.lisp     H0's ground end to end (the page, the shim, the wake)
 verify/host/run-smoke.sh   builds, runs it, reads the verdict; GCSTRESS=1 under gc-stress
 verify/host/drive.lisp     the acceptance run, over the port
@@ -691,6 +692,39 @@ with the memory note updated.
   in flight" criterion).
 - Done when: the drive passes against a separate clamiga, and
   `Talk to the Editor Itself` / `Talk to clamiga` switch between the two.
+- **Done 2026-09-26** (branch `host-h5`; runtime on cl-amiga's
+  `feat/dev-tcp`): the wire's home on the host is `lisp/transport-tcp.lisp`
+  -- a client thread with one request in flight posting replies to the
+  mailbox, `transport-find-port` a connect attempt (with the token, held
+  off for two seconds after a failure since the idle timer and the menu
+  ask often), `transport-own-port` the editor's port as
+  `tcp:HOST:PORT/TOKEN`, `transport-launch` the start of a clamiga on the
+  binary the editor runs on (R3 above), and the editor's exit stopping a
+  clamiga it started (`EVAL (ext.dev.tcp:stop)` over the connection; one
+  the user started is left alone) -- while the self transport is made on
+  the first `Talk to the Editor Itself`.  `tests/test-transport-tcp.lisp`
+  (9 tests, 44 in the file's run with the two fixtures it borrows):
+  found and answered through the mailbox, no token nothing tried, a
+  wrong token refused and the request lost, a clamiga gone and back, the
+  REPL attached back over the editor's port (clamiga's REPL thread -- the
+  test image's -- connecting to it), the launch of a real second clamiga
+  and its stop, the wire starting on TCP with the editor's image on
+  demand; `run-drive.sh` grew `leg-start-clamiga` (the menu's Start
+  clamiga, the launched flag, no preamble or port file left, the log) and
+  runs every Lisp leg against that clamiga (`(find-package :clamacs)` at
+  its REPL is `NIL`: a process of its own), the own-Lisp leg is
+  drive.rexx's phase 5 (switch, `(room)`, `in-editor`, switch back), and
+  the script checks that the started clamiga logged `; clamiga stopped`
+  after the editor's exit and, under `MEMTRACK=1`, its leak report.  What
+  it settled: `wire-connect`'s question became "No running clamiga was
+  found. Start one?" and a failed launch says why
+  (`transport-launch-problem`, new in wire.lisp); a `--bind` address is
+  honoured now (R1) and `host-port-address` is the bound one.  What it
+  found: `ext.dev.tcp:stop` run from a connection thread (`EVAL
+  (ext.dev.tcp:stop)`) must leave that connection open for its reply
+  (`*connection*`), and a REPL thread whose editor went is stopped by
+  its next failing send, never by the server's stop -- in a real clamiga
+  the process exit does it.
 
 ### H6 -- the other hosts and the image (when asked)
 
@@ -709,18 +743,28 @@ with the memory note updated.
   `ffi:foreign-string` answers "argument must be a string" for a wide
   string -- both should say what happened.
 
-- **R1** `lib/dev-tcp.lisp`: the development port over TCP (H5), with the
-  `AUTH` gate, the loopback default, the entropy-drawn token and the
-  0600-from-the-start file creation of "Who may connect" (the editor's
-  own port needs the last two too: a file `open` with a mode and a
-  random-bytes primitive are runtime pieces if the shim does not offer
-  them).
+- **R1** (done 2026-09-26, cl-amiga branch `feat/dev-tcp`)
+  `lib/dev-tcp.lisp`: the development port over TCP (H5), with the
+  `AUTH` gate, the loopback default, the entropy-drawn token (or
+  `:token`) of "Who may connect", and `ext:socket-listen` taking one
+  dotted-quad address to bind (`platform_socket_listen_addr` on the three
+  platforms) for `:host` and `--bind`.  `tests/test_dev_tcp.sh` (62
+  checks) and `tests/amiga/dev-tcp-tests.lisp`.  The editor's own port
+  needed nothing more: `/dev/urandom` and a `umask` around the `open`
+  did the last two (H2).
 - **R2** (only if stepping proves insufficient) a GC-safe foreign call:
   `ffi:call-foreign ... :gc-safe t` enters the safe region for the call's
   duration, and a callback invoked on a thread that is in one leaves it
   on entry and re-enters on return.
-- **R3** `ext:run-program` (or the shim's `posix_spawn`) for
-  `transport-launch` on the host (H5).
+- **R3** (settled 2026-09-26 without a spawn primitive) `transport-launch`
+  on the host is `ext:system-command` of a backgrounded shell line
+  (`clamiga --non-interactive --load preamble </dev/null >log 2>&1 &`),
+  with the token put in the editor's own environment by libc `setenv`
+  through the FFI for the child to inherit and taken out again after --
+  on no command line, in no file.  What the runtime did add is
+  `ext:executable-path` (the running binary as a path another process
+  can start it by), so the editor starts the clamiga it runs on.
+  `ext:run-program` stays open for another day.
 
 ## Risks and what decides them
 

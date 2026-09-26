@@ -47,8 +47,15 @@ Everything Emacs about it is the same code as on the Amiga: the keys
 prompts, the requesters, the menus.  The document window has files,
 editing, colouring, search, the minibuffer and the status line with the
 arglist; the Lisp behind it -- the REPL, the debugger, the inspector,
-introspection and LOAD -- works against the editor's own image (`C-c
-C-z`, `C-x C-e`, `M-.`, ...), with a separate clamiga to follow.  The
+introspection and LOAD -- is a separate clamiga, as on the Amiga.
+**Clamiga > Start clamiga** (`M-x run-lisp`) starts one on the binary
+the editor runs on and connects to it, and the first `C-c C-c` offers
+to; a clamiga you started yourself is found through its TCP port
+(cl-amiga's `(ext.dev.tcp:start)`): `CLAMACS_CLAMIGA=host:port` (default
+`127.0.0.1:4005`) and `CLAMACS_CLAMIGA_TOKEN` in the editor's environment
+name it -- an Amiga on the LAN included, when its port was started with
+`:host` and the editor with `--bind` (below).  **Clamiga > Talk to the
+Editor Itself** points everything at the editor's own image instead.  The
 **menu bar** at the top of the window is the Amiga's menu strip, drawn
 by the page (the toolkit has no native one): the same menus, the Emacs
 key beside each item, items dimmed by the same rules, the Buffers menu
@@ -89,7 +96,10 @@ client that is not clamiga decodes before it counts.
 
 `verify/host/drive.lisp` is such a script -- the acceptance run --
 and `CLAMACS_PORT=4010` picks a fixed port (0, the default, lets the OS
-choose).
+choose).  `host/run.sh file.lisp -- --bind 192.168.1.5` makes the port
+listen on that one address of the Mac instead of loopback: what a
+clamiga on another machine needs to reach the editor for the REPL (a
+wildcard is refused).  The token authenticates; nothing is encrypted.
 
 ## The init file
 

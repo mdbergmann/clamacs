@@ -438,16 +438,21 @@ no decoding hides what is on the wire."
           (error (e) (search "no private directory" (princ-to-string e)))))
     (is (null *host-port*))))
 
-(deftest port-refuses-every-bind-with-a-message-and-starts-nothing
-  ;; Until the runtime can bind a named address (R1) `--bind' is refused
-  ;; whatever it names, or when it names nothing: never a port on loopback
-  ;; as though the option had not been given.
+(deftest port-refuses-a-wildcard-or-missing-bind-and-starts-nothing
+  ;; `--bind' names ONE address; a wildcard, or no address at all, is
+  ;; refused with a message: never a port on loopback as though the option
+  ;; had not been given.
   (let ((editor (make-fake-editor)))
     (dolist (entry '(("" "needs an address")
                      ("0.0.0.0" "wildcard address is not allowed")
                      ("::" "wildcard address is not allowed")
                      ("*" "wildcard address is not allowed")
-                     ("192.168.1.5" "only listen on 127.0.0.1")))
+                     ;; The runtime's parser takes leading zeros: these
+                     ;; are INADDR_ANY too.
+                     ("00.0.0.0" "wildcard address is not allowed")
+                     ("0.0.0.000" "wildcard address is not allowed")
+                     ("0" "wildcard address is not allowed")
+                     ("0000:0000::0" "wildcard address is not allowed")))
       (let* ((*host-bind* (first entry))
              (message (handler-case (progn (host-port-start editor :dir "/tmp/x/") nil)
                         (error (e) (princ-to-string e)))))
@@ -456,6 +461,35 @@ no decoding hides what is on the wire."
         (is (and (stringp message) (search (second entry) message)))
         (is (and (stringp message) (search "not started" message)))
         (is (null *host-port*))))))
+
+(deftest port-bind-refusal-takes-only-wildcards-and-nothing
+  ;; An address with any other digit is not a wildcard, zeros or not.
+  (dolist (addr '("127.0.0.1" "192.168.1.5" "10.0.0.7" "0.0.0.1" "100.0.0.0" "::1"))
+    (is (null (bind-refusal addr))))
+  (dolist (addr '("" "*" "0.0.0.0" "00.0.0.0" "0.0.0.000" "::" "0:0::0"))
+    (is (stringp (bind-refusal addr)))))
+
+(deftest port-binds-the-one-address-bind-names
+  ;; The runtime binds a named address (R1): loopback spelled out serves
+  ;; as the default does, and an address no interface has is refused with
+  ;; the runtime's reason and no port.
+  (let ((*host-bind* "127.0.0.1"))
+    (with-port (f)
+      (is-equal (host-port-host (port-fixture-hp f)) "127.0.0.1")
+      (is-equal (host-port-address (port-fixture-hp f))
+                (format nil "127.0.0.1:~D" (host-port-number (port-fixture-hp f))))
+      (let ((stream (host-port-connect (port-fixture-dir f))))
+        (is stream)
+        (when stream
+          (is-equal (request stream "GETNAME") '(0 "sample.lisp"))
+          (close stream)))))
+  (let* ((*host-bind* "203.0.113.1")
+         (editor (make-fake-editor))
+         (message (handler-case (progn (host-port-start editor :dir "/tmp/x/") nil)
+                    (error (e) (princ-to-string e)))))
+    (is (and (stringp message) (search "cannot listen on 203.0.113.1" message)))
+    (is (and (stringp message) (search "not started" message)))
+    (is (null *host-port*))))
 
 (deftest port-connect-reports-a-wrong-token-file
   (with-port (f)
@@ -467,32 +501,5 @@ no decoding hides what is on the wire."
         (is-equal reason "authentication required"))
       (write-private-file token-file token))))
 
-;;; --- the wire on the self transport ------------------------------------------
-
-(deftest host-wire-starts-on-the-self-transport
-  (let* ((*host-port* nil)
-         (doc (make-fake "(+ 1 2)|"))
-         (editor (doc-editor doc))
-         (box (make-mailbox)))
-    (setf (editor-mailbox editor) box)
-    (let ((dir (port-temp-dir)))
-      (unwind-protect
-           (progn
-             (let ((*self-transport* nil))
-               (make-wire editor (make-host-self-transport editor))
-               (setf (wire-self (editor-wire editor)) (wire-home (editor-wire editor)))
-               (host-port-start editor :dir dir)
-               (let ((wire (editor-wire editor)))
-                 (is (eq (wire-home wire) (wire-self wire)))
-                 (is (wire-self-p wire))
-                 ;; Both menu items say the same transport twice.
-                 (run-command doc 'clamacs-connect-self)
-                 (is-equal (fake-last-message doc) "Already talking to the editor itself")
-                 (run-command doc 'clamacs-connect-clamiga)
-                 (is-equal (fake-last-message doc) "Already talking to clamiga")
-                 (is-equal (transport-own-port (wire-transport wire)) *self-own-port*)
-                 (stop-host-wire editor)
-                 (is (null *host-port*))
-                 (is (null *self-transport*)))))
-        (mailbox-close box)
-        (setf (editor-mailbox editor) nil)))))
+;;; The wire itself -- its home the TCP transport, the editor's own image
+;;; behind `Talk to the Editor Itself' -- is tests/test-transport-tcp.lisp's.

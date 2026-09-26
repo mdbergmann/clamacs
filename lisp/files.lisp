@@ -117,6 +117,11 @@ belonged to the old text."
         t)
     (error () nil)))
 
+(defun delete-quietly (path)
+  "Remove PATH if it exists; a failure is nobody's concern (a launch's
+scratch files)."
+  (ignore-errors (when (probe-file path) (delete-file path))))
+
 (defun show-file-text (doc path text)
   (doc-set-text doc text)
   (visit-path doc path)

@@ -142,9 +142,6 @@ two rapid launches) never share a file."
     (values (format nil "T:clamacs-start-clamiga-~A" tag)
             (format nil "T:clamacs-port-~A.lisp" tag))))
 
-(defun delete-quietly (path)
-  (ignore-errors (when (probe-file path) (delete-file path))))
-
 (defmethod transport-launch ((tr arexx-transport))
   (multiple-value-bind (script preamble) (launch-file-names)
     (let ((command (own-clamiga-command)))

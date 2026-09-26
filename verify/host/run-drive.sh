@@ -6,8 +6,10 @@
 # TMPDIR of the run's own (so its init file, its layout file and its port
 # files touch nothing of the user's), waits for its port, checks the port
 # files' modes, and runs verify/host/drive.lisp against the port -- the
-# same legs as drive.rexx, against the editor's own image -- which quits
-# the editor at the end.  Then a SECOND editor is started against the
+# same legs as drive.rexx, against a second clamiga the editor STARTS on
+# the binary it runs on (`Start clamiga', phase H5; the editor stops it
+# again at its exit, which this script checks in its log) -- and which
+# quits the editor at the end.  Then a SECOND editor is started against the
 # layout file the drive wrote, with a TMPDIR of its own, and the drive's
 # `second' mode reads where it came up over ITS port and quits it.
 #
@@ -150,6 +152,29 @@ if grep -q 'the page reported' "$out/editor-a.log"; then
 fi
 check_leaks "$out/editor-a.log" "the editor"
 
+# --- the clamiga the editor started, stopped again at its exit ---------
+started_log="$out/tmp-a/clamacs-clamiga.log"
+if [ -f "$started_log" ]; then
+    n=0
+    while ! grep -q '^; clamiga stopped' "$started_log"; do
+        if [ "$n" -ge 15 ]; then break; fi
+        sleep 1
+        n=$((n + 1))
+    done
+    if grep -q '^; clamiga stopped' "$started_log"; then
+        echo "OK the clamiga the editor started stopped with the editor" >>"$log"
+    else
+        echo "FAIL the clamiga the editor started did not stop within 15 s (clamacs-clamiga.log)" >>"$log"
+    fi
+    if grep -q '^ERROR' "$started_log"; then
+        echo "FAIL the started clamiga reported an error (clamacs-clamiga.log):" >>"$log"
+        grep '^ERROR' "$started_log" >>"$log"
+    fi
+    check_leaks "$started_log" "the started clamiga"
+else
+    echo "FAIL the editor started no clamiga (no $started_log)" >>"$log"
+fi
+
 # --- the second editor, against the layout file the drive wrote --------
 if [ -f "$cfg" ]; then
     pid_b=$(start_editor "$out/tmp-b" "$out/editor-b.log" "$root/verify/realamiga/sample2.lisp")
@@ -175,6 +200,7 @@ oks=$(grep -c '^OK' "$log")
 if [ "$fails" -ne 0 ]; then
     echo "=== FAIL: $fails FAIL line(s), $oks OK ==="
     echo "--- editor-a.log ---"; grep -v '^; Loading' "$out/editor-a.log"
+    [ -f "$out/tmp-a/clamacs-clamiga.log" ] && { echo "--- clamacs-clamiga.log ---"; grep -v '^; Loading' "$out/tmp-a/clamacs-clamiga.log"; }
     exit 1
 fi
 if ! grep -q '^DRIVE-DONE' "$log"; then
