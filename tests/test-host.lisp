@@ -1060,9 +1060,8 @@ batch of both taken."
     ;; The table, one entry per index, at the head of the batch
     (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New\",\"\"],[\"item\",\"Open...\",\"C-x C-f\"]," js))
     (is (search "[\"bar\",\"\",\"\"]" js))
-    ;; The View title and its group are `hidden' until the page draws
-    ;; themes (phase T2); their lines stay so the indices are the table's
-    (is (search "[\"hidden\",\"View\",\"\"],[\"hidden\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    ;; The two dynamic groups go out under their names
+    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1125,80 +1124,211 @@ batch of both taken."
   (is-equal (webkit-version "Mozilla/5.0 Gecko/2010") "unknown")
   (is-equal (webkit-version nil) "unknown"))
 
+;;; The theme state is global (theme.lisp): a test that picks runs with
+;;; no pick, a known default, the init file a scratch path, and the
+;;; registry as it was afterwards -- test-theme.lisp's WITH-THEME-STATE,
+;;; kept here too so this file runs on its own (CLAMACS_TEST=host).
+;;; LOAD-THEME reaches the frontend through *EDITOR*, the running editor:
+;;; the test's editor stands in as soon as it is made (WITH-HOST-EDITOR).
+(defmacro with-host-theme-state (&body body)
+  `(let ((*theme* nil)
+         (*default-theme* :light)
+         (*editor* nil)
+         (*init-file* (temp-file "host-theme-rc"))
+         (saved-themes (copy-list *themes*)))
+     (unwind-protect (progn ,@body)
+       (setq *themes* saved-themes)
+       (delete-quietly *init-file*))))
+
+(defmacro with-host-editor ((editor) &body body)
+  "BODY with EDITOR as the running editor, as START makes it."
+  `(let ((*editor* ,editor)) ,@body))
+
+(defparameter *host-builtin-theme-lines*
+  '("> Light" "  Dark" "  Solarized Light" "  Solarized Dark" "  One Dark" "  Gruvbox Dark")
+  "The View menu's lines with no pick made.")
+
 (deftest host-buffers-menu-follows-the-documents-and-the-tick
   (multiple-value-bind (editor d1 js) (host-menu-editor "one")
-    (is (search "CK.setBuffers([[\"(unnamed)\",true]]);" js))
+    (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",true]]);" js))
     (let ((d2 (host-test-document editor "two")))
       ;; A second unnamed buffer: Emacs's <2>, the tick on the new one
-      (is (search "CK.setBuffers([[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" (host-take-evals editor)))
+      (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" (host-take-evals editor)))
       (is-equal (editor-dynamic-menu-lines editor :buffers) '("  (unnamed)" "> (unnamed)<2>"))
       (is (search "buffers (  (unnamed)|> (unnamed)<2>)" (host-panel-state :menu editor)))
-      ;; The View menu's group is not the page's yet: the model's lines.
-      (is-equal (first (editor-dynamic-menu-lines editor :themes)) "> Light")
       ;; A pick by the page's position activates; only the tick is remade
-      (with-entry (editor) (host-buffers-pick editor 0))
+      (with-entry (editor) (host-dynamic-pick editor :buffers 0))
       (is (eq (editor-active-document editor) d1))
-      (is (search "CK.setBuffers([[\"(unnamed)\",true],[\"(unnamed)<2>\",false]]);" (host-take-evals editor)))
+      (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",true],[\"(unnamed)<2>\",false]]);" (host-take-evals editor)))
       ;; The port's BUFFERS verb reads the page's lines and picks by label
       (is-equal (nth-value 1 (port-command editor "BUFFERS"))
                 (format nil "> (unnamed)~%  (unnamed)<2>"))
       (is-equal (nth-value 1 (port-command editor "BUFFERS (unnamed)<2>")) "")
       (is (eq (editor-active-document editor) d2))
       (is-equal (nth-value 1 (port-command editor "BUFFERS nobody")) "no such buffer")
-      ;; A position off the menu, or null, changes nothing
-      (with-entry (editor) (host-buffers-pick editor 7))
-      (with-entry (editor) (host-buffers-pick editor :null))
+      ;; A position off the menu, null, or a group the bar does not have:
+      ;; nothing
+      (with-entry (editor) (host-dynamic-pick editor :buffers 7))
+      (with-entry (editor) (host-dynamic-pick editor :buffers :null))
+      (with-entry (editor) (host-dynamic-pick editor :windows 0))
       (is (eq (editor-active-document editor) d2))
       ;; A tool buffer goes below the bar; the bar's position is not a pick
       (with-entry (editor) (show-text-window editor "*clamacs-scratch*" nil "hello"))
-      (is (search "CK.setBuffers([[\"(unnamed)\",false],[\"(unnamed)<2>\",false],\"-\",[\"*clamacs-scratch*\",true]]);"
+      (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",false],[\"(unnamed)<2>\",false],\"-\",[\"*clamacs-scratch*\",true]]);"
                   (host-take-evals editor)))
-      (with-entry (editor) (host-buffers-pick editor 2))
+      (with-entry (editor) (host-dynamic-pick editor :buffers 2))
       (is-equal (doc-name (editor-active-document editor)) "*clamacs-scratch*")
-      (with-entry (editor) (host-buffers-pick editor 1))
+      (with-entry (editor) (host-dynamic-pick editor :buffers 1))
       (is (eq (editor-active-document editor) d2))
       ;; A closed buffer leaves the menu
       (with-entry (editor) (run-command d2 'kill-buffer))
       (reap editor)
-      (is (search "CK.setBuffers([[\"(unnamed)\",true],\"-\",[\"*clamacs-scratch*\",false]]);"
+      (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",true],\"-\",[\"*clamacs-scratch*\",false]]);"
                   (host-take-evals editor))))))
+
+(deftest host-view-menu-lists-the-themes-and-a-pick-loads-one
+  (with-host-theme-state
+    (multiple-value-bind (editor doc js) (host-menu-editor "one")
+     (with-host-editor (editor)
+      ;; The View menu went out with the table, the default ticked
+      (is (search "CK.setDynamic(\"themes\",[[\"Light\",true],[\"Dark\",false],[\"Solarized Light\",false],[\"Solarized Dark\",false],[\"One Dark\",false],[\"Gruvbox Dark\",false]]);" js))
+      (is-equal (editor-dynamic-menu-lines editor :themes) *host-builtin-theme-lines*)
+      (is (search (format nil "themes (~{~A~^|~})" *host-builtin-theme-lines*)
+                  (host-panel-state :menu editor)))
+      ;; Nothing changed: nothing said
+      (with-entry (editor) nil)
+      (is-equal (host-take-evals editor) "")
+      ;; A pick by the page's position is LOAD-THEME: the theme, the
+      ;; page's CK.theme, the tick, the init file
+      (with-entry (editor) (host-dynamic-pick editor :themes 3))
+      (is (eq *theme* (find-theme :solarized-dark)))
+      (let ((js (host-take-evals editor)))
+        (is (search "CK.theme([[\"--bg\",\"#002b36\"],[\"--fg\",\"#839496\"]" js))
+        (is (search "[\"--c-keyword\",\"#859900\"]" js))
+        (is (search "[\"--font-size\",\"14px\"]],true);" js))
+        (is (search "CK.setDynamic(\"themes\",[[\"Light\",false],[\"Dark\",false],[\"Solarized Light\",false],[\"Solarized Dark\",true],[\"One Dark\",false],[\"Gruvbox Dark\",false]]);" js))
+        ;; The theme is sent before the menu's tick: what the page shows
+        ;; first is the colours
+        (is (< (search "CK.theme(" js) (search "CK.setDynamic(\"themes\"" js))))
+      (is (search "(load-theme :solarized-dark)" (read-file-text *init-file*)))
+      (is-equal (host-panel-state :theme editor)
+                "solarized-dark dark bg #002b36 keyword #859900 system unknown")
+      ;; The port's THEMES verb reads the page's lines and picks by label
+      (is-equal (nth-value 1 (port-command editor "THEMES"))
+                (format nil "  Light~%  Dark~%  Solarized Light~%> Solarized Dark~%  One Dark~%  Gruvbox Dark"))
+      (is-equal (nth-value 1 (port-command editor "THEMES One Dark")) "")
+      (is (eq *theme* (find-theme :one-dark)))
+      ;; (the port runs its verbs inside an entry, which flushes)
+      (flush-batch editor)
+      (is (search "[\"--bg\",\"#282c34\"]" (host-take-evals editor)))
+      (is-equal (nth-value 1 (port-command editor "THEMES Nobody")) "no such theme")
+      (is (eq *theme* (find-theme :one-dark)))
+      ;; The page's pick comes with the group's name: what it spells
+      (is (eq (dynamic-group-named editor "themes") :themes))
+      (is (eq (dynamic-group-named editor "BUFFERS") :buffers))
+      (is (null (dynamic-group-named editor "windows")))
+      (is (null (dynamic-group-named editor :null)))
+      (is (null (dynamic-group-named editor 3)))
+      (is (null (dynamic-group-named editor nil)))
+      ;; A theme defined from the REPL is in the menu after the next
+      ;; entry, below a bar, and the command's message names the label
+      (with-entry (editor)
+        (register-theme (make-theme :mine '(:inherits :dark :label "Mine") '(:keyword "#ff9900"))))
+      (is (search "CK.setDynamic(\"themes\",[[\"Light\",false],[\"Dark\",false],[\"Solarized Light\",false],[\"Solarized Dark\",false],[\"One Dark\",true],[\"Gruvbox Dark\",false],\"-\",[\"Mine\",false]]);"
+                  (host-take-evals editor)))
+      (with-entry (editor) (host-dynamic-pick editor :themes 7))
+      (is (eq *theme* (find-theme :mine)))
+      (is (search "[\"--c-keyword\",\"#ff9900\"]" (host-take-evals editor)))
+      (is (search "(load-theme :mine)" (read-file-text *init-file*)))
+      ;; The bar's position is not a pick
+      (with-entry (editor) (host-dynamic-pick editor :themes 6))
+      (is (eq *theme* (find-theme :mine)))
+      (is (not (search "CK.theme(" (host-take-evals editor))))
+      ;; A pick without the page (the shim's path, the same function):
+      ;; C-u M-x clamacs-theme leaves the file alone
+      (with-entry (editor) (run-command doc 'clamacs-theme 4))
+      (host-type-text editor "gruvbox-dark")
+      (host-type editor "RET")
+      (is (eq *theme* (find-theme :gruvbox-dark)))
+      (is-equal (doc-message-text doc) "Theme: Gruvbox Dark (this session)")
+      (is (search "(load-theme :mine)" (read-file-text *init-file*)))))))
+
+(deftest host-theme-goes-to-the-page-at-start-and-follows-the-system-scheme
+  (with-host-theme-state
+    (let ((editor (host-test-editor)))
+      ;; START's order: the menus, then the theme -- the page's own
+      ;; palette until then.  With no pick and no word from the page, the
+      ;; light built-in, every variable of the page's :root block
+      (with-entry (editor) (send-menus editor) (send-theme editor))
+      (let ((js (host-take-evals editor)))
+        (is (< (search "CK.setMenus(" js) (search "CK.theme(" js)))
+        (is (search "CK.theme([[\"--bg\",\"#ffffff\"],[\"--fg\",\"#1f1f1f\"],[\"--dim\",\"#6a6a6a\"]" js))
+        (is (search "[\"--font-family\",\"\\\"SF Mono\\\", Menlo, monospace\"],[\"--font-size\",\"14px\"]],false);" js))
+        (is-equal (count-calls "CK.theme(" js) 1))
+      (is-equal (host-panel-state :theme editor) "light light bg #ffffff keyword #0000ff system unknown")
+      ;; The page reports the system dark at ready: the default follows,
+      ;; and so does an editor without a pick
+      (host-ready editor "Mozilla/5.0 AppleWebKit/605.1.15" "dark")
+      (is (host-editor-ready editor))
+      (is-equal (host-editor-user-agent editor) "Mozilla/5.0 AppleWebKit/605.1.15")
+      (is-equal (host-editor-scheme editor) "dark")
+      (is (eq *default-theme* :dark))
+      (is (eq (active-theme) (find-theme :dark)))
+      (with-entry (editor) (send-theme editor))
+      (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" (host-take-evals editor)))
+      (is-equal (host-panel-state :theme editor) "dark dark bg #1e1e1e keyword #569cd6 system dark")
+      ;; A pick made before the page came up (the init file's) wins over
+      ;; the scheme
+      (setf *theme* (find-theme :solarized-light))
+      (host-ready editor "UA" "light")
+      (is (eq *default-theme* :light))
+      (is (eq (active-theme) (find-theme :solarized-light)))
+      ;; An older page says nothing about the scheme, and a word that is
+      ;; not one is ignored: the default stays
+      (host-ready editor "UA")
+      (host-ready editor "UA" "purple")
+      (host-ready editor "UA" :null)
+      (is (eq *default-theme* :light))
+      (is-equal (host-editor-scheme editor) "light"))))
 
 (deftest host-native-menu-takes-the-table-as-lines-and-its-syncs-go-to-the-shim
   (flet ((tabbed (&rest fields) (format nil "~{~A~^	~}" fields)))
-    ;; The table as the shim takes it: one line per entry, in order.  The
-    ;; View title and its group are `hidden' until the shim draws themes
-    ;; (phase T2), keeping their lines so the indices stay the table's.
+    ;; The table as the shim takes it: one line per entry, in order, the
+    ;; dynamic groups under their names
     (let ((text (menu-table-text (host-test-editor))))
       (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New" "")
                          (tabbed "item" "Open..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
-      (is (search (lines (tabbed "hidden" "View" "") (tabbed "hidden" "" "")
+      (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))
       (is-equal (count #\Newline text) (1- (menu-count)))))
-  ;; The Buffers menu as the shim takes it: the BUFFERS verb's lines
-  (is-equal (buffers-menu-text '(("a.lisp" . :a) ("b.lisp" . :b) :bar ("*clamacs-repl*" . :r)) :b)
+  ;; A dynamic group as the shim takes it: the port verb's lines
+  (is-equal (dynamic-menu-text '(("a.lisp" . :a) ("b.lisp" . :b) :bar ("*clamacs-repl*" . :r)) :b)
             (lines "  a.lisp" "> b.lisp" "-" "  *clamacs-repl*"))
-  (is-equal (buffers-menu-text '() nil) "")
+  (is-equal (dynamic-menu-text '() nil) "")
   ;; An editor whose menu is the host's: the page's bar is told an empty
-  ;; table, and the enable states and the Buffers lines go to the shim --
+  ;; table, and the enable states and the groups' lines go to the shim --
   ;; onto NATIVE-CALLS without one -- never to the page
-  (let ((editor (host-test-editor)))
+  (with-host-theme-state
+   (let ((editor (host-test-editor)))
+    (setq *editor* editor)
     (with-entry (editor) (send-menus editor :native t))
     (host-test-document editor "one")
     (let ((js (host-take-evals editor))
           (calls (reverse (host-editor-native-calls editor))))
       (is (search "CK.setMenus([]);" js))
       (is (not (search "menuEnable" js)))
-      (is (not (search "setBuffers" js)))
+      (is (not (search "setDynamic" js)))
       (is-equal (count :enable calls :key #'first)
                 (count :item (menu-entries) :key #'menu-entry-kind))
       (is (member (list :enable (menu-find 'find-file) t) calls :test #'equal))
       (is (member (list :enable (menu-find 'save-buffer) nil) calls :test #'equal))
       (is (member (list :enable (menu-find 'clamacs-repl) nil) calls :test #'equal))
-      (is (member (list :buffers "> (unnamed)") calls :test #'equal)))
+      (is (member (list :buffers "> (unnamed)") calls :test #'equal))
+      (is (member (list :themes (format nil "~{~A~^~%~}" *host-builtin-theme-lines*)) calls :test #'equal)))
     ;; Nothing changed: nothing said.  The first edit enables Save, alone
     (setf (host-editor-native-calls editor) '())
     (with-entry (editor) nil)
@@ -1216,12 +1346,23 @@ batch of both taken."
     (is-equal (editor-dynamic-menu-lines editor :buffers) '("  (unnamed)" "> (unnamed)<2>"))
     ;; A pick by the shim's position activates the edited first buffer,
     ;; and the port's verbs read the state as before: Save follows it
-    (with-entry (editor) (host-buffers-pick editor 0))
+    (with-entry (editor) (host-dynamic-pick editor :buffers 0))
     (is-equal (editor-dynamic-menu-lines editor :buffers) '("> (unnamed)" "  (unnamed)<2>"))
     (is-equal (nth-value 1 (port-command editor "MENU save-buffer STATE")) "enabled")
     (is (member (list :enable (menu-find 'save-buffer) t) (host-editor-native-calls editor) :test #'equal))
-    ;; No shim: no report of the bar
-    (is-equal (host-menu-report editor) "no report")))
+    ;; A theme picked on the host's bar: the theme, the View lines remade
+    ;; for the shim, the page told the colours (its variables, whichever
+    ;; draws the bar)
+    (setf (host-editor-native-calls editor) '())
+    (with-entry (editor) (host-dynamic-pick editor :themes 1))
+    (is (eq *theme* (find-theme :dark)))
+    (is (member (list :themes (lines "  Light" "> Dark" "  Solarized Light" "  Solarized Dark" "  One Dark" "  Gruvbox Dark"))
+                (host-editor-native-calls editor) :test #'equal))
+    (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" (host-take-evals editor)))
+    ;; No shim: no report of the bar, and no click on it
+    (is-equal (host-menu-report editor) "no report")
+    (is-equal (host-menu-click 0 (menu-find 'find-file) editor) "no native menu")
+    (is-equal (host-menu-click :themes 0 editor) "no native menu"))))
 
 (defun host-test-setenv (name value)
   "libc's setenv in this process -- unsetenv for a NIL VALUE -- which is
@@ -1265,43 +1406,69 @@ loading it here would also replace the wire starter the other tests use."
     ;; `which' 0: the table's item, run on the active document
     (native-menu-callback editor 0 (menu-find 'beginning-of-defun))
     (is-equal (doc-index-line doc (doc-point doc)) 3)
-    ;; `which' 1: the n-th Buffers line
-    (let ((d2 (host-test-document editor "two")))
+    ;; `which' a dynamic group's table index: the n-th line of that group
+    (let ((d2 (host-test-document editor "two"))
+          (buffers (menu-find-dynamic :buffers))
+          (themes (menu-find-dynamic :themes)))
       (is (eq (editor-active-document editor) d2))
       (setf (host-editor-in-modal editor) t)
-      (native-menu-callback editor 1 0)
+      (native-menu-callback editor buffers 0)
       (is (eq (editor-active-document editor) d2))
       (setf (host-editor-in-modal editor) nil)
-      (native-menu-callback editor 1 0)
+      (native-menu-callback editor buffers 0)
       (is (eq (editor-active-document editor) doc))
-      (native-menu-callback editor 1 1)
+      (native-menu-callback editor buffers 1)
       (is (eq (editor-active-document editor) d2))
-      ;; A line off the menu, and an index off the table: nothing, no error
-      (native-menu-callback editor 1 7)
+      ;; A line off the menu, an index off the table, an index that is no
+      ;; group's (a title's, an item's), JSON null: nothing, no error
+      (native-menu-callback editor buffers 7)
       (native-menu-callback editor 0 (menu-count))
-      (is (eq (editor-active-document editor) d2)))))
+      (native-menu-callback editor (1- buffers) 0)
+      (native-menu-callback editor (menu-find 'find-file) 0)
+      (native-menu-callback editor :null 0)
+      (native-menu-callback editor (menu-count) 0)
+      (is (eq (editor-active-document editor) d2))
+      ;; The View group's line picks a theme
+      (with-host-theme-state
+        (setq *editor* editor)
+        (with-entry (editor) nil)
+        (host-take-evals editor)
+        (native-menu-callback editor themes 4)
+        (is (eq *theme* (find-theme :one-dark)))
+        (is (search "CK.theme([[\"--bg\",\"#282c34\"]" (host-take-evals editor)))
+        (is (search "(load-theme :one-dark)" (read-file-text *init-file*)))))))
 
 (deftest host-menu-report-is-the-page-s-menu-object-when-the-page-draws-the-bar
   (let ((editor (host-test-editor)))
     (with-entry (editor) (send-menus editor :native nil))
     (is-equal (host-menu-report editor) "no report")
     (with-entry (editor)
-      (host-panels-report editor "{\"menu\":{\"items\":52,\"disabled\":[4,23],\"buffers\":[\"> a\",\"-\",\"  *b*\"]},\"dock\":{\"open\":false}}"))
+      (host-panels-report editor "{\"menu\":{\"items\":52,\"disabled\":[4,23],\"themes\":[\"> Light\",\"  Dark\"],\"buffers\":[\"> a\",\"-\",\"  *b*\"]},\"theme\":{\"bg\":\"#ffffff\"},\"dock\":{\"open\":false}}"))
     (is-equal (host-menu-report editor)
-              "{\"items\":52,\"disabled\":[4,23],\"buffers\":[\"> a\",\"-\",\"  *b*\"]}")
+              "{\"items\":52,\"disabled\":[4,23],\"themes\":[\"> Light\",\"  Dark\"],\"buffers\":[\"> a\",\"-\",\"  *b*\"]}")
     (is (null (page-menu-report "{\"dock\":{\"open\":false}}")))
     (is-equal (host-menu-report nil) "no report")))
 
 (deftest host-without-a-menu-bar-the-buffers-verb-still-answers
   ;; An editor the table was never sent to (the tests' plain one) answers
-  ;; BUFFERS from the model and sends the page nothing about menus.
-  (let* ((editor (host-test-editor))
-         (doc (host-test-document editor "x")))
-    (declare (ignore doc))
-    (is-equal (nth-value 1 (port-command editor "BUFFERS")) "> (unnamed)")
-    (let ((js (host-take-evals editor)))
-      (is (not (search "menuEnable" js)))
-      (is (not (search "setBuffers" js))))))
+  ;; BUFFERS and THEMES from the model and sends the page nothing about
+  ;; menus.
+  (with-host-theme-state
+    (let* ((editor (host-test-editor))
+           (doc (host-test-document editor "x")))
+      (declare (ignore doc))
+      (setq *editor* editor)
+      (is-equal (nth-value 1 (port-command editor "BUFFERS")) "> (unnamed)")
+      (is-equal (nth-value 1 (port-command editor "THEMES"))
+                (format nil "~{~A~^~%~}" *host-builtin-theme-lines*))
+      (let ((js (host-take-evals editor)))
+        (is (not (search "menuEnable" js)))
+        (is (not (search "setDynamic" js))))
+      ;; A pick still applies the theme through the page
+      (is-equal (nth-value 1 (port-command editor "THEMES Dark")) "")
+      (is (eq *theme* (find-theme :dark)))
+      (flush-batch editor)
+      (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" (host-take-evals editor))))))
 
 ;;; --- the program's command line ------------------------------------------------
 

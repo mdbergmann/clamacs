@@ -25,6 +25,8 @@
 ;;;;   CLAMACS_DRIVE_TMP   a scratch directory: what RAM: is on the Amiga
 ;;;;   CLAMACS_DRIVE_CFG   the layout file the editor reads and writes
 ;;;;                       (~/.clamacs-windows.cfg of the run's own HOME)
+;;;;   CLAMACS_DRIVE_RC    the init file a theme pick writes (~/.clamacsrc
+;;;;                       of that HOME), which the second editor loads
 ;;;;
 ;;;; Every line printed lands in the run's log; run-drive.sh greps it for
 ;;;; FAIL and DRIVE-DONE.  This is a client of its own -- forty lines of
@@ -39,6 +41,7 @@
 (defvar *root* (or (ext:getenv "CLAMACS_DRIVE_ROOT") (error "CLAMACS_DRIVE_ROOT is not set")))
 (defvar *tmp* (or (ext:getenv "CLAMACS_DRIVE_TMP") (error "CLAMACS_DRIVE_TMP is not set")))
 (defvar *cfg* (or (ext:getenv "CLAMACS_DRIVE_CFG") (error "CLAMACS_DRIVE_CFG is not set")))
+(defvar *rc-file* (or (ext:getenv "CLAMACS_DRIVE_RC") (error "CLAMACS_DRIVE_RC is not set")))
 
 (defun fixture (name)
   (concatenate 'string *root* "verify/realamiga/" name))
@@ -462,20 +465,21 @@ the second editor's mode -- so the list is taken apart by hand.)"
            ;; callback fired: sample2.lisp is picked first (it can only become
            ;; active through the shim's `which' 1 path), then sample.lisp
            ;; back, which LEG-BUFFERS expects ticked.  The positions are the
-           ;; BUFFERS lines', the bar counted, as the shim counts them.
+           ;; BUFFERS lines', the bar counted, as the shim counts them; the
+           ;; group is named (:buffers), and HOST-MENU-CLICK finds its entry.
            (let* ((lines (buffers-lines))
                   (other (position "  sample2.lisp" lines :test #'string=))
                   (home (position "> sample.lisp" lines :test #'string=)))
              (if (not (and other home))
                  (fail "BUFFERS before the Buffers pick gave ~{~A~^|~}" lines)
                  (progn
-                   (cmd (format nil "EVAL (clamacs::host-menu-click 1 ~D)" other))
+                   (cmd (format nil "EVAL (clamacs::host-menu-click :buffers ~D)" other))
                    (let ((r *result*))
                      (cmd "GETFILE")
                      (if (and (string= r "\"picked\"") (result-has "sample2.lisp"))
                          (ok "the host's Buffers menu pick (item ~D) activated sample2.lisp" other)
                          (fail "the host's Buffers pick of item ~D gave ~A, active ~A" other r *result*)))
-                   (cmd (format nil "EVAL (clamacs::host-menu-click 1 ~D)" home))
+                   (cmd (format nil "EVAL (clamacs::host-menu-click :buffers ~D)" home))
                    (let ((r *result*))
                      (cmd "GETFILE")
                      (if (and (string= r "\"picked\"") (result-has "sample.lisp"))
@@ -510,15 +514,24 @@ the second editor's mode -- so the list is taken apart by hand.)"
           (substitute #\| #\Newline (subseq *result* 0 (min 160 (length *result*)))))
       (fail "About's toolkit lines: ~A" *result*)))
 
-(defun buffers-lines ()
-  "BUFFERS as a list of lines."
-  (cmd "BUFFERS")
+(defun result-lines ()
+  "*RESULT* as a list of lines."
   (let ((lines '()) (start 0) (text *result*))
     (loop
       (let ((nl (position #\Newline text :start start)))
         (push (subseq text start nl) lines)
         (if nl (setq start (1+ nl)) (return))))
     (nreverse lines)))
+
+(defun buffers-lines ()
+  "BUFFERS as a list of lines."
+  (cmd "BUFFERS")
+  (result-lines))
+
+(defun themes-lines ()
+  "THEMES as a list of lines."
+  (cmd "THEMES")
+  (result-lines))
 
 (defun leg-buffers ()
   (let ((b (buffers-lines)))
@@ -562,6 +575,114 @@ the second editor's mode -- so the list is taken apart by hand.)"
         (ok "a closed buffer left the Buffers menu")
         (fail "after kill-buffer BUFFERS gave ~{~A~^|~}" b)))
   (cmd "BUFFERS sample.lisp"))
+
+;;; The View menu (specs/clamacs-themes.md, phase T2): the built-ins with
+;;; the system's default ticked, a pick through the verb and through the
+;;; host's own bar, the page's colours read back beside the editor's
+;;; account, the init file written -- and left holding a theme of the
+;;; drive's own for the second editor to come up in.
+
+(defun theme-ticked ()
+  "The ticked line of THEMES without its mark, or NIL."
+  (let ((line (find-if (lambda (l) (and (> (length l) 1) (char= (char l 0) #\>))) (themes-lines))))
+    (and line (subseq line 2))))
+
+(defun check-theme (step name dark bg keyword)
+  "The editor's account and the page's report of the theme NAME, with
+BG and KEYWORD the colours both must show."
+  (let ((want (format nil "~A ~A bg ~A keyword ~A" name (if dark "dark" "light") bg keyword)))
+    (if (string/= (panel-state :theme want) "")
+        (ok "~A: the editor shows ~A" step want)
+        (fail "~A: the editor's theme says ~A (wanted ~A)" step *result* want)))
+  (let ((want (format nil "\"theme\":{\"bg\":\"~A\",\"keyword\":\"~A\",\"scheme\":\"~A\"}"
+                      bg keyword (if dark "dark" "light"))))
+    (if (string/= (page-panels want) "")
+        (ok "~A: the page painted ~A" step want)
+        (fail "~A: the page reports ~A (wanted ~A)" step *result* want))))
+
+(defun leg-themes ()
+  (let ((th (themes-lines)))
+    (if (and (= (length th) 6)
+             (member (theme-ticked) '("Light" "Dark") :test #'equal)
+             (member "  Solarized Dark" th :test #'string=)
+             (member "  Gruvbox Dark" th :test #'string=))
+        (ok "the View menu lists the six built-in themes, ~A ticked" (theme-ticked))
+        (fail "THEMES gave ~{~A~^|~}" th)))
+  ;; The default is the system's scheme, and the page shows its own
+  ;; palette for it: the light one, or the dark one
+  (cmd "EVAL (clamacs::host-panel-state :theme)")
+  (cond ((result-has "system dark")
+         (check-theme "the default" "dark" t "#1e1e1e" "#569cd6"))
+        ((result-has "system light")
+         (check-theme "the default" "light" nil "#ffffff" "#0000ff"))
+        (t (fail "the page did not report the system's scheme: ~A" *result*)))
+  (if (probe-file *rc-file*)
+      (fail "an init file is there before any pick: ~A" *rc-file*)
+      (ok "no init file before the first pick"))
+  ;; A pick through the verb: the tick, the menu bar, the page, the file
+  (cmd "THEMES Solarized Dark")
+  (if (result-is "")
+      (ok "picking Solarized Dark in the View menu")
+      (fail "THEMES Solarized Dark gave ~A" *result*))
+  (if (equal (theme-ticked) "Solarized Dark")
+      (ok "the tick moved to Solarized Dark")
+      (fail "after the pick THEMES gave ~{~A~^|~}" (themes-lines)))
+  (if (string/= (menu-report "\"> Solarized Dark\"") "")
+      (ok "the menu bar's View menu ticks Solarized Dark")
+      (fail "the menu bar's View menu: ~A" *result*))
+  (check-theme "Solarized Dark" "solarized-dark" t "#002b36" "#859900")
+  (if (file-has-line *rc-file* "(load-theme :solarized-dark)")
+      (ok "the pick was written to ~A" *rc-file*)
+      (fail "~A does not hold the pick" *rc-file*))
+  ;; The host's own bar (macOS): the item itself performs its action, the
+  ;; positions the THEMES lines' (no bar among the built-ins)
+  (let ((one-dark (position "  One Dark" (themes-lines) :test #'string=)))
+    (cmd (format nil "EVAL (clamacs::host-menu-click :themes ~D)" one-dark))
+    (cond ((result-is "\"no native menu\"")
+           (ok "the page draws the View menu here; the THEMES verb is the pick"))
+          ((not (result-is "\"picked\""))
+           (fail "picking One Dark on the host's menu bar gave ~A" *result*))
+          (t
+           (if (equal (theme-ticked) "One Dark")
+               (ok "the host's View menu pick (item ~D) loaded One Dark" one-dark)
+               (fail "the host's View menu pick left ~{~A~^|~}" (themes-lines)))
+           (check-theme "One Dark" "one-dark" t "#282c34" "#c678dd")
+           (if (file-has-line *rc-file* "(load-theme :one-dark)")
+               (ok "the host's pick was written to the init file")
+               (fail "~A does not hold One Dark" *rc-file*)))))
+  ;; A session-only pick (C-u M-x clamacs-theme's path) applies and
+  ;; leaves the file alone
+  (cmd "EVAL (clamacs::load-theme :gruvbox-dark :save nil)")
+  (check-theme "a session-only pick" "gruvbox-dark" t "#282828" "#fb4934")
+  (if (file-has-line *rc-file* "(load-theme :gruvbox-dark)")
+      (fail "a session-only pick was written to ~A" *rc-file*)
+      (ok "a session-only pick left the init file alone"))
+  (cmd "THEMES Nobody")
+  (if (result-is "no such theme")
+      (ok "THEMES refused an unknown theme")
+      (fail "THEMES Nobody gave ~A" *result*))
+  ;; A theme of the drive's own, defined and loaded in the init file:
+  ;; the editor takes it up at once when the file is loaded the way
+  ;; RUN loads it (the port's LOAD verb is clamiga's, not the editor's),
+  ;; and the second editor comes up in it
+  (write-file *rc-file* (format nil ";; the drive's init file~%(define-theme :drive-theme (:inherits :one-dark :label \"Drive Theme\")~%  :keyword \"#ff9900\")~%(load-theme :drive-theme)~%"))
+  (cmd (format nil "EVAL (clamacs::load-init-file ~S)" *rc-file*))
+  ;; (LOAD's own "; Loading" line comes before the value)
+  (if (and (= *rc* 0) (string= (car (last (result-lines))) "T"))
+      (ok "the editor loaded the drive's init file")
+      (fail "loading the drive's init file gave rc= ~D ~A" *rc* *result*))
+  (if (equal (theme-ticked) "Drive Theme")
+      (ok "the init file's define-theme and load-theme took: Drive Theme ticked")
+      (fail "after loading the init file THEMES gave ~{~A~^|~}" (themes-lines)))
+  (check-theme "Drive Theme" "drive-theme" t "#282c34" "#ff9900")
+  (let ((th (themes-lines)))
+    (if (and (member "-" th :test #'string=)
+             (> (position "> Drive Theme" th :test #'string=) (position "-" th :test #'string=)))
+        (ok "a user theme is listed below the bar")
+        (fail "THEMES with a user theme gave ~{~A~^|~}" th)))
+  (if (file-has-line *rc-file* "(load-theme :drive-theme)")
+      (ok "the init file's own form was not written back")
+      (fail "the init file changed under the load: ~A" (with-open-file (in *rc-file*) (read-line in nil "")))))
 
 (defun leg-keys ()
   (cmd (format nil "OPEN FILE ~A" (fixture "sample.lisp")))
@@ -1322,6 +1443,7 @@ requester asked.  Then wait for the port to go."
   (leg-editor-checks)
   (leg-menu)
   (leg-buffers)
+  (leg-themes)
   (leg-keys)
   (leg-snapshot)
   (leg-start-clamiga)
@@ -1355,6 +1477,15 @@ wrote: it must come up where the file said, then quit."
     (if (string= got *want*)
         (ok "a second editor came up where the file said: ~A" got)
         (fail "the second editor came up at ~A (wanted ~A)" got *want*)))
+  ;; ... and in the theme the init file defines and loads (an image holds
+  ;; the built-ins only; the file's theme is defined after the restore)
+  (if (equal (theme-ticked) "Drive Theme")
+      (ok "the second editor came up in the init file's theme: Drive Theme ticked")
+      (fail "the second editor's THEMES gave ~{~A~^|~}" (themes-lines)))
+  (check-theme "the second editor" "drive-theme" t "#282c34" "#ff9900")
+  (if (string/= (menu-report "\"> Drive Theme\"") "")
+      (ok "the second editor's menu bar ticks Drive Theme")
+      (fail "the second editor's menu bar: ~A" *result*))
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)

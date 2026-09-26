@@ -10,8 +10,10 @@
 # the binary it runs on (`Start clamiga', phase H5; the editor stops it
 # again at its exit, which this script checks in its log) -- and which
 # quits the editor at the end.  Then a SECOND editor is started against the
-# layout file the drive wrote, with a TMPDIR of its own, and the drive's
-# `second' mode reads where it came up over ITS port and quits it.
+# layout file the drive wrote and the init file it left (a theme of the
+# drive's own, defined and loaded there), with a TMPDIR of its own, and
+# the drive's `second' mode reads where it came up and what theme it shows
+# over ITS port and quits it.
 #
 #   verify/host/run-drive.sh            under ../build/host/clamiga
 #   GCSTRESS=1 verify/host/run-drive.sh under ../build/host-gcstress/clamiga
@@ -149,6 +151,7 @@ run_drive() {
     # $1 tmpdir, $2 mode
     CLAMACS_DRIVE_DIR="$1/" CLAMACS_DRIVE_ROOT="$root/" \
     CLAMACS_DRIVE_TMP="$out/scratch/" CLAMACS_DRIVE_CFG="$cfg" \
+    CLAMACS_DRIVE_RC="$out/home/.clamacsrc" \
         "$clamiga" --no-userinit --heap 16M --non-interactive \
         --load "$here/drive.lisp" -- "$2" </dev/null 2>&1 | grep -v '^; Loading' >>"$log"
 }

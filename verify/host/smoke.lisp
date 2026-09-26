@@ -141,7 +141,11 @@ above 255, which a narrow string cannot hold."
   (note "webview created")
   (wv-str "webview_set_title" "Clamacs (host smoke)")
   (wv "webview_set_size" :int32 '(:pointer :int32 :int32 :int32) *w* 900 600 0)
-  (bind "clamacsReady" (lambda (ua) (note "page ready, user agent ~S" ua) (setq *ready* t)))
+  (bind "clamacsReady" (lambda (ua &optional scheme)
+                         (note "page ready, user agent ~S, system scheme ~S" ua scheme)
+                         (check (member scheme '("dark" "light") :test #'equal)
+                                "the page reported no scheme at ready: ~S" scheme)
+                         (setq *ready* t)))
   (bind "clamacsSmoke" (lambda (json) (setq *state* (clamacs::json-parse json))))
   (bind "clamacsActivate" (lambda (id) (note "activate ~A" id)))
   (bind "clamacsLog" (lambda (text) (check nil "the page reported: ~A" text)))
@@ -169,7 +173,20 @@ above 255, which a narrow string cannot hold."
                "status: ~S" (gethash "status" state))
         (check (equal (gethash "message" state) "Ready") "message: ~S" (gethash "message" state))
         (note "page state read back: ~D doc(s), text ~D chars"
-              (length (gethash "docs" state)) (length (gethash "text" state))))))
+              (length (gethash "docs" state)) (length (gethash "text" state)))))
+    ;; 2b. A theme: the variables set on the document element are what the
+    ;; page computes, and the scheme follows the flag.
+    (setq *state* nil)
+    (js-eval "CK.theme([[\"--bg\", \"#123456\"], [\"--c-keyword\", \"#abcdef\"]], true); clamacsSmoke(JSON.stringify(CK.state()))")
+    (when (step-until (lambda () *state*) 10 "the page's state after CK.theme")
+      (let ((theme (gethash "theme" (gethash "panels" *state*))))
+        (check (hash-table-p theme) "no theme in the page's report")
+        (when (hash-table-p theme)
+          (check (equal (gethash "bg" theme) "#123456") "theme bg: ~S" (gethash "bg" theme))
+          (check (equal (gethash "keyword" theme) "#abcdef") "theme keyword: ~S" (gethash "keyword" theme))
+          (check (equal (gethash "scheme" theme) "dark") "theme scheme: ~S" (gethash "scheme" theme))
+          (note "the page took the theme: bg ~A keyword ~A scheme ~A"
+                (gethash "bg" theme) (gethash "keyword" theme) (gethash "scheme" theme))))))
 
   ;; 3. The shim: beep, frame, move, toolkit line.
   (shim "clamacs_host_beep" :void '())

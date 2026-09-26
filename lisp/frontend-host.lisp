@@ -33,9 +33,15 @@
 ;;;;   - The menu bar is the table of menu.lisp, sent once: on macOS to the
 ;;;;     shim, which puts it on the screen's menu bar, elsewhere to the
 ;;;;     page, which draws it (webview has no native one); MENU-UPDATE
-;;;;     keeps its enable states and the Buffers menu in step after every
-;;;;     entry, and a pick comes back as a table index either way, so the
-;;;;     menu is the third entrance to the command table here as under MUI.
+;;;;     keeps its enable states and the dynamic groups (Buffers, View)
+;;;;     in step after every entry, and a pick comes back as a table index
+;;;;     either way, so the menu is the third entrance to the command
+;;;;     table here as under MUI.
+;;;;   - A theme (theme.lisp) is the page's CSS variables set on the
+;;;;     document element, one CK.theme call: EDITOR-APPLY-THEME sends what
+;;;;     THEME-CSS-VARS answers, at start and whenever LOAD-THEME runs, and
+;;;;     the page's scheme (dark or light, from the system) reported at
+;;;;     clamacsReady decides the default theme.
 ;;;;
 ;;;; The page may be absent: an editor made without a window (the tests)
 ;;;; keeps its flushed batches in HOST-EDITOR-EVALS instead, and the
@@ -126,6 +132,9 @@ otherwise; the page's stylesheet starts from the same figure.")
   (ready nil)
   (in-modal nil)
   user-agent
+  ;; The system's colour scheme the page reported at ready, "dark" or
+  ;; "light": what decides the default theme (theme.lisp)
+  (scheme nil)
   ;; What the status line and the window title show, to push only changes
   (shown-status nil)
   (shown-title nil)
@@ -153,17 +162,17 @@ otherwise; the page's stylesheet starts from the same figure.")
   (page-panels nil)
   ;; The menu bar as Lisp told the page -- or the shim, NATIVE-MENU (see
   ;; "The menu bar" below) -- to show it: whether the table went out
-  ;; (nothing is synced before), one enable flag per table entry, the
-  ;; Buffers menu's entries and the ticked document, the documents behind
-  ;; its items in order.  Without a shim a native menu's calls go onto
-  ;; NATIVE-CALLS, as the page's batches go onto EVALS.
+  ;; (nothing is synced before), one enable flag per table entry, and per
+  ;; dynamic group (Buffers, View) its entries with the ticked object and
+  ;; the objects behind its lines in order.  Without a shim a native
+  ;; menu's calls go onto NATIVE-CALLS, as the page's batches go onto
+  ;; EVALS.
   (menus-sent nil)
   (native-menu nil)
   (native-calls '())
   (menu-enabled nil)
-  (buffers-shown '())
-  (buffers-active nil)
-  (buffers-docs #()))
+  (dynamic-shown '())            ; group -> (entries . ticked)
+  (dynamic-objects '()))         ; group -> vector of objects, one per line
 
 (defclass host-document (document)
   ((id :initarg :id :reader hdoc-id)
@@ -1027,20 +1036,37 @@ behind the page."
 ;;; the third entrance to the command table here as it is under MUI,
 ;;; never a second implementation.  MENU-UPDATE, after every entry, brings
 ;;; the enable states in step with MENU-STATE (only what changed is sent)
-;;; and the Buffers menu in step with BUFFER-MENU (remade when its entries
-;;; or the ticked document changed), as the MUI frontend's does after a
-;;; command and after every mailbox drain.  CLAMACS_HOST_MENU=page in the
-;;; environment keeps the page's bar on a host that has its own.
+;;; and each dynamic group -- the Buffers menu, the View menu's themes --
+;;; in step with DYNAMIC-MENU (remade when its entries or the ticked
+;;; object changed), as the MUI frontend's does after a command and after
+;;; every mailbox drain.  CLAMACS_HOST_MENU=page in the environment keeps
+;;; the page's bar on a host that has its own.
 
 ;;; The page and the shim are told each entry's MENU-WIRE-KIND in lower
-;;; case: `title', `item', `bar', a dynamic group's name (`buffers'), or
-;;; `hidden' for what this frontend does not draw -- the View title and
-;;; its group until the page and the shim draw themes (phase T2 of
-;;; specs/clamacs-themes.md).  Both skip a kind they do not know, and
-;;; every entry keeps its line, so the indices stay the table's.
+;;; case: `title', `item', `bar', a dynamic group's name (`buffers',
+;;; `themes'), or `hidden' for what this frontend does not draw.  Both
+;;; skip a kind they do not know, and every entry keeps its line, so the
+;;; indices stay the table's.  A group's lines go out as CK.setDynamic
+;;; (which, lines) to the page and clamacs_host_menu_dynamic (which,
+;;; lines) to the shim -- neither knows what a buffer or a theme is, they
+;;; see a named list of lines -- and a pick comes back as the group and
+;;; the line's position (clamacsDynamic; the shim's callback names the
+;;; group by its entry's table index).
 
 (defmethod editor-dynamic-groups ((editor host-editor))
-  '(:buffers))
+  '(:buffers :themes))
+
+(defun dynamic-group-named (editor name)
+  "The dynamic group this frontend draws under NAME -- a keyword, or its
+name as the page spells it (`buffers') -- or NIL."
+  (and (or (stringp name) (symbolp name))
+       name
+       (find name (editor-dynamic-groups editor) :test #'string-equal)))
+
+(defun dynamic-group-at (index)
+  "The dynamic group whose entry is at the table INDEX, or NIL."
+  (let ((e (menu-entry index)))
+    (and e (menu-entry-dynamic e))))
 
 (defun menu-wire-kind-string (editor index)
   (string-downcase (symbol-name (menu-wire-kind editor index))))
@@ -1056,10 +1082,11 @@ behind the page."
                                 #\Tab (or (menu-entry-title e) "")
                                 #\Tab (or (menu-entry-keys e) "")))))
 
-(defun buffers-menu-text (menu active)
-  "The Buffers MENU (BUFFER-MENU's list) with ACTIVE ticked, as the shim
-takes it: one line per entry, spelled as the BUFFERS verb spells them."
-  (format nil "~{~A~^~%~}" (dynamic-menu-lines menu active)))
+(defun dynamic-menu-text (entries ticked)
+  "A dynamic group's ENTRIES (DYNAMIC-MENU's list) with TICKED's item
+ticked, as the shim takes it: one line per entry, spelled as the port's
+BUFFERS and THEMES verbs spell them."
+  (format nil "~{~A~^~%~}" (dynamic-menu-lines entries ticked)))
 
 (defun native-menu-wanted-p ()
   "False when CLAMACS_HOST_MENU=page asks for the page's bar on a host
@@ -1068,16 +1095,20 @@ that has a menu bar of its own."
     (not (and env (string-equal env "page")))))
 
 (defun native-menu-callback (editor which n)
-  "The shim's pick callback: WHICH 0 is the table's item N, WHICH 1 the
-N-th Buffers line.  It runs inside an entry, as a binding does
-(CALL-WITH-ENTRY: the WITH-ENTRY macro is defined further down), and is
-dropped while a requester runs its own loop."
+  "The shim's pick callback: WHICH 0 is the table's item N; any other
+WHICH is the table index of a dynamic group's entry, and N the position
+of the line picked in that group (the bar counts).  It runs inside an
+entry, as a binding does (CALL-WITH-ENTRY: the WITH-ENTRY macro is
+defined further down), and is dropped while a requester runs its own
+loop."
   (unless (host-editor-in-modal editor)
     (call-with-entry editor
                      (lambda ()
-                       (if (= which 0)
+                       (if (eql which 0)
                            (host-menu-pick editor n)
-                           (host-buffers-pick editor n))))))
+                           (let ((group (dynamic-group-at which)))
+                             (when group
+                               (host-dynamic-pick editor group n))))))))
 
 (defun native-menu-install (editor)
   "The table onto the host's own menu bar through the shim, when it has
@@ -1109,20 +1140,21 @@ states forgotten so the next MENU-UPDATE sends every one."
                   'vector)))
   (setf (host-editor-menus-sent editor) t
         (host-editor-menu-enabled editor) nil
-        (host-editor-buffers-shown editor) '()
-        (host-editor-buffers-active editor) nil
-        (host-editor-buffers-docs editor) #()))
+        (host-editor-dynamic-shown editor) '()
+        (host-editor-dynamic-objects editor) '()))
 
 (defun native-menu-enable (editor index flag)
   (if (host-editor-shim editor)
       (shim editor "clamacs_host_menu_enable" :void '(:int32 :int32) index (if flag 1 0))
       (push (list :enable index flag) (host-editor-native-calls editor))))
 
-(defun native-menu-buffers (editor text)
+(defun native-menu-dynamic (editor which text)
+  "The group WHICH's lines TEXT to the shim, which remakes the menu."
   (if (host-editor-shim editor)
-      (ffi:with-foreign-string (lines text)
-        (shim editor "clamacs_host_menu_buffers" :void '(:pointer) lines))
-      (push (list :buffers text) (host-editor-native-calls editor))))
+      (ffi:with-foreign-string (name (string-downcase (symbol-name which)))
+        (ffi:with-foreign-string (lines text)
+          (shim editor "clamacs_host_menu_dynamic" :void '(:pointer :pointer) name lines)))
+      (push (list which text) (host-editor-native-calls editor))))
 
 (defun menu-enable-sync (editor)
   "The enable state of every item whose state differs from what the
@@ -1139,40 +1171,51 @@ menu bar shows."
                      (ck editor "menuEnable" index flag)))))
     (setf (host-editor-menu-enabled editor) want)))
 
-(defun buffers-menu-sync (editor)
-  "The Buffers menu remade when its entries or its tick are no longer
-what the menu bar shows: to the page `-' for the bar and [label, ticked]
-for a buffer, to the shim the BUFFERS verb's lines."
-  (let ((want (buffer-menu editor))
-        (active (editor-active-document editor)))
-    (unless (and (dynamic-menu-equal want (host-editor-buffers-shown editor))
-                 (eq active (host-editor-buffers-active editor)))
-      (if (host-editor-native-menu editor)
-          (native-menu-buffers editor (buffers-menu-text want active))
-          (ck editor "setBuffers"
-              (coerce (mapcar (lambda (e)
-                                (if (eq e :bar)
-                                    "-"
-                                    (list (car e) (eq (cdr e) active))))
-                              want)
-                      'vector)))
-      (setf (host-editor-buffers-shown editor) want
-            (host-editor-buffers-active editor) active
-            (host-editor-buffers-docs editor)
-            (coerce (mapcar (lambda (e) (if (eq e :bar) nil (cdr e))) want) 'vector)))))
+(defun dynamic-menu-shown (editor which)
+  "What the menu bar shows of the group WHICH: (ENTRIES . TICKED), or
+NIL before its first sync."
+  (cdr (assoc which (host-editor-dynamic-shown editor))))
+
+(defun dynamic-menu-sync (editor which)
+  "The group WHICH remade when its entries or its tick are no longer what
+the menu bar shows: to the page `-' for the bar and [label, ticked] for
+an item, to the shim the port verb's lines."
+  (multiple-value-bind (want ticked) (dynamic-menu editor which)
+    (let ((shown (dynamic-menu-shown editor which)))
+      (unless (and shown
+                   (dynamic-menu-equal want (car shown))
+                   (eq ticked (cdr shown)))
+        (if (host-editor-native-menu editor)
+            (native-menu-dynamic editor which (dynamic-menu-text want ticked))
+            (ck editor "setDynamic" which
+                (coerce (mapcar (lambda (e)
+                                  (if (eq e :bar)
+                                      "-"
+                                      (list (car e) (eq (cdr e) ticked))))
+                                want)
+                        'vector)))
+        (setf (host-editor-dynamic-shown editor)
+              (acons which (cons want ticked)
+                     (remove which (host-editor-dynamic-shown editor) :key #'car))
+              (host-editor-dynamic-objects editor)
+              (acons which (coerce (mapcar (lambda (e) (if (eq e :bar) nil (cdr e))) want) 'vector)
+                     (remove which (host-editor-dynamic-objects editor) :key #'car)))))))
 
 (defun host-menu-click (which n &optional (editor *editor*))
   "For a script: pick an item of the host's own menu bar as the mouse
-would -- WHICH 0 and the table index N, or WHICH 1 and the N-th Buffers
-line -- through the shim, which performs the NSMenuItem's action, so the
-pick takes the whole path: Cocoa, the callback, the entry.  Answers
+would -- WHICH 0 and the table index N, or a dynamic group (:BUFFERS,
+:THEMES, or its entry's table index) and the position N of a line in it
+-- through the shim, which performs the NSMenuItem's action, so the pick
+takes the whole path: Cocoa, the callback, the entry.  Answers
 \"picked\", or \"no native menu\" where the page draws the bar (the page's
 items are picked through the port's MENU verb then)."
-  (cond ((not (and editor (host-editor-shim editor) (host-editor-native-menu editor)))
-         "no native menu")
-        ((/= 0 (shim editor "clamacs_host_menu_click" :int32 '(:int32 :int32) which n))
-         "picked")
-        (t "no such item")))
+  (let ((which (if (keywordp which) (or (menu-find-dynamic which) -1) which)))
+    (cond ((not (and editor (host-editor-shim editor) (host-editor-native-menu editor)))
+           "no native menu")
+          ((and (integerp which) (>= which 0) (integerp n)
+                (/= 0 (shim editor "clamacs_host_menu_click" :int32 '(:int32 :int32) which n)))
+           "picked")
+          (t "no such item"))))
 
 (defun page-menu-report (panels)
   "The `menu' object of the page's report PANELS (clamacsPanels), or NIL:
@@ -1187,10 +1230,11 @@ it holds arrays only, so it ends at its first brace."
 (defun host-menu-report (&optional (editor *editor*))
   "What the menu bar shows, read off the bar itself -- the shim's items
 when the menu is the host's, the page's last report otherwise -- as JSON:
-the item count, the dimmed table indices, the Buffers lines as the BUFFERS
-verb spells them.  For a script's `EVAL (clamacs::host-menu-report)' over
-the port, so the run checks what is on the screen beside HOST-PANEL-STATE,
-the editor's own account.  \"no report\" when there is none yet."
+the item count, the dimmed table indices, and each dynamic group's lines
+under its name (`buffers', `themes') as the port's verbs spell them.  For
+a script's `EVAL (clamacs::host-menu-report)' over the port, so the run
+checks what is on the screen beside HOST-PANEL-STATE, the editor's own
+account.  \"no report\" when there is none yet."
   (or (and editor
            (if (host-editor-native-menu editor)
                (when (host-editor-shim editor)
@@ -1206,7 +1250,8 @@ the editor's own account.  \"no report\" when there is none yet."
 Nothing before the table went out (an editor the tests make without one)."
   (when (host-editor-menus-sent editor)
     (menu-enable-sync editor)
-    (buffers-menu-sync editor)))
+    (dolist (which (editor-dynamic-groups editor))
+      (dynamic-menu-sync editor which))))
 
 (defun host-menu-pick (editor index)
   "The clamacsMenu binding: the item at INDEX was picked.  Run only when
@@ -1215,33 +1260,77 @@ state may have moved since the last report."
   (when (and (integerp index) (menu-item-enabled-p editor index))
     (menu-pick editor index)))
 
-(defun host-buffers-pick (editor n)
-  "The clamacsBuffers binding: the Buffers menu's item N, as the page
-counts its entries (the bar included), activates its document."
-  (let ((docs (host-editor-buffers-docs editor)))
-    (when (and (integerp n) (<= 0 n) (< n (length docs)))
-      (buffer-menu-pick editor (aref docs n)))))
+(defun host-dynamic-pick (editor which n)
+  "The clamacsDynamic binding and the shim's pick: the item at position N
+of the group WHICH, as the menu bar counts its entries (the bar included),
+picked -- a buffer's window activated, a theme loaded.  A position off the
+menu, the bar's, or a group the bar does not draw: nothing."
+  (let ((objects (cdr (assoc which (host-editor-dynamic-objects editor)))))
+    (when (and objects (integerp n) (<= 0 n) (< n (length objects)))
+      (let ((object (aref objects n)))
+        (and object (dynamic-menu-pick editor which object))))))
+
+(defun dynamic-menu-drawn-p (editor which)
+  "Whether the menu bar has the group WHICH: the table went out and this
+frontend draws it."
+  (and (host-editor-menus-sent editor)
+       (member which (editor-dynamic-groups editor))
+       t))
 
 (defmethod editor-dynamic-menu-lines ((editor host-editor) which)
-  "What the page's Buffers menu shows, brought up to date first -- the
+  "What the menu bar's group WHICH shows, brought up to date first -- the
 port's verbs run from the mailbox, not inside a menu pick.  Without a
-menu bar (the table not sent), or for a group the bar does not draw
-yet, what it should be."
-  (cond ((not (and (eq which :buffers) (host-editor-menus-sent editor)))
+menu bar (the table not sent), what it should be."
+  (cond ((not (dynamic-menu-drawn-p editor which))
          (call-next-method))
         (t
-         (buffers-menu-sync editor)
-         (dynamic-menu-lines (host-editor-buffers-shown editor)
-                             (host-editor-buffers-active editor)))))
+         (dynamic-menu-sync editor which)
+         (let ((shown (dynamic-menu-shown editor which)))
+           (dynamic-menu-lines (car shown) (cdr shown))))))
 
 (defmethod editor-dynamic-menu-pick ((editor host-editor) which label)
-  (cond ((not (and (eq which :buffers) (host-editor-menus-sent editor)))
+  (cond ((not (dynamic-menu-drawn-p editor which))
          (call-next-method))
         (t
-         (buffers-menu-sync editor)
+         (dynamic-menu-sync editor which)
          (let ((n (position-if (lambda (e) (and (consp e) (string= (car e) label)))
-                               (host-editor-buffers-shown editor))))
-           (and n (host-buffers-pick editor n))))))
+                               (car (dynamic-menu-shown editor which)))))
+           (and n (host-dynamic-pick editor which n))))))
+
+;;; ------------------------------------------------------------------
+;;; The theme (theme.lisp)
+;;; ------------------------------------------------------------------
+;;;
+;;; The page keeps every colour in CSS variables on :root, so a theme is
+;;; those variables set on the document element, which every rule reads
+;;; already: one CK.theme call with THEME-CSS-VARS' pairs and the dark
+;;; flag (the page sets data-theme from it, so color-scheme -- the
+;;; scrollbars, the form controls -- follows).  Sent by LOAD-THEME through
+;;; the generic, and by START after the menus, so the editor comes up in
+;;; the theme the init file named.  The page's own palette, picked by the
+;;; system's setting, stays as the fallback before the first call -- and
+;;; that setting, reported at clamacsReady, is what the default theme
+;;; follows, so an editor without a pick looks exactly as before.
+
+(defmethod editor-apply-theme ((editor host-editor) theme)
+  (ck editor "theme"
+      (mapcar (lambda (pair) (list (car pair) (cdr pair))) (theme-css-vars theme))
+      (and (theme-dark theme) t)))
+
+(defun send-theme (editor)
+  "The theme in effect to the page: at start, after the menus."
+  (editor-apply-theme editor (active-theme)))
+
+(defun host-ready (editor user-agent &optional scheme)
+  "The clamacsReady binding: the page is up.  SCHEME, `dark' or `light'
+from the page's matchMedia, makes the same built-in the default theme;
+a page that does not say (an older page, the smoke's stub) leaves the
+default as it is."
+  (setf (host-editor-ready editor) t
+        (host-editor-user-agent editor) user-agent)
+  (when (member scheme '("dark" "light") :test #'equal)
+    (setf (host-editor-scheme editor) scheme
+          *default-theme* (if (string= scheme "dark") :dark :light))))
 
 ;;; ------------------------------------------------------------------
 ;;; The dock: the tool buffers and the three panels as tabs
@@ -1400,22 +1489,33 @@ fractional zoom reports a fractional height; it is rounded to whole pixels."
 ;;; --- for a script: what the panels show
 
 (defun host-panel-state (panel &optional (editor *editor*))
-  "What the editor told the page to show for PANEL -- :DOCK, :DIAGNOSTICS,
-:DEBUGGER or :INSPECTOR -- as one line of words, for a script's `EVAL
-\(clamacs::host-panel-state :debugger)' over the port."
+  "What the editor told the page to show for PANEL -- :MENU, :THEME,
+:DOCK, :DIAGNOSTICS, :DEBUGGER or :INSPECTOR -- as one line of words, for
+a script's `EVAL (clamacs::host-panel-state :debugger)' over the port."
   (unless editor
     (return-from host-panel-state "no editor"))
   (flet ((open-word (flag) (if flag "open" "closed"))
          (row-word (n) (if n (princ-to-string n) "none")))
     (ecase panel
       (:menu
-       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~})"
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
                      when (and (not flag) (eq (menu-entry-kind (menu-entry index)) :item))
                        collect index)
-               (editor-dynamic-menu-lines editor :buffers)))
+               (editor-dynamic-menu-lines editor :buffers)
+               (editor-dynamic-menu-lines editor :themes)))
+      (:theme
+       ;; The theme in effect, and the two colours the page's report
+       ;; carries, so a script compares the two accounts
+       (let ((theme (active-theme)))
+         (format nil "~A ~A bg ~A keyword ~A system ~A"
+                 (theme-name-string (theme-name theme))
+                 (if (theme-dark theme) "dark" "light")
+                 (theme-resolve theme :bg)
+                 (theme-resolve theme :keyword)
+                 (or (host-editor-scheme editor) "unknown"))))
       (:dock
        (format nil "~A height ~D shown ~A"
                (open-word (host-editor-dock-open editor))
@@ -1531,9 +1631,7 @@ ticks can arrive then."
 
 (defun install-bindings (editor)
   (bind editor "clamacsReady"
-        (lambda (user-agent)
-          (setf (host-editor-ready editor) t
-                (host-editor-user-agent editor) user-agent)))
+        (lambda (user-agent &optional scheme) (host-ready editor user-agent scheme)))
   (bind editor "clamacsLog" (lambda (text) (host-log editor text)))
   (bind editor "clamacsKey"
         (lambda (doc-id key code ctrl alt meta shift target)
@@ -1554,7 +1652,10 @@ ticks can arrive then."
   (bind editor "clamacsTick" (lambda () (host-tick editor)))
   ;; The menu bar (phase H4)
   (bind editor "clamacsMenu" (lambda (index) (host-menu-pick editor index)))
-  (bind editor "clamacsBuffers" (lambda (n) (host-buffers-pick editor n)))
+  (bind editor "clamacsDynamic"
+        (lambda (which n)
+          (let ((group (dynamic-group-named editor which)))
+            (when group (host-dynamic-pick editor group n)))))
   ;; The dock and the panels (phase H3).  A row number the page sends for
   ;; "nothing selected" is JSON null: ROW-ARG makes it NIL.
   (bind editor "clamacsDiagPick" (lambda (row) (host-diag-pick editor (row-arg row))))
@@ -1723,6 +1824,7 @@ last tab closes."
                 (progn
                   (with-entry (editor)
                     (send-menus editor)
+                    (send-theme editor)
                     (place-dock editor)
                     (if files
                         (dolist (path files)

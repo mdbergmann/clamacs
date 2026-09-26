@@ -66,7 +66,7 @@ CSS, as an alist -- a `#abc' expanded to `#aabbcc', the theme's spelling."
                (semi (position #\; css :start colon))
                (name (subseq css dash colon))
                (value (string-trim " " (subseq css (1+ colon) semi))))
-          (when (= (length value) 4)
+          (when (and (= (length value) 4) (char= (char value 0) #\#))
             (setq value (format nil "#~C~C~C~C~C~C" (char value 1) (char value 1)
                                 (char value 2) (char value 2) (char value 3) (char value 3))))
           (push (cons name value) vars)
@@ -75,21 +75,22 @@ CSS, as an alist -- a `#abc' expanded to `#aabbcc', the theme's spelling."
 
 (deftest light-and-dark-are-the-pages-two-palettes
   ;; Byte for byte with host/page-head.html, so an editor that never
-  ;; picked a theme looks as before.  The font keys are not CSS variables
-  ;; until phase T2; the colours are compared.
+  ;; picked a theme looks as before.  The page's :root block has every
+  ;; key, the font included; its dark block the colours only (the font is
+  ;; the same), so :dark's font keys are :light's.
   (let ((css (read-file-text *theme-page-head*)))
     (is (stringp css))
     (when (stringp css)
       (let ((light (css-block-vars css 0))
             (dark (css-block-vars css (search "prefers-color-scheme: dark" css))))
-        (is-equal (length light) (length (theme-colour-keys)))
+        (is-equal (length light) (length (theme-keys)))
         (is-equal (length dark) (length (theme-colour-keys)))
         (dolist (pair (theme-css-vars (find-theme :light)))
-          (unless (member (car pair) '("--font-family" "--font-size") :test #'string=)
-            (is-equal (cdr (assoc (car pair) light :test #'string=)) (cdr pair))))
+          (is-equal (cdr (assoc (car pair) light :test #'string=)) (cdr pair)))
         (dolist (pair (theme-css-vars (find-theme :dark)))
-          (unless (member (car pair) '("--font-family" "--font-size") :test #'string=)
-            (is-equal (cdr (assoc (car pair) dark :test #'string=)) (cdr pair))))))))
+          (if (member (car pair) '("--font-family" "--font-size") :test #'string=)
+              (is-equal (cdr (assoc (car pair) light :test #'string=)) (cdr pair))
+              (is-equal (cdr (assoc (car pair) dark :test #'string=)) (cdr pair))))))))
 
 ;;; --- finding, defining, forgetting ---------------------------------------------------
 

@@ -367,7 +367,7 @@ to the `clamacsLog` binding, registered before the bundle runs.
 
 | Binding | Arguments | Meaning |
 |---|---|---|
-| `clamacsReady` | `userAgent` | the page is up: Lisp builds the menus, opens the first documents |
+| `clamacsReady` | `userAgent, scheme` | the page is up: Lisp builds the menus, sends the theme, opens the first documents; `scheme` is the system's, `"dark"` or `"light"`, which decides the default theme (`specs/clamacs-themes.md`) |
 | `clamacsLog` | `text` | a JavaScript error or rejection in the page; Lisp reports it |
 | `clamacsKey` | `docId, key, code, ctrl, alt, meta, shift, target` | a key in a view (`target` "text") or the input line ("mini") |
 | `clamacsUpdate` | `docId, [[from, to, inserted], ...], head` | a change CodeMirror made on its own |
@@ -376,14 +376,14 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsActivate` | `docId` | a tab was clicked / a view focused |
 | `clamacsCloseTab` | `docId` | a tab's close button |
 | `clamacsMenu` | `index` | a menu item picked (the table index): `menu-pick` on the active document, refused when the item is dimmed by now |
-| `clamacsBuffers` | `n` | a Buffers-menu item picked, by its position in what `setBuffers` last gave (the bar counts) |
+| `clamacsDynamic` | `which, n` | an item of a dynamic group (`"buffers"`, `"themes"`) picked, by its position in what `setDynamic(which, ...)` last gave (the bar counts) |
 | `clamacsDiagPick` | `row` | a diagnostics row selected |
 | `clamacsDbgFrame` / `clamacsDbgFrameOpen` / `clamacsDbgRestart` / `clamacsDbgEval` / `clamacsDbgButton` | `n` / `n` / `n` / `text` / `"continue"\|"abort"` | the debugger panel |
 | `clamacsInspPart` / `clamacsInspBack` | `n` / -- | the inspector panel |
 | `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
 | `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
 | `clamacsDockResized` | `height` | for the snapshot |
-| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, the Buffers lines spelled as the `BUFFERS` verb spells them), the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
+| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
 | `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document |
 
 Every binding runs on the main thread inside `webview_dispatch`'s turn;
@@ -400,7 +400,9 @@ kind]` paints one run over what is there, `kind` false clears),
 `setTitle(id, title)`, `setModified(id, flag)`,
 `setStatus(text)`, `setEcho(text)`, `openMini(label, text)`,
 `closeMini()`, `setMiniText(text)`, `setMiniLabel(label)`,
-`setMenus(json)`, `menuEnable(index, flag)`, `setBuffers(json)`,
+`setMenus(json)`, `menuEnable(index, flag)`, `setDynamic(which, json)`,
+`theme(vars, dark)` (`vars` `[name, value]` pairs of the page's CSS
+variables, set on the document element; `dark` sets `data-theme`),
 `showDiagnostics(rows, open)`, `selectDiagnostic(row)`, `dbgOpen(level,
 condition, restarts, hasContinue)`, `dbgClose()`, `dbgRaise()`,
 `dbgFrames(rows)`, `dbgSelectFrame(n)`, `dbgLocals(rows)`, `inspOpen(type,
@@ -712,6 +714,14 @@ with the memory note updated.
   `MENU` verb never touches -- the first native pick crashed the editor
   on a `with-entry` used above the macro's definition, and no gate saw
   it), and `clamacs_host_menu_clear()` at `host-close` puts the menu bar
+  back.  (Phase T2 of `specs/clamacs-themes.md`, the same day,
+  generalised the Buffers half over the dynamic groups: the shim keeps a
+  named list of lines per group -- `clamacs_host_menu_dynamic(which,
+  lines)` for `buffers` and `themes` alike, a pick `fn(group, n)` with
+  `group` the table index of the group's entry, the report one array per
+  group under its name -- and knows nothing of buffers or themes.)  The
+  paragraph below describes the state before that.
+  `clamacs_host_menu_clear()` at `host-close` puts the menu bar
   back.  The application menu's title is the bundle's `CFBundleName`, or
   the process name without a bundle (`clamiga` from `run.sh`), so the
   shim sets that key in the main bundle's info dictionary before

@@ -65,7 +65,8 @@ the close button does; `CLAMACS_HOST_MENU=page` in the environment keeps
 it in the window instead), on Linux and Windows a bar at the top of the
 window drawn by the page (the toolkit has no native one) -- the same
 menus either way, the Emacs key beside each item, items dimmed by the
-same rules, the Buffers menu with the active buffer ticked, About with
+same rules, the Buffers menu with the active buffer ticked, the View
+menu's themes (below), About with
 the toolkit lines (the platform's toolkit, webview, WebKit) and Help >
 Common Lisp HyperSpec opening the system's browser.  What the Amiga opens
 as windows of
@@ -258,6 +259,38 @@ the editor's own tool buffers: the REPL, `*clamacs-description*`,
 name, each entry also shows its directory. A macro can read the menu with
 `BUFFERS` and pick from it with `BUFFERS <name>`. See
 `tests/test-menu.lisp`.
+
+## Themes
+
+Colour themes are there in the host editor (macOS, Linux, Windows) for
+now; the Amiga's MUI frontend does not apply them yet.  The **View** menu
+lists the colour themes, the one in effect ticked:
+Light and Dark (the editor's own two looks; the one the system's
+appearance calls for is the default), Solarized Light, Solarized Dark,
+One Dark and Gruvbox Dark.  Pick one there, or with `M-x clamacs-theme`
+(with completion; `C-u M-x clamacs-theme` applies it for this session
+only), and it is remembered: the editor writes one `(load-theme :name)`
+form into your init file and touches nothing else there.  A theme of
+your own is a `define-theme` form in the init file above it, a few
+lines that name a built-in to start from and the colours to change:
+
+```lisp
+(define-theme :my-dark (:inherits :one-dark :label "My Dark")
+  :keyword "#ff9900" :font-size "15px")
+(load-theme :my-dark)
+```
+
+The keys are the text (`:bg :fg :dim :cursor :selection :active-line`),
+the gutter (`:gutter-bg :gutter-fg`), the chrome (`:bar :bar-fg
+:tab-active :line :status-bg :status-fg :echo-bg :echo-fg`), the tokens
+(`:comment :string :number :keyword :defining :symbol :paren-match
+:paren-bad`) and the editor's monospace font (`:font-family
+:font-size`); a colour is `#rrggbb`.  A misspelt key or colour is
+reported with the file's line; a `load-theme` of a name that is not
+defined falls back to the default with a message, so the editor always
+comes up.  A macro reads the menu with `THEMES` and picks with `THEMES
+<label>`.  Every key is honoured (the page's colours are these variables).
+See `tests/test-theme.lisp` and `tests/test-host.lisp` (the View menu).
 
 ## Window positions
 

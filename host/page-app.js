@@ -14,7 +14,9 @@
 // Lisp; the page tells Lisp what the panels show (clamacsPanels) after
 // every change, so a script can check the page did what it was told.
 // Phase H4: the menu bar, drawn here from the table of menu.lisp, its
-// enable states and the Buffers menu, reported the same way.
+// enable states and the dynamic groups (Buffers, View), reported the
+// same way.  Phase T2 (specs/clamacs-themes.md): a theme is the page's
+// CSS variables set by Lisp through CK.theme, reported the same way.
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
@@ -330,16 +332,17 @@
   // bar here.)  CK.setMenus hands the table over, one [kind, title, keys]
   // per entry, indexed as Lisp indexes it; a pick is told to Lisp as that
   // index (clamacsMenu), which runs the command on the active document as
-  // MUI's MenuAction does, and CK.menuEnable dims an item.  The Buffers
-  // menu (the entry of kind "buffers") holds what CK.setBuffers last gave
-  // -- "-" for a bar, [label, ticked] for a buffer -- and a pick there is
-  // the item's position (clamacsBuffers).  A title opens on a click and the
-  // open menu follows the mouse along the bar; a click anywhere else or
-  // Escape closes it, and none of it moves the keyboard off the view.
+  // MUI's MenuAction does, and CK.menuEnable dims an item.  A dynamic
+  // group -- an entry of any other kind, "buffers" or "themes", named by
+  // that kind -- holds what CK.setDynamic(kind, lines) last gave -- "-"
+  // for a bar, [label, ticked] for an item -- and a pick there is the
+  // group and the item's position (clamacsDynamic); the page does not know
+  // what a buffer or a theme is.  A title opens on a click and the open
+  // menu follows the mouse along the bar; a click anywhere else or Escape
+  // closes it, and none of it moves the keyboard off the view.
 
   const menuItems = new Map();   // table index -> item element
-  let buffersPopup = null;       // the Buffers menu's popup
-  let buffersLines = [];         // what it shows, spelled as Lisp's BUFFERS verb spells it
+  const dynamicMenus = new Map(); // kind -> {popup, lines}: lines as Lisp's verbs spell them
   let openMenu = null;           // the title element whose popup is open
 
   function menuClose() {
@@ -401,20 +404,21 @@
     menubar.appendChild(title);
     return popup;
   }
-  function fillBuffers(lines) {
-    buffersLines = [];
-    if (!buffersPopup) return;
-    buffersPopup.textContent = "";
+  function fillDynamic(which, lines) {
+    const group = dynamicMenus.get(which);
+    if (!group) return;
+    group.lines = [];
+    group.popup.textContent = "";
     lines.forEach((line, n) => {
       if (line === "-") {
-        makeMenuSep(buffersPopup);
-        buffersLines.push("-");
+        makeMenuSep(group.popup);
+        group.lines.push("-");
         return;
       }
       const [label, ticked] = line;
-      const item = makeMenuItem(buffersPopup, label, "", () => lisp("clamacsBuffers", n));
+      const item = makeMenuItem(group.popup, label, "", () => lisp("clamacsDynamic", which, n));
       item.tick.textContent = ticked ? "\u2713" : "";
-      buffersLines.push((ticked ? "> " : "  ") + label);
+      group.lines.push((ticked ? "> " : "  ") + label);
     });
   }
   document.addEventListener("mousedown", (ev) => {
@@ -431,16 +435,37 @@
     const disabled = [];
     for (const [index, item] of menuItems) if (item.classList.contains("disabled")) disabled.push(index);
     disabled.sort((a, b) => a - b);
-    return {items: menuItems.size, disabled, buffers: buffersLines};
+    const state = {items: menuItems.size, disabled};
+    for (const [which, group] of dynamicMenus) state[which] = group.lines;
+    return state;
   }
 
-  // What the menu bar, the dock and the panels show, told to Lisp once per
-  // change (a batch of changes is one report): what a script checks
-  // through the port.
+  // ---- the theme -------------------------------------------------------------
+  //
+  // The colours are the CSS variables of :root; Lisp's theme is those
+  // variables set on the document element (CK.theme), which every rule
+  // reads, and data-theme, which color-scheme follows.  The report carries
+  // two of them as the page computes them, and the scheme, so a script
+  // proves the page painted what Lisp said.
+
+  const rootStyle = document.documentElement.style;
+  function themeState() {
+    const computed = getComputedStyle(document.documentElement);
+    return {bg: computed.getPropertyValue("--bg").trim(),
+            keyword: computed.getPropertyValue("--c-keyword").trim(),
+            scheme: document.documentElement.dataset.theme || ""};
+  }
+  const systemScheme = () =>
+    window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+  // What the menu bar, the theme, the dock and the panels show, told to
+  // Lisp once per change (a batch of changes is one report): what a
+  // script checks through the port.
   let reportPending = false;
   function panelState() {
     return {
       menu: menuState(),
+      theme: themeState(),
       dock: {open: dockShown !== null, shown: dockShown, height: dockEl.offsetHeight || parseInt(dockEl.style.height) || 0},
       diagnostics: {open: diagItem.open, rows: diagList.rows.length, selected: diagList.selected},
       debugger: {open: dbgItem.open, level: panels.debugger.level, condition: panels.debugger.condition,
@@ -588,25 +613,26 @@
     setMiniLabel(label) { miniLabel.textContent = label; },
 
     // The menu bar.  ENTRIES is the table of menu.lisp: [kind, title,
-    // keys] per entry, kind "title", "item", "bar" or "buffers"; an empty
-    // table hides the bar (the host's own shows the menus).
+    // keys] per entry, kind "title", "item", "bar", "hidden" (an entry this
+    // page does not draw; its line kept so the indices stay the table's)
+    // or a dynamic group's name; an empty table hides the bar (the host's
+    // own shows the menus).
     setMenus(entries) {
       menuClose();
       menubar.textContent = "";
       menubar.style.display = entries.length ? "" : "none";
       menuItems.clear();
-      buffersPopup = null;
+      dynamicMenus.clear();
       let popup = null;
       entries.forEach((e, index) => {
         const [kind, title, keys] = e;
         if (kind === "title") popup = makeMenuTitle(title);
-        else if (!popup) return;
+        else if (!popup || kind === "hidden") return;
         else if (kind === "bar") makeMenuSep(popup);
-        else if (kind === "buffers") buffersPopup = popup;
         else if (kind === "item")
           menuItems.set(index, makeMenuItem(popup, title, keys, () => lisp("clamacsMenu", index)));
+        else dynamicMenus.set(kind, {popup, lines: []});
       });
-      fillBuffers([]);
       reportPanels();
     },
     menuEnable(index, flag) {
@@ -614,8 +640,16 @@
       if (item) item.classList.toggle("disabled", !flag);
       reportPanels();
     },
-    setBuffers(lines) {
-      fillBuffers(lines);
+    setDynamic(which, lines) {
+      fillDynamic(which, lines);
+      reportPanels();
+    },
+
+    // The theme: VARS is [name, value] pairs of the CSS variables above,
+    // DARK whether the theme is a dark one.
+    theme(vars, dark) {
+      for (const [name, value] of vars) rootStyle.setProperty(name, value);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
       reportPanels();
     },
 
@@ -718,7 +752,8 @@
 
   setInterval(() => lisp("clamacsTick"), 300);
 
-  lisp("clamacsReady", navigator.userAgent);
+  // Ready, with the system's colour scheme: what the default theme follows.
+  lisp("clamacsReady", navigator.userAgent, systemScheme());
 })();
 </script>
 </body>

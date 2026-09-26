@@ -309,6 +309,67 @@ image holds the built-ins; the init file's themes load after the
 restore, as `define-command` forms do).  `make host-linux` for the
 GTK bar.
 
+Done 2026-09-26.  What T2 settled beyond the text above:
+
+- **One mechanism for both groups, on both bars.**  The host editor
+  keeps per dynamic group what the bar shows (`dynamic-shown`: the
+  entries and the ticked object) and the objects behind its lines
+  (`dynamic-objects`); `dynamic-menu-sync editor which` remakes a group
+  when either changed, `host-dynamic-pick editor which n` is the one
+  pick, and `menu-update` walks `editor-dynamic-groups`.  The page's
+  `CK.setDynamic(which, lines)` and binding `clamacsDynamic(which, n)`
+  name the group by its kind string; the shim's
+  `clamacs_host_menu_dynamic(which, lines)` the same, and its pick
+  callback `fn(group, n)` names it by the **table index of the group's
+  entry** (never 0, the first entry being a title), so
+  `native-menu-callback` maps the index back through
+  `dynamic-group-at`.  `host-menu-click` takes the group as a keyword
+  (`:themes`) or that index; the reports carry one array per group under
+  its name (`"buffers"`, `"themes"`).  Neither the page nor the shim
+  knows what a buffer or a theme is.
+- **The theme call is `CK.theme(vars, dark)`** with `vars` the
+  `[name, value]` pairs of `theme-css-vars` in key order (an array, not an
+  object, so the batch is deterministic and the tests can match it), set
+  with `setProperty` on the document element -- inline, so it overrides
+  the page's `@media` palette -- and `data-theme` from the flag, which
+  two `:root[data-theme=...]` rules turn into `color-scheme`.  `send-theme`
+  runs in `start` right after `send-menus`, before the first document.
+- **The font variables** are read by the editor's text (`.cm-editor`
+  size, `.cm-scroller` family) and, family only, by the panels, the
+  status line and the echo row, which keep their 12px; the menu's key
+  column keeps the system monospace.  `--bar-fg` is spelled out
+  (`#333333`), and the page's `:root` block now holds every theme key,
+  which `test-theme.lisp` checks (its CSS reader expands a 3-digit colour
+  only when the value starts with `#`: `14px` is four characters too).
+- **The scheme at ready** is `matchMedia("(prefers-color-scheme:
+  dark)")` as `clamacsReady`'s second argument; `host-ready` sets
+  `*default-theme*` from it and keeps it (`host-editor-scheme`) for the
+  `:theme` line of `host-panel-state`.  A page that says nothing, or
+  something that is not `dark` or `light`, leaves the default alone (the
+  smoke's stub, an older page).  A pick the init file made before the
+  page came up is `*theme*` and wins over the scheme, as
+  `active-theme` says.
+- **The report** carries `theme: {bg, keyword, scheme}` from
+  `getComputedStyle` (custom properties come back as set, `#002b36`,
+  never converted to `rgb()`), and `host-panel-state :theme` answers
+  `name dark|light bg #.. keyword #.. system dark|light|unknown`, so the
+  drive's `check-theme` compares the two accounts.
+- **The drive's leg** (`leg-themes`) runs the verb pick, the native
+  bar's pick where there is one (`host-menu-click :themes n`, answering
+  `no native menu` on the page's bar, as the Buffers pick does), a
+  session-only pick through `EVAL (clamacs::load-theme ... :save nil)`
+  against the init file's text, a refused name, and then `LOAD`s an init
+  file of its own (`define-theme :drive-theme` + `load-theme`) into the
+  running editor -- the file's own form not written back -- which the
+  second editor comes up in (`run-drive.sh` names it
+  `CLAMACS_DRIVE_RC`).  The smoke run sets a theme through `CK.theme`
+  and reads it back from `CK.state()`.
+- **Tests with a theme pick bind `*editor*`** to the test's editor:
+  `load-theme` reaches the frontend through the running editor, which
+  the tests' plain editors are not; and a port verb's batch is flushed
+  by the entry the port runs it in, so a test reading the batch after
+  `port-command` flushes first.
+
 ### T3 -- the MUI frontend (when asked)
 
 As above.  `run-lisp-editor.sh 040` and `020`, `run-lisp-drive.sh`

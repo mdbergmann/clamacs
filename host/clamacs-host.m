@@ -306,9 +306,15 @@ const char *clamacs_host_toolkit(void)
  * its menus (webview makes no main menu at all, so until now Cmd-Q did
  * nothing).  TABLE is the table of menu.lisp, one entry per line in
  * order -- "kind<TAB>title<TAB>keys", kind one of title, item, bar,
- * buffers -- and an item's position in it is its table index, which a
- * pick hands back: FN(0, index, ARG) for an item of the table,
- * FN(1, n, ARG) for the n-th line of the Buffers menu (the bar counts).
+ * hidden (an entry this bar does not draw; its line is kept so the
+ * indices stay the table's), or the name of a DYNAMIC GROUP (buffers,
+ * themes): a menu whose items the editor remakes at run time through
+ * clamacs_host_menu_dynamic -- the shim does not know what a buffer or
+ * a theme is, it keeps a named list of lines.  An item's position in the
+ * table is its table index, which a pick hands back: FN(0, index, ARG)
+ * for an item of the table, FN(group, n, ARG) for the n-th line of a
+ * dynamic group (the bar counts), GROUP the table index of the group's
+ * own entry -- never 0, the first entry being a title.
  * The key an item shows is the editor's Emacs chord (C-x C-s), drawn
  * dimmed beside the label: it is not a Cocoa key equivalent -- the page
  * handles every key, and a menu key equivalent would take the key away
@@ -324,8 +330,12 @@ const char *clamacs_host_toolkit(void)
 @property (nonatomic, weak) NSWindow *window;
 @property (nonatomic, strong) NSMenu *previous;
 @property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMenuItem *> *items;
-@property (nonatomic, strong) NSMenu *buffers;
-@property (nonatomic, strong) NSMutableArray<NSString *> *bufferLines;
+/* The dynamic groups by name: the menu, its entry's table index, the
+ * lines it shows, and the names in table order for the report. */
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMenu *> *dynamic;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *dynamicIndex;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *dynamicLines;
+@property (nonatomic, strong) NSMutableArray<NSString *> *dynamicOrder;
 @end
 
 @implementation ClamacsMenuTarget
@@ -334,10 +344,13 @@ const char *clamacs_host_toolkit(void)
     if (self.fn)
         self.fn(0, (int32_t)sender.tag, self.arg);
 }
-- (void)pickBuffer:(NSMenuItem *)sender
+/* A dynamic group's item carries its group's table index as its
+ * represented object and its line's position as its tag. */
+- (void)pickDynamic:(NSMenuItem *)sender
 {
     if (self.fn)
-        self.fn(1, (int32_t)sender.tag, self.arg);
+        self.fn((int32_t)[(NSNumber *)sender.representedObject intValue],
+                (int32_t)sender.tag, self.arg);
 }
 - (void)quit:(id)sender
 {
@@ -401,8 +414,10 @@ int clamacs_host_menu_set(void *win, const char *table,
         menu_target.arg = arg;
         menu_target.window = (__bridge NSWindow *)win;
         menu_target.items = [NSMutableDictionary dictionary];
-        menu_target.buffers = nil;
-        menu_target.bufferLines = [NSMutableArray array];
+        menu_target.dynamic = [NSMutableDictionary dictionary];
+        menu_target.dynamicIndex = [NSMutableDictionary dictionary];
+        menu_target.dynamicLines = [NSMutableDictionary dictionary];
+        menu_target.dynamicOrder = [NSMutableArray array];
 
         main = [[NSMenu alloc] initWithTitle:@"MainMenu"];
         top = [main addItemWithTitle:@"" action:nil keyEquivalent:@""];
@@ -419,13 +434,19 @@ int clamacs_host_menu_set(void *win, const char *table,
                 top.submenu = menu;
                 if ([title isEqualToString:@"Help"])
                     NSApp.helpMenu = menu;
-            } else if (menu == nil) {
-                /* an entry before the first title: nowhere to put it */
+            } else if (menu == nil || [kind isEqualToString:@"hidden"]) {
+                /* an entry before the first title, or one not drawn here */
             } else if ([kind isEqualToString:@"bar"]) {
                 [menu addItem:[NSMenuItem separatorItem]];
-            } else if ([kind isEqualToString:@"buffers"]) {
-                menu_target.buffers = menu;
-            } else if ([kind isEqualToString:@"item"]) {
+            } else if (![kind isEqualToString:@"item"]) {
+                /* a dynamic group, named by its kind */
+                if (kind.length > 0 && menu_target.dynamic[kind] == nil) {
+                    menu_target.dynamic[kind] = menu;
+                    menu_target.dynamicIndex[kind] = @(index);
+                    menu_target.dynamicLines[kind] = [NSMutableArray array];
+                    [menu_target.dynamicOrder addObject:kind];
+                }
+            } else {
                 NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title
                                                               action:@selector(pick:)
                                                        keyEquivalent:@""];
@@ -461,19 +482,26 @@ void clamacs_host_menu_enable(int index, int flag)
     }
 }
 
-/* The Buffers menu remade from LINES, one per line as the editor's
- * BUFFERS verb spells them: "-" a bar, "> label" the ticked buffer,
- * "  label" another.  A pick hands back the line's position. */
-void clamacs_host_menu_buffers(const char *lines)
+/* The dynamic group WHICH (its kind in the table: "buffers", "themes")
+ * remade from LINES, one per line as the editor's BUFFERS and THEMES
+ * verbs spell them: "-" a bar, "> label" the ticked item, "  label"
+ * another.  A pick hands back the group's table index and the line's
+ * position.  A group the table did not have: nothing. */
+void clamacs_host_menu_dynamic(const char *which, const char *lines)
 {
     @autoreleasepool {
+        NSString *name = text_arg(which);
         NSString *text = text_arg(lines);
-        NSMenu *menu = menu_target ? menu_target.buffers : nil;
+        NSMenu *menu = (menu_target && name) ? menu_target.dynamic[name] : nil;
+        NSMutableArray<NSString *> *shown;
+        NSNumber *group;
         NSInteger n = 0;
         if (text == nil || menu == nil)
             return;
+        shown = menu_target.dynamicLines[name];
+        group = menu_target.dynamicIndex[name];
         [menu removeAllItems];
-        [menu_target.bufferLines removeAllObjects];
+        [shown removeAllObjects];
         for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
             if (line.length == 0)
                 continue;
@@ -483,34 +511,46 @@ void clamacs_host_menu_buffers(const char *lines)
                 BOOL ticked = [line hasPrefix:@"> "];
                 NSString *label = line.length >= 2 ? [line substringFromIndex:2] : line;
                 NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:label
-                                                              action:@selector(pickBuffer:)
+                                                              action:@selector(pickDynamic:)
                                                        keyEquivalent:@""];
                 item.target = menu_target;
                 item.tag = n;
+                item.representedObject = group;
                 item.state = ticked ? NSControlStateValueOn : NSControlStateValueOff;
                 [menu addItem:item];
             }
-            [menu_target.bufferLines addObject:line];
+            [shown addObject:line];
             n++;
         }
     }
 }
 
+/* The dynamic group whose entry is at the table index WHICH, or nil. */
+static NSMenu *menu_dynamic_at(int which)
+{
+    for (NSString *name in menu_target.dynamicOrder)
+        if ([menu_target.dynamicIndex[name] intValue] == which)
+            return menu_target.dynamic[name];
+    return nil;
+}
+
 /* For a script: perform the action of an item as a click would -- WHICH
- * 0 and a table index, 1 and a Buffers position -- so the whole path
- * from the NSMenuItem to the editor's callback is exercised.  1 when
- * there was such an item (a disabled one is passed over, as the mouse
- * would), 0 otherwise. */
+ * 0 and a table index, or a dynamic group's table index and a position
+ * in it -- so the whole path from the NSMenuItem to the editor's callback
+ * is exercised.  1 when there was such an item (a disabled one is passed
+ * over, as the mouse would), 0 otherwise. */
 int clamacs_host_menu_click(int which, int n)
 {
     @autoreleasepool {
         NSMenuItem *item = nil;
+        NSMenu *group;
         if (menu_target == nil)
             return 0;
         if (which == 0) {
             item = menu_target.items[@(n)];
-        } else if (menu_target.buffers && n >= 0 && n < (int)menu_target.buffers.numberOfItems) {
-            item = [menu_target.buffers itemAtIndex:n];
+        } else if ((group = menu_dynamic_at(which)) != nil
+                   && n >= 0 && n < (int)group.numberOfItems) {
+            item = [group itemAtIndex:n];
             if (item.isSeparatorItem)
                 item = nil;
         }
@@ -539,9 +579,10 @@ static void json_string(NSMutableString *out, NSString *s)
 }
 
 /* What the menu bar shows, as the page reports its own: the item count,
- * the dimmed table indices in order, the Buffers lines -- JSON, malloc'd
- * (clamacs_host_free); NULL without a menu.  Read off the NSMenuItems, so
- * a script checks what is on the screen, not what the editor said. */
+ * the dimmed table indices in order, and each dynamic group's lines
+ * under its name, in table order -- JSON, malloc'd (clamacs_host_free);
+ * NULL without a menu.  Read off the NSMenuItems, so a script checks
+ * what is on the screen, not what the editor said. */
 char *clamacs_host_menu_report(void)
 {
     @autoreleasepool {
@@ -560,13 +601,20 @@ char *clamacs_host_menu_report(void)
                 first = NO;
             }
         }
-        [out appendString:@"],\"buffers\":["];
-        for (i = 0; i < menu_target.bufferLines.count; i++) {
-            if (i > 0)
-                [out appendString:@","];
-            json_string(out, menu_target.bufferLines[i]);
+        [out appendString:@"]"];
+        for (NSString *name in menu_target.dynamicOrder) {
+            NSArray<NSString *> *lines = menu_target.dynamicLines[name];
+            [out appendString:@","];
+            json_string(out, name);
+            [out appendString:@":["];
+            for (i = 0; i < lines.count; i++) {
+                if (i > 0)
+                    [out appendString:@","];
+                json_string(out, lines[i]);
+            }
+            [out appendString:@"]"];
         }
-        [out appendString:@"]}"];
+        [out appendString:@"}"];
         return strdup([out UTF8String]);
     }
 }
@@ -824,7 +872,7 @@ int clamacs_host_menu_set(void *win, const char *table,
                           void (*fn)(int32_t, int32_t, void *), void *arg)
 { (void)win; (void)table; (void)fn; (void)arg; return 0; }
 void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
-void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+void clamacs_host_menu_dynamic(const char *which, const char *lines) { (void)which; (void)lines; }
 char *clamacs_host_menu_report(void) { return NULL; }
 int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
 void clamacs_host_menu_clear(void) {}
@@ -1165,7 +1213,7 @@ int clamacs_host_menu_set(void *win, const char *table,
                           void (*fn)(int32_t, int32_t, void *), void *arg)
 { (void)win; (void)table; (void)fn; (void)arg; return 0; }
 void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
-void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+void clamacs_host_menu_dynamic(const char *which, const char *lines) { (void)which; (void)lines; }
 char *clamacs_host_menu_report(void) { return NULL; }
 int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
 void clamacs_host_menu_clear(void) {}
@@ -1193,7 +1241,7 @@ int clamacs_host_menu_set(void *win, const char *table,
                           void (*fn)(int32_t, int32_t, void *), void *arg)
 { (void)win; (void)table; (void)fn; (void)arg; return 0; }
 void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
-void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+void clamacs_host_menu_dynamic(const char *which, const char *lines) { (void)which; (void)lines; }
 char *clamacs_host_menu_report(void) { return NULL; }
 int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
 void clamacs_host_menu_clear(void) {}

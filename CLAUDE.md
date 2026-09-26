@@ -166,9 +166,27 @@ unknown name (the editor must come up on any init file); the init file's
 own `(load-theme ...)` form does not write itself back (`*theme-persist*`
 is bound NIL under `load-init-file`); and a frontend names the groups it
 draws (`editor-dynamic-groups`), so a title whose group it does not draw
-yet is `hidden` on the wire and left out of the MUI strip -- both
-frontends draw `:buffers` only until T2 (the page and the native bar) and
-T3 (MUI), so nothing looks different yet.
+yet is `hidden` on the wire and left out of the MUI strip.  Phase T2
+(same day) is the host frontend: `editor-apply-theme` on `host-editor`
+is one `CK.theme(vars, dark)` call (the CSS variables set inline on the
+document element, `data-theme` for `color-scheme`; `--font-family` /
+`--font-size` are variables now), sent by `send-theme` in `start` after
+the menus and by every `load-theme`; `clamacsReady` carries the
+system's scheme, which `host-ready` makes the default theme; the page's
+report has a `theme` field and `host-panel-state :theme` the editor's
+account.  The Buffers plumbing became the dynamic groups' -- one
+`dynamic-menu-sync` / `host-dynamic-pick` over the group's name,
+`CK.setDynamic(which, lines)` and `clamacsDynamic(which, n)` on the page,
+`clamacs_host_menu_dynamic(which, lines)` on the shim with the pick
+callback naming the group by its entry's table index -- so the page and
+the shim keep named lists of lines and know nothing of buffers or
+themes.  `drive.lisp` has a THEMES leg (verb pick, native pick,
+session-only pick, the init file written and read back, an init file
+with a `define-theme` of its own loaded into the running editor and
+started from by the second editor); a test that picks a theme binds
+`*editor*` to its editor, since `load-theme` reaches the frontend
+through the running one.  T3, the MUI frontend, is still open: it draws
+`:buffers` only.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 
