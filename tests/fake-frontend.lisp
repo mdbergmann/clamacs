@@ -67,7 +67,17 @@
   (insp-open nil)
   (insp-shown nil)               ; (type depth object parts)
   ;; What DOC-OPEN-URL answers: :OPENED, :REFUSED or :MISSING
-  (url-answer :opened))
+  (url-answer :opened)
+  ;; The theme EDITOR-APPLY-THEME was last handed (theme.lisp), and how
+  ;; often it was
+  (theme nil)
+  (theme-applied 0))
+
+;;; --- the theme (theme.lisp)
+
+(defmethod editor-apply-theme ((editor fake-editor) theme)
+  (setf (fake-editor-theme editor) theme)
+  (incf (fake-editor-theme-applied editor)))
 
 ;;; --- window positions (snapshot.lisp) and the browser (menu.lisp)
 

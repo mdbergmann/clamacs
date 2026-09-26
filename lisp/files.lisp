@@ -360,6 +360,11 @@ the editor -- and what the C editor's quit always did."
 and BIND-KEY forms in the CLAMACS package, mostly.  It runs after an image
 restores, so EXT:*IMAGE-RESTORED-P* lets it skip loads the image holds.")
 
+(defvar *theme-persist* t
+  "Whether LOAD-THEME (theme.lisp) writes the choice into the init file.
+Bound to NIL while the init file loads: its own `(load-theme ...)' form
+is the record, not something to write back into the file being read.")
+
 (defun load-init-file (&optional (path *init-file*))
   "LOAD PATH, the user's init file, when there is one, in the CLAMACS
 package: T when it loaded, NIL when there is none.  A form that signals
@@ -367,7 +372,8 @@ is reported by LOAD itself, with the file and the line, and the forms
 after it still load -- deliberately outside any handler, since a
 HANDLER-CASE around LOAD would end the load at the first mistake instead."
   (and (probe-file path)
-       (let ((*package* (find-package :clamacs)))
+       (let ((*package* (find-package :clamacs))
+             (*theme-persist* nil))
          (load path)
          t)))
 

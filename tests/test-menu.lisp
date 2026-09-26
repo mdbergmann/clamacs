@@ -46,15 +46,38 @@
                 (is (member (menu-entry-rule e) *menu-rules*))
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
                 (incf items))
-               (:buffers
-                ;; The place of the open buffers: a menu of its own.
+               (:dynamic
+                ;; The place of a group made at run time: a menu of its own,
+                ;; named after the group.
                 (is (and (> i 0) (eq (menu-entry-kind (nth (1- i) entries)) :title)))
-                (is-equal (menu-entry-title (nth (1- i) entries)) "Buffers")
+                (is-equal (menu-entry-title (nth (1- i) entries))
+                          (ecase (menu-entry-dynamic e)
+                            (:buffers "Buffers")
+                            (:themes "View")))
                 (is (or (null next) (eq (menu-entry-kind next) :title))))))
-    (is-equal (count :buffers entries :key #'menu-entry-kind) 1)
+    (is-equal (count :dynamic entries :key #'menu-entry-kind) 2)
     (is-equal (menu-count) (length entries))
-    (is-equal titles 7)
-    (is (> items 30))))
+    (is-equal titles 8)
+    (is (> items 30))
+    ;; View sits between Windows and Buffers.
+    (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
+           (menu-find-dynamic :themes)
+           (menu-find-dynamic :buffers)))
+    (is-equal (menu-entry-dynamic (menu-entry (menu-find-dynamic :themes))) :themes)
+    (is (null (menu-entry-dynamic (menu-entry 0))))
+    (is (null (menu-find-dynamic :nothing)))))
+
+(deftest a-title-with-nothing-drawn-under-it-is-hidden
+  ;; The model draws every group: everything is drawn.
+  (let ((editor (make-fake-editor)))
+    (is-equal (editor-dynamic-groups editor) '(:buffers :themes))
+    (dotimes (i (menu-count))
+      (is (menu-entry-drawn-p editor i))
+      (is (not (eq (menu-wire-kind editor i) :hidden))))
+    (is-equal (menu-wire-kind editor 0) :title)
+    (is-equal (menu-wire-kind editor (menu-find 'find-file)) :item)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)))
 
 (deftest menu-find-returns-the-item
   (let ((i (menu-find 'save-buffer)))
@@ -259,8 +282,9 @@
     (is (not (menu-pick editor 0)))         ; a title
     ;; A pick over the port without a document is still answered.
     (is-equal (port editor "MENU find-file STATE") '(0 "enabled"))
-    ;; The Buffers menu's slot is no item to pick.
-    (is (not (menu-pick editor (position :buffers (menu-entries) :key #'menu-entry-kind))))))
+    ;; The dynamic groups' slots are no items to pick.
+    (is (not (menu-pick editor (menu-find-dynamic :buffers))))
+    (is (not (menu-pick editor (menu-find-dynamic :themes))))))
 
 ;;; --- the Buffers menu --------------------------------------------------------
 
@@ -320,22 +344,40 @@
                 '("y.lisp" "y.lisp  (Work:)")))
     (close-document y nil)))
 
-(deftest buffer-menu-equal-compares-labels-and-documents
+(deftest dynamic-menu-equal-compares-labels-and-objects
   (let* ((editor (make-fake-editor))
          (a (named-fake editor "a.lisp" "T:a.lisp"))
          (b (named-fake editor "*clamacs-repl*"))
          (menu (buffer-menu editor)))
-    (is (buffer-menu-equal menu (buffer-menu editor)))
-    (is (buffer-menu-equal '() '()))
-    (is (not (buffer-menu-equal menu (butlast menu))))
-    (is (not (buffer-menu-equal menu '())))
+    (is (dynamic-menu-equal menu (buffer-menu editor)))
+    (is (dynamic-menu-equal '() '()))
+    (is (not (dynamic-menu-equal menu (butlast menu))))
+    (is (not (dynamic-menu-equal menu '())))
     ;; Same documents, a label changed (a buffer saved under a new name).
     (setf (doc-name a) "c.lisp" (doc-path a) "T:c.lisp")
-    (is (not (buffer-menu-equal menu (buffer-menu editor))))
+    (is (not (dynamic-menu-equal menu (buffer-menu editor))))
     ;; Same labels, another document.
-    (is (not (buffer-menu-equal (list (cons "x" a)) (list (cons "x" b)))))
-    (is (not (buffer-menu-equal (list :bar) (list (cons "x" b)))))
-    (is (not (buffer-menu-equal (list (cons "x" b)) (list :bar))))))
+    (is (not (dynamic-menu-equal (list (cons "x" a)) (list (cons "x" b)))))
+    (is (not (dynamic-menu-equal (list :bar) (list (cons "x" b)))))
+    (is (not (dynamic-menu-equal (list (cons "x" b)) (list :bar))))))
+
+(deftest the-buffers-group-is-read-off-the-dynamic-table
+  (let* ((editor (make-fake-editor))
+         (a (named-fake editor "a.lisp" "T:a.lisp"))
+         (b (named-fake editor "b.lisp" "T:b.lisp")))
+    (doc-activate a)
+    (multiple-value-bind (entries ticked) (dynamic-menu editor :buffers)
+      (is (dynamic-menu-equal entries (buffer-menu editor)))
+      (is (eq ticked a)))
+    (is-equal (dynamic-menu-lines (buffer-menu editor) a) '("> a.lisp" "  b.lisp"))
+    (is-equal (editor-dynamic-menu-lines editor :buffers) '("> a.lisp" "  b.lisp"))
+    ;; A pick by object, and by label.
+    (is (dynamic-menu-pick editor :buffers b))
+    (is (eq (editor-active-document editor) b))
+    (is (editor-dynamic-menu-pick editor :buffers "a.lisp"))
+    (is (eq (editor-active-document editor) a))
+    (is (not (editor-dynamic-menu-pick editor :buffers "c.lisp")))
+    (is (not (dynamic-menu-pick editor :buffers nil)))))
 
 (deftest buffer-menu-pick-switches-windows
   (let* ((editor (make-fake-editor))
@@ -368,6 +410,44 @@
       (is-equal (port editor "BUFFERS INTRO.LISP") '(0 "no such buffer"))
       (is-equal (port editor "BUFFERS nothing") '(0 "no such buffer"))
       (is (eq (editor-active-document editor) repl)))))
+
+;;; --- the View menu -----------------------------------------------------------
+
+;;; The themes as menu entries: theme.lisp's own tests cover the themes;
+;;; this is the group's side, the twin of the Buffers cases above.  A pick
+;;; is LOAD-THEME, which writes the init file: bound to a scratch path.
+(deftest themes-verb-lists-and-picks
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor doc))
+          (*theme* nil)
+          (*editor* nil)
+          (*init-file* (temp-file "menu-themes-rc")))
+      (unwind-protect
+           (progn
+             ;; Without a pick the default is ticked.
+             (is-equal (first (editor-dynamic-menu-lines editor :themes)) "> Light")
+             (is (member "  Gruvbox Dark" (editor-dynamic-menu-lines editor :themes)
+                         :test #'string=))
+             (is-equal (port editor "THEMES")
+                       (list 0 (format nil "~{~A~^~%~}" (editor-dynamic-menu-lines editor :themes))))
+             ;; A pick by label loads the theme, the tick follows *THEME*,
+             ;; and the init file remembers it.
+             (is-equal (port editor "THEMES One Dark") '(0 ""))
+             (is (eq *theme* (find-theme :one-dark)))
+             (is-equal (second (port editor "THEMES"))
+                       (format nil "  Light~%  Dark~%  Solarized Light~%  Solarized Dark~%> One Dark~%  Gruvbox Dark"))
+             (is (search "(load-theme :one-dark)" (read-file-text *init-file*)))
+             ;; The label is matched exactly; nothing changes on a miss.
+             (is-equal (port editor "THEMES one dark") '(0 "no such theme"))
+             (is-equal (port editor "THEMES nothing") '(0 "no such theme"))
+             (is (eq *theme* (find-theme :one-dark)))
+             ;; The group's slot is no item; a pick by object goes the same way.
+             (is (dynamic-menu-pick editor :themes (find-theme :dark)))
+             (is (eq *theme* (find-theme :dark)))
+             (is (not (dynamic-menu-pick editor :themes :no-such-theme)))
+             (is (eq *theme* (find-theme :dark))))
+        (delete-quietly *init-file*)))))
 
 ;;; --- About and the HyperSpec ---------------------------------------------------
 

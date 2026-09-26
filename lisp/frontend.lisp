@@ -25,6 +25,12 @@
 ;;; The editor: what every document shares
 ;;; ------------------------------------------------------------------
 
+(defvar *editor* nil
+  "The running editor, from the frontend's START to its return; NIL in
+between, and in the tests, which make editors of their own.  What the
+pure modules reach for when a change must be shown and no document is
+at hand (LOAD-THEME from the init file, a form in the REPL).")
+
 (defstruct (editor (:constructor make-editor ()))
   ;; Set by save-buffers-kill-emacs; the frontend's event loop leaves.
   (quitting nil)
@@ -202,6 +208,15 @@ the diagnostics window, without jumping to it."))
 kind (:COMMENT :STRING :CHAR :KEYWORD :NUMBER :DEFINING), :PAREN-MATCH, or
 NIL for the normal pen.  Colour is presentation, not content: it must not
 mark the text modified."))
+
+(defgeneric editor-apply-theme (editor theme)
+  (:documentation "Show THEME (theme.lisp): the frontend takes what it
+can of THEME-CSS-VARS or THEME-PENS and repaints.  Called by LOAD-THEME
+whenever the theme changes, and by a frontend itself when it comes up.
+A frontend that shows no colours of its own does nothing.")
+  (:method ((editor editor) theme)
+    (declare (ignore theme))
+    nil))
 
 (defgeneric doc-call-quietly (doc function)
   (:documentation "Call FUNCTION with display updates held back, for an

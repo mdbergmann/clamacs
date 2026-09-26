@@ -25,4 +25,6 @@
            #:global-keymap
            #:lisp-keymap
            #:repl-keymap
-           #:in-editor))
+           #:in-editor
+           #:define-theme
+           #:load-theme))

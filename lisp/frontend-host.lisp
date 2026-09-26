@@ -186,8 +186,7 @@ otherwise; the page's stylesheet starts from the same figure.")
    ;; a file, while the page still holds it in the dock.
    (dock-p :initform nil :accessor hdoc-dock-p)))
 
-(defvar *editor* nil
-  "The running host editor, from START to its return.")
+;;; *EDITOR*, the running editor, is frontend.lisp's: START sets it.
 
 (defvar *wire-starter* nil
   "Function of the editor that sets up the wire and the editor's own port,
@@ -1033,26 +1032,34 @@ behind the page."
 ;;; command and after every mailbox drain.  CLAMACS_HOST_MENU=page in the
 ;;; environment keeps the page's bar on a host that has its own.
 
-(defun menu-table-text (entries)
-  "ENTRIES, the table, as the shim takes it: one line per entry in
-order, `kind<TAB>title<TAB>keys', the kind in lower case."
+;;; The page and the shim are told each entry's MENU-WIRE-KIND in lower
+;;; case: `title', `item', `bar', a dynamic group's name (`buffers'), or
+;;; `hidden' for what this frontend does not draw -- the View title and
+;;; its group until the page and the shim draw themes (phase T2 of
+;;; specs/clamacs-themes.md).  Both skip a kind they do not know, and
+;;; every entry keeps its line, so the indices stay the table's.
+
+(defmethod editor-dynamic-groups ((editor host-editor))
+  '(:buffers))
+
+(defun menu-wire-kind-string (editor index)
+  (string-downcase (symbol-name (menu-wire-kind editor index))))
+
+(defun menu-table-text (editor)
+  "The table as the shim takes it: one line per entry in order,
+`kind<TAB>title<TAB>keys'."
   (format nil "~{~A~^~%~}"
-          (mapcar (lambda (e)
-                    (format nil "~A~C~A~C~A"
-                            (string-downcase (symbol-name (menu-entry-kind e)))
-                            #\Tab (or (menu-entry-title e) "")
-                            #\Tab (or (menu-entry-keys e) "")))
-                  entries)))
+          (loop for e in (menu-entries)
+                for index from 0
+                collect (format nil "~A~C~A~C~A"
+                                (menu-wire-kind-string editor index)
+                                #\Tab (or (menu-entry-title e) "")
+                                #\Tab (or (menu-entry-keys e) "")))))
 
 (defun buffers-menu-text (menu active)
   "The Buffers MENU (BUFFER-MENU's list) with ACTIVE ticked, as the shim
 takes it: one line per entry, spelled as the BUFFERS verb spells them."
-  (format nil "~{~A~^~%~}"
-          (mapcar (lambda (e)
-                    (cond ((eq e :bar) "-")
-                          ((eq (cdr e) active) (format nil "> ~A" (car e)))
-                          (t (format nil "  ~A" (car e)))))
-                  menu)))
+  (format nil "~{~A~^~%~}" (dynamic-menu-lines menu active)))
 
 (defun native-menu-wanted-p ()
   "False when CLAMACS_HOST_MENU=page asks for the page's bar on a host
@@ -1082,7 +1089,7 @@ one: true then.  Picks come back through NATIVE-MENU-CALLBACK."
                  (declare (ignore arg))
                  (native-menu-callback editor which n)))))
       (push cb (host-editor-callbacks editor))
-      (/= 0 (ffi:with-foreign-string (table (menu-table-text (menu-entries)))
+      (/= 0 (ffi:with-foreign-string (table (menu-table-text editor))
               (shim editor "clamacs_host_menu_set" :int32 '(:pointer :pointer :pointer :pointer)
                     (host-editor-win editor) table cb (ffi:make-foreign-pointer 0)))))))
 
@@ -1094,11 +1101,11 @@ states forgotten so the next MENU-UPDATE sends every one."
   (ck editor "setMenus"
       (if (host-editor-native-menu editor)
           #()
-          (coerce (mapcar (lambda (e)
-                            (list (menu-entry-kind e)
-                                  (or (menu-entry-title e) "")
-                                  (or (menu-entry-keys e) "")))
-                          (menu-entries))
+          (coerce (loop for e in (menu-entries)
+                        for index from 0
+                        collect (list (menu-wire-kind-string editor index)
+                                      (or (menu-entry-title e) "")
+                                      (or (menu-entry-keys e) "")))
                   'vector)))
   (setf (host-editor-menus-sent editor) t
         (host-editor-menu-enabled editor) nil
@@ -1138,7 +1145,7 @@ what the menu bar shows: to the page `-' for the bar and [label, ticked]
 for a buffer, to the shim the BUFFERS verb's lines."
   (let ((want (buffer-menu editor))
         (active (editor-active-document editor)))
-    (unless (and (buffer-menu-equal want (host-editor-buffers-shown editor))
+    (unless (and (dynamic-menu-equal want (host-editor-buffers-shown editor))
                  (eq active (host-editor-buffers-active editor)))
       (if (host-editor-native-menu editor)
           (native-menu-buffers editor (buffers-menu-text want active))
@@ -1215,22 +1222,21 @@ counts its entries (the bar included), activates its document."
     (when (and (integerp n) (<= 0 n) (< n (length docs)))
       (buffer-menu-pick editor (aref docs n)))))
 
-(defmethod editor-buffer-menu-lines ((editor host-editor))
+(defmethod editor-dynamic-menu-lines ((editor host-editor) which)
   "What the page's Buffers menu shows, brought up to date first -- the
 port's verbs run from the mailbox, not inside a menu pick.  Without a
-menu bar (the table not sent), what it should be."
-  (cond ((not (host-editor-menus-sent editor)) (call-next-method))
+menu bar (the table not sent), or for a group the bar does not draw
+yet, what it should be."
+  (cond ((not (and (eq which :buffers) (host-editor-menus-sent editor)))
+         (call-next-method))
         (t
          (buffers-menu-sync editor)
-         (let ((active (host-editor-buffers-active editor)))
-           (mapcar (lambda (e)
-                     (cond ((eq e :bar) "-")
-                           ((eq (cdr e) active) (format nil "> ~A" (car e)))
-                           (t (format nil "  ~A" (car e)))))
-                   (host-editor-buffers-shown editor))))))
+         (dynamic-menu-lines (host-editor-buffers-shown editor)
+                             (host-editor-buffers-active editor)))))
 
-(defmethod editor-buffer-menu-pick ((editor host-editor) label)
-  (cond ((not (host-editor-menus-sent editor)) (call-next-method))
+(defmethod editor-dynamic-menu-pick ((editor host-editor) which label)
+  (cond ((not (and (eq which :buffers) (host-editor-menus-sent editor)))
+         (call-next-method))
         (t
          (buffers-menu-sync editor)
          (let ((n (position-if (lambda (e) (and (consp e) (string= (car e) label)))
@@ -1409,7 +1415,7 @@ fractional zoom reports a fractional height; it is rounded to whole pixels."
                      for index from 0
                      when (and (not flag) (eq (menu-entry-kind (menu-entry index)) :item))
                        collect index)
-               (editor-buffer-menu-lines editor)))
+               (editor-dynamic-menu-lines editor :buffers)))
       (:dock
        (format nil "~A height ~D shown ~A"
                (open-word (host-editor-dock-open editor))

@@ -28,10 +28,12 @@
 ;;; ------------------------------------------------------------------
 
 (defstruct (menu-entry (:constructor make-menu-entry (kind rule command title keys map)))
-  kind                      ; :title, :item, :bar, or :buffers -- the place the
-                            ; open buffers go (BUFFER-MENU), filled at run time
+  kind                      ; :title, :item, :bar, or :dynamic -- the place
+                            ; a group of items made at run time goes: the
+                            ; open buffers, the themes (DYNAMIC-MENU)
   rule                      ; when an item is enabled, see MENU-RULE-HOLDS-P
-  command                   ; the command symbol, or NIL
+  command                   ; the command symbol, or NIL; for a :dynamic
+                            ; entry the group's name (:buffers, :themes)
   title                     ; the label; the menu's name for a :title
   keys                      ; the key shown beside it, or NIL
   ;; Which map the key lives in: :global, :lisp or :repl.  Only the test
@@ -143,9 +145,13 @@
      (bar)
      (item 'clamacs-snapshot-windows    :always        "Snapshot Windows"       nil       :global)
 
+     ;; One item per theme (theme.lisp), the one in effect ticked.
+     (title "View")
+     (make-menu-entry :dynamic :always :themes nil nil nil)
+
      ;; One item per open buffer, made and remade as windows come and go.
      (title "Buffers")
-     (make-menu-entry :buffers :always nil nil nil nil)
+     (make-menu-entry :dynamic :always :buffers nil nil nil)
 
      (title "Help")
      (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global))))
@@ -169,6 +175,15 @@ NIL."
                         (and (eq (menu-entry-kind e) :item)
                              (eq (menu-entry-command e) symbol)))
                       *menu-table*))))
+
+(defun menu-entry-dynamic (entry)
+  "The name of the dynamic group ENTRY stands for, or NIL for any other
+kind of entry."
+  (and (eq (menu-entry-kind entry) :dynamic) (menu-entry-command entry)))
+
+(defun menu-find-dynamic (which)
+  "The index of the dynamic group WHICH's entry, or NIL."
+  (position which *menu-table* :key #'menu-entry-dynamic))
 
 ;;; ------------------------------------------------------------------
 ;;; The rules
@@ -317,16 +332,6 @@ are both."
                 (nthcdr (length sources) entries))
         entries)))
 
-(defun buffer-menu-equal (a b)
-  "Whether the Buffers menus A and B show the same items for the same
-documents -- what a frontend asks before remaking its items."
-  (and (= (length a) (length b))
-       (every (lambda (x y)
-                (if (eq x :bar)
-                    (eq y :bar)
-                    (and (consp y) (eq (cdr x) (cdr y)) (string= (car x) (car y)))))
-              a b)))
-
 (defun buffer-menu-pick (editor doc)
   "Switch to DOC's window, as its item in the Buffers menu does.  True
 when DOC is still open."
@@ -334,37 +339,114 @@ when DOC is still open."
     (doc-activate doc)
     t))
 
-(defgeneric editor-buffer-menu-lines (editor)
-  (:documentation "The Buffers menu as the frontend shows it, one string
-per item: the label, with `> ' before the ticked one and `  ' before the
-others, and `-' for the bar.  A frontend with real menu items reads them
-back; this method says what they should be.")
-  (:method ((editor editor))
-    (let ((active (editor-active-document editor)))
-      (mapcar (lambda (e)
-                (cond ((eq e :bar) "-")
-                      ((eq (cdr e) active) (format nil "> ~A" (car e)))
-                      (t (format nil "  ~A" (car e)))))
-              (buffer-menu editor)))))
+;;; ------------------------------------------------------------------
+;;; The dynamic groups: Buffers and View, one mechanism
+;;; ------------------------------------------------------------------
 
-(defgeneric editor-buffer-menu-pick (editor label)
-  (:documentation "Pick the Buffers menu's item LABEL as the mouse would.
-True when there was one.  A frontend with real menu items goes through the
-item it made.")
-  (:method ((editor editor) label)
+;;; A dynamic group is a menu whose items are made at run time and
+;;; remade when they no longer match: the open buffers, the themes.  Each
+;;; is two functions of the editor -- the entries with the one to tick,
+;;; and the pick -- and everything else (the sync a frontend runs after
+;;; every command, the lines the port answers, the pick by label) is
+;;; written once over the group's name.
+
+(defun dynamic-menu (editor which)
+  "The group WHICH as it should be now: a list of (LABEL . OBJECT) and
+:BAR, and as second value the object whose item is ticked."
+  (ecase which
+    (:buffers (values (buffer-menu editor) (editor-active-document editor)))
+    (:themes (values (theme-menu) (active-theme)))))
+
+(defun dynamic-menu-pick (editor which object)
+  "Pick OBJECT's item in the group WHICH as the mouse would: a buffer's
+window is activated, a theme loaded (and remembered, as LOAD-THEME
+does).  True when it was done."
+  (ecase which
+    (:buffers (buffer-menu-pick editor object))
+    (:themes (and (find-theme object) (load-theme object) t))))
+
+(defun dynamic-menu-equal (a b)
+  "Whether the groups A and B show the same items for the same objects
+-- what a frontend asks before remaking its items."
+  (and (= (length a) (length b))
+       (every (lambda (x y)
+                (if (eq x :bar)
+                    (eq y :bar)
+                    (and (consp y) (eq (cdr x) (cdr y)) (string= (car x) (car y)))))
+              a b)))
+
+(defun dynamic-menu-lines (entries ticked)
+  "ENTRIES, a group's list, as the port spells it: one string per item,
+the label with `> ' before the ticked one and `  ' before the others,
+and `-' for a bar."
+  (mapcar (lambda (e)
+            (cond ((eq e :bar) "-")
+                  ((eq (cdr e) ticked) (format nil "> ~A" (car e)))
+                  (t (format nil "  ~A" (car e)))))
+          entries))
+
+(defgeneric editor-dynamic-groups (editor)
+  (:documentation "The dynamic groups the frontend makes items for.  A
+title whose menu holds nothing but a group the frontend does not draw
+is left out of its bar (MENU-ENTRY-DRAWN-P), so a frontend that has not
+caught up with a group shows no empty menu.")
+  (:method ((editor editor)) '(:buffers :themes)))
+
+(defun menu-entry-drawn-p (editor index)
+  "Whether the frontend draws the entry at INDEX: a dynamic group when
+the frontend makes its items, a title when something under it is drawn,
+everything else always."
+  (let ((e (menu-entry index)))
+    (case (menu-entry-kind e)
+      (:dynamic (and (member (menu-entry-dynamic e) (editor-dynamic-groups editor)) t))
+      (:title (loop for i from (1+ index) below (menu-count)
+                    for next = (menu-entry i)
+                    until (eq (menu-entry-kind next) :title)
+                    thereis (menu-entry-drawn-p editor i)))
+      (t t))))
+
+(defun menu-wire-kind (editor index)
+  "The kind of the entry at INDEX as a frontend's menu bar is told it:
+:HIDDEN for an entry it does not draw, a dynamic group's own name, else
+the kind.  Every entry keeps its line, so the indices stay the table's."
+  (let ((e (menu-entry index)))
+    (cond ((not (menu-entry-drawn-p editor index)) :hidden)
+          ((eq (menu-entry-kind e) :dynamic) (menu-entry-dynamic e))
+          (t (menu-entry-kind e)))))
+
+(defgeneric editor-dynamic-menu-lines (editor which)
+  (:documentation "The group WHICH as the frontend shows it, one string
+per item as DYNAMIC-MENU-LINES spells them.  A frontend with real menu
+items reads them back; this method says what they should be.")
+  (:method ((editor editor) which)
+    (multiple-value-bind (entries ticked) (dynamic-menu editor which)
+      (dynamic-menu-lines entries ticked))))
+
+(defgeneric editor-dynamic-menu-pick (editor which label)
+  (:documentation "Pick the item LABEL of the group WHICH as the mouse
+would.  True when there was one.  A frontend with real menu items goes
+through the item it made.")
+  (:method ((editor editor) which label)
     (let ((e (find-if (lambda (e) (and (consp e) (string= (car e) label)))
-                      (buffer-menu editor))))
-      (and e (buffer-menu-pick editor (cdr e))))))
+                      (dynamic-menu editor which))))
+      (and e (dynamic-menu-pick editor which (cdr e))))))
 
-;;; BUFFERS [label]: the Buffers menu from a macro.  Without an argument it
-;;; answers EDITOR-BUFFER-MENU-LINES; with one it picks the item with that
-;;; label, answering "" or "no such buffer".
-(define-port-verb "BUFFERS" (editor arg)
+(defun dynamic-menu-verb (editor which arg missing)
+  "BUFFERS and THEMES: without an argument the group's lines; with one
+a pick of the item with that label, answering \"\" or MISSING."
   (cond ((string= arg "")
-         (values +rc-ok+ (format nil "~{~A~^~%~}" (editor-buffer-menu-lines editor))))
-        ((editor-buffer-menu-pick editor arg)
+         (values +rc-ok+ (format nil "~{~A~^~%~}" (editor-dynamic-menu-lines editor which))))
+        ((editor-dynamic-menu-pick editor which arg)
          (values +rc-ok+ ""))
-        (t (values +rc-ok+ "no such buffer"))))
+        (t (values +rc-ok+ missing))))
+
+;;; BUFFERS [label]: the Buffers menu from a macro.
+(define-port-verb "BUFFERS" (editor arg)
+  (dynamic-menu-verb editor :buffers arg "no such buffer"))
+
+;;; THEMES [label]: the View menu from a macro -- the twin of BUFFERS.
+(define-port-verb "THEMES" (editor arg)
+  (dynamic-menu-verb editor :themes arg "no such theme"))
 
 ;;; ------------------------------------------------------------------
 ;;; About

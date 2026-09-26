@@ -335,8 +335,7 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   buffers-menu (buffer-items '()) (buffers-shown '()) (buffer-docs #())
   (buffers-checked :unknown))
 
-(defvar *editor* nil
-  "The running MUI editor, from START to its return.")
+;;; *EDITOR*, the running editor, is frontend.lisp's: START sets it.
 
 (defvar *wire-starter* nil
   "Function of the editor that sets up the wire to clamiga and the editor's
@@ -1272,6 +1271,13 @@ window; NIL when it is NIL or not open."
 ;;; NM_BARLABEL, (STRPTR)-1: a separator, as libraries/gadtools.h spells it.
 (defconstant +nm-barlabel+ #xFFFFFFFF)
 
+;;; The dynamic groups this frontend makes items for: the open buffers.
+;;; The themes come with phase T3 of specs/clamacs-themes.md; until then
+;;; the View title is left out of the strip (MENU-ENTRY-DRAWN-P), so the
+;;; Amiga shows no empty menu.
+(defmethod editor-dynamic-groups ((editor mui-editor))
+  '(:buffers))
+
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --
 when MUI would not build it: the editor still runs, keys and port intact."
@@ -1285,16 +1291,23 @@ when MUI would not build it: the editor still runs, keys and port intact."
                 for i from 0
                 do (ecase (menu-entry-kind e)
                      (:title
-                      (setq menu (mui:new-object :menu m:+muia-menu-title+ (menu-entry-title e)))
-                      (mui:do-method strip m:+muim-family-add-tail+ menu))
+                      ;; A title nothing is drawn under is no menu: MENU
+                      ;; stays NIL until the next title.
+                      (cond ((menu-entry-drawn-p editor i)
+                             (setq menu (mui:new-object :menu m:+muia-menu-title+ (menu-entry-title e)))
+                             (mui:do-method strip m:+muim-family-add-tail+ menu))
+                            (t (setq menu nil))))
                      (:bar
-                      (mui:do-method menu m:+muim-family-add-tail+
-                                     (mui:new-object :menuitem
-                                                     m:+muia-menuitem-title+ +nm-barlabel+)))
-                     (:buffers
-                      (setf (mui-editor-buffers-menu editor) menu))
+                      (when menu
+                        (mui:do-method menu m:+muim-family-add-tail+
+                                       (mui:new-object :menuitem
+                                                       m:+muia-menuitem-title+ +nm-barlabel+))))
+                     (:dynamic
+                      (when (and menu (eq (menu-entry-dynamic e) :buffers))
+                        (setf (mui-editor-buffers-menu editor) menu)))
                      (:item
-                      (let ((item (if (menu-entry-keys e)
+                      (when menu
+                       (let ((item (if (menu-entry-keys e)
                                       (mui:new-object :menuitem
                                                       m:+muia-menuitem-title+ (menu-entry-title e)
                                                       m:+muia-menuitem-shortcut+ (menu-entry-keys e)
@@ -1304,7 +1317,7 @@ when MUI would not build it: the editor still runs, keys and port intact."
                                                       m:+muia-menuitem-title+ (menu-entry-title e)
                                                       m:+muia-user-data+ (menu-item-id i)))))
                         (mui:do-method menu m:+muim-family-add-tail+ item)
-                        (setf (aref items i) item)))))
+                        (setf (aref items i) item))))))
           (setf (mui-editor-menustrip editor) strip
                 (mui-editor-menu-items editor) items
                 (mui-editor-menu-enabled editor)
@@ -1421,7 +1434,7 @@ the old one when the MenuAction hook runs."
              (not (editor-quitting editor)))
     (let ((want (buffer-menu editor))
           (active (editor-active-document editor)))
-      (cond ((not (buffer-menu-equal want (mui-editor-buffers-shown editor)))
+      (cond ((not (dynamic-menu-equal want (mui-editor-buffers-shown editor)))
              (handler-case (rebuild-buffer-items editor want active)
                (error (e)
                  ;; Not again until the buffers change: the loop runs this
@@ -1439,8 +1452,8 @@ the old one when the MenuAction hook runs."
 ;;; id an item carries, so drive.rexx checks what the menu shows and the id
 ;;; the MenuAction hook would get.  The port's verbs run from the mailbox,
 ;;; not inside a menu pick, so the menu is brought up to date first.
-(defmethod editor-buffer-menu-lines ((editor mui-editor))
-  (if (null (mui-editor-buffers-menu editor))
+(defmethod editor-dynamic-menu-lines ((editor mui-editor) which)
+  (if (or (not (eq which :buffers)) (null (mui-editor-buffers-menu editor)))
       (call-next-method)
       (progn
         (buffers-menu-sync editor)
@@ -1452,8 +1465,8 @@ the old one when the MenuAction hook runs."
                                       ">" " ")
                                   (mui:get-attr-string m:+muia-menuitem-title+ item)))))))
 
-(defmethod editor-buffer-menu-pick ((editor mui-editor) label)
-  (if (null (mui-editor-buffers-menu editor))
+(defmethod editor-dynamic-menu-pick ((editor mui-editor) which label)
+  (if (or (not (eq which :buffers)) (null (mui-editor-buffers-menu editor)))
       (call-next-method)
       (progn
         (buffers-menu-sync editor)

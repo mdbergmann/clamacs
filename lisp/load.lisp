@@ -17,7 +17,7 @@
     "frontend" "commands" "minibuffer" "files"
     "diag" "wire" "port" "mailbox" "introspect"
     "replmsg" "repl" "debugger" "inspector"
-    "menu" "snapshot" "transport-self"))
+    "theme" "menu" "snapshot" "transport-self"))
 
 ;;; The frontend: the MUI one on an Amiga, with the ARexx transport and the
 ;;; editor's port behind it; none by default on the host (the tests bring

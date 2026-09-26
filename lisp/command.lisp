@@ -131,4 +131,7 @@ longest common prefix, as COMPLETE returns them."
  ;; Window positions, the HyperSpec in the user's browser, and the About
  ;; requester -- a command here where the C editor had a menu-only item,
  ;; so the menu stays an entrance to the command table and nothing else.
- clamacs-snapshot-windows clamacs-hyperspec clamacs-about)
+ clamacs-snapshot-windows clamacs-hyperspec clamacs-about
+ ;; The colour theme (theme.lisp): the View menu's items and the init
+ ;; file's form both end in the same LOAD-THEME this command calls.
+ clamacs-theme)

@@ -151,6 +151,24 @@ back through the shim's callback as the same table index, and
 what `drive.lisp` checks.  GTK and Win32 answer 0 and keep the page's
 bar; `CLAMACS_HOST_MENU=page` asks for the page's on a Mac.  Never make
 a Cocoa key equivalent of an item: it takes the key from the page.
+**Colour themes** are `specs/clamacs-themes.md`; phase T1 (2026-09-26) is
+the pure part: `lisp/theme.lisp` (the struct, `define-theme`, six
+built-ins -- `:light` and `:dark` are the page's two palettes byte for
+byte, checked against `host/page-head.html` by `tests/test-theme.lisp`
+-- `load-theme`, `theme-css-vars` / `theme-pens` for the two frontends,
+the init file's rewrite over the sexp scanner, `M-x clamacs-theme` with
+`C-u` for a session-only pick) and the menu's dynamic groups: the
+`:buffers` entry kind became `:dynamic` with a name, a View title with
+the `:themes` group sits before Buffers, and `dynamic-menu` /
+`dynamic-menu-pick` / `editor-dynamic-menu-lines` / the `THEMES` verb are
+one path over the name.  Three rules: `load-theme` never errors on an
+unknown name (the editor must come up on any init file); the init file's
+own `(load-theme ...)` form does not write itself back (`*theme-persist*`
+is bound NIL under `load-init-file`); and a frontend names the groups it
+draws (`editor-dynamic-groups`), so a title whose group it does not draw
+yet is `hidden` on the wire and left out of the MUI strip -- both
+frontends draw `:buffers` only until T2 (the page and the native bar) and
+T3 (MUI), so nothing looks different yet.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

@@ -1060,7 +1060,9 @@ batch of both taken."
     ;; The table, one entry per index, at the head of the batch
     (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New\",\"\"],[\"item\",\"Open...\",\"C-x C-f\"]," js))
     (is (search "[\"bar\",\"\",\"\"]" js))
-    (is (search "[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    ;; The View title and its group are `hidden' until the page draws
+    ;; themes (phase T2); their lines stay so the indices are the table's
+    (is (search "[\"hidden\",\"View\",\"\"],[\"hidden\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1129,8 +1131,10 @@ batch of both taken."
     (let ((d2 (host-test-document editor "two")))
       ;; A second unnamed buffer: Emacs's <2>, the tick on the new one
       (is (search "CK.setBuffers([[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" (host-take-evals editor)))
-      (is-equal (editor-buffer-menu-lines editor) '("  (unnamed)" "> (unnamed)<2>"))
+      (is-equal (editor-dynamic-menu-lines editor :buffers) '("  (unnamed)" "> (unnamed)<2>"))
       (is (search "buffers (  (unnamed)|> (unnamed)<2>)" (host-panel-state :menu editor)))
+      ;; The View menu's group is not the page's yet: the model's lines.
+      (is-equal (first (editor-dynamic-menu-lines editor :themes)) "> Light")
       ;; A pick by the page's position activates; only the tick is remade
       (with-entry (editor) (host-buffers-pick editor 0))
       (is (eq (editor-active-document editor) d1))
@@ -1161,13 +1165,16 @@ batch of both taken."
 
 (deftest host-native-menu-takes-the-table-as-lines-and-its-syncs-go-to-the-shim
   (flet ((tabbed (&rest fields) (format nil "~{~A~^	~}" fields)))
-    ;; The table as the shim takes it: one line per entry, in order
-    (let ((text (menu-table-text (menu-entries))))
+    ;; The table as the shim takes it: one line per entry, in order.  The
+    ;; View title and its group are `hidden' until the shim draws themes
+    ;; (phase T2), keeping their lines so the indices stay the table's.
+    (let ((text (menu-table-text (host-test-editor))))
       (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New" "")
                          (tabbed "item" "Open..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
-      (is (search (lines (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
+      (is (search (lines (tabbed "hidden" "View" "") (tabbed "hidden" "" "")
+                         (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))
       (is-equal (count #\Newline text) (1- (menu-count)))))
@@ -1206,11 +1213,11 @@ batch of both taken."
     (is (member (list :buffers (lines "  (unnamed)" "> (unnamed)<2>"))
                 (host-editor-native-calls editor) :test #'equal))
     (is (search "buffers (  (unnamed)|> (unnamed)<2>)" (host-panel-state :menu editor)))
-    (is-equal (editor-buffer-menu-lines editor) '("  (unnamed)" "> (unnamed)<2>"))
+    (is-equal (editor-dynamic-menu-lines editor :buffers) '("  (unnamed)" "> (unnamed)<2>"))
     ;; A pick by the shim's position activates the edited first buffer,
     ;; and the port's verbs read the state as before: Save follows it
     (with-entry (editor) (host-buffers-pick editor 0))
-    (is-equal (editor-buffer-menu-lines editor) '("> (unnamed)" "  (unnamed)<2>"))
+    (is-equal (editor-dynamic-menu-lines editor :buffers) '("> (unnamed)" "  (unnamed)<2>"))
     (is-equal (nth-value 1 (port-command editor "MENU save-buffer STATE")) "enabled")
     (is (member (list :enable (menu-find 'save-buffer) t) (host-editor-native-calls editor) :test #'equal))
     ;; No shim: no report of the bar
