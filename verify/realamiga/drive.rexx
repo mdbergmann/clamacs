@@ -896,6 +896,24 @@ IF POS('2 error(s)', DIAGS) > 0 THEN
 ELSE
     SAY 'FAIL load-buffer diagnostics were' DIAGS
 
+/* What the load printed (clamiga's own report of the first error) came
+** back in the reply's log and went into the REPL transcript, under the
+** reply's `; loading' line; the buffer kept the focus.  The Lisp editor
+** only, which LISP names: the C editor's EVAL takes a command name, not a
+** form, and never routes a load's log into a transcript. */
+IF CLAMIGA ~= '' THEN DO
+'EVAL (let ((repl (clamacs::repl-doc clamacs::*editor*))) (and repl (clamacs::doc-text repl 0 (clamacs::doc-end repl))))'
+IF POS('; loading', RESULT) > 0 & POS('first deliberate error', RESULT) > 0 THEN
+    SAY 'OK the load''s output went into the REPL transcript'
+ELSE
+    SAY 'FAIL the REPL transcript after the load is' RESULT
+'GETNAME'
+IF POS('errors.lisp', RESULT) > 0 THEN
+    SAY 'OK the buffer kept the focus over the transcript:' RESULT
+ELSE
+    SAY 'FAIL after the load the active window is' RESULT
+END /* CLAMIGA ~= '': the load's transcript, Lisp editor only */
+
 /* The reply filled the error list, which is what enables Next Error. */
 IF PHASE >= 5 THEN DO
 'MENU clamacs-next-error STATE'

@@ -320,11 +320,20 @@ new one."
 
 (defun wire-diagnostics (wire doc text)
   "A LOAD, COMPILE-FILE or failed EVAL replied: the rows go to the error
-list, the summary to the echo area."
-  (let ((list (wire-diags wire)))
-    (parse-diagnostics list (or text ""))
+list, the summary to the echo area, and what the command printed to the
+REPL transcript (repl-log) under the reply's first line, `; loading
+Work:foo.lisp'."
+  (let ((list (wire-diags wire))
+        (text (or text "")))
+    (parse-diagnostics list text)
     (setf (wire-error-row wire) -1)
     (editor-show-diagnostics (wire-editor wire) (diaglist-rendered list))
+    (when (diaglist-log list)
+      ;; A failed EVAL's reply starts with a row, not with `; ...'.
+      (let ((line (first-line text)))
+        (repl-log (wire-editor wire) doc
+                  (and (starts-with-p "; " line) (subseq line 2))
+                  (diaglist-log list))))
     (when doc
       (doc-message doc
                    (if (diaglist-summary-seen list)

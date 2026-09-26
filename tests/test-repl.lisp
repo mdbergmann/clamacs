@@ -416,3 +416,115 @@
       ;; registers as such.
       (is-equal *raw-port-verbs* '("OUTPUT" "RESULT" "DEBUGGER"))
       (is (every (lambda (v) (assoc v *port-verbs* :test #'string=)) *raw-port-verbs*)))))
+
+;;; --- what a LOAD printed ---------------------------------------------------
+;;;
+;;; A LOAD or COMPILE-FILE runs on clamiga's handler thread, so what the
+;;; file prints is not streamed: it comes back as the `--- log ---' section
+;;; of the reply (diag.lisp), and the transcript is where it is shown.
+
+(defparameter *hello-load-reply*
+  (lines "; loading T:hello.lisp"
+         "0 error(s), 0 warning(s)"
+         "--- log ---"
+         "hello from the file"
+         "and again"
+         ""))
+
+(deftest a-load-s-output-lands-in-the-transcript-above-the-prompt
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (doc-activate doc)
+    (wire-request wire doc :load "LOAD T:hello.lisp")
+    (fake-deliver tr 0 *hello-load-reply*)
+    (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA"
+                     "; loading T:hello.lisp"
+                     "hello from the file"
+                     "and again"
+                     "CL-USER> |"))
+    ;; The buffer keeps the focus, and the editor's insertion is no change.
+    (is (eq (editor-active-document (doc-editor doc)) doc))
+    (is (not (doc-modified-p repl)))
+    ;; No second attach for it.
+    (is-equal (fake-sent-commands tr) '("REPL-ATTACH CLAMACS DEBUG" "LOAD T:hello.lisp"))
+    ;; The prompt still works: its indices moved with the text.
+    (doc-activate repl)
+    (send-input repl tr "(+ 1 2)")
+    (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "3"))
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA"
+                     "; loading T:hello.lisp"
+                     "hello from the file"
+                     "and again"
+                     "CL-USER> (+ 1 2)"
+                     "3"
+                     "CL-USER> |"))
+    ;; A reply with nothing printed leaves the transcript alone.
+    (wire-request wire doc :load "LOAD T:quiet.lisp")
+    (fake-deliver tr 0 (lines "; loading T:quiet.lisp" "0 error(s), 0 warning(s)" ""))
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA"
+                     "; loading T:hello.lisp"
+                     "hello from the file"
+                     "and again"
+                     "CL-USER> (+ 1 2)"
+                     "3"
+                     "CL-USER> |"))))
+
+(deftest a-load-s-output-opens-the-repl-window-behind-the-buffer
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+    (doc-activate doc)
+    (wire-request wire doc :load "LOAD T:hello.lisp")
+    (fake-deliver tr 0 *hello-load-reply*)
+    (let* ((editor (doc-editor doc))
+           (repl (repl-doc editor)))
+      (is repl)
+      (is (eq (editor-active-document editor) doc))
+      (is-equal (transcript repl)
+                (lines "; loading T:hello.lisp" "hello from the file" "and again" "|"))
+      (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
+      ;; Attached as a buffer eval's window is, so RET at it works.
+      (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
+      (fake-deliver tr 0 "CL-USER")
+      (is (repl-session-attached (repl-session editor)))
+      (is-equal (transcript repl)
+                (lines "; loading T:hello.lisp" "hello from the file" "and again"
+                       "; REPL attached to CLAMIGA" "CL-USER> |"))
+      (is (eq (editor-active-document editor) doc)))))
+
+(deftest a-quiet-load-opens-no-repl-window
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+    (wire-request wire doc :load "LOAD T:quiet.lisp")
+    (fake-deliver tr 0 (lines "; loading T:quiet.lisp" "0 error(s), 0 warning(s)" ""))
+    (is (null (repl-doc (doc-editor doc))))
+    (is-equal (fake-sent-commands tr) '("LOAD T:quiet.lisp"))))
+
+(deftest a-load-s-output-while-the-repl-is-busy-goes-to-the-end
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (doc-activate repl)
+    (send-input repl tr "(sleep 6)")
+    (is (null (repl-window-input-start (doc-repl repl))))
+    ;; A load in between (the port answers while the REPL thread runs):
+    ;; its log follows the input line, and the RESULT's prompt follows it.
+    (wire-request wire doc :load "LOAD T:hello.lisp")
+    (fake-deliver tr 0 *hello-load-reply*)
+    (fake-inbound (doc-editor repl) "RESULT 0 CL-USER")
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA"
+                     "CL-USER> (sleep 6)"
+                     "; loading T:hello.lisp"
+                     "hello from the file"
+                     "and again"
+                     "CL-USER> |"))))
+
+(deftest a-failed-eval-s-output-has-no-header-line
+  ;; A handler-thread EVAL (the port's, a macro's) that failed answers with
+  ;; its rows first, not with `; ...': the log goes in as it is.
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (wire-request wire doc :eval "EVAL (boom)")
+    (fake-deliver tr 10 "")
+    (fake-deliver tr 0 (lines "T:x.lisp:1: ERROR: boom" "1 error(s), 0 warning(s)"
+                              "--- log ---" "printed before the error" ""))
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA" "printed before the error" "CL-USER> |"))))

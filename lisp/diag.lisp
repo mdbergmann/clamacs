@@ -34,7 +34,9 @@
   (warnings 0)
   (summary nil)            ; the `N error(s), M warning(s)' line, or NIL
   (aborted nil)            ; `; aborted -- ...' was seen
-  (truncated nil))         ; `[truncated at ...]' was seen
+  (truncated nil)          ; `[truncated at ...]' was seen
+  (log nil))               ; what the command printed, or NIL: the lines
+                           ; after `--- log ---', newline-terminated
 
 (defun diaglist-count (list)
   (length (diaglist-items list)))
@@ -55,7 +57,8 @@
         (diaglist-warnings list) 0
         (diaglist-summary list) nil
         (diaglist-aborted list) nil
-        (diaglist-truncated list) nil)
+        (diaglist-truncated list) nil
+        (diaglist-log list) nil)
   list)
 
 ;;; Longest match first, so STYLE-WARNING is not read as an unknown word
@@ -140,8 +143,11 @@ severity, or NIL."
 were added.  Everything after the `--- log ---' marker is what the command
 PRINTED, for a human to read -- clamiga's own error reports in there begin
 with `ERROR: ' and must not become rows -- except the truncation marker,
-which %TRUNCATE appends to the whole reply, after the log."
-  (let ((added 0) (in-log nil) (start 0) (len (length text)))
+which %TRUNCATE appends to the whole reply, after the log.  The log's
+lines are kept verbatim (the truncation marker among them, so a reader
+sees where the cut was) in DIAGLIST-LOG for the REPL transcript."
+  (let ((added 0) (in-log nil) (start 0) (len (length text))
+        (log (make-string-output-stream)) (logged nil))
     (loop
       (when (>= start len) (return))
       (let* ((nl (position #\Newline text :start start))
@@ -150,8 +156,14 @@ which %TRUNCATE appends to the whole reply, after the log."
         (when (and (> (length line) 0)
                    (char= (char line (1- (length line))) #\Return))
           (setq line (subseq line 0 (1- (length line)))))
-        (when (starts-with-p "--- log ---" line)
-          (setq in-log t))
+        (cond ((starts-with-p "--- log ---" line)
+               (setq in-log t))
+              (in-log
+               ;; Not the last empty line: the reply ends in a newline.
+               (when (or nl (> (length line) 0))
+                 (write-string line log)
+                 (terpri log)
+                 (setq logged t))))
         (when (starts-with-p "[truncated a" line)
           (setf (diaglist-truncated list) t))
         (when (and (> (length line) 0) (not in-log))
@@ -171,6 +183,8 @@ which %TRUNCATE appends to the whole reply, after the log."
         (if nl
             (setq start (1+ nl))
             (return))))
+    ;; This reply's, not the list's: a quiet reply shows nothing.
+    (setf (diaglist-log list) (and logged (get-output-stream-string log)))
     added))
 
 (defun parse-location (text)

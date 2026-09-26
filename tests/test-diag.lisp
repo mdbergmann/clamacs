@@ -76,9 +76,26 @@
     (is-equal (diaglist-rendered list)
               '("Work:src/foo.lisp:3: ERROR: Too many arguments to FOO"
                 "Work:src/foo.lisp:7: WARNING: Undefined variable Y"))
+    ;; What the command printed, for the REPL transcript.
+    (is-equal (diaglist-log list) (lines "some compiler chatter" ""))
     (diaglist-clear list)
     (is-equal (diaglist-count list) 0)
-    (is (not (diaglist-summary-seen list)))))
+    (is (not (diaglist-summary-seen list)))
+    (is (null (diaglist-log list)))))
+
+(deftest the-log-is-kept-verbatim
+  ;; Blank lines and indentation are the program's; a reply without a
+  ;; trailing newline still gets one; CRs are stripped as on the rows.
+  (let ((list (make-diaglist)))
+    (parse-diagnostics list
+                       (format nil "; loading a.lisp~%0 error(s), 0 warning(s)~%--- log ---~%hello~%~%  indented~C~%last" #\Return))
+    (is-equal (diaglist-log list) (lines "hello" "" "  indented" "last" "")))
+  ;; No log section, or an empty one: NIL, so nothing is shown for it.
+  (let ((list (make-diaglist)))
+    (parse-diagnostics list (lines "; loading a.lisp" "0 error(s), 0 warning(s)" ""))
+    (is (null (diaglist-log list)))
+    (parse-diagnostics list (lines "; loading a.lisp" "0 error(s), 0 warning(s)" "--- log ---" ""))
+    (is (null (diaglist-log list)))))
 
 (deftest the-log-section-is-not-parsed
   ;; The log holds clamiga's own error reports, which begin with `ERROR: '
@@ -116,7 +133,11 @@
                       ""))
               1)
     (is-equal (diaglist-count list) 1)
-    (is (diaglist-truncated list))))
+    (is (diaglist-truncated list))
+    ;; The marker stays in the log: the transcript's reader sees the cut.
+    (is-equal (diaglist-log list)
+              (lines "ERROR: chatter that is not a diagnostic"
+                     "[truncated at 8192 characters]" ""))))
 
 (deftest clean-reply
   (let ((list (make-diaglist)))

@@ -315,6 +315,14 @@
       (let ((editor (doc-editor doc)))
         (is-equal (length (fake-editor-diag-rows editor)) 2)
         (is (fake-editor-diag-open editor))
+        ;; What the load printed opened the REPL window behind the buffer
+        ;; (test-repl.lisp has the rest), and its attach went out.
+        (is (eq (editor-active-document editor) doc))
+        (is-equal (transcript (repl-doc editor))
+                  (lines (format nil "; loading ~A" path)
+                         "ERROR: SIMPLE-ERROR: first deliberate error"
+                         "|"))
+        (fake-answer-attach tr)
         ;; `C-x `' shares its position and its jump with the list.
         (run-command doc 'clamacs-next-error)
         (is-equal (doc-index-line doc (doc-point doc)) 6)

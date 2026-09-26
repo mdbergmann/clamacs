@@ -663,6 +663,17 @@ the second editor's mode -- so the list is taken apart by hand.)"
     (if (search "2 error(s)" diags)
         (ok "clamacs-load-buffer reported ~A" diags)
         (fail "load-buffer diagnostics were ~A" diags)))
+  ;; What the load printed (clamiga's own report of the first error) came
+  ;; back in the reply's log and went into the REPL transcript, under the
+  ;; reply's `; loading' line; the buffer kept the focus.
+  (cmd "EVAL (let ((repl (clamacs::repl-doc clamacs::*editor*))) (and repl (clamacs::doc-text repl 0 (clamacs::doc-end repl))))")
+  (if (and (result-has "; loading") (result-has "first deliberate error"))
+      (ok "the load's output went into the REPL transcript")
+      (fail "the REPL transcript after the load is ~A" *result*))
+  (cmd "GETNAME")
+  (if (result-has "errors.lisp")
+      (ok "the buffer kept the focus over the transcript: ~A" *result*)
+      (fail "after the load the active window is ~A" *result*))
   (cmd "MENU clamacs-next-error STATE")
   (if (string= *result* "enabled")
       (ok "Next Error woke up with the diagnostics")

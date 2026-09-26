@@ -177,8 +177,11 @@ with the erring stack still there.  The REPL window is opened and
 attached the first time you evaluate; `C-c C-b` interrupts.  When clamiga
 was restarted, the next evaluation finds the new one and attaches the
 REPL again by itself (the echo area says `clamiga found on CLAMIGA`).
-Loading (`C-c C-k`, `C-c C-l`) stays what it was: every error in the file
-becomes a row in the diagnostics window.
+Loading (`C-c C-k`, `C-c C-l`) runs on clamiga's handler thread instead:
+every error in the file becomes a row in the diagnostics window, and
+whatever the file printed while loading lands in the `*clamacs-repl*`
+transcript afterwards, under a `; loading ...` line (the window opens
+behind the buffer if it was not open yet).
 
 Those keys all run the form on the *other* clamiga, the one the editor
 drives.  The editor is a clamiga too, and **Clamiga > Talk to the Editor

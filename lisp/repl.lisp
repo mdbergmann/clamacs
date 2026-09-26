@@ -204,6 +204,16 @@ front; the caller decides whether that is where the user goes."
       (unless (repl-session-attached (repl-session editor))
         (repl-attach doc)))))
 
+(defun repl-open-behind (editor from)
+  "The REPL window, opened behind FROM if there is none: the news it is
+about to show came from FROM, so that is where the user stays."
+  (or (repl-doc editor)
+      (let ((repl (repl-open editor from)))
+        (when (and repl from)
+          ;; The new window came up in front.
+          (doc-activate from))
+        repl)))
+
 (defun repl-eval-from (from text)
   "A buffer eval on the REPL thread.  Before the REPL is attached the form
 waits for the REPL-ATTACH reply; the REPL window opens for that, but the
@@ -216,11 +226,9 @@ user stays in the buffer."
       (cond
         ((not (repl-session-attached session))
          (when (null repl)
-           (setq repl (repl-open editor from))
+           (setq repl (repl-open-behind editor from))
            (when (null repl)
-             (return-from repl-eval-from nil))
-           ;; The new window came up in front: the eval came from FROM.
-           (doc-activate from))
+             (return-from repl-eval-from nil)))
          (repl-set-pending session from text)
          (repl-attach repl)
          (unless (repl-session-attaching session)
@@ -462,6 +470,23 @@ input."
                  (setf (repl-window-bol state) bol)))   ; the end did not change
               (t
                (repl-append doc text)))))))
+
+(defun repl-log (editor from header log)
+  "What a LOAD or COMPILE-FILE printed (the `--- log ---' of its reply,
+diag.lisp), into the transcript under a `; HEADER' line (none when HEADER
+is NIL), above the prompt when one is showing.  The command ran on
+clamiga's handler thread, so nothing streamed: this is where its output
+lands.  A REPL window that is not open yet opens behind FROM and
+attaches, as a buffer eval's does, so the log is not shown to nobody."
+  (let ((repl (repl-open-behind editor from))
+        (session (repl-session editor)))
+    (when repl
+      (unless (repl-window-input-start (doc-repl repl))
+        (repl-ensure-bol repl))
+      (repl-output editor (format nil "~@[; ~A~%~]~A" header log))
+      (unless (or (repl-session-attached session)
+                  (repl-session-attaching session))
+        (repl-attach repl)))))
 
 (defun repl-readline (editor)
   (let ((doc (repl-doc editor)))
