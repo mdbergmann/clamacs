@@ -38,11 +38,19 @@
                 (is (and next (eq (menu-entry-kind next) :item))))
                (:item
                 (is (and (stringp (menu-entry-title e)) (string/= (menu-entry-title e) "")))
-                (let ((command (menu-entry-command e)))
+                (let ((command (menu-entry-command e))
+                      (pick (menu-entry-pick e)))
                   (is (command-name command))            ; a real command
                   (is (find-command (command-name command)))
                   (is (not (member command seen)))       ; listed once
-                  (push command seen))
+                  (push command seen)
+                  ;; A mouse command of its own is a real one too.
+                  (when pick
+                    (is (command-function pick))
+                    (is (not (eq pick command)))
+                    (is-equal (menu-entry-picks e) pick))
+                  (unless pick
+                    (is-equal (menu-entry-picks e) command)))
                 (is (member (menu-entry-rule e) *menu-rules*))
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
                 (incf items))
@@ -91,6 +99,20 @@
   (is (null (menu-find "no-such-command")))
   (is (null (menu-entry -1)))
   (is (null (menu-entry (menu-count)))))
+
+(deftest the-file-items-open-the-requester-from-the-mouse
+  ;; The key beside Open... prompts; the pick asks in the requester.
+  (dolist (pair '((find-file . find-file-requester)
+                  (find-file-other-window . find-file-other-window-requester)
+                  (save-buffer . save-buffer-requester)
+                  (write-file . write-file-requester)
+                  (clamacs-load-file . clamacs-load-file-requester)))
+    (let ((e (menu-entry (menu-find (car pair)))))
+      (is-equal (menu-entry-pick e) (cdr pair))
+      (is-equal (menu-entry-picks e) (cdr pair))))
+  (is (null (menu-entry-pick (menu-entry (menu-find 'kill-buffer)))))
+  ;; MENU-FIND goes by the key's command, which is what a macro names.
+  (is (null (menu-find 'find-file-requester))))
 
 (deftest the-unbound-commands-are-reachable-from-the-menu
   ;; The reason the menu exists for these: they have no key.

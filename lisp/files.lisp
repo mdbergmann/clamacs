@@ -30,9 +30,11 @@ This is not an edit: the text is unmodified afterwards."))
 (defgeneric doc-set-title (doc title)
   (:documentation "The window's title."))
 
-(defgeneric doc-ask-file (doc title save)
-  (:documentation "The file requester behind an empty answer to `C-x C-f':
-a path, or NIL when the user cancelled.  SAVE asks for a file to write."))
+(defgeneric doc-ask-file (doc title save initial)
+  (:documentation "The file requester: a path, or NIL when the user
+cancelled.  SAVE asks for a file to write.  INITIAL is where it opens --
+a directory, or a file whose directory it shows and whose name it offers
+(what Save As seeds it with); \"\" leaves that to the toolkit."))
 
 (defgeneric doc-ask (doc question choices)
   (:documentation "A requester with QUESTION and one button per keyword in
@@ -63,6 +65,15 @@ NAME; the caller loads PATH into it."))
   (let ((cut (position-if (lambda (c) (or (char= c #\/) (char= c #\:)))
                           path :from-end t)))
     (if cut (subseq path (1+ cut)) path)))
+
+(defun path-directory (path)
+  "PATH up to and including its last `/' or `:'; \"\" when it has none."
+  (subseq path 0 (- (length path) (length (path-basename path)))))
+
+(defun doc-directory (doc)
+  "Where a file prompt of DOC starts: its file's directory, or nowhere in
+particular (\"\") for a buffer without one."
+  (path-directory (or (doc-path doc) "")))
 
 (defun lisp-path-p (path)
   (let ((dot (position #\. path :from-end t)))
@@ -247,29 +258,119 @@ file is there but cannot be read."
       ((null (open-document editor path))
        (message doc "Cannot open ~A" path)))))
 
-(defun prompt-for-file (doc label continuation &key (initial "") save)
-  "Prompt for a path; an empty answer means \"show me\" -- the file
-requester.  CONTINUATION gets DOC and the path, unless the user cancelled."
-  (prompt doc label
-          (lambda (doc answer)
-            (let ((path (if (string= answer "")
-                            (doc-ask-file doc (string-right-trim ": " label)
-                                          save)
-                            answer)))
-              (when path
-                (funcall continuation doc path))))
-          :initial initial
-          :history (editor-file-history (doc-editor doc))))
+;;; ------------------------------------------------------------------
+;;; Asking for a file: the prompt and the requester
+;;; ------------------------------------------------------------------
+
+;;; Two ways in, as in Emacs on a GUI: the keys open a prompt in the
+;;; minibuffer, the menu opens the requester.  At the prompt TAB completes
+;;; the name against the directory typed so far, and on a line that names
+;;; no file yet -- empty, or a bare directory -- TAB (or RET) opens the
+;;; requester there instead, which the label says.  The C editor hid the
+;;; requester behind RET on an empty line and nothing else, and nobody
+;;; found it.
+
+(defun directory-only-p (text)
+  "Whether TEXT names no file: empty, or ending in a `/' or `:'."
+  (or (string= text "")
+      (let ((last (char text (1- (length text)))))
+        (or (char= last #\/) (char= last #\:)))))
+
+(defun complete-path (text)
+  "Completion of the file name in TEXT against its directory, as COMPLETE
+answers: the matching paths, directories with a `/' after them so the
+next TAB descends, and their common prefix.  The name part is matched
+without regard to case (AmigaDOS has none; nor does the Mac), and the
+completion is the file's own spelling.  COMPLETE finds the common prefix
+case-sensitively, so two matches that differ only in case inside the typed
+part share less than TEXT: the line then stays as typed, and TAB only
+counts.  A directory that cannot be listed matches nothing."
+  (let* ((dir (path-directory text))
+         (name (path-basename text))
+         (n (length name))
+         (paths (ignore-errors
+                 (mapcar #'namestring
+                         (directory (concatenate 'string dir "*")))))
+         (matches '()))
+    (dolist (path paths)
+      (let ((base (path-basename (string-right-trim "/" path))))
+        (when (and (>= (length base) n)
+                   (string-equal name base :end2 n))
+          (push (concatenate 'string dir base
+                             (if (directory-only-p path) "/" ""))
+                matches))))
+    (multiple-value-bind (matches common) (complete (nreverse matches) "")
+      (values matches
+              (if (< (length common) (length text)) text common)))))
+
+(defun ask-file-then (doc title save initial continuation)
+  "The requester, titled TITLE, opening at INITIAL; the path chosen goes
+to CONTINUATION with DOC, and into the file history.  Nothing happens
+when the user cancelled."
+  (let ((path (doc-ask-file doc title save initial)))
+    (when path
+      (hist-add (editor-file-history (doc-editor doc)) path)
+      (funcall continuation doc path)
+      t)))
+
+(defun prompt-for-file (doc label continuation &key (initial "") save
+                                                    (title (string-right-trim ": " label)))
+  "Prompt for a path with LABEL, completing on TAB.  A line that names no
+file (empty, or a directory) opens the requester TITLE there on TAB or
+RET; an empty line opens it where INITIAL points, or in the buffer's own
+directory.  CONTINUATION gets DOC and the path, unless the user
+cancelled."
+  (flet ((requester (text)
+           ;; From the completer the prompt is still open: it goes before
+           ;; the continuation, which may open the next one.
+           (let ((seed (cond ((string/= text "") text)
+                             ((string/= initial "") initial)
+                             (t (doc-directory doc)))))
+             (ask-file-then doc title save seed
+                            (lambda (doc path)
+                              (when (minibuffer-open-p doc)
+                                (minibuffer-finish doc))
+                              (funcall continuation doc path))))))
+    (prompt doc (format nil "~A (TAB: browse): " (string-right-trim ": " label))
+            (lambda (doc answer)
+              (if (string= answer "")
+                  (requester "")
+                  (funcall continuation doc answer)))
+            :initial initial
+            :completer (lambda (text)
+                         (if (directory-only-p text)
+                             (progn (requester text) :handled)
+                             (complete-path text)))
+            :history (editor-file-history (doc-editor doc)))))
 
 (define-command find-file (doc arg)
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
-                   (lambda (doc path) (find-file-named doc path nil))))
+                   (lambda (doc path) (find-file-named doc path nil))
+                   :title "Open"))
 
 (define-command find-file-other-window (doc arg)
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
-                   (lambda (doc path) (find-file-named doc path t))))
+                   (lambda (doc path) (find-file-named doc path t))
+                   :title "Open in New Window"))
+
+;;; The menu's entrances: Open... and friends carry an ellipsis, so they
+;;; open the requester itself, the way Emacs's File menu does with a
+;;; mouse.  Each is a command in its own right, for `M-x' or a key of
+;;; the user's.
+
+(define-command find-file-requester (doc arg)
+  "Open a file chosen in the requester, as `find-file' opens one typed."
+  (declare (ignore arg))
+  (ask-file-then doc "Open" nil (doc-directory doc)
+                 (lambda (doc path) (find-file-named doc path nil))))
+
+(define-command find-file-other-window-requester (doc arg)
+  "Open a file chosen in the requester in a window of its own."
+  (declare (ignore arg))
+  (ask-file-then doc "Open in New Window" nil (doc-directory doc)
+                 (lambda (doc path) (find-file-named doc path t))))
 
 (define-command clamacs-new-buffer (doc arg)
   (declare (ignore arg))
@@ -280,16 +381,30 @@ requester.  CONTINUATION gets DOC and the path, unless the user cancelled."
 (define-command write-file (doc arg)
   (declare (ignore arg))
   (prompt-for-file doc "Write file: " #'save-file
-                   :initial (or (doc-path doc) "") :save t))
+                   :initial (or (doc-path doc) "") :save t :title "Save As"))
+
+(define-command write-file-requester (doc arg)
+  "Save the buffer under a name chosen in the requester, which offers its
+current one."
+  (declare (ignore arg))
+  (ask-file-then doc "Save As" t (or (doc-path doc) "") #'save-file))
 
 (define-command save-buffer (doc arg)
   (if (doc-path doc)
       (save-file doc (doc-path doc))
       (write-file doc arg)))
 
+(define-command save-buffer-requester (doc arg)
+  "Save: in place when the buffer has a file, else under a name from the
+requester -- the menu's Save, which never drops into the minibuffer."
+  (if (doc-path doc)
+      (save-file doc (doc-path doc))
+      (write-file-requester doc arg)))
+
 (defun close-document (doc &optional (ask t))
   "Close DOC's window, asking about unsaved changes first when ASK.  Saving
-an unnamed buffer needs a name: the prompt opens and the window stays."
+an unnamed buffer needs a name: the requester opens (the user is in a
+requester already) and the window stays."
   (unless (doc-closing doc)
     ;; A transcript is not a file: the REPL window never asks to save, and
     ;; closing it stops clamiga's REPL thread (repl.lisp).
@@ -301,8 +416,10 @@ an unnamed buffer needs a name: the prompt opens and the window stays."
                      '(:save :discard :cancel))
         (:save
          (cond ((null (doc-path doc))
-                (write-file doc 1)
-                (return-from close-document nil))
+                ;; Named and written in the requester: the close goes on.
+                (write-file-requester doc 1)
+                (when (or (null (doc-path doc)) (doc-modified-p doc))
+                  (return-from close-document nil)))
                ((not (save-file doc (doc-path doc)))
                 (return-from close-document nil))))
         (:discard)

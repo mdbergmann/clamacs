@@ -1363,24 +1363,28 @@ relayout on every keystroke."
   (mui:set-attrs (mdoc-window doc) m:+muia-window-title+
                  (store-string (mdoc-title-buf doc) title)))
 
-(defmethod doc-ask-file ((doc mui-document) title save)
-  "The ASL file requester, through MUI so it opens on the editor's screen."
+(defmethod doc-ask-file ((doc mui-document) title save initial)
+  "The ASL file requester, through MUI so it opens on the editor's screen,
+in INITIAL's drawer with its file part (\"\" for a directory) in the file
+gadget."
   (let ((req (mui:with-tags (tags) (m:mui-alloc-asl-request asl:+asl-file-request+ tags))))
     (when req
       (unwind-protect
            (ffi:with-foreign-string (ftitle title)
-             (ffi:with-foreign-string (finitial (doc-name doc))
-               (mui:with-tags (tags asl:+aslfr-title-text+ ftitle
-                                    asl:+aslfr-do-save-mode+ (and save t)
-                                    asl:+aslfr-initial-file+ finitial
-                                    asl:+aslfr-window+ (mui:get-attr-pointer m:+muia-window-window+
-                                                                             (mdoc-window doc)))
-                 (when (m:mui-asl-request req tags)
-                   (let ((drawer (ffi:foreign-to-string
-                                  (ffi:make-foreign-pointer (ffi:peek-u32 req +fr-drawer-offset+))))
-                         (file (ffi:foreign-to-string
-                                (ffi:make-foreign-pointer (ffi:peek-u32 req +fr-file-offset+)))))
-                     (join-path drawer file))))))
+             (ffi:with-foreign-string (fdrawer (path-directory initial))
+               (ffi:with-foreign-string (ffile (path-basename initial))
+                 (mui:with-tags (tags asl:+aslfr-title-text+ ftitle
+                                      asl:+aslfr-do-save-mode+ (and save t)
+                                      asl:+aslfr-initial-drawer+ fdrawer
+                                      asl:+aslfr-initial-file+ ffile
+                                      asl:+aslfr-window+ (mui:get-attr-pointer m:+muia-window-window+
+                                                                               (mdoc-window doc)))
+                   (when (m:mui-asl-request req tags)
+                     (let ((drawer (ffi:foreign-to-string
+                                    (ffi:make-foreign-pointer (ffi:peek-u32 req +fr-drawer-offset+))))
+                           (file (ffi:foreign-to-string
+                                  (ffi:make-foreign-pointer (ffi:peek-u32 req +fr-file-offset+)))))
+                       (join-path drawer file)))))))
         (m:mui-free-asl-request req)))))
 
 (defun join-path (drawer file)

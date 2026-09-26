@@ -182,8 +182,16 @@ editor does not emulate them.  Several documents, several windows.
   the same thing.
 - **Isearch** (`C-s`/`C-r`) over `MUIM_TextEditor_Search` with the
   minibuffer showing the pattern.
-- **Files**: `C-x C-f`, `C-x C-s`, `C-x C-w`, `C-x b`, `C-x k`; ASL file
-  requester behind `C-x C-f` when the minibuffer entry is empty.  `C-x C-f`
+- **Files**: `C-x C-f`, `C-x C-s`, `C-x C-w`, `C-x b`, `C-x k`.  The keys
+  prompt in the minibuffer, where TAB completes the name against the
+  directory typed so far and, on a line that names no file (empty, or a
+  bare directory), opens the ASL file requester there -- RET on an empty
+  line does the same, and the label says so.  The menu's Open..., Open in
+  New Window..., Save As... and Load File... open the requester directly
+  (`find-file-requester` and friends: the item's PICK command, beside the
+  key's), as Emacs's File menu does with a mouse; Save on an unnamed
+  buffer, from the menu or from the "unsaved changes" requester, asks in
+  the requester too.  `C-x C-f`
   (Open...) shows the file in the current window, asking about unsaved
   text first, and goes to the file's window when it is open already; `C-x 2`
   (Open in New Window...) always opens a new window.  The REPL and the

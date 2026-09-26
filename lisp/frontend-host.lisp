@@ -909,18 +909,18 @@ while a native dialog runs its own loop."
                  (nth n choices)
                  (car (last choices))))))))
 
-(defmethod doc-ask-file ((doc host-document) title save)
+(defmethod doc-ask-file ((doc host-document) title save initial)
   (let ((editor (doc-editor doc)))
-    (push (list :file title save) (host-editor-asked editor))
+    (push (list :file title save initial) (host-editor-asked editor))
     (cond ((null (host-editor-shim editor))
            (pop (host-editor-answers editor)))
           (t
            (let ((p (with-modal (editor)
                       (ffi:with-foreign-string (ftitle title)
-                        (ffi:with-foreign-string (initial (or (doc-path doc) ""))
+                        (ffi:with-foreign-string (finitial initial)
                           (shim editor "clamacs_host_ask_file" :pointer
                                 '(:pointer :pointer :int32 :pointer)
-                                (host-editor-win editor) ftitle (if save 1 0) initial))))))
+                                (host-editor-win editor) ftitle (if save 1 0) finitial))))))
              (unless (ffi:null-pointer-p p)
                (unwind-protect (ffi:foreign-to-string p)
                  (shim editor "clamacs_host_free" :void '(:pointer) p))))))))

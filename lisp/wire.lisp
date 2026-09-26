@@ -436,12 +436,18 @@ not for keys."
         ((wire-load doc (doc-path doc))
          (message doc "Loading ~A ..." (doc-name doc)))))
 
+(defun load-file-into-lisp (doc path)
+  (when (wire-load doc path)
+    (message doc "Loading ~A ..." path)))
+
 (define-command clamacs-load-file (doc arg)
   (declare (ignore arg))
-  (prompt-for-file doc "Load file: "
-                   (lambda (doc path)
-                     (when (wire-load doc path)
-                       (message doc "Loading ~A ..." path)))))
+  (prompt-for-file doc "Load file: " #'load-file-into-lisp :title "Load File"))
+
+(define-command clamacs-load-file-requester (doc arg)
+  "Load a file chosen in the requester into clamiga: the menu's Load File..."
+  (declare (ignore arg))
+  (ask-file-then doc "Load File" nil (doc-directory doc) #'load-file-into-lisp))
 
 (define-command clamacs-compile-file (doc arg)
   (declare (ignore arg))

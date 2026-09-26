@@ -601,8 +601,8 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (doc-message-text doc) "C-x C-q is undefined")
     ;; The file requester and the browser answer from the script
     (setf (host-editor-answers editor) '(nil))
-    (is-equal (doc-ask-file doc "Find file" nil) nil)
-    (is-equal (first (host-editor-asked editor)) '(:file "Find file" nil))
+    (is-equal (doc-ask-file doc "Open" nil "/tmp/") nil)
+    (is-equal (first (host-editor-asked editor)) '(:file "Open" nil "/tmp/"))
     (is-equal (doc-open-url doc "https://example.org/") :opened)
     (is-equal (host-editor-urls editor) '("https://example.org/"))
     (is-equal (multiple-value-list (doc-geometry doc)) '(0 0 800 600))

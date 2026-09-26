@@ -18,6 +18,24 @@
   (is-equal (path-basename "plain.lisp") "plain.lisp")
   (is-equal (path-basename "dir/") ""))
 
+(deftest path-directory-cuts-at-slash-and-colon
+  ;; What both frontends seed the requester with, and the MUI one splits
+  ;; into drawer and file: the path up to and including the last separator.
+  (is-equal (path-directory "Work:a/b.lisp") "Work:a/")
+  (is-equal (path-directory "Work:src/main.lisp") "Work:src/")
+  (is-equal (path-directory "/tmp/a/b.lisp") "/tmp/a/")
+  (is-equal (path-directory "T:x") "T:")
+  (is-equal (path-directory "Work:") "Work:")
+  (is-equal (path-directory "a/") "a/")
+  (is-equal (path-directory "x.lisp") "")
+  (is-equal (path-directory "") ""))
+
+(deftest directory-only-p-is-empty-or-ends-in-slash-or-colon
+  (dolist (text '("" "dir/" "/" "T:" "Work:src/" "/tmp/a/"))
+    (is (directory-only-p text)))
+  (dolist (text '("x" "dir/file" "T:x" "Work:src/main.lisp" "a.b"))
+    (is (not (directory-only-p text)))))
+
 (deftest lisp-path-p-goes-by-the-extension
   (dolist (path '("a.lisp" "Work:b.lsp" "c.cl" "sys.asd" "x.y.lisp"))
     (is (lisp-path-p path)))
@@ -47,7 +65,7 @@
   (let ((path (temp-file "one.lisp" (lines "(defun one ()" "  1)")))
         (doc (make-fake "|")))
     (type-keys doc "C-x C-f")
-    (is-equal (fake-prompt doc) "Find file: ")
+    (is-equal (fake-prompt doc) "Find file (TAB: browse): ")
     (answer-prompt doc path)
     (is-equal (fake-state doc) (lines "|(defun one ()" "  1)"))
     (is-equal (doc-path doc) path)
@@ -129,12 +147,169 @@
         (doc (make-fake "|")))
     (setf (fake-answers doc) (list path))
     (type-keys doc "C-x C-f RET")
-    (is-equal (first (fake-asked doc)) '(:file "Find file" nil))
+    ;; An unnamed buffer has no directory to start in.
+    (is-equal (first (fake-asked doc)) '(:file "Open" nil ""))
     (is-equal (fake-text doc) "asked")
+    ;; ... a named one does.
+    (setf (fake-answers doc) (list path))
+    (type-keys doc "C-x C-f RET")
+    (is-equal (first (fake-asked doc)) (list :file "Open" nil (path-directory path)))
     ;; Cancelled: nothing happens.
     (setf (fake-answers doc) (list nil))
     (type-keys doc "C-x C-f RET")
     (is-equal (fake-text doc) "asked")
+    (is (not (minibuffer-open-p doc)))
+    (delete-file path)))
+
+;;; --- TAB at the file prompt ------------------------------------------------------
+
+(defun completion-fixture ()
+  "A directory with two files and a subdirectory in it; its path, with the
+separator."
+  (let ((dir (temp-path "cdir/")))
+    (ensure-directories-exist (concatenate 'string dir "sub/"))
+    (write-file-text (concatenate 'string dir "alpha.lisp") "a")
+    (write-file-text (concatenate 'string dir "alps.txt") "b")
+    dir))
+
+(deftest tab-completes-a-file-name-against-its-directory
+  (let ((dir (completion-fixture)))
+    (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "al"))
+      (is-equal matches (list (concatenate 'string dir "alpha.lisp")
+                              (concatenate 'string dir "alps.txt")))
+      (is-equal common (concatenate 'string dir "alp")))
+    ;; Case does not matter for the typed part; the completion is the
+    ;; file's own spelling.
+    (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "ALPH"))
+      (is-equal matches (list (concatenate 'string dir "alpha.lisp")))
+      (is-equal common (concatenate 'string dir "alpha.lisp")))
+    ;; A directory completes with its separator, so the next TAB descends.
+    (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "s"))
+      (is-equal matches (list (concatenate 'string dir "sub/")))
+      (is-equal common (concatenate 'string dir "sub/")))
+    ;; Nothing there, or no such directory: nothing, not an error.
+    (is-equal (complete-path (concatenate 'string dir "zzz")) '())
+    (is-equal (complete-path (temp-path "no-such-dir/x")) '())
+    ;; Through the keys: the common prefix goes into the line, and the
+    ;; count is said.
+    (let ((doc (make-fake "|")))
+      (type-keys doc "C-x C-f")
+      (type-text doc (concatenate 'string dir "al"))
+      (type-keys doc "TAB")
+      (is-equal (fake-mini-text doc) (concatenate 'string dir "alp"))
+      (is-equal (fake-mini-label doc) "[2 completions]")
+      (type-text doc "h")
+      (type-keys doc "TAB")
+      (is-equal (fake-mini-text doc) (concatenate 'string dir "alpha.lisp"))
+      (is-equal (fake-mini-label doc) "[Sole completion]")
+      (type-keys doc "RET")
+      (is-equal (fake-text doc) "a")
+      (is-equal (doc-path doc) (concatenate 'string dir "alpha.lisp")))))
+
+(deftest tab-keeps-what-was-typed-when-matches-differ-in-case
+  ;; The name is matched without regard to case but COMPLETE's common
+  ;; prefix is not: `alpha.lisp' and `Alps.txt' share nothing past the
+  ;; directory, and TAB must not cut the `al' the user typed back to it.
+  (let ((dir (temp-path "case-dir/")))
+    (ensure-directories-exist dir)
+    (write-file-text (concatenate 'string dir "alpha.lisp") "a")
+    (write-file-text (concatenate 'string dir "Alps.txt") "b")
+    (let ((typed (concatenate 'string dir "al")))
+      (multiple-value-bind (matches common) (complete-path typed)
+        (is-equal (length matches) 2)
+        (is (member (concatenate 'string dir "alpha.lisp") matches :test #'string=))
+        (is (member (concatenate 'string dir "Alps.txt") matches :test #'string=))
+        (is-equal common typed))
+      ;; Through the keys: the line stays, the count is said.
+      (let ((doc (make-fake "|")))
+        (type-keys doc "C-x C-f")
+        (type-text doc typed)
+        (type-keys doc "TAB")
+        (is-equal (fake-mini-text doc) typed)
+        (is-equal (fake-mini-label doc) "[2 completions]")
+        (type-keys doc "C-g")))))
+
+(deftest tab-after-a-device-name-opens-the-requester-there
+  ;; A `:' ends a directory as a `/' does.
+  (let ((doc (make-fake "|")))
+    (setf (fake-answers doc) (list nil))
+    (type-keys doc "C-x C-f")
+    (type-text doc "Work:")
+    (type-keys doc "TAB")
+    (is-equal (first (fake-asked doc)) '(:file "Open" nil "Work:"))
+    ;; Cancelled: the prompt is still there, with the line as typed.
+    (is (minibuffer-open-p doc))
+    (is-equal (fake-mini-text doc) "Work:")
+    (type-keys doc "C-g")))
+
+(deftest tab-on-a-line-that-names-no-file-opens-the-requester
+  (let ((dir (completion-fixture))
+        (doc (make-fake "|")))
+    ;; Empty line: the requester, and the prompt is over once a file was
+    ;; chosen.
+    (setf (fake-answers doc) (list (concatenate 'string dir "alps.txt")))
+    (type-keys doc "C-x C-f TAB")
+    (is-equal (first (fake-asked doc)) '(:file "Open" nil ""))
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (fake-text doc) "b")
+    ;; A bare directory: the requester opens there.
+    (setf (fake-answers doc) (list nil))
+    (type-keys doc "C-x C-f")
+    (type-text doc dir)
+    (type-keys doc "TAB")
+    (is-equal (first (fake-asked doc)) (list :file "Open" nil dir))
+    ;; Cancelled: the prompt is still there, with the line as typed.
+    (is (minibuffer-open-p doc))
+    (is-equal (fake-mini-text doc) dir)
+    (type-keys doc "C-g")
+    ;; The requester's choice is in the file history like a typed one.
+    (type-keys doc "C-x C-f M-p")
+    (is-equal (fake-mini-text doc) (concatenate 'string dir "alps.txt"))
+    (type-keys doc "C-g")))
+
+(deftest the-requester-commands-are-the-menus-entrances
+  (let ((path (temp-file "picked.lisp" "picked"))
+        (doc (make-fake "|")))
+    ;; Open... from the menu: the requester, no prompt.
+    (setf (fake-answers doc) (list path))
+    (is (menu-pick (doc-editor doc) (menu-find 'find-file)))
+    (is-equal (first (fake-asked doc)) '(:file "Open" nil ""))
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (fake-text doc) "picked")
+    ;; Open in New Window... from the menu.
+    (setf (fake-answers doc) (list path))
+    (is (menu-pick (doc-editor doc) (menu-find 'find-file-other-window)))
+    (is-equal (first (fake-asked doc))
+              (list :file "Open in New Window" nil (path-directory path)))
+    (is-equal (length (live-documents (doc-editor doc))) 2)
+    ;; Save As... offers the buffer's own name in save mode.
+    (let ((other (temp-file "picked-as.lisp")))
+      (setf (fake-answers doc) (list other))
+      (is (menu-pick (doc-editor doc) (menu-find 'write-file)))
+      (is-equal (first (fake-asked doc)) (list :file "Save As" t path))
+      (is-equal (read-file-text other) "picked")
+      (is-equal (doc-path doc) other)
+      (delete-file other))
+    ;; Cancelled: nothing, and no prompt either.
+    (setf (fake-answers doc) (list nil))
+    (is (menu-pick (doc-editor doc) (menu-find 'write-file)))
+    (is (not (minibuffer-open-p doc)))
+    (delete-file path)))
+
+(deftest the-menus-save-never-prompts
+  ;; Save on a named buffer writes it; on an unnamed one it asks in the
+  ;; requester, where the mouse already is.
+  (let ((path (temp-file "menu-save.lisp"))
+        (doc (make-fake "one|")))
+    (setf (fake-answers doc) (list path))
+    (run-command doc 'save-buffer-requester)
+    (is-equal (first (fake-asked doc)) '(:file "Save As" t ""))
+    (is-equal (read-file-text path) "one")
+    (type-keys doc "SPC t w o")
+    (run-command doc 'save-buffer-requester)
+    (is-equal (length (fake-asked doc)) 1)
+    (is-equal (read-file-text path) "one two")
+    (is (not (doc-modified-p doc)))
     (delete-file path)))
 
 (deftest a-scratch-window-keeps-its-text
@@ -168,7 +343,7 @@
   (let ((path (temp-file "named.lisp"))
         (doc (make-fake "(text)|")))
     (type-keys doc "C-SPC C-x C-s")
-    (is-equal (fake-prompt doc) "Write file: ")
+    (is-equal (fake-prompt doc) "Write file (TAB: browse): ")
     (answer-prompt doc path)
     (is-equal (read-file-text path) "(text)")
     (is-equal (doc-path doc) path)
@@ -254,20 +429,34 @@
     (is (not (fake-window-open doc)))))
 
 (deftest kill-buffer-save-needs-a-name-first
+  ;; The user is in a requester: the name is asked in one too, never in
+  ;; the minibuffer, and a name given closes the window in one go.
   (let ((doc (make-fake "|"))
         (path (temp-file "closing.lisp")))
     (type-keys doc "x")
-    (setf (fake-answers doc) '(:save))
+    ;; Save, then cancel the name: the window stays, the text is kept.
+    (setf (fake-answers doc) '(:save nil))
     (type-keys doc "C-x k")
-    ;; The window stays while the name is asked for.
     (is (fake-window-open doc))
-    (is-equal (fake-prompt doc) "Write file: ")
-    (answer-prompt doc path)
-    (is-equal (read-file-text path) "x")
-    ;; Saved: now it closes without a question.
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (first (fake-asked doc)) '(:file "Save As" t ""))
+    (is-equal (fake-text doc) "x")
+    (is (doc-modified-p doc))
+    ;; Save with a name: written and closed.
+    (setf (fake-answers doc) (list :save path))
     (type-keys doc "C-x k")
+    (is-equal (read-file-text path) "x")
     (is (not (fake-window-open doc)))
     (delete-file path)))
+
+(deftest kill-buffer-save-stays-open-when-the-write-fails
+  (let ((doc (make-fake "|")))
+    (type-keys doc "x")
+    (setf (fake-answers doc) (list :save (temp-path "no-such-dir/x.lisp")))
+    (type-keys doc "C-x k")
+    (is (fake-window-open doc))
+    (is (doc-modified-p doc))
+    (is (search "Cannot write" (fake-last-message doc)))))
 
 (deftest closed-windows-are-out-of-the-rotation
   (let* ((one (make-fake "|"))

@@ -291,8 +291,8 @@ each coloured run, left to right, as a painter's algorithm gives it."
 (defmethod doc-set-title ((doc fake-document) title)
   (setf (fake-title doc) title))
 
-(defmethod doc-ask-file ((doc fake-document) title save)
-  (push (list :file title save) (fake-asked doc))
+(defmethod doc-ask-file ((doc fake-document) title save initial)
+  (push (list :file title save initial) (fake-asked doc))
   (pop (fake-answers doc)))
 
 (defmethod doc-ask ((doc fake-document) question choices)

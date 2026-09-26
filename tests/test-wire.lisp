@@ -387,7 +387,7 @@
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
     (declare (ignore wire))
     (run-command doc 'clamacs-load-file)
-    (is-equal (fake-prompt doc) "Load file: ")
+    (is-equal (fake-prompt doc) "Load file (TAB: browse): ")
     (type-text doc "T:x.lisp")
     (type-keys doc "RET")
     (is-equal (fake-last-sent tr) "LOAD T:x.lisp")
@@ -400,6 +400,37 @@
     (run-command doc 'clamacs-compile-file)
     (is-equal (fake-last-sent tr) "COMPILE-FILE T:y.lisp")
     (is-equal (fake-last-message doc) "Compiling (unnamed) ...")))
+
+(deftest load-file-requester-loads-the-chosen-file
+  ;; The menu's Load File...: the requester, no prompt, then LOAD.
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+    (declare (ignore wire))
+    ;; A buffer without a file has no directory to start in.
+    (setf (fake-answers doc) (list "T:chosen.lisp"))
+    (run-command doc 'clamacs-load-file-requester)
+    (is-equal (fake-asked doc) '((:file "Load File" nil "")))
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (fake-sent-commands tr) '("LOAD T:chosen.lisp"))
+    (is-equal (fake-last-message doc) "Loading T:chosen.lisp ...")
+    (fake-deliver tr 0 "0 error(s), 0 warning(s)")
+    ;; A named buffer starts the requester in its own directory.
+    (setf (doc-path doc) "Work:src/a.lisp"
+          (fake-answers doc) (list "T:second.lisp"))
+    (run-command doc 'clamacs-load-file-requester)
+    (is-equal (first (fake-asked doc)) '(:file "Load File" nil "Work:src/"))
+    (is-equal (fake-last-sent tr) "LOAD T:second.lisp")
+    (is-equal (fake-last-message doc) "Loading T:second.lisp ...")
+    (fake-deliver tr 0 "0 error(s), 0 warning(s)")
+    ;; Both choices are in the file history, the newest first.
+    (let ((history (editor-file-history (doc-editor doc))))
+      (is-equal (history-items history) '("T:second.lisp" "T:chosen.lisp"))
+      ;; Cancelled: nothing is sent and nothing is remembered.
+      (setf (fake-answers doc) (list nil))
+      (run-command doc 'clamacs-load-file-requester)
+      (is (not (minibuffer-open-p doc)))
+      (is-equal (length (fake-asked doc)) 3)
+      (is-equal (fake-sent-commands tr) '("LOAD T:chosen.lisp" "LOAD T:second.lisp"))
+      (is-equal (history-items history) '("T:second.lisp" "T:chosen.lisp")))))
 
 (deftest connect-and-run-lisp
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)

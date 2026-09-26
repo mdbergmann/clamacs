@@ -16,6 +16,11 @@
 ;;;; command exists, that every key shown really runs that command through
 ;;;; the real keymaps, and that the rules answer as documented.
 ;;;;
+;;;; An item whose key opens a prompt in the minibuffer may name a second
+;;;; command for the mouse (PICK): Open... shows `C-x C-f' beside it, but
+;;;; picking it opens the file requester, as Emacs's File menu does with
+;;;; a mouse.  The port's MENU verb picks as the mouse does.
+;;;;
 ;;;; The port of src/emacs/menudef.c and the Lisp half of src/menu.c and
 ;;;; src/url.c.  Pure: no MUI, no OS types.  frontend-mui.lisp turns the
 ;;;; table into Menu and Menuitem objects and keeps their enable state in
@@ -27,7 +32,8 @@
 ;;; The table
 ;;; ------------------------------------------------------------------
 
-(defstruct (menu-entry (:constructor make-menu-entry (kind rule command title keys map)))
+(defstruct (menu-entry (:constructor make-menu-entry
+                           (kind rule command title keys map &optional pick)))
   kind                      ; :title, :item, :bar, or :dynamic -- the place
                             ; a group of items made at run time goes: the
                             ; open buffers, the themes (DYNAMIC-MENU)
@@ -38,7 +44,14 @@
   keys                      ; the key shown beside it, or NIL
   ;; Which map the key lives in: :global, :lisp or :repl.  Only the test
   ;; reads it; the shortcut column shows the key regardless.
-  map)
+  map
+  ;; The command a mouse pick runs when it is not COMMAND: the requester
+  ;; behind an item whose key prompts in the minibuffer.
+  pick)
+
+(defun menu-entry-picks (entry)
+  "The command picking ENTRY runs."
+  (or (menu-entry-pick entry) (menu-entry-command entry)))
 
 (defparameter *menu-rules*
   '(:always
@@ -58,15 +71,19 @@
 (defparameter *menu-table*
   (flet ((title (name) (make-menu-entry :title :always nil name nil nil))
          (bar () (make-menu-entry :bar :always nil nil nil nil))
-         (item (command rule label keys map)
-           (make-menu-entry :item rule command label keys map)))
+         (item (command rule label keys map &optional pick)
+           (make-menu-entry :item rule command label keys map pick)))
     (list
      (title "Project")
      (item 'clamacs-new-buffer          :always        "New"                    nil       :global)
-     (item 'find-file                   :always        "Open..."                "C-x C-f" :global)
-     (item 'find-file-other-window      :always        "Open in New Window..."  "C-x 2"   :global)
-     (item 'save-buffer                 :doc-changed   "Save"                   "C-x C-s" :global)
-     (item 'write-file                  :always        "Save As..."             "C-x C-w" :global)
+     (item 'find-file                   :always        "Open..."                "C-x C-f" :global
+           'find-file-requester)
+     (item 'find-file-other-window      :always        "Open in New Window..."  "C-x 2"   :global
+           'find-file-other-window-requester)
+     (item 'save-buffer                 :doc-changed   "Save"                   "C-x C-s" :global
+           'save-buffer-requester)
+     (item 'write-file                  :always        "Save As..."             "C-x C-w" :global
+           'write-file-requester)
      (bar)
      (item 'switch-to-buffer            :always        "Next Buffer"            "C-x b"   :global)
      (item 'kill-buffer                 :always        "Close Buffer"           "C-x k"   :global)
@@ -117,7 +134,8 @@
      (item 'clamacs-connect-clamiga     :self          "Talk to clamiga"        nil       :global)
      (bar)
      (item 'clamacs-load-buffer         :connected     "Load Buffer"            "C-c C-k" :lisp)
-     (item 'clamacs-load-file           :connected     "Load File..."           "C-c C-l" :lisp)
+     (item 'clamacs-load-file           :connected     "Load File..."           "C-c C-l" :lisp
+           'clamacs-load-file-requester)
      (item 'clamacs-compile-file        :doc-has-path  "Compile File"           nil       :lisp)
      (bar)
      (item 'clamacs-eval-defun          :connected     "Eval Defun"             "C-c C-c" :lisp)
@@ -246,7 +264,7 @@ True when it ran."
   (let ((e (menu-entry index))
         (doc (editor-active-document editor)))
     (and e (eq (menu-entry-kind e) :item) doc
-         (progn (run-command doc (menu-entry-command e) 1) t))))
+         (progn (run-command doc (menu-entry-picks e) 1) t))))
 
 ;;; MENU <command-name> [STATE]: the menu strip, from a macro.  Without
 ;;; STATE it picks the item that runs the command, the way the mouse would
