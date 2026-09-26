@@ -262,9 +262,7 @@ name, each entry also shows its directory. A macro can read the menu with
 
 ## Themes
 
-Colour themes are there in the host editor (macOS, Linux, Windows) for
-now; the Amiga's MUI frontend does not apply them yet.  The **View** menu
-lists the colour themes, the one in effect ticked:
+The **View** menu lists the colour themes, the one in effect ticked:
 Light and Dark (the editor's own two looks; the one the system's
 appearance calls for is the default), Solarized Light, Solarized Dark,
 One Dark and Gruvbox Dark.  Pick one there, or with `M-x clamacs-theme`
@@ -289,9 +287,14 @@ the gutter (`:gutter-bg :gutter-fg`), the chrome (`:bar :bar-fg
 reported with the file's line; a `load-theme` of a name that is not
 defined falls back to the default with a message, so the editor always
 comes up.  A macro reads the menu with `THEMES` and picks with
-`THEMES <label>`.  Every key is honoured (the page's colours are these
-variables).  See `tests/test-theme.lisp` and `tests/test-host.lisp` (the
-View menu).
+`THEMES <label>`.  On the host every key is honoured (the page's colours
+are these variables).  On the Amiga the text area takes the theme's
+text, background and token colours in a Lisp buffer; the cursor, the
+selection, the status line, the echo area and the panels keep your MUI
+preferences, as does a buffer that is not in Lisp mode.  On a Workbench
+of 16 colours or fewer a dark theme applies its token colours only and
+leaves the text and background as they are, and says so once.  See
+`tests/test-theme.lisp` and `tests/test-host.lisp` (the View menu).
 
 ## Window positions
 

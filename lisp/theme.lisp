@@ -214,10 +214,14 @@ value, every key resolved; a key nothing sets is left out."
 
 ;;; The MUI text class's colour map, by slot: SetBlock's colour values are
 ;;; 1-based, so slot 1 is the first pen (the C editor's black, now the
-;;; text colour), slot 2 the second (white, free), then paren-match,
+;;; text colour), slot 2 the second (white, free), then the paren match,
 ;;; comment, keyword, string, defining, number -- COLOUR-VALUE's numbers
-;;; in frontend-mui.lisp.
-(defparameter *theme-pen-keys* '(:fg nil :paren-match :comment :keyword :string :defining :number))
+;;; in frontend-mui.lisp.  The paren match is a FOREGROUND pen there (the
+;;; class colours characters, it does not tint behind them), so it takes
+;;; :NUMBER's colour -- green on the two default themes, as the page's
+;;; :PAREN-MATCH tint is -- and not the tint itself, which would be a pale
+;;; paren on a pale page (decided at T3, 2026-09-26).
+(defparameter *theme-pen-keys* '(:fg nil :number :comment :keyword :string :defining :number))
 
 (defun theme-pens (theme)
   "THEME as the MUI frontend takes it: eight (R G B) lists in the colour
@@ -226,6 +230,33 @@ map's order.  The free slot is white."
             (multiple-value-bind (r g b) (and key (theme-rgb (theme-resolve theme key)))
               (if r (list r g b) (list 255 255 255))))
           *theme-pen-keys*))
+
+(defun theme-background-spec (theme)
+  "THEME's :BG as a MUI image spec, `2:rrrrrrrr,gggggggg,bbbbbbbb' -- an
+RGB colour, each component a 32-bit value with the byte repeated, the
+form MUIA_Background takes.  NIL when the theme has no :BG."
+  (multiple-value-bind (r g b) (theme-rgb (theme-resolve theme :bg))
+    (and r
+         (flet ((wide (c) (* c #x01010101)))
+           (string-downcase
+            (format nil "2:~8,'0x,~8,'0x,~8,'0x" (wide r) (wide g) (wide b)))))))
+
+;;; The Amiga's shallow-screen rule: on a Workbench with 16 colours or
+;;; fewer ObtainBestPen answers nearest matches, and a dark theme's text on
+;;; its background comes out as one grey on another.  So such a theme
+;;; applies its token colours only there and leaves the text and the
+;;; background to the class's own -- a function of the depth and the theme,
+;;; so it is tested without a screen.
+(defconstant +theme-shallow-depth+ 4)
+
+(defun theme-text-pens-p (theme depth)
+  "Whether a frontend that paints with pens should paint THEME's text and
+background colours on a screen of DEPTH bitplanes: always for a light
+theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
+\(more than 16 colours).  A DEPTH of NIL (not known) says yes."
+  (or (not (theme-dark theme))
+      (null depth)
+      (> depth +theme-shallow-depth+)))
 
 ;;; ------------------------------------------------------------------
 ;;; The built-ins

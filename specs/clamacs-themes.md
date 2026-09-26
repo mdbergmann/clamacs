@@ -370,10 +370,93 @@ Done 2026-09-26.  What T2 settled beyond the text above:
   by the entry the port runs it in, so a test reading the batch after
   `port-command` flushes first.
 
-### T3 -- the MUI frontend (when asked)
+### T3 -- the MUI frontend
 
 As above.  `run-lisp-editor.sh 040` and `020`, `run-lisp-drive.sh`
 with the new leg, a MorphOS run on the box.
+
+Done 2026-09-26.  What T3 settled beyond the text above:
+
+- **The paren-match pen takes `:number`'s colour**, not `:paren-match`'s:
+  the class colours characters and never tints behind them, and the
+  page's tint (`#c8e6c9` on Light) would be a pale paren on a pale page.
+  `:number` is green on the two default themes -- the tint's hue -- and
+  distinct on the others.  The slot's key changed in `*theme-pen-keys*`;
+  the theme keys did not.
+- **The plan is settled before the first window** (`ensure-theme-plan`,
+  from the default public screen's depth, `LockPubScreen(NULL)`), and
+  checked at every text object's Setup against the screen it really
+  opened on (a user's MUI prefs may put the editor on a screen of its
+  own): `GetBitMapAttr(BMA_DEPTH)` off the screen's RastPort BitMap,
+  which an RTG screen answers correctly too.  The pure rule is
+  `theme-text-pens-p theme depth` (a dark theme and a depth of 4 or less
+  says no; an unknown depth says yes), the message it owes is shown once
+  in the first window's echo area (`show-theme-note`).
+- **The background spec is `theme-background-spec`**, pure:
+  `2:rrrrrrrr,gggggggg,bbbbbbbb` with each byte repeated across 32 bits,
+  lowercase.  It lives in one foreign buffer per editor that MUI reads
+  (`bg-buf`), rewritten at every plan, and goes to a text object as a
+  **creation tag** (`text-creation-tags`), which is how the class takes
+  it for sure.  Measured in FS-UAE (MUI 3.8): a `MUIA_Background` set on
+  a set-up object does not repaint it, neither during Setup nor later,
+  and a changed colour map repaints nothing either -- so the spec's "the
+  class accepts it on a set too, so a switch is live" was wrong.
+- **A switch closes and opens the document windows again**
+  (`theme-repaint`), the way MUI itself brings a changed look to a
+  running application: the close runs Cleanup (the pens released), the
+  background is set on the object while it is not set up, the open runs
+  Setup (the theme's pens obtained, the plan re-checked) and redraws,
+  then `colour-all` and the active window activated again.
+  `editor-apply-theme` only marks the editor dirty; the repaint runs from
+  the event loop's housekeeping (and once in `start`, for a theme a start
+  hook picked), never from the hook that asked -- MUI may still be inside
+  the window.
+- **The text pen and the background go on Lisp-mode documents only.**
+  The colouring, which paints plain text with the text pen, runs only
+  there; a `*description*` or a `.txt` buffer would show the class's own
+  text colour on the theme's background.  So those keep the class's own
+  colours, like the chrome, and a mode change (`C-x C-w` to another
+  extension) is followed by the new generic `doc-lisp-mode-changed`,
+  which `set-lisp-mode` calls and which marks the editor for the same
+  repaint.  An object that had the theme's background and loses it (a
+  switch to a dark theme on a shallow screen, a mode change) gets
+  `MUII_TextBack`, the standard text background -- the class's
+  configured one cannot be read back.  A document that left Lisp mode
+  with the theme's background is also cleared of the colours it was
+  painted in (`clear-text-colours`, `SetBlock` value 0 over every line:
+  `doc-colour`'s NIL is the theme's text pen, and `colour-all` no longer
+  runs on it), else the theme's light text would stay on the standard
+  background.
+- **The object's background is on record from its creation**:
+  `build-window` sets the object's owned flag when `text-creation-tags`
+  gave it the theme's background.  A first Setup that finds a shallower
+  screen than the default public one re-plans without a background, and
+  the mismatch (`text-background-wanted` against the owned flag) is not
+  set right during Setup, which repaints nothing on MUI 3.8: Setup only
+  marks the editor dirty, and the repaint from the event loop sets
+  `MUII_TextBack` while the window is closed.
+- **The dynamic groups are `dyn-group` structs** on the MUI editor, one
+  per group in the table's order, each with its Menu object, items,
+  shown entries, objects and tick; the item id is
+  `+dynamic-item-id-base+` (`#x10000`) times the group's number plus the
+  position, so the MenuAction hook finds the group from the id.
+  `dynamic-menus-sync` runs from the loop's housekeeping and syncs both.
+- **The drive's leg** points `*init-file*` at `T:clamacs-drive-rc` first
+  (the Workbench image's `S:.clamacsrc` must not carry the run's choice),
+  picks over `THEMES`, reads the file back, makes a session-only pick, and
+  puts the path back with `refresh-user-paths`.  It also reports the
+  depth and the decision as an `INFO` line, since the rule cannot be
+  forced from outside; the rule itself is host-tested.
+  `THEME=one-dark run-lisp-editor.sh 040` starts the smoke run in a
+  theme and photographs the window (the superproject's
+  `screen-grab.lisp`, `build/amiga/shots-<leg>/`); `SWITCH=<name>` loads
+  a second theme once the window is open, so the shot shows the live
+  switch.
+- **The 020 config is not a gate** (decided 2026-09-26: too slow), and
+  it is no shallow-screen check either: both FS-UAE configs open the
+  Workbench on a 16-bit uaegfx screen (`depth 16` in the ready line), so
+  the rule is proven by its host tests only until a native-chipset
+  Workbench or a real A1200 is set up.
 
 ## Risks and what decides them
 

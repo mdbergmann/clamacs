@@ -52,6 +52,61 @@
       (is-equal (length (theme-pens th)) 8)))
   (is-equal (length (theme-keys)) 26))
 
+;;; The MUI frontend's view (specs/clamacs-themes.md, "The MUI frontend"):
+;;; the eight pens in the colour map's order, the background spec, and the
+;;; shallow-screen rule -- pure, so they are settled here and not in FS-UAE.
+
+(deftest theme-pens-are-the-colour-map-in-slot-order
+  ;; Slot 1 the text colour, slot 2 free (white), slot 3 the paren match --
+  ;; a foreground pen, so :number's colour, not the page's tint -- then
+  ;; comment, keyword, string, defining, number.
+  (let ((pens (theme-pens (find-theme :light))))
+    (is-equal (nth 0 pens) '(#x1f #x1f #x1f))
+    (is-equal (nth 1 pens) '(255 255 255))
+    (is-equal (nth 2 pens) '(#x09 #x86 #x58))
+    (is-equal (nth 3 pens) '(#x7a #x7a #x7a))
+    (is-equal (nth 4 pens) '(#x00 #x00 #xff))
+    (is-equal (nth 5 pens) '(#xa3 #x15 #x15))
+    (is-equal (nth 6 pens) '(#x79 #x5e #x26))
+    (is-equal (nth 7 pens) '(#x09 #x86 #x58)))
+  ;; Through the inherit chain and the default's fallback: a theme of a few
+  ;; keys still fills every slot.
+  (with-theme-state ()
+    (define-theme :few () :fg "#010203")
+    (let ((pens (theme-pens (find-theme :few))))
+      (is-equal (nth 0 pens) '(1 2 3))
+      (is-equal (nth 4 pens) '(#x00 #x00 #xff))
+      (is (every (lambda (p) (= (length p) 3)) pens)))))
+
+(deftest theme-background-spec-is-muis-rgb-image-spec
+  ;; MUIA_Background's `2:' form: each byte repeated across 32 bits.
+  (is-equal (theme-background-spec (find-theme :light)) "2:ffffffff,ffffffff,ffffffff")
+  (is-equal (theme-background-spec (find-theme :solarized-dark)) "2:00000000,2b2b2b2b,36363636")
+  (is-equal (theme-background-spec (find-theme :one-dark)) "2:28282828,2c2c2c2c,34343434")
+  (with-theme-state ()
+    ;; A theme without a :bg of its own takes the parent's, then the default's.
+    (define-theme :inherit-bg (:inherits :gruvbox-dark) :keyword "#ffffff")
+    (is-equal (theme-background-spec (find-theme :inherit-bg)) "2:28282828,28282828,28282828")))
+
+(deftest the-shallow-screen-rule-is-a-function-of-depth-and-theme
+  (let ((light (find-theme :light)) (dark (find-theme :dark)))
+    ;; A light theme paints its text and background on any screen.
+    (dolist (depth '(1 2 3 4 5 8 16 24 nil))
+      (is (theme-text-pens-p light depth)))
+    ;; A dark one only on more than 16 colours; an unknown depth says yes.
+    (dolist (depth '(1 2 3 4))
+      (is (not (theme-text-pens-p dark depth))))
+    (dolist (depth '(5 8 16 24 nil))
+      (is (theme-text-pens-p dark depth)))
+    (is-equal +theme-shallow-depth+ 4)
+    ;; The flag, not the colours, decides: a dark theme declared light is
+    ;; painted, whatever its palette.
+    (with-theme-state ()
+      (define-theme :dark-but-flagged-light (:inherits :dark :dark nil))
+      (is (theme-text-pens-p (find-theme :dark-but-flagged-light) 2))
+      (define-theme :light-but-flagged-dark (:inherits :light :dark t))
+      (is (not (theme-text-pens-p (find-theme :light-but-flagged-dark) 4))))))
+
 (defun css-block-vars (css from)
   "The `--name: value;' pairs of the first `:root {' block after FROM in
 CSS, as an alist -- a `#abc' expanded to `#aabbcc', the theme's spelling."
@@ -205,10 +260,11 @@ CSS, as an alist -- a `#abc' expanded to `#aabbcc', the theme's spelling."
   (is-equal (theme-css-var :font-size) "--font-size"))
 
 (deftest the-pen-view-is-the-colour-map
-  ;; Eight (r g b) in SetBlock's slot order: the text, the free slot,
-  ;; paren-match, comment, keyword, string, defining, number.
+  ;; Eight (r g b) in SetBlock's slot order: the text, the free slot, the
+  ;; paren match (a foreground pen: :number's colour, T3), comment,
+  ;; keyword, string, defining, number.
   (is-equal (theme-pens (find-theme :light))
-            '((31 31 31) (255 255 255) (200 230 201) (122 122 122)
+            '((31 31 31) (255 255 255) (9 134 88) (122 122 122)
               (0 0 255) (163 21 21) (121 94 38) (9 134 88)))
   (is-equal (first (theme-pens (find-theme :dark))) '(212 212 212))
   (is-equal (multiple-value-list (theme-rgb "#FFcc00")) '(255 204 0))
@@ -701,3 +757,60 @@ THUNK's value."
               '("Light" "Dark" "Solarized Light" "Solarized Dark" "One Dark" "Gruvbox Dark"
                 :bar "Mine" "Other"))
     (is (eq (cdr (car (last (theme-menu)))) (find-theme :other)))))
+
+;;; --- the mode hook the MUI frontend follows ---------------------------------------
+;;;
+;;; The background follows a document's Lisp mode (`doc-lisp-mode-changed',
+;;; frontend-mui.lisp marks the editor for a repaint on it), so SET-LISP-MODE
+;;; must call it once on a real change and never on a repeat.  The fake
+;;; frontend has no method of its own: a document class here counts the calls.
+
+(defclass mode-counting-document (fake-document)
+  ((mode-changes :initform 0 :accessor mode-changes)))
+
+(defmethod doc-lisp-mode-changed ((doc mode-counting-document))
+  (incf (mode-changes doc)))
+
+(defun make-mode-counting-document (lisp-mode)
+  (make-instance 'mode-counting-document :editor (make-fake-editor)
+                                         :lisp-mode lisp-mode
+                                         :mirror (make-mirror)))
+
+(deftest set-lisp-mode-tells-the-frontend-once-per-change
+  (let ((doc (make-mode-counting-document nil)))
+    (is-equal (mode-changes doc) 0)
+    (set-lisp-mode doc t)
+    (is (doc-lisp-mode doc))
+    (is-equal (mode-changes doc) 1)
+    ;; The same mode again, in either spelling of true, says nothing.
+    (set-lisp-mode doc t)
+    (set-lisp-mode doc :yes)
+    (is-equal (mode-changes doc) 1)
+    (set-lisp-mode doc nil)
+    (is (null (doc-lisp-mode doc)))
+    (is-equal (mode-changes doc) 2)
+    (set-lisp-mode doc nil)
+    (is-equal (mode-changes doc) 2)))
+
+(deftest visiting-a-path-tells-the-frontend-when-the-mode-changes
+  ;; C-x C-w to another extension: the hook fires when the mode flips, and
+  ;; not when the new path leaves it where it was.
+  (let ((doc (make-mode-counting-document t)))
+    (visit-path doc "ram:a.txt")
+    (is (null (doc-lisp-mode doc)))
+    (is-equal (mode-changes doc) 1)
+    (visit-path doc "ram:b.text")
+    (is-equal (mode-changes doc) 1)
+    (visit-path doc "ram:c.lisp")
+    (is (doc-lisp-mode doc))
+    (is-equal (mode-changes doc) 2)
+    (visit-path doc "ram:d.asd")
+    (is-equal (mode-changes doc) 2)))
+
+(deftest a-frontend-without-the-hook-is-not-troubled-by-a-mode-change
+  ;; The generic's default method does nothing (the fake frontend has none).
+  (let ((doc (make-fake "" :lisp-mode nil)))
+    (set-lisp-mode doc t)
+    (is (doc-lisp-mode doc))
+    (set-lisp-mode doc nil)
+    (is (null (doc-lisp-mode doc)))))

@@ -19,18 +19,31 @@
 # focus for one key only (CLAUDE.md, "Phase 1 facts"), so the minibuffer's
 # MUI dance is verified on hardware and, from phase 2 on, through the port.
 #
+# THEME=<name> (a theme of lisp/theme.lisp, e.g. one-dark) starts the
+# editor in that theme for the session -- the colour themes' MUI leg
+# (specs/clamacs-themes.md, T3): the pens, the background and the text
+# colour show in the screenshot, and the ready marker carries the screen
+# depth the frontend saw and whether it painted the theme's text and
+# background (the shallow-screen rule).  The superproject's screen-grab
+# helper photographs the editor's window: build/amiga/shots-<leg>/*.png
+# (ffmpeg converts; without it the .ppm stays).
+#
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
-# build/amiga/lisp-editor-clamiga.log (clamiga's own output).
+# build/amiga/lisp-editor-clamiga.log (clamiga's own output),
+# build/amiga/shots-<leg>/ (the screenshots).
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
+THEME="${THEME:-}"
+SWITCH="${SWITCH:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
+SHOTS="$OUT/shots-$LEG"
 RUNLOG="$OUT/lisp-editor-run.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
 HOST="$SUPER/build/host/clamiga"
@@ -46,9 +59,12 @@ HARD_TIMEOUT="${HARD_TIMEOUT:-2400}"
 [ -f "$SUPER/build/cross/clamiga" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
 [ -f "$ROOT/build/cross/sendkey" ] || { echo "sendkey missing: make -C $ROOT -f Makefile.cross amiga"; exit 1; }
 
-mkdir -p "$OUT" "$SUPER/build/amiga"
+mkdir -p "$OUT" "$SUPER/build/amiga" "$SHOTS"
 rm -f "$RUNLOG" "$OUT"/lisp-editor-* "$OUT"/lisp-editor-*.uaem "$HERE"/*.uaem
+rm -f "$SHOTS"/* "$OUT/screen-grab.log" "$OUT/screen-grab-run.log"
 cp "$ROOT/build/cross/sendkey" "$OUT/sendkey"
+# screen-grab.lisp writes under build/amiga/shots/ of its current directory.
+rm -rf "$OUT/shots"; mkdir -p "$OUT/shots"
 
 # The expected file and the typing script, both from lisp-editor-keys.lisp.
 "$HOST" --no-userinit --heap 16M --non-interactive \
@@ -68,15 +84,34 @@ TYPING=$(cat "$OUT/lisp-editor-typing")
 # on clamiga's command line, the way the release launcher and a Workbench
 # project icon hand files over (EXT:*COMMAND-LINE-ARGS*) -- and mark the
 # exit.  AmigaDOS makes `*' an escape inside quotes, so the forms go
-# through a file, never an --eval.
-cat > "$OUT/lisp-editor-driver.lisp" <<'PRE'
+# through a file, never an --eval.  The ready marker carries what the
+# frontend decided for the theme on this screen (THEME-PLAN).
+if [ -n "$THEME" ]; then
+	THEME_FORM="(clamacs::load-theme :$THEME :save nil)"
+else
+	THEME_FORM=""
+fi
+# SWITCH=<name>: a second theme loaded once the window is open -- the live
+# switch (EDITOR-APPLY-THEME on set-up objects), which the screenshot then
+# shows instead of THEME.
+if [ -n "$SWITCH" ]; then
+	SWITCH_FORM="(clamacs::load-theme :$SWITCH :save nil)"
+else
+	SWITCH_FORM=""
+fi
+cat > "$OUT/lisp-editor-driver.lisp" <<PRE
 (load "Clamacs:lisp/load.lisp")
 (setf clamacs::*exit-trace* t)
+$THEME_FORM
 (push (lambda (editor)
-        (declare (ignore editor))
+        $SWITCH_FORM
         (with-open-file (s "Clamacs:build/amiga/lisp-editor-ready"
                            :direction :output :if-exists :supersede)
-          (write-line "ready" s)))
+          (format s "ready theme ~A depth ~A text-pen ~A bg ~A~%"
+                  (clamacs::theme-name (clamacs::mui-theme editor))
+                  (clamacs::mui-editor-screen-depth editor)
+                  (clamacs::mui-editor-text-pen-p editor)
+                  (clamacs::mui-editor-bg-spec editor))))
       clamacs::*after-start-hooks*)
 (clamacs::start :files ext:*command-line-args*)
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
@@ -96,6 +131,12 @@ stack 128000
 IF EXISTS T:clamacs-exit.log
   delete >NIL: T:clamacs-exit.log
 ENDIF
+; The photographer: it shoots every new window on the public screen 2 s
+; after it appears, into build/amiga/shots/ of ITS directory, and leaves
+; when T:examples-done exists.
+delete >NIL: T:examples-done
+delete >NIL: T:screen-grab-ready
+run >build/amiga/screen-grab-run.log CLAmiga:build/cross/clamiga --no-userinit --heap 16M --non-interactive --load CLAmiga:verify/realamiga/screen-grab.lisp
 cd CLAmiga:
 run >Clamacs:build/amiga/lisp-editor-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/lisp-editor-driver.lisp -- Clamacs:build/amiga/lisp-editor-out.lisp
 cd Clamacs:
@@ -111,6 +152,7 @@ IF NOT EXISTS Clamacs:build/amiga/lisp-editor-ready
   SKIP waitready BACK
 ENDIF
 echo "OK editor window open after about \$n x 2 s" >>build/amiga/lisp-editor-run.log
+type Clamacs:build/amiga/lisp-editor-ready >>build/amiga/lisp-editor-run.log
 C:Wait 3
 echo "=== typing ===" >>build/amiga/lisp-editor-run.log
 date >>build/amiga/lisp-editor-run.log
@@ -118,6 +160,10 @@ $TYPING
 date >>build/amiga/lisp-editor-run.log
 build/amiga/sendkey C-x C-s DELAY 1
 C:Wait 3
+; The photographer has had its one shot (it photographs a window once,
+; when it appears): let it leave before the editor does.
+echo done >T:examples-done
+C:Wait 2
 build/amiga/sendkey C-x k DELAY 1
 set n 0
 LAB waitdone
@@ -132,6 +178,11 @@ IF NOT EXISTS Clamacs:build/amiga/lisp-editor-done
 ENDIF
 echo "OK editor quit about \$n x 2 s after C-x k closed the last buffer" >>build/amiga/lisp-editor-run.log
 LAB collect
+echo done >T:examples-done
+echo "=== screen-grab.log ===" >>build/amiga/lisp-editor-run.log
+IF EXISTS build/amiga/screen-grab.log
+  type build/amiga/screen-grab.log >>build/amiga/lisp-editor-run.log
+ENDIF
 echo "=== clamacs-exit.log ===" >>build/amiga/lisp-editor-run.log
 IF EXISTS T:clamacs-exit.log
   type T:clamacs-exit.log >>build/amiga/lisp-editor-run.log
@@ -179,6 +230,21 @@ wait "$FSUAE_PID" 2>/dev/null
 rm -f "$SUPER/build/amiga/boot-override"
 echo "=== $RUNLOG ==="
 cat "$RUNLOG" 2>/dev/null
+
+# The screenshots: PNG when ffmpeg is there, else the PPM as shot.
+n=0
+for f in "$OUT"/shots/*.ppm; do
+	[ -f "$f" ] || continue
+	base=$(basename "$f" .ppm)
+	if command -v ffmpeg >/dev/null 2>&1; then
+		ffmpeg -loglevel error -y -i "$f" "$SHOTS/$base.png" && rm -f "$f"
+	else
+		mv "$f" "$SHOTS/$base.ppm"
+	fi
+	n=$((n + 1))
+done
+rm -rf "$OUT/shots"
+echo "=== $n screenshot(s) under $SHOTS ==="
 
 # The verdict: the file the editor saved is what the host's editor holds,
 # and the teardown ran to its end without a dispose that signalled.

@@ -371,7 +371,69 @@ IF POS('*clamacs-room*', RESULT) = 0 THEN
 ELSE
     SAY 'FAIL after kill-buffer BUFFERS gave' TRANSLATE(RESULT, '|', NL)
 'BUFFERS sample.lisp'
-END /* CLAMIGA ~= '' & PHASE >= 5: the Buffers menu */
+
+/* The View menu (specs/clamacs-themes.md, phase T3): THEMES is the twin
+** of BUFFERS -- the items read back from MUI, `>' before the ticked one,
+** THEMES <label> a pick through the item's id.  A pick writes the init
+** file, so the leg points *INIT-FILE* at T: first (the Workbench's
+** S:.clamacsrc must not carry the run's choice) and puts it back after. */
+'EVAL (progn (clamacs::delete-quietly "T:clamacs-drive-rc") (setf clamacs::*init-file* "T:clamacs-drive-rc") "moved")'
+'THEMES'
+B = RESULT
+IF POS('> Light' || NL, B || NL) > 0 & POS('  Solarized Dark' || NL, B || NL) > 0 & POS('  Gruvbox Dark' || NL, B || NL) > 0 THEN
+    SAY 'OK the View menu lists the themes, Light ticked'
+ELSE
+    SAY 'FAIL THEMES gave' TRANSLATE(B, '|', NL)
+'THEMES Solarized Dark'
+R = RESULT
+'EVAL (clamacs::theme-name (clamacs::active-theme))'
+IF R = '' & POS('SOLARIZED-DARK', RESULT) > 0 THEN
+    SAY 'OK picking Solarized Dark in the View menu loaded it'
+ELSE
+    SAY 'FAIL THEMES Solarized Dark gave' R', the theme in effect' RESULT
+'THEMES'
+IF POS('> Solarized Dark' || NL, RESULT || NL) > 0 & POS('> Light', RESULT) = 0 THEN
+    SAY 'OK the tick moved to Solarized Dark'
+ELSE
+    SAY 'FAIL after the pick THEMES gave' TRANSLATE(RESULT, '|', NL)
+'EVAL (clamacs::read-file-text "T:clamacs-drive-rc")'
+IF POS('(load-theme :solarized-dark)', RESULT) > 0 THEN
+    SAY 'OK the pick wrote the init file'
+ELSE
+    SAY 'FAIL after the pick the init file holds' RESULT
+/* The pens and the background: what the frontend decided for this screen.
+** A dark theme keeps the screen's text and background on 16 colours or
+** fewer (the shallow-screen rule), so only the depth and the decision are
+** reported -- the rule itself is host-tested. */
+'EVAL (list :depth (clamacs::mui-editor-screen-depth clamacs::*editor*) :text-pen (clamacs::mui-editor-text-pen-p clamacs::*editor*) :bg (clamacs::mui-editor-bg-spec clamacs::*editor*))'
+SAY 'INFO the MUI frontend paints Solarized Dark as' RESULT
+IF POS(':DEPTH', RESULT) > 0 & POS(':TEXT-PEN', RESULT) > 0 THEN
+    SAY 'OK the frontend settled the theme against the screen'
+ELSE
+    SAY 'FAIL the theme plan gave' RESULT
+'THEMES nothing-by-that-name'
+IF RESULT = 'no such theme' THEN
+    SAY 'OK THEMES refused an unknown theme'
+ELSE
+    SAY 'FAIL THEMES nothing-by-that-name gave' RESULT
+/* A session-only pick moves the tick and leaves the file alone. */
+'EVAL (clamacs::theme-name (clamacs::load-theme :one-dark :save nil))'
+'THEMES'
+B = RESULT
+'EVAL (clamacs::read-file-text "T:clamacs-drive-rc")'
+IF POS('> One Dark' || NL, B || NL) > 0 & POS('(load-theme :solarized-dark)', RESULT) > 0 THEN
+    SAY 'OK a session-only pick ticked One Dark and left the init file alone'
+ELSE
+    SAY 'FAIL after load-theme :save nil THEMES gave' TRANSLATE(B, '|', NL) 'and the file' RESULT
+/* Back to the default look, the file put back where the user's is. */
+'THEMES Light'
+'THEMES'
+IF POS('> Light' || NL, RESULT || NL) > 0 THEN
+    SAY 'OK the View menu is back on Light'
+ELSE
+    SAY 'FAIL after THEMES Light the menu gave' TRANSLATE(RESULT, '|', NL)
+'EVAL (progn (clamacs::refresh-user-paths) (clamacs::delete-quietly "T:clamacs-drive-rc") clamacs::*init-file*)'
+END /* CLAMIGA ~= '' & PHASE >= 5: the Buffers and View menus */
 
 /* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.

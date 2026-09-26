@@ -185,8 +185,33 @@ session-only pick, the init file written and read back, an init file
 with a `define-theme` of its own loaded into the running editor and
 started from by the second editor); a test that picks a theme binds
 `*editor*` to its editor, since `load-theme` reaches the frontend
-through the running one.  T3, the MUI frontend, is still open: it draws
-`:buffers` only.
+through the running one.  Phase T3 (same day) is the MUI frontend: a
+text object's eight pens are the theme's (`theme-pens`, obtained at
+Setup; the paren-match pen is a foreground pen, so it takes `:number`'s
+colour), its background is the theme's `:bg` as a `2:` RGB spec given
+at CREATION (`theme-background-spec`, `text-creation-tags`; the class
+keeps it, `FLG_OwnBackground`), and the line clear paints plain text
+with the text pen (`colour-value` answers 1 for NIL), the only way to a
+text colour the class has.  Four rules: what the theme and the screen
+decide is settled before the first window from the default public
+screen's depth and checked at every Setup (`theme-plan`,
+`GetBitMapAttr`); a dark theme on a screen of 16 colours or fewer keeps
+its token colours only (`theme-text-pens-p`, pure, host-tested) and says
+so once in the echo area; the background and text pen go on Lisp-mode
+documents only (`doc-lisp-mode-changed` follows a `C-x C-w` across the
+line), the rest -- cursor, selection, chrome, plain buffers -- staying
+the user's MUI prefs; and **a switch closes and reopens the document
+windows** (`theme-repaint`, from the loop's housekeeping, never from a
+hook), because on MUI 3.8 a `MUIA_Background` set on a set-up object
+does not repaint it and a changed colour map repaints nothing -- measured
+in FS-UAE, the screenshot of `SWITCH=... run-lisp-editor.sh` is the
+proof.  The Buffers plumbing became `dyn-group`s (one per dynamic group,
+item ids `+dynamic-item-id-base+` times the group's number), so the
+View menu is in the strip and `THEMES` works over the port;
+`drive.rexx` has the THEMES leg (the pick writes `*init-file*`, which
+the leg points at `T:` first), `THEME=one-dark
+verify/realamiga/run-lisp-editor.sh 040` starts the smoke run in a
+theme and photographs it (`build/amiga/shots-040/`).
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

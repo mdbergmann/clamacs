@@ -156,9 +156,15 @@
 (defconstant +fr-file-offset+ 4)
 (defconstant +fr-drawer-offset+ 8)
 
+;; struct Screen.RastPort (84) .BitMap (4): the screen's bitmap, whose
+;; depth decides the shallow-screen rule (THEME-TEXT-PENS-P)
+(defconstant +screen-rastport-bitmap-offset+ 88)
+
 ;;; Instance data of ClamacsText: the handler node, the eight pens
 ;;; (MUIA_TextEditor_ColorMap points here), two flags, the idle timer's
-;;; input handler node and its flag.
+;;; input handler node and its flag, and whether the theme's background
+;;; was set on this object (a switch to a theme without one puts the
+;;; standard text background back in its place).
 (defconstant +text-data-size+ 96)
 (defconstant +text-ehn-offset+ 0)
 (defconstant +text-cmap-offset+ 24)
@@ -166,6 +172,7 @@
 (defconstant +text-eh-added-offset+ 60)
 (defconstant +text-ihn-offset+ 64)
 (defconstant +text-timer-added-offset+ 88)
+(defconstant +text-own-bg-offset+ 92)
 ;;; Instance data of ClamacsMini: the handler node and the event
 ;;; MUIM_HandleEvent last saw.  The edit hook itself is a Lisp object
 ;;; (MUI-EDITOR-MINI-HOOKS), not an address here: FREE-STRING-KEY-HOOK
@@ -207,20 +214,23 @@
   (logior m:+muikeyf-gadget-next+ m:+muikeyf-gadget-off+
           m:+muikeyf-window-close+))
 
-;;; Eight pens for MUIA_TextEditor_ColorMap.  A SetBlock colour value of N
-;;; means pen N-1 of this table, 0 the normal pen; the token kinds map onto
-;;; them below.  1 black, 2 white, 3 red, 4 green, 5 cyan, 6 yellow,
-;;; 7 blue, 8 magenta.
-(defparameter *pen-rgb*
-  '((#x00 #x00 #x00) (#xff #xff #xff) (#xcc #x00 #x00) (#x00 #x88 #x00)
-    (#x00 #x99 #x99) (#x99 #x77 #x00) (#x00 #x00 #xcc) (#xaa #x00 #xaa)))
+;;; Eight pens for MUIA_TextEditor_ColorMap, the theme's (THEME-PENS in
+;;; theme.lisp gives them in this order: the text colour, a free white,
+;;; the paren match, comment, keyword, string, defining, number).  A
+;;; SetBlock colour value of N means pen N-1 of the table, 0 the class's
+;;; own text pen; the token kinds map onto them below.
 (defconstant +pen-count+ 8)
 
-(defun colour-value (colour)
+(defun colour-value (colour text-pen-p)
+  "The SetBlock colour value of COLOUR, a token kind or NIL for plain
+text.  Every recolour clears the line with the plain value before it
+paints the tokens, so with TEXT-PEN-P -- the theme's text colour in slot
+1 (THEME-TEXT-PENS-P) -- plain text is painted in the theme's foreground
+at the same cost; without it the class's own text pen stays."
   (case colour
     (:comment 4) ((:string :char) 6) (:keyword 5) (:number 8) (:defining 7)
     (:paren-match 3)
-    (t 0)))
+    (t (if text-pen-p 1 0))))
 
 ;;; ------------------------------------------------------------------
 ;;; Small foreign helpers
@@ -327,13 +337,47 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; (NIL for a title or a bar) and the enable state last set on it, so
   ;; MENU-UPDATE touches only what changed.  NIL when no strip was built.
   menustrip menu-items menu-enabled
-  ;; The Buffers menu (BUFFER-MENU): its Menu object, the Menuitem of each
-  ;; entry shown with the foreign title it points to (NIL for the bar's),
-  ;; the entries shown, a vector of their documents by item id, and the
-  ;; document whose item is ticked (:UNKNOWN once Intuition may have ticked
-  ;; one itself).
-  buffers-menu (buffer-items '()) (buffers-shown '()) (buffer-docs #())
-  (buffers-checked :unknown))
+  ;; The dynamic groups (menu.lisp's DYNAMIC-MENU: the Buffers menu, the
+  ;; View menu's themes), one DYN-GROUP each, in the table's order
+  (dyn-groups '())
+  ;; The theme (theme.lisp) as this frontend paints it: the theme
+  ;; EDITOR-APPLY-THEME was last handed (NIL: ACTIVE-THEME), the depth of
+  ;; the screen the first text object was set up on (NIL before that),
+  ;; and what the two decide (THEME-PLAN): the eight pens, whether plain
+  ;; text is painted with the theme's text pen, the background spec in a
+  ;; foreign buffer MUI reads (NIL when the class keeps its own), and the
+  ;; message the shallow-screen rule owes the user, shown once.
+  theme screen-depth (theme-rgb '()) (text-pen-p nil) bg-buf (bg-spec nil)
+  (theme-note nil) (shallow-noted nil)
+  ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
+  ;; from the event loop)
+  (theme-dirty nil))
+
+;;; One dynamic group of the menu strip: the Menu object under its title,
+;;; the Menuitem of each entry shown with the foreign title it points to
+;;; (NIL for a bar's), the entries shown, a vector of their objects (a
+;;; document, a theme) by item id, and the object whose item is ticked
+;;; (:UNKNOWN once Intuition may have ticked one itself).  Its items carry
+;;; ids of their own above the table's: +DYNAMIC-ITEM-ID-BASE+ times the
+;;; group's number (from 1) plus the position.
+(defstruct (dyn-group (:constructor make-dyn-group (which number)))
+  which number menu (items '()) (shown '()) (objects #()) (checked :unknown))
+
+(defconstant +dynamic-item-id-base+ #x10000)
+
+(defun dyn-group (editor which)
+  (find which (mui-editor-dyn-groups editor) :key #'dyn-group-which))
+
+(defun dyn-group-item-id (group n)
+  (+ (* +dynamic-item-id-base+ (dyn-group-number group)) n))
+
+(defun dyn-group-of-id (editor id)
+  "The group an item id above the table's belongs to, and the position in
+it, two values; NIL for a table item's id."
+  (and (>= id +dynamic-item-id-base+)
+       (let ((group (find (floor id +dynamic-item-id-base+) (mui-editor-dyn-groups editor)
+                          :key #'dyn-group-number)))
+         (and group (values group (mod id +dynamic-item-id-base+))))))
 
 ;;; *EDITOR*, the running editor, is frontend.lisp's: START sets it.
 
@@ -494,20 +538,160 @@ exactly the object's."
 (defun rem-idle-timer (editor ihn)
   (mui:do-method (mui-editor-app editor) m:+muim-application-rem-input-handler+ ihn))
 
+;;; --- The theme on the text objects (theme.lisp; specs/clamacs-themes.md,
+;;; "The MUI frontend").  TextEditor.mcc lets a program set the colour map
+;;; its SetBlock colours index -- eight pens obtained on the screen's
+;;; colour map at Setup, released at Cleanup -- and a MUIA_Background,
+;;; which it keeps (FLG_OwnBackground) instead of its configured one; the
+;;; text colour has no attribute, so plain text is painted with the
+;;; theme's text pen by the clear every recolour makes (COLOUR-VALUE).  The
+;;; cursor, the selection and the chrome stay the user's MUI prefs.  What
+;;; the theme and the screen's depth decide is settled once, at the first
+;;; Setup (THEME-PLAN), and again at every EDITOR-APPLY-THEME.
+
+(defun screen-bitmap-depth (screen)
+  "The depth of SCREEN (a struct Screen): GetBitMapAttr on its RastPort's
+BitMap -- what an RTG screen answers too."
+  (let ((bitmap (ffi:peek-u32 screen +screen-rastport-bitmap-offset+)))
+    (if (zerop bitmap)
+        8
+        (gfx:get-bitmap-attr (ffi:make-foreign-pointer bitmap) gfx:+bma-depth+))))
+
+(defun screen-depth (object)
+  "The depth of the screen OBJECT is set up on."
+  (screen-bitmap-depth (mui:area-screen object)))
+
+(defun default-screen-depth ()
+  "The depth of the default public screen, where the windows open unless
+the user's MUI prefs say otherwise: what the plan is made from before the
+first window exists.  8 when the screen cannot be locked."
+  (let ((screen (intui:lock-pub-screen nil)))
+    (if (or (null screen) (ffi:null-pointer-p screen))
+        8
+        (unwind-protect (screen-bitmap-depth screen)
+          (intui:unlock-pub-screen nil screen)))))
+
+(defconstant +bg-buffer-size+ 32)   ; "2:rrrrrrrr,gggggggg,bbbbbbbb" is 29
+
+(defun mui-theme (editor)
+  (or (mui-editor-theme editor) (active-theme)))
+
+(defun theme-plan (editor)
+  "What this frontend paints for the theme in effect on the screen it has
+seen: the pens, the text pen, the background.  A dark theme on a shallow
+screen (THEME-TEXT-PENS-P) keeps its token colours only, and says so
+once."
+  (let* ((theme (mui-theme editor))
+         (depth (mui-editor-screen-depth editor))
+         (text-pens (theme-text-pens-p theme depth)))
+    (setf (mui-editor-theme-rgb editor) (theme-pens theme)
+          (mui-editor-text-pen-p editor) text-pens
+          (mui-editor-bg-spec editor) (and text-pens (theme-background-spec theme)))
+    (when (and (not text-pens) (not (mui-editor-shallow-noted editor)))
+      (setf (mui-editor-shallow-noted editor) t
+            (mui-editor-theme-note editor)
+            (format nil "~A: a dark theme keeps the screen's text and background on a ~D-colour screen"
+                    (theme-label theme) (ash 1 depth))))
+    (when (mui-editor-bg-spec editor)
+      (store-text (mui-editor-bg-buf editor) +bg-buffer-size+ (mui-editor-bg-spec editor)))))
+
+(defun show-theme-note (editor doc)
+  "The message THEME-PLAN left, in DOC's echo area, once."
+  (let ((note (mui-editor-theme-note editor)))
+    (when (and note doc)
+      (setf (mui-editor-theme-note editor) nil)
+      (doc-message doc note))))
+
+(defun obtain-text-pens (editor data object)
+  "The theme's eight pens on OBJECT's screen into its colour map."
+  (let ((cm (screen-colormap object)))
+    (loop for (r g b) in (mui-editor-theme-rgb editor)
+          for i from 0 below +pen-count+
+          do (ffi:poke-i32 data
+                           (gfx:obtain-best-pen-a cm (ash r 24) (ash g 24) (ash b 24) nil)
+                           (+ +text-cmap-offset+ (* 4 i))))
+    (ffi:poke-u32 data 1 +text-pens-held-offset+)))
+
+(defun release-text-pens (data object)
+  (when (/= 0 (ffi:peek-u32 data +text-pens-held-offset+))
+    (let ((cm (screen-colormap object)))
+      (dotimes (i +pen-count+)
+        (let ((pen (ffi:peek-i32 data (+ +text-cmap-offset+ (* 4 i)))))
+          (when (/= pen -1)
+            (gfx:release-pen cm pen))
+          (ffi:poke-i32 data -1 (+ +text-cmap-offset+ (* 4 i))))))
+    (ffi:poke-u32 data 0 +text-pens-held-offset+)))
+
+(defun text-background-wanted (editor doc)
+  "Does the plan give DOC's text object the theme's background?  Only a
+Lisp-mode document, and only where the theme paints one."
+  (and doc (doc-lisp-mode doc) (mui-editor-bg-spec editor) t))
+
+(defun text-background-owned-p (data)
+  "Does the text object with instance data DATA hold the theme's background?"
+  (/= 0 (ffi:peek-u32 data +text-own-bg-offset+)))
+
+(defun text-instance-data (editor object)
+  (mui:inst-data (mui:custom-class-class (mui-editor-textclass editor)) object))
+
+(defun apply-text-background (editor data object doc)
+  "The theme's background on OBJECT when DOC is in Lisp mode -- where the
+colouring paints every line in the theme's text colour; a document that is
+not keeps the class's own colours, like the chrome -- and the standard
+text background back where this object had the theme's before.  Only on
+an object that is not set up: MUI 3.8 does not repaint one that is."
+  (let ((want (text-background-wanted editor doc))
+        (own (text-background-owned-p data)))
+    (cond (want
+           (mui:set-attrs object m:+muia-background+ (mui-editor-bg-buf editor))
+           (ffi:poke-u32 data 1 +text-own-bg-offset+))
+          (own
+           (mui:set-attrs object m:+muia-background+ m:+muii-text-back+)
+           (ffi:poke-u32 data 0 +text-own-bg-offset+)))))
+
+(defun ensure-theme-plan (editor)
+  "The plan before the first window: from the default public screen's
+depth.  A window's Setup checks it against the screen it really opened on."
+  (unless (mui-editor-screen-depth editor)
+    (setf (mui-editor-screen-depth editor) (default-screen-depth))
+    (theme-plan editor)))
+
+(defun text-creation-background-p (editor lisp-mode)
+  "Is a text object made now for a document in LISP-MODE given the theme's
+background?  BUILD-WINDOW records it in the object (the owned flag) when it
+was, so that a plan the first Setup corrects can take it away again."
+  (ensure-theme-plan editor)
+  (and lisp-mode (mui-editor-bg-spec editor) t))
+
+(defun text-creation-tags (editor lisp-mode)
+  "The theme's background as a creation tag of a text object -- the way
+the class takes it for sure (an Area sets its background up at Setup from
+what it was given before) -- for a Lisp-mode document with a theme that
+paints one."
+  (and (text-creation-background-p editor lisp-mode)
+       (list m:+muia-background+ (mui-editor-bg-buf editor))))
+
 (defun text-setup (editor class object message)
   (let ((ok (mui:do-super-method class object message)))
     (when (/= ok 0)
       (let ((data (mui:inst-data class object)))
         ;; Pens for the colouring: obtained here rather than at creation,
-        ;; since a pen belongs to the screen the object ends up on.
-        (let ((cm (screen-colormap object)))
-          (loop for (r g b) in *pen-rgb*
-                for i from 0
-                do (ffi:poke-i32 data
-                                 (gfx:obtain-best-pen-a cm (ash r 24) (ash g 24) (ash b 24) nil)
-                                 (+ +text-cmap-offset+ (* 4 i)))))
-        (ffi:poke-u32 data 1 +text-pens-held-offset+)
+        ;; since a pen belongs to the screen the object ends up on -- whose
+        ;; depth is checked against the plan's here.
+        (let ((depth (screen-depth object)))
+          (unless (eql depth (mui-editor-screen-depth editor))
+            (setf (mui-editor-screen-depth editor) depth)
+            (theme-plan editor)))
+        (obtain-text-pens editor data object)
         (mui:set-attrs object +tea-color-map+ (ffi:pointer+ data +text-cmap-offset+))
+        ;; The background is the repaint's to change, the object not being
+        ;; set up there (MUI 3.8 repaints nothing set during Setup): an
+        ;; object created with the theme's -- or without it -- that the
+        ;; plan, corrected just now for the screen it opened on, wants
+        ;; otherwise is put right by a repaint from the event loop.
+        (unless (eq (text-background-wanted editor (object-document editor object))
+                    (text-background-owned-p data))
+          (setf (mui-editor-theme-dirty editor) t))
         ;; The Emacs layer's key handler, ahead of the class's own.
         (add-handler (ffi:pointer+ data +text-ehn-offset+) class object)
         (ffi:poke-u32 data 1 +text-eh-added-offset+)
@@ -524,15 +708,60 @@ exactly the object's."
       (rem-handler (ffi:pointer+ data +text-ehn-offset+) object)
       (ffi:poke-u32 data 0 +text-eh-added-offset+))
     (when (/= 0 (ffi:peek-u32 data +text-pens-held-offset+))
-      (let ((cm (screen-colormap object)))
-        (mui:set-attrs object +tea-color-map+ nil)
-        (dotimes (i +pen-count+)
-          (let ((pen (ffi:peek-i32 data (+ +text-cmap-offset+ (* 4 i)))))
-            (when (/= pen -1)
-              (gfx:release-pen cm pen))
-            (ffi:poke-i32 data -1 (+ +text-cmap-offset+ (* 4 i))))))
-      (ffi:poke-u32 data 0 +text-pens-held-offset+)))
+      (mui:set-attrs object +tea-color-map+ nil)
+      (release-text-pens data object)))
   (mui:do-super-method class object message))
+
+(defmethod editor-apply-theme ((editor mui-editor) theme)
+  "THEME remembered, and the windows marked for THEME-REPAINT.  Before the
+first window that window's Setup paints it."
+  (setf (mui-editor-theme editor) theme)
+  (when (mui-editor-app editor)
+    (setf (mui-editor-theme-dirty editor) t)))
+
+(defmethod doc-lisp-mode-changed ((doc mui-document))
+  "The background follows the mode: the theme's on a Lisp-mode document,
+the class's own otherwise -- at the next repaint."
+  (let ((editor (doc-editor doc)))
+    (when (mui-editor-app editor)
+      (setf (mui-editor-theme-dirty editor) t))))
+
+(defun window-open-p (window)
+  (and window (/= 0 (or (mui:get-attr m:+muia-window-open+ window) 0))))
+
+(defun theme-repaint (editor)
+  "The theme onto the open document windows, the way MUI itself brings a
+changed look to an application: each window is closed and opened again.
+A MUIA_Background set on a set-up object does not repaint it (MUI 3.8),
+and a changed colour map repaints nothing either; the close runs Cleanup
+(the pens released), the background is set on the object while it is not
+set up -- as at creation, where the class takes it for sure -- and the
+open runs Setup (the theme's pens obtained) and redraws.  Then every
+Lisp-mode document is recoloured -- and one that left Lisp mode with the
+theme's background, which the colouring no longer runs on, is cleared of
+the colours it was painted in -- and the active window made active again.
+Only from the event loop (HOUSEKEEPING, START), never from a hook: MUI may
+still be inside the window that asked."
+  (when (and (mui-editor-theme-dirty editor) (mui-editor-app editor)
+             (not (editor-quitting editor)))
+    (setf (mui-editor-theme-dirty editor) nil)
+    (when (mui-editor-screen-depth editor)
+      (theme-plan editor))
+    (let ((active (active-document editor)))
+      (dolist (doc (live-documents editor))
+        (let* ((window (mdoc-window doc))
+               (object (mdoc-text doc))
+               (data (and object (text-instance-data editor object)))
+               (painted (and data (text-background-owned-p data))))
+          (when (and object (window-open-p window))
+            (mui:set-attrs window m:+muia-window-open+ nil)
+            (apply-text-background editor data object doc)
+            (mui:set-attrs window m:+muia-window-open+ t)
+            (cond ((doc-lisp-mode doc) (colour-all doc))
+                  (painted (clear-text-colours doc))))))
+      (when (and active (not (doc-closing active)))
+        (doc-activate active)))
+    (show-theme-note editor (active-document editor))))
 
 (defun wake-loop (editor)
   "Hand the event loop a return ID, so that it runs its housekeeping --
@@ -981,10 +1210,30 @@ presentation, not content, so the flag is put back afterwards."
        (unwind-protect (progn ,@body)
          (mui:set-attrs (mdoc-text ,d) +tea-has-changed+ (/= ,was 0))))))
 
+(defun set-block-colour (doc y x0 x1 value)
+  "SetBlock colour VALUE (COLOUR-VALUE's scale) on columns X0 to X1 of line Y."
+  (mui:do-method (mdoc-text doc) +tem-set-block+ x0 y x1 y
+                 +tef-set-block-color+ value))
+
 (defmethod doc-colour ((doc mui-document) y x0 x1 colour)
   (with-changed-flag (doc)
-    (mui:do-method (mdoc-text doc) +tem-set-block+ x0 y x1 y
-                   +tef-set-block-color+ (colour-value colour))))
+    (set-block-colour doc y x0 x1
+                      (colour-value colour (mui-editor-text-pen-p (doc-editor doc))))))
+
+(defun clear-text-colours (doc)
+  "Every line of DOC back to the class's own text pen and no token colours:
+SetBlock's value 0, which DOC-COLOUR cannot say -- its NIL is the theme's
+text pen.  For a document that left Lisp mode while it was painted in the
+theme's colours: the colouring no longer runs on it, and the theme's light
+text would stay on the standard background."
+  (let ((text (doc-text doc 0 (doc-end doc)))
+        (y 0))
+    (with-quiet-display (doc)
+      (with-changed-flag (doc)
+        (do-text-lines (line text)
+          (when (plusp (length line))
+            (set-block-colour doc y 0 (length line) 0))
+          (incf y))))))
 
 (defmethod doc-call-quietly ((doc mui-document) function)
   (mui:set-attrs (mdoc-text doc) +tea-quiet+ t)
@@ -1271,12 +1520,10 @@ window; NIL when it is NIL or not open."
 ;;; NM_BARLABEL, (STRPTR)-1: a separator, as libraries/gadtools.h spells it.
 (defconstant +nm-barlabel+ #xFFFFFFFF)
 
-;;; The dynamic groups this frontend makes items for: the open buffers.
-;;; The themes come with phase T3 of specs/clamacs-themes.md; until then
-;;; the View title is left out of the strip (MENU-ENTRY-DRAWN-P), so the
-;;; Amiga shows no empty menu.
+;;; The dynamic groups this frontend makes items for: the open buffers and
+;;; the themes (phase T3 of specs/clamacs-themes.md), one mechanism below.
 (defmethod editor-dynamic-groups ((editor mui-editor))
-  '(:buffers))
+  '(:buffers :themes))
 
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --
@@ -1303,8 +1550,12 @@ when MUI would not build it: the editor still runs, keys and port intact."
                                        (mui:new-object :menuitem
                                                        m:+muia-menuitem-title+ +nm-barlabel+))))
                      (:dynamic
-                      (when (and menu (eq (menu-entry-dynamic e) :buffers))
-                        (setf (mui-editor-buffers-menu editor) menu)))
+                      (when menu
+                        (let ((group (make-dyn-group (menu-entry-dynamic e)
+                                                     (1+ (length (mui-editor-dyn-groups editor))))))
+                          (setf (dyn-group-menu group) menu)
+                          (setf (mui-editor-dyn-groups editor)
+                                (append (mui-editor-dyn-groups editor) (list group))))))
                      (:item
                       (when menu
                        (let ((item (if (menu-entry-keys e)
@@ -1328,7 +1579,7 @@ when MUI would not build it: the editor still runs, keys and port intact."
         (when strip (ignore-errors (mui:dispose-object strip)))
         (setf (mui-editor-menustrip editor) nil
               (mui-editor-menu-items editor) nil
-              (mui-editor-buffers-menu editor) nil)
+              (mui-editor-dyn-groups editor) '())
         (format *error-output* "clamacs: the menu strip could not be built (~A) -- running without menus~%" e)
         nil))))
 
@@ -1340,8 +1591,8 @@ when MUI would not build it: the editor still runs, keys and port intact."
                 (mui:pool-hook (lambda (hook object message)
                                  (declare (ignore hook object))
                                  (let ((id (ffi:peek-u32 message 0)))
-                                   (if (>= id +buffer-item-id-base+)
-                                       (buffer-item-picked editor (- id +buffer-item-id-base+))
+                                   (if (>= id +dynamic-item-id-base+)
+                                       (dynamic-item-picked editor id)
                                        (menu-pick editor (menu-item-index id))))
                                  (after-command editor)
                                  0))
@@ -1365,41 +1616,44 @@ points is the honest way."
                 do (mui:set-attrs item m:+muia-menuitem-enabled+ want)
                    (setf (aref enabled i) want))))))
 
-;;; The Buffers menu (menu.lisp's BUFFER-MENU): its items are made and
-;;; disposed as buffers come and go, so they carry ids of their own above
-;;; the table's, the position in BUFFER-DOCS plus this base.
-(defconstant +buffer-item-id-base+ #x10000)
+;;; The dynamic groups (menu.lisp's DYNAMIC-MENU): the Buffers menu and
+;;; the View menu's themes.  Their items are made and disposed as buffers
+;;; and themes come and go, so they carry ids of their own above the
+;;; table's (DYN-GROUP-ITEM-ID), and everything below is written once over
+;;; the group.
 
-(defun buffer-item-picked (editor n)
-  (let ((docs (mui-editor-buffer-docs editor)))
-    ;; Intuition ticks a picked CHECKIT item itself: say what is ticked now.
-    (setf (mui-editor-buffers-checked editor) :unknown)
-    (when (< -1 n (length docs))
-      (buffer-menu-pick editor (aref docs n)))))
+(defun dynamic-item-picked (editor id)
+  (multiple-value-bind (group n) (dyn-group-of-id editor id)
+    (when group
+      ;; Intuition ticks a picked CHECKIT item itself: say what is ticked now.
+      (setf (dyn-group-checked group) :unknown)
+      (let ((objects (dyn-group-objects group)))
+        (when (< -1 n (length objects))
+          (dynamic-menu-pick editor (dyn-group-which group) (aref objects n)))))))
 
-(defun free-buffer-items (editor)
-  "Take the Buffers menu's items out and dispose of them, with their
+(defun free-dynamic-items (group)
+  "Take GROUP's items out of its menu and dispose of them, with their
 titles."
-  (let ((menu (mui-editor-buffers-menu editor)))
-    (dolist (entry (mui-editor-buffer-items editor))
+  (let ((menu (dyn-group-menu group)))
+    (dolist (entry (dyn-group-items group))
       (mui:do-method menu m:+muim-family-remove+ (car entry))
       (mui:dispose-object (car entry))
       (when (cdr entry) (ffi:free-foreign (cdr entry))))
-    (setf (mui-editor-buffer-items editor) '()
-          (mui-editor-buffers-shown editor) '()
-          (mui-editor-buffer-docs editor) #()
-          (mui-editor-buffers-checked editor) :unknown)))
+    (setf (dyn-group-items group) '()
+          (dyn-group-shown group) '()
+          (dyn-group-objects group) #()
+          (dyn-group-checked group) :unknown)))
 
-(defun rebuild-buffer-items (editor want active)
+(defun rebuild-dynamic-items (editor group want ticked)
   (let* ((strip (mui-editor-menustrip editor))
-         (menu (mui-editor-buffers-menu editor))
-         (docs (make-array (count-if #'consp want)))
+         (menu (dyn-group-menu group))
+         (objects (make-array (count-if #'consp want)))
          ;; MUI 4 wants a live strip's changes bracketed; MUI 3 makes them
          ;; as they come and does not know the method (it answers 0).
          (bracketed (/= 0 (mui:do-method strip m:+muim-menustrip-init-change+))))
     (unwind-protect
          (let ((n 0))
-           (free-buffer-items editor)
+           (free-dynamic-items group)
            (dolist (e want)
              (let ((entry
                      (if (eq e :bar)
@@ -1410,74 +1664,85 @@ titles."
                                      (mui:new-object :menuitem
                                                      m:+muia-menuitem-title+ title
                                                      m:+muia-menuitem-checkit+ t
-                                                     m:+muia-menuitem-checked+ (eq (cdr e) active)
-                                                     m:+muia-user-data+ (+ +buffer-item-id-base+ n))
+                                                     m:+muia-menuitem-checked+ (eq (cdr e) ticked)
+                                                     m:+muia-user-data+ (dyn-group-item-id group n))
                                    (error (c) (ffi:free-foreign title) (error c)))
                                  title)))))
                (mui:do-method menu m:+muim-family-add-tail+ (car entry))
-               (push entry (mui-editor-buffer-items editor))
+               (push entry (dyn-group-items group))
                (when (consp e)
-                 (setf (aref docs n) (cdr e))
+                 (setf (aref objects n) (cdr e))
                  (incf n))))
-           (setf (mui-editor-buffers-shown editor) want
-                 (mui-editor-buffer-docs editor) docs
-                 (mui-editor-buffers-checked editor) active))
+           (setf (dyn-group-shown group) want
+                 (dyn-group-objects group) objects
+                 (dyn-group-checked group) ticked))
       (when bracketed
         (mui:do-method strip m:+muim-menustrip-exit-change+)))))
 
-(defun buffers-menu-sync (editor)
-  "The Buffers menu in step with BUFFER-MENU, the active buffer ticked.
-Only from the event loop, never from a hook: remaking the items remakes
+(defun dynamic-menu-sync (editor group)
+  "GROUP's menu in step with DYNAMIC-MENU, the right item ticked.  Only
+from the event loop, never from a hook: remaking the items remakes
 Intuition's menu strip, and MUI may still be walking the picked items of
 the old one when the MenuAction hook runs."
-  (when (and (mui-editor-buffers-menu editor) (mui-editor-app editor)
-             (not (editor-quitting editor)))
-    (let ((want (buffer-menu editor))
-          (active (editor-active-document editor)))
-      (cond ((not (dynamic-menu-equal want (mui-editor-buffers-shown editor)))
-             (handler-case (rebuild-buffer-items editor want active)
-               (error (e)
-                 ;; Not again until the buffers change: the loop runs this
-                 ;; after every input event.
-                 (setf (mui-editor-buffers-shown editor) want)
-                 (format *error-output* "clamacs: the Buffers menu could not be made (~A)~%" e))))
-            ((not (eq active (mui-editor-buffers-checked editor)))
-             (loop for entry in (reverse (mui-editor-buffer-items editor))
-                   for e in want
-                   when (consp e)
-                     do (mui:set-attrs (car entry) m:+muia-menuitem-checked+ (eq (cdr e) active)))
-             (setf (mui-editor-buffers-checked editor) active))))))
+  (multiple-value-bind (want ticked) (dynamic-menu editor (dyn-group-which group))
+    (cond ((not (dynamic-menu-equal want (dyn-group-shown group)))
+           (handler-case (rebuild-dynamic-items editor group want ticked)
+             (error (e)
+               ;; Not again until the entries change: the loop runs this
+               ;; after every input event.
+               (setf (dyn-group-shown group) want)
+               (format *error-output* "clamacs: the ~A menu could not be made (~A)~%"
+                       (dyn-group-which group) e))))
+          ((not (eq ticked (dyn-group-checked group)))
+           (loop for entry in (reverse (dyn-group-items group))
+                 for e in want
+                 when (consp e)
+                   do (mui:set-attrs (car entry) m:+muia-menuitem-checked+ (eq (cdr e) ticked)))
+           (setf (dyn-group-checked group) ticked)))))
 
-;;; The port's BUFFERS reads the items back from MUI, and picks through the
-;;; id an item carries, so drive.rexx checks what the menu shows and the id
-;;; the MenuAction hook would get.  The port's verbs run from the mailbox,
-;;; not inside a menu pick, so the menu is brought up to date first.
+(defun dynamic-menus-sync (editor)
+  "Every dynamic group in step: after every input event and mailbox drain."
+  (when (and (mui-editor-app editor) (not (editor-quitting editor)))
+    (dolist (group (mui-editor-dyn-groups editor))
+      (dynamic-menu-sync editor group))))
+
+;;; The port's BUFFERS and THEMES read the items back from MUI, and pick
+;;; through the id an item carries, so drive.rexx checks what the menu
+;;; shows and the id the MenuAction hook would get.  The port's verbs run
+;;; from the mailbox, not inside a menu pick, so the menu is brought up to
+;;; date first.
+(defun live-dyn-group (editor which)
+  (and (mui-editor-app editor) (not (editor-quitting editor))
+       (dyn-group editor which)))
+
 (defmethod editor-dynamic-menu-lines ((editor mui-editor) which)
-  (if (or (not (eq which :buffers)) (null (mui-editor-buffers-menu editor)))
-      (call-next-method)
-      (progn
-        (buffers-menu-sync editor)
-        (loop for (item . title) in (reverse (mui-editor-buffer-items editor))
-              collect (if (null title)
-                          "-"
-                          (format nil "~A ~A"
-                                  (if (/= 0 (or (mui:get-attr m:+muia-menuitem-checked+ item) 0))
-                                      ">" " ")
-                                  (mui:get-attr-string m:+muia-menuitem-title+ item)))))))
+  (let ((group (live-dyn-group editor which)))
+    (if (null group)
+        (call-next-method)
+        (progn
+          (dynamic-menu-sync editor group)
+          (loop for (item . title) in (reverse (dyn-group-items group))
+                collect (if (null title)
+                            "-"
+                            (format nil "~A ~A"
+                                    (if (/= 0 (or (mui:get-attr m:+muia-menuitem-checked+ item) 0))
+                                        ">" " ")
+                                    (mui:get-attr-string m:+muia-menuitem-title+ item))))))))
 
 (defmethod editor-dynamic-menu-pick ((editor mui-editor) which label)
-  (if (or (not (eq which :buffers)) (null (mui-editor-buffers-menu editor)))
-      (call-next-method)
-      (progn
-        (buffers-menu-sync editor)
-        (let ((entry (find-if (lambda (entry)
-                                (and (cdr entry)
-                                     (equal (mui:get-attr-string m:+muia-menuitem-title+ (car entry))
-                                            label)))
-                              (mui-editor-buffer-items editor))))
-          (and entry
-               (buffer-item-picked
-                editor (- (mui:get-attr m:+muia-user-data+ (car entry)) +buffer-item-id-base+)))))))
+  (let ((group (live-dyn-group editor which)))
+    (if (null group)
+        (call-next-method)
+        (progn
+          (dynamic-menu-sync editor group)
+          (let ((entry (find-if (lambda (entry)
+                                  (and (cdr entry)
+                                       (equal (mui:get-attr-string m:+muia-menuitem-title+ (car entry))
+                                              label)))
+                                (dyn-group-items group))))
+            (and entry
+                 (dynamic-item-picked
+                  editor (mui:get-attr m:+muia-user-data+ (car entry)))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; About and the HyperSpec (menu.lisp)
@@ -1957,15 +2222,17 @@ it from running under the vertical one."
   (store-string (mdoc-message-buf doc) "")
   (store-string (mdoc-label-buf doc) "")
   (setf (mdoc-text doc)
-        (mui:new-object (mui:custom-class-class (mui-editor-textclass editor))
-                        m:+muia-cycle-chain+ t
-                        +tea-fixed-font+ t
-                        +tea-undo-levels+ 200
-                        +tea-wrap-mode+ +tev-wrap-mode-nowrap+
-                        ;; NoStyle, not Plain: Plain writes colour escapes
-                        ;; into the exported text.
-                        +tea-export-hook+ +tev-export-hook-nostyle+
-                        +tea-import-hook+ +tev-import-hook-plain+)
+        (apply #'mui:new-object (mui:custom-class-class (mui-editor-textclass editor))
+               m:+muia-cycle-chain+ t
+               +tea-fixed-font+ t
+               +tea-undo-levels+ 200
+               +tea-wrap-mode+ +tev-wrap-mode-nowrap+
+               ;; NoStyle, not Plain: Plain writes colour escapes
+               ;; into the exported text.
+               +tea-export-hook+ +tev-export-hook-nostyle+
+               +tea-import-hook+ +tev-import-hook-plain+
+               ;; The theme's background (theme.lisp), when it paints one
+               (text-creation-tags editor (doc-lisp-mode doc)))
         (mdoc-slider doc) (mui:new-object :scrollbar)
         ;; Lines never wrap, so a long line runs off the right edge: a
         ;; horizontal bar makes it reachable with the mouse, on a class
@@ -1993,6 +2260,11 @@ it from running under the vertical one."
                                         m:+muia-frame+ m:+muiv-frame-string+
                                         m:+muia-string-max-len+ 256
                                         m:+muia-cycle-chain+ t))
+  ;; The object holds the theme's background if it was created with it
+  ;; (TEXT-CREATION-TAGS): recorded, so that a plan the first Setup corrects
+  ;; -- a screen shallower than the default public one -- takes it away again.
+  (when (text-creation-background-p editor (doc-lisp-mode doc))
+    (ffi:poke-u32 (text-instance-data editor (mdoc-text doc)) 1 +text-own-bg-offset+))
   ;; Register the objects before any method can run on them.
   (setf (gethash (object-address (mdoc-text doc)) (mui-editor-objects editor)) doc
         (gethash (object-address (mdoc-mini doc)) (mui-editor-objects editor)) doc)
@@ -2034,6 +2306,9 @@ it from running under the vertical one."
   ;; MUI opens a window with no active object.
   (doc-activate doc)
   (update-status doc)
+  ;; The first window's Setup settled the theme against the screen: what
+  ;; the shallow-screen rule has to say goes into this echo area.
+  (show-theme-note editor doc)
   doc)
 
 (defmethod editor-make-document ((editor mui-editor) &key path name lisp-mode)
@@ -2139,7 +2414,8 @@ quit.  True when the last window is gone and the loop must leave."
     (reap editor))
   (when (editor-quitting editor)
     (quit-requested editor))
-  (buffers-menu-sync editor)
+  (theme-repaint editor)
+  (dynamic-menus-sync editor)
   (null (live-documents editor)))
 
 (defun run-loop (editor)
@@ -2195,7 +2471,9 @@ function: an image is saved before it runs and restores into it."
     (unwind-protect
          (mui:with-foreign-pool ()
            (setf (mui-editor-ie editor) (mui:pool-alloc +ie-size+)
-                 (mui-editor-mapbuf editor) (mui:pool-alloc 8))
+                 (mui-editor-mapbuf editor) (mui:pool-alloc 8)
+                 ;; The theme's background spec, which MUI reads
+                 (mui-editor-bg-buf editor) (mui:pool-alloc +bg-buffer-size+))
            (create-classes editor)
            (install-hooks editor)
            ;; The menu strip goes in at creation (MUIA_Application_Menustrip
@@ -2227,7 +2505,10 @@ function: an image is saved before it runs and restores into it."
                     (dolist (hook *after-start-hooks*)
                       (funcall hook editor))
                     (menu-update editor)
-                    (buffers-menu-sync editor)
+                    (dynamic-menus-sync editor)
+                    ;; A theme a start hook or the wire's first reply
+                    ;; picked, before the first key.
+                    (theme-repaint editor)
                     (run-loop editor)))
              ;; Order: no more calls from the other threads (waiters are
              ;; woken with the shutdown answer), then the port and the
@@ -2252,12 +2533,13 @@ function: an image is saved before it runs and restores into it."
              (mui:dispose-object (mui-editor-app editor))
              (exit-note "application disposed")
              (setf (mui-editor-app editor) nil
-                   (mui-editor-menustrip editor) nil
-                   (mui-editor-buffers-menu editor) nil)
-             ;; The Buffers menu's items went with it; their titles are ours.
-             (dolist (entry (mui-editor-buffer-items editor))
-               (when (cdr entry) (ffi:free-foreign (cdr entry))))
-             (setf (mui-editor-buffer-items editor) '())
+                   (mui-editor-menustrip editor) nil)
+             ;; The dynamic groups' items went with it; their titles are ours.
+             (dolist (group (mui-editor-dyn-groups editor))
+               (dolist (entry (dyn-group-items group))
+                 (when (cdr entry) (ffi:free-foreign (cdr entry))))
+               (setf (dyn-group-items group) '()))
+             (setf (mui-editor-dyn-groups editor) '())
              (free-mailbox editor)))
       (setf *editor* nil))
     t))

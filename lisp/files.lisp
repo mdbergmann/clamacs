@@ -83,7 +83,8 @@ of their own) keep their text and get a new window instead."
     (unless (eq lisp-mode (and (doc-lisp-mode doc) t))
       (setf (doc-lisp-mode doc) lisp-mode
             (doc-keys doc) (make-keystate (global-keymap)
-                                          (and lisp-mode (lisp-keymap)))))))
+                                          (and lisp-mode (lisp-keymap))))
+      (doc-lisp-mode-changed doc))))
 
 (defun visit-path (doc path)
   "DOC now shows PATH: the name, the title, the mode and the state that

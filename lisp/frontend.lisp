@@ -218,6 +218,13 @@ A frontend that shows no colours of its own does nothing.")
     (declare (ignore theme))
     nil))
 
+(defgeneric doc-lisp-mode-changed (doc)
+  (:documentation "DOC's Lisp mode was switched on or off (SET-LISP-MODE):
+a frontend whose text colours are Lisp mode's -- the MUI one paints the
+theme's text and background on a Lisp-mode document only -- follows.")
+  (:method ((doc document))
+    nil))
+
 (defgeneric doc-call-quietly (doc function)
   (:documentation "Call FUNCTION with display updates held back, for an
 operation that touches many lines.")

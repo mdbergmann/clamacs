@@ -294,6 +294,14 @@ OK the tick moved to sample2.lisp
 OK *clamacs-room* is a tool buffer below the bar
 OK BUFFERS refused an unknown buffer
 OK a closed buffer left the Buffers menu
+OK the View menu lists the themes, Light ticked
+OK picking Solarized Dark in the View menu loaded it
+OK the tick moved to Solarized Dark
+OK the pick wrote the init file
+OK the frontend settled the theme against the screen
+OK THEMES refused an unknown theme
+OK a session-only pick ticked One Dark and left the init file alone
+OK the View menu is back on Light
 OK GETWINDOW answered doc1
 OK the snapshot was taken
 OK the snapshot wrote ENV: and ENVARC:
