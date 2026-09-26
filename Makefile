@@ -16,6 +16,16 @@
 #   make test-lisp-gc-stress  the same, a compaction at every allocation
 #                    (needs the superproject's `make test-gc-stress' binary)
 #   make amiga       cross-compile the editor (delegates to Makefile.cross)
+#
+# The host frontend (specs/clamacs-host.md; host/ and verify/host/):
+#
+#   make host        build/host-frontend/: the page, webview and the shim
+#   make host-image  ... plus clamacs.img, the editor's heap image, verified
+#   make host-app    ... plus Clamacs.app, the macOS bundle
+#   make host-check  the smoke run, the key run and the drive (needs a window
+#                    server); host-check-image and host-check-app the drive
+#                    from the image and through the bundle
+#   make host-linux  the smoke run and the drive on Linux, in a container
 
 CC_HOST     ?= cc
 CFLAGS_HOST  = -std=c99 -Wall -Wextra -Wpedantic -g -O1 -Isrc
@@ -54,7 +64,8 @@ TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 CLAMIGA_HOST     ?= ../build/host/clamiga
 CLAMIGA_GCSTRESS ?= ../build/host-gcstress/clamiga
 
-.PHONY: all test test-lisp test-lisp-gc-stress clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS))
+.PHONY: all test test-lisp test-lisp-gc-stress clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS)) \
+        host host-image host-app host-check host-check-image host-check-app host-linux
 
 # Without this, make treats the core objects as intermediates of the pattern
 # rule that builds a test binary and deletes them after every run, so each
@@ -100,6 +111,27 @@ amiga:
 
 mos:
 	$(MAKE) -f Makefile.mos mos
+
+host:
+	host/build.sh
+
+host-image:
+	host/make-image.sh
+
+host-app:
+	host/make-app.sh
+
+host-check:
+	verify/host/run-smoke.sh && verify/host/host-keys.sh && verify/host/run-drive.sh
+
+host-check-image:
+	IMAGE=1 verify/host/run-drive.sh
+
+host-check-app:
+	APP=1 verify/host/run-drive.sh
+
+host-linux:
+	verify/host/run-linux.sh
 
 clean:
 	rm -rf build/host

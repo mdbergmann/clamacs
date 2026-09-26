@@ -114,7 +114,34 @@ second clamiga once; `run-drive.sh` drives every Lisp leg against a
 clamiga the editor started and checks that it stopped with the editor.
 `--bind ADDR` is honoured now (the runtime binds a named address).  A
 clamiga change this needs (`ext.dev.tcp`, `ext:socket-listen` with an
-address, `ext:executable-path`) is on cl-amiga's `feat/dev-tcp`.
+address, `ext:executable-path`) is on cl-amiga's `feat/dev-tcp`.  Phase
+H6 (2026-09-26) is the other hosts and the image.  The shim has a GTK 3
+body (`CLAMACS_HOST_GTK`, `build.sh` defines it on Linux and compiles the
+`.m` as C) and a Win32 body (`_WIN32`; compiled with mingw-w64, never run
+on a Windows machine), `build.sh` builds webview and the shim per host
+(`.dylib` / `.so` / `.dll`; `host-library-name` picks the suffix from
+`*features*`, and Windows has no feature of its own there), and
+`verify/host/run-linux.sh` (`make host-linux`) runs the smoke and the
+drive on Ubuntu under Xvfb in a container -- the Linux gate, green.  Two
+things Linux taught: a GTK resize is asynchronous (the smoke steps until
+the frame took, where Cocoa's `setFrame` was synchronous), and About's
+first line is the shim's per host, so the drive accepts any of the three.
+The host image is `host/make-image.sh` (`make host-image`,
+`build/host-frontend/clamacs.img` beside the page and the libraries,
+verified by `scripts/verify-editor-image.lisp`, which now branches on the
+frontend the image holds) and `IMAGE=1 host/run.sh` starts from it; the
+macOS bundle is `host/make-app.sh` (`make host-app`, `Clamacs.app` with
+clamiga, image, page, libraries, the runtime's `lib/` and its boot image
+under `Contents/lib/clamiga/`, an icon from `host/Clamacs.svg`).  Two
+rules that came with the image: `host-frontend-dir` is decided at RUN
+time (the environment, then beside the binary when `page.html` is there,
+then the checkout's build directory the image remembers), and `run`
+calls `refresh-user-paths` first, because `*init-file*` and
+`*snapshot-files*` are settled at load and an image holds the saving
+machine's HOME -- `make-image.sh` verifies under another HOME for exactly
+that.  `IMAGE=1` / `APP=1 verify/host/run-drive.sh` drive an editor
+started from the image / through the bundle's launcher (both green, 170
+OK).
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

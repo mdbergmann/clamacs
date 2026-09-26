@@ -55,12 +55,45 @@
          (dir (if here (directory-namestring here) ""))
          (cut (search "lisp/" dir :from-end t)))
     (concatenate 'string (if cut (subseq dir 0 cut) dir) "build/host-frontend/"))
-  "The directory host/build.sh writes to: page.html, libwebview.dylib and
-libclamacs-host.dylib.  CLAMACS_HOST_FRONTEND in the environment overrides
-it.")
+  "The directory host/build.sh writes to in a checkout: page.html and the
+two libraries.  Settled when this file loads, so an image holds the answer
+of the checkout it was saved from; HOST-FRONTEND-DIR decides at run time.")
+
+(defun host-library-name (base)
+  "BASE with this host's shared-library suffix: .dylib on macOS, .so on
+Linux, .dll elsewhere (Windows -- the runtime puts no feature of its own
+there, and none for the BSDs, which host/build.sh does not build for)."
+  (concatenate 'string base
+               (cond ((member :darwin *features*) ".dylib")
+                     ((member :linux *features*) ".so")
+                     (t ".dll"))))
+
+(defun with-trailing-slash (dir)
+  (if (and (> (length dir) 0)
+           (member (char dir (1- (length dir))) '(#\/ #\\)))
+      dir
+      (concatenate 'string dir "/")))
+
+(defun choose-host-frontend-dir (env exe-dir default)
+  "The directory of the page and the libraries: ENV (CLAMACS_HOST_FRONTEND)
+when it is set; else EXE-DIR, the running binary's directory, when the page
+is there -- the Clamacs.app bundle and an installed layout put page,
+libraries and image beside clamiga; else DEFAULT, the checkout's build
+directory.  Each with a trailing slash."
+  (cond ((and env (string/= env "")) (with-trailing-slash env))
+        ((and exe-dir
+              (probe-file (concatenate 'string (with-trailing-slash exe-dir) "page.html")))
+         (with-trailing-slash exe-dir))
+        (t default)))
+
+(defun host-frontend-dir ()
+  (let ((exe (ext:executable-path)))
+    (choose-host-frontend-dir (ext:getenv "CLAMACS_HOST_FRONTEND")
+                              (and exe (directory-namestring exe))
+                              *host-frontend-dir*)))
 
 (defun host-frontend-file (name)
-  (concatenate 'string (or (ext:getenv "CLAMACS_HOST_FRONTEND") *host-frontend-dir*) name))
+  (concatenate 'string (host-frontend-dir) name))
 
 ;;; ------------------------------------------------------------------
 ;;; The editor and its documents
@@ -1477,12 +1510,12 @@ file -- valid UTF-8 as long as host/build.sh kept it ASCII."
 (defun host-open (editor)
   "The libraries, the window, the bindings, the page; returns once the
 page has reported ready."
-  (let ((webview (host-frontend-file "libwebview.dylib"))
-        (shim (host-frontend-file "libclamacs-host.dylib"))
+  (let ((webview (host-frontend-file (host-library-name "libwebview")))
+        (shim (host-frontend-file (host-library-name "libclamacs-host")))
         (page (host-frontend-file "page.html")))
     (dolist (file (list webview shim page))
       (unless (probe-file file)
-        (error "Clamacs: ~A is missing -- run host/build.sh first." file)))
+        (error "Clamacs: ~A is missing -- run host/build.sh first (or point CLAMACS_HOST_FRONTEND at the directory that has it)." file)))
     (setf (host-editor-webview editor) (or (ffi:load-library webview)
                                            (error "Clamacs: ~A did not load." webview))
           (host-editor-shim editor) (or (ffi:load-library shim)
@@ -1603,6 +1636,9 @@ loopback as if the option had not been given."
 (defun run ()
   "The editor as a program: the user's init file (~/.clamacsrc), then
 START on the program's own arguments -- what follows `--' on clamiga's
-command line."
+command line.  The image's start (`clamiga --image clamacs.img --eval
+\"(clamacs::run)\"') comes here too, so the user's paths are re-derived
+first: the image holds the saving machine's."
+  (refresh-user-paths)
   (load-init-file)
   (start :files (parse-command-line ext:*command-line-args*)))

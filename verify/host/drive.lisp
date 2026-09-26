@@ -443,8 +443,14 @@ the second editor's mode -- so the list is taken apart by hand.)"
   (if (string= *result* "enabled")
       (ok "the Project menu has About")
       (fail "MENU clamacs-about STATE gave ~A" *result*))
+  ;; The first line is the shim's, one per host (the Cocoa, GTK or Win32
+  ;; body of host/clamacs-host.m); the second is webview's version and
+  ;; the WebKit token of the user agent, the same everywhere.
   (cmd "EVAL (clamacs::about-text clamacs::*editor*)")
-  (if (and (= *rc* 0) (search "Cocoa/WebKit on macOS" *result*)
+  (if (and (= *rc* 0)
+           (or (search "Cocoa/WebKit on macOS" *result*)
+               (search "GTK " *result*)
+               (search "Win32/WebView2 on Windows" *result*))
            (search "webview " *result*) (search ", WebKit " *result*)
            (not (search "unknown" *result*)))
       (ok "About names the toolkit: ~A"

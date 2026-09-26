@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Clamacs.svg: the app icon of the macOS bundle (host/make-app.sh turns
+     it into Clamacs.icns with rsvg-convert and iconutil).  The lambda card
+     of the Workbench icons (cl-amiga's scripts/make-icons.py), drawn for a
+     1024-pixel canvas with macOS's rounded-square inset. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4a7a"/>
+      <stop offset="1" stop-color="#1c2340"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" ry="184" fill="url(#card)"/>
+  <rect x="100" y="100" width="824" height="412" rx="184" ry="184" fill="url(#sheen)"/>
+  <rect x="172" y="172" width="680" height="680" rx="130" ry="130" fill="none" stroke="#a8b4dc" stroke-width="14" stroke-opacity="0.55"/>
+  <text x="512" y="742" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="300"
+        font-size="640" text-anchor="middle" fill="#f4f6ff">&#x3bb;</text>
+</svg>

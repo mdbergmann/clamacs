@@ -2254,6 +2254,8 @@ function: an image is saved before it runs and restores into it."
 START on the program's own arguments -- what follows `--' on clamiga's
 command line, or the project icons of a Workbench start, both
 EXT:*COMMAND-LINE-ARGS*.  lisp/clamacs.lisp calls it after loading the
-editor from source; the image's restore hook calls it the same way."
+editor from source; the image's start calls it the same way, so the
+user's paths are re-derived first (constants here; see REFRESH-USER-PATHS)."
+  (refresh-user-paths)
   (load-init-file)
   (start :files ext:*command-line-args*))

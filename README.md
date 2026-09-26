@@ -33,17 +33,20 @@ release starts the same editor from a heap image instead (its `Clamacs`
 icon, or `clamiga --image clamacs.img --non-interactive --eval
 "(clamacs::run)" -- file.lisp`), which skips the load.
 
-## On the host (macOS)
+## On the host (macOS, Linux)
 
-The same editor runs on a Mac, in one native window with the buffers as
-tabs (webview + CodeMirror 6; `specs/clamacs-host.md`):
+The same editor runs on a Mac or a Linux desktop, in one native window
+with the buffers as tabs (webview + CodeMirror 6; `specs/clamacs-host.md`):
 
 ```
-host/run.sh file.lisp ...        # builds what is missing, then starts the editor
+host/run.sh file.lisp ...        # builds what is missing, then starts the editor from source
+IMAGE=1 host/run.sh file.lisp    # the same from its heap image (made and verified on first use)
+make host-app                    # macOS: build/host-frontend/Clamacs.app, the editor as an application
 ```
 
 Everything Emacs about it is the same code as on the Amiga: the keys
-(Option is Meta, ESC too; Command keys stay the system's), Lisp mode, the
+(Option is Meta on the Mac, Alt on Linux, ESC everywhere; Command keys
+stay the system's), Lisp mode, the
 prompts, the requesters, the menus.  The document window has files,
 editing, colouring, search, the minibuffer and the status line with the
 arglist; the Lisp behind it -- the REPL, the debugger, the inspector,
@@ -59,9 +62,9 @@ Editor Itself** points everything at the editor's own image instead.  The
 **menu bar** at the top of the window is the Amiga's menu strip, drawn
 by the page (the toolkit has no native one): the same menus, the Emacs
 key beside each item, items dimmed by the same rules, the Buffers menu
-with the active buffer ticked, About with the toolkit lines (macOS,
-webview, WebKit) and Help > Common Lisp HyperSpec opening the system's
-browser.  What the Amiga opens as windows of
+with the active buffer ticked, About with the toolkit lines (the
+platform's toolkit, webview, WebKit) and Help > Common Lisp HyperSpec
+opening the system's browser.  What the Amiga opens as windows of
 their own lives in the **dock** below the splitter: the tool buffers
 (the REPL, a description, an apropos) as tabs, and the Diagnostics,
 Debugger and Inspector panels beside them -- a diagnostics row jumps to
@@ -76,6 +79,33 @@ read at the next start).  `host/build.sh`
 needs the network once, for the webview library and the CodeMirror
 packages (both pinned and checked); the editor itself does not.  The init
 file is `~/.clamacsrc`, the window layout `~/.clamacs-windows.cfg`.
+
+**The heap image and the application.**  `host/make-image.sh` (`make
+host-image`) saves the editor as `build/host-frontend/clamacs.img` beside
+the page and the libraries and proves it starts -- the host twin of the
+release's `bin/aos3/clamacs.img` -- and `IMAGE=1 host/run.sh` starts from
+it, which skips the load.  Images are per-build: one older than the
+clamiga binary is remade.  On the Mac, `host/make-app.sh` (`make
+host-app`) wraps it all into `build/host-frontend/Clamacs.app` -- clamiga,
+the image, the page, the two libraries and the runtime library with its
+own boot image, so **Clamiga > Start clamiga** works from inside the
+bundle -- with an icon and an Info.plist; it runs from the Dock or with
+`open -a build/host-frontend/Clamacs.app --args file.lisp` (a shell
+launcher gets no Apple Events, so files dropped on the icon are not opened;
+open them from inside).  It is not signed.
+
+**Linux** needs GTK 3 and WebKitGTK 4.1 with their headers (Debian/Ubuntu:
+`libgtk-3-dev libwebkit2gtk-4.1-dev`; 4.0 is taken when 4.1 is missing),
+`pkg-config`, gcc/g++ and node; then `host/run.sh` is the same command.
+The requesters are GTK dialogs, the file panel the GTK file chooser, About
+names the GTK, WebKitGTK and distribution versions.  A window position is
+what the compositor allows (Wayland ignores a move).  `make host-linux`
+runs the whole gate in an Ubuntu container under Xvfb
+(`verify/host/run-linux.sh`, needs docker).  **Windows** (an MSYS2 shell,
+WebView2) has its shim bodies and `build.sh` branch written and compiled
+against the API with mingw-w64, but has not been run on a Windows machine
+yet: its requester is a `MessageBox`, whose fixed buttons (Yes / No /
+Cancel) the message maps to the editor's ("Yes = Save, No = Discard").
 
 The editor's own port -- what `drive.rexx`'s macros talk to on the Amiga
 -- is a TCP listener on `127.0.0.1` here, serving the same verbs on a
@@ -276,6 +306,9 @@ verify/host/run-smoke.sh         # the host frontend's ground: window, page, shi
 verify/host/host-keys.sh         # the host editor typed into through its page, unattended
 verify/host/run-drive.sh         # the host editor's acceptance run over its own port
 MEMTRACK=1 verify/host/run-drive.sh # the same under a leak-tracking clamiga: nothing may outlive exit
+IMAGE=1 verify/host/run-drive.sh # the same with both editors started from the heap image (make host-image)
+APP=1 verify/host/run-drive.sh   # the same through Clamacs.app's launcher (make host-app; macOS)
+make host-linux                  # the smoke run and the drive on Linux, in a container (verify/host/run-linux.sh)
 ```
 
 The Lisp editor's tests run everything but `frontend-mui.lisp` on the host

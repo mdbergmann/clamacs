@@ -195,10 +195,14 @@ frameworks; no other toolchain).  Its C API, called through
 | `void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)` | the window's close button asks the editor (`save-buffers-kill-emacs`) instead of ending the loop; a delegate that forwards everything else to webview's |
 | `const char *clamacs_host_toolkit(void)` | the toolkit line for About ("Cocoa/WebKit on macOS 27.0.0") |
 
-Linux (GTK) and Windows (Win32) implementations go behind `#ifdef` in the
-same file when those hosts are taken up; every entry has a "not
-available" return so the editor runs without them (the requester falls
-back to the echo area, the file dialog to the prompt).
+The Linux (GTK 3, `CLAMACS_HOST_GTK`) and Windows (Win32, `_WIN32`)
+implementations are behind `#ifdef` in the same file (H6; `build.sh`
+compiles the `.m` as C there); every entry has a "not available" return
+for any other host so the editor runs without them (the requester falls
+back to the echo area, the file dialog to the prompt).  The library is
+`libclamacs-host.dylib` / `.so` / `.dll`, and the editor asks for it and
+for `libwebview` with the suffix of the host it runs on
+(`host-library-name`).
 
 ### The wire: the editor's own image first, TCP second
 
@@ -431,14 +435,17 @@ self-contained.
 ## Files
 
 ```
-host/build.sh              the dylibs and the page (macOS today); pins webview, checks the bundle
+host/build.sh              the libraries and the page, per host (macOS, Linux, Windows); pins webview, checks the bundle
 host/package.json          the CodeMirror packages ...
 host/package-lock.json     ... locked, installed with npm ci
-host/clamacs-host.m        the shim
+host/clamacs-host.m        the shim: Cocoa, GTK and Win32 bodies
 host/page-head.html        layout and palettes
 host/page-entry.mjs        the CodeMirror bundle's entry
 host/page-app.js           CK.* and the bindings
-host/run.sh                clamiga --heap 32M --non-interactive --load lisp/clamacs.lisp -- files
+host/run.sh                clamiga --heap 32M --non-interactive --load lisp/clamacs.lisp -- files; IMAGE=1 from the image
+host/make-image.sh         build/host-frontend/clamacs.img, saved and verified (phase H6)
+host/make-app.sh           build/host-frontend/Clamacs.app, the macOS bundle (phase H6)
+host/Clamacs.svg           its icon
 lisp/json.lisp             pure: the JSON reader and the JS string writer
 lisp/textmirror.lisp       pure: the text model (from tests/fake-frontend.lisp)
 lisp/mailbox.lisp          pure: call-in-editor / drain, wake as a parameter
@@ -454,8 +461,11 @@ tests/test-transport-tcp.lisp   the wire to a dev-tcp server in the test process
 verify/host/smoke.lisp     H0's ground end to end (the page, the shim, the wake)
 verify/host/run-smoke.sh   builds, runs it, reads the verdict; GCSTRESS=1 under gc-stress
 verify/host/drive.lisp     the acceptance run, over the port
-verify/host/run-drive.sh   builds, starts the editor, runs the drive, checks the log
+verify/host/run-drive.sh   builds, starts the editor, runs the drive, checks the log;
+                           IMAGE=1 from the image, APP=1 through the bundle's launcher
 verify/host/host-keys.sh   the differential smoke run: keys through the page
+verify/host/run-linux.sh   the smoke run and the drive on Linux, in a container under Xvfb
+verify/host/linux/Dockerfile  ... its image: Ubuntu with GTK, WebKitGTK, node, Xvfb
 ```
 
 `lisp/load.lisp` keeps its lists; `lisp/clamacs.lisp` binds
@@ -732,6 +742,79 @@ with the memory note updated.
   WebView2, Win32 dialogs, MSYS2 build.  Each a session with the box at
   hand.
 - A host `clamacs.img` (`--image`) and a `Clamacs.app` / launcher.
+- **Done 2026-09-26** (branch `host-h6`), with a container standing in
+  for the Linux box and mingw-w64 for the Windows one.  The shim's GTK 3
+  body (`CLAMACS_HOST_GTK`): a step is one blocking
+  `g_main_context_iteration` ended by the first event or a
+  `g_timeout_add` of the step's length, then what is pending (capped), and
+  the wake is `g_main_context_wakeup`; the requester a `GtkMessageDialog`
+  with the buttons' indices shifted by one as response ids (GTK keeps the
+  non-positive ones; Escape answers Cancel's index when there is one), the
+  file panel a `GtkFileChooserDialog`, the close button a `delete-event`
+  handler that runs the editor's callback and answers TRUE so webview's
+  `destroy` handler never runs, the frame `gtk_window_get_position` /
+  `get_size` and `move` / `resize` (Wayland ignores a move), text
+  converted from Latin-1 with `g_convert`, and About's line from
+  `gtk_get_*_version`, `webkit_get_*_version` and `g_get_os_info`.  The
+  Win32 body (`_WIN32`): `MsgWaitForMultipleObjectsEx` then a
+  `PeekMessage` drain, a `WM_NULL` posted to the loop's thread as the wake,
+  `MessageBoxW` with the button set picked by the count and the names
+  written into the message (Yes = Save, No = Discard), `GetOpenFileNameW`
+  / `GetSaveFileNameW`, the close button a wrapped window procedure that
+  swallows `WM_CLOSE`, the version from `RtlGetVersion`; compiled with
+  `x86_64-w64-mingw32-gcc -Wall -Wextra` clean, and NOT run: the first
+  Windows session runs `build.sh` there (the WebView2 SDK headers from the
+  pinned nupkg; `webview2_sha256` is still to be recorded, and until it is
+  `build.sh` stops after the fetch and prints the hash) and the smoke.
+  `build.sh` branches on `uname -s`, compiles the `.m` as C off the Mac
+  and names the libraries `.dylib` / `.so` / `.dll`; the editor asks with
+  `host-library-name`, whose choice is `:darwin` / `:linux` from
+  `*features*` and `.dll` otherwise, since the runtime puts no Windows
+  feature there (a runtime item for that first Windows session).
+  `verify/host/run-linux.sh` (`make host-linux`) builds an Ubuntu 24.04
+  image (`verify/host/linux/Dockerfile`), builds clamiga for Linux into
+  `build/host-linux/` of the superproject, runs `build.sh` there and the
+  smoke and the drive under `xvfb-run`: green on the first drive but for
+  About (the drive now accepts each host's first line; 169 OK after) --
+  what it taught is that a GTK resize is asynchronous, so the smoke steps
+  until the frame took.  The image: `host/make-image.sh` loads the editor from
+  source with the host frontend and runs `save-editor-image.lisp` from
+  `build/host-frontend/`, so `clamacs.img` sits beside the page and the
+  libraries, then restores it under a HOME and a TMPDIR of its own and
+  runs `verify-editor-image.lisp`, which branches on the frontend the
+  image holds (`*editor-image-frontend*`: the MUI checks as before, and
+  for the host that `refresh-user-paths` moved `*init-file*` and
+  `*snapshot-files*` from the saving HOME to this one, then the window,
+  the menu -- `host-editor-menus-sent` -- and a clean quit).  What the
+  image settled: `host-frontend-dir` is a function now
+  (`CLAMACS_HOST_FRONTEND`, then the running binary's directory when
+  `page.html` is there, then `*host-frontend-dir*`, the checkout's build
+  directory the image remembers), and `run` -- both frontends' -- calls
+  `refresh-user-paths` first, because a `defparameter` computed from
+  `user-homedir-pathname` is the saving machine's in an image.
+  `IMAGE=1 host/run.sh` starts from the image (remade when older than the
+  binary).  The bundle: `host/make-app.sh` lays out `Clamacs.app` --
+  `Contents/MacOS/` holds the launcher (a shell script: `exec clamiga
+  --heap 32M --non-interactive --image clamacs.img --eval "(clamacs::run)"
+  -- files`), clamiga, the image, the page and the two libraries, and
+  `Contents/lib/clamiga/` the runtime library with the bare-boot
+  `clamiga.img` of `make image`, so a clamiga the editor starts finds its
+  lib and boots from the image; `Contents/Resources/Clamacs.icns` is
+  `host/Clamacs.svg` through rsvg-convert and iconutil.  Cocoa takes the
+  bundle from the executable's path, so the Dock shows Clamacs with the
+  icon; a shell launcher gets no Apple Events, so files dropped on the
+  icon are not opened.  `run-drive.sh` grew `IMAGE=1` and `APP=1` (the
+  editors started from the image / through the launcher, plus the check
+  that no source was loaded): 170 OK each, `MEMTRACK=1` unchanged.  The
+  tests: `host-library-name`, `choose-host-frontend-dir` (the three
+  sources, the trailing slash), `refresh-user-paths`; `host-library-name`
+  is tested with `*features*` bound, one branch per host.  One flake seen
+  once and not again: `choose-host-frontend-dir` with an inline
+  `string-right-trim` argument answered as if the page were missing, in
+  the first run of the new test only.  It is a wrong answer from
+  conforming code, so it is runtime item R5, not something the test works
+  around: the test keeps the inline spelling only, and the file's
+  gc-stress run is the place it would show again.
 
 ## Runtime items (commits in cl-amiga, each under every gate)
 
@@ -765,6 +848,24 @@ with the memory note updated.
   `ext:executable-path` (the running binary as a path another process
   can start it by), so the editor starts the clamiga it runs on.
   `ext:run-program` stays open for another day.
+- **R4** (open, for the first Windows session) a Windows feature on
+  `*features*` (`:win32`, beside `:darwin` and `:linux`, which
+  `src/core/symbol.c` pushes for the host OS): `host-library-name` and
+  the smoke fall back to `.dll` when neither of the two is present, which
+  is right today and blind tomorrow.  The same feature list has no BSD
+  entry, so `host/build.sh` builds for Linux and macOS and Windows only;
+  a BSD name goes back into it together with a runtime feature.  (The
+  fallback cannot key off `:unix` instead: the runtime pushes `:posix` and
+  `:unix` on every non-Amiga build, Windows included.)
+- **R5** (open, unreproduced) a wrong answer once from
+  `(choose-host-frontend-dir nil (string-right-trim "/" dir) default)` in
+  the first run of `host-frontend-dir-is-chosen-at-run-time`: the
+  `probe-file` of the concatenated `page.html` path answered as if the
+  file were missing, so `default` came back.  Not seen in any run since.
+  To reduce: run the call in a loop with the page present, on the plain
+  host binary and on `build/host-gcstress/clamiga` (`string-right-trim` on
+  a fresh string, `concatenate`, `probe-file` are the suspects), and if it
+  reproduces, fix it in cl-amiga with a regression test there.
 
 ## Risks and what decides them
 

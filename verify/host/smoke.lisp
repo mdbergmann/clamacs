@@ -42,10 +42,16 @@
 
 ;;; ---- the two libraries -------------------------------------------------
 
-(defvar *webview* (or (ffi:load-library (concatenate 'string *out* "libwebview.dylib"))
-                      (error "libwebview.dylib not found under ~A -- run host/build.sh" *out*)))
-(defvar *shim* (or (ffi:load-library (concatenate 'string *out* "libclamacs-host.dylib"))
-                   (error "libclamacs-host.dylib not found under ~A -- run host/build.sh" *out*)))
+;;; The libraries' suffix on this host (frontend-host.lisp's HOST-LIBRARY-NAME
+;;; makes the same choice; this file loads the JSON reader alone).
+(defvar *so* (cond ((member :darwin *features*) ".dylib")
+                   ((member :linux *features*) ".so")
+                   (t ".dll")))
+
+(defvar *webview* (or (ffi:load-library (concatenate 'string *out* "libwebview" *so*))
+                      (error "libwebview~A not found under ~A -- run host/build.sh" *so* *out*)))
+(defvar *shim* (or (ffi:load-library (concatenate 'string *out* "libclamacs-host" *so*))
+                   (error "libclamacs-host~A not found under ~A -- run host/build.sh" *so* *out*)))
 (defvar *w* nil)
 (defvar *callbacks* '())
 
@@ -180,7 +186,11 @@ above 255, which a narrow string cannot hold."
              (check (and (> (third f) 0) (> (fourth f) 0)) "frame has no size: ~S" f))
            (shim "clamacs_host_set_frame" :void '(:pointer :int32 :int32 :int32 :int32)
                  win 120 80 800 500)
-           (host-step 100)
+           ;; Cocoa's setFrame is synchronous; GTK applies a resize on its
+           ;; frame clock and learns the outcome from the X server (or the
+           ;; compositor), so the frame is stepped for, not read at once.
+           (step-until (lambda () (equal (get-frame) '(120 80 800 500))) 3
+                       "the frame to take set_frame 120 80 800 500")
            (let ((f (get-frame)))
              (note "frame after set_frame 120 80 800 500: ~S" f)
              (check (equal f '(120 80 800 500)) "set_frame did not take: ~S" f)))

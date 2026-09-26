@@ -1195,3 +1195,51 @@ batch of both taken."
   (let ((*host-bind* nil))
     (is-equal (parse-command-line '("x.lisp" "--bind")) '("x.lisp"))
     (is-equal *host-bind* "")))
+
+;;; --- where the page and the libraries are (phase H6) -------------------------
+
+(deftest host-library-name-follows-the-host
+  ;; One suffix per host, decided by the runtime's features -- .dylib for
+  ;; :darwin, .so for :linux, .dll where neither is present (Windows: the
+  ;; runtime has no feature for it, and pushes :posix and :unix there like
+  ;; anywhere off the Amiga).  The features are bound, so every branch runs
+  ;; on every host, the Windows fallback included.
+  (let ((*features* (list :darwin :posix :unix)))
+    (is-equal (host-library-name "libwebview") "libwebview.dylib"))
+  (let ((*features* (list :linux :posix :unix)))
+    (is-equal (host-library-name "libwebview") "libwebview.so")
+    (is-equal (host-library-name "libclamacs-host") "libclamacs-host.so"))
+  (let ((*features* (list :posix :unix)))
+    (is-equal (host-library-name "libwebview") "libwebview.dll")
+    (is-equal (host-library-name "libclamacs-host") "libclamacs-host.dll"))
+  (let ((*features* '()))
+    (is-equal (host-library-name "libwebview") "libwebview.dll"))
+  ;; The real features answer with one of the three.
+  (is (member (host-library-name "libwebview")
+              '("libwebview.dylib" "libwebview.so" "libwebview.dll")
+              :test #'string=)))
+
+(deftest host-frontend-dir-is-chosen-at-run-time
+  ;; The environment first; else the running binary's directory when the
+  ;; page is there (the app bundle, an installed layout); else the
+  ;; checkout's build directory an image may hold from another machine.
+  ;; Every answer carries a trailing slash, so a name can be appended.
+  (let* ((page (temp-file "page.html" "<html></html>"))
+         (with-page (directory-namestring page))
+         (without (concatenate 'string with-page "nowhere-such/")))
+    (is-equal (choose-host-frontend-dir "/env/dir" with-page "/build/") "/env/dir/")
+    (is-equal (choose-host-frontend-dir "/env/dir/" nil "/build/") "/env/dir/")
+    (is-equal (choose-host-frontend-dir "" with-page "/build/") with-page)
+    (is-equal (choose-host-frontend-dir nil with-page "/build/") with-page)
+    ;; A directory given without its slash.  The natural (inline) spelling
+    ;; stays, not a let-bound one: one wrong answer to exactly this was seen
+    ;; once and never again (specs/clamacs-host.md, R5), and a test that
+    ;; only ever passes a let-bound copy would hide it.
+    (is-equal (choose-host-frontend-dir nil (string-right-trim "/" with-page) "/build/") with-page)
+    (is-equal (choose-host-frontend-dir nil without "/build/") "/build/")
+    (is-equal (choose-host-frontend-dir nil nil "/build/") "/build/")
+    ;; What the editor asks for ends in the file's name under that directory.
+    (let ((file (host-frontend-file "page.html")))
+      (is (search "/page.html" file))
+      (is-equal (host-frontend-dir) (subseq file 0 (- (length file) (length "page.html")))))
+    (delete-file page)))

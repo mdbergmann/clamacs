@@ -189,3 +189,16 @@
         ;; The second window has no stored place.
         (is (null (layout-place editor (doc-role (open-document editor nil)))))))
     (delete-file env)))
+
+(deftest the-user-paths-are-re-derived-when-the-editor-runs
+  ;; A heap image holds *INIT-FILE* and *SNAPSHOT-FILES* as the saving
+  ;; machine had them; RUN calls REFRESH-USER-PATHS first, which answers
+  ;; what a fresh load of the two files would.
+  (let ((*init-file* "/some/other/machine/.clamacsrc")
+        (*snapshot-files* (list "/some/other/machine/.clamacs-windows.cfg")))
+    (refresh-user-paths)
+    (is-equal *init-file* (default-init-file))
+    (is-equal *snapshot-files* (default-snapshot-files))
+    (is (search ".clamacsrc" *init-file*))
+    (is (search ".clamacs-windows.cfg" (first *snapshot-files*)))
+    (is (null (search "/some/other/machine/" *init-file*)))))

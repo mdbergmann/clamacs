@@ -21,7 +21,17 @@
 #                                       editors must end with every off-heap
 #                                       block handed back -- the shutdown
 #                                       criterion of phase H4
-#   CLAMIGA=... names another binary.
+#   IMAGE=1 verify/host/run-drive.sh    both editors started from the heap
+#                                       image (host/make-image.sh, made first)
+#                                       instead of from source -- phase H6
+#   APP=1 verify/host/run-drive.sh      both editors started through the
+#                                       Clamacs.app bundle's launcher
+#                                       (host/make-app.sh, made first): the
+#                                       image, the page and the libraries
+#                                       beside the bundled binary, the clamiga
+#                                       it starts finding its lib/ there
+#   CLAMIGA=... names another binary (not with APP=1: the bundle's is the
+#   superproject's build/host/clamiga).
 #
 # Result: build/host-frontend/drive/drive.log (the drive's OK/FAIL/INFO
 # lines and the script's own), editor-a.log, editor-b.log.  The verdict
@@ -31,7 +41,9 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 super=$(cd "$root/.." && pwd)
-out="$root/build/host-frontend/drive"
+# CLAMACS_DRIVE_OUT names another result directory (run-linux.sh gives the
+# container's run one of its own, so it can run beside a Mac run).
+out=${CLAMACS_DRIVE_OUT:-"$root/build/host-frontend/drive"}
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
     clamiga=${CLAMIGA:-"$super/build/host-gcstress/clamiga"}
@@ -50,6 +62,16 @@ fi
 [ -x "$clamiga" ] || { echo "no clamiga at $clamiga (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
+# How an editor is started: from source, from the image, or through the
+# bundle's launcher (which starts from the bundled image).
+img="$root/build/host-frontend/clamacs.img"
+launcher="$root/build/host-frontend/Clamacs.app/Contents/MacOS/Clamacs"
+if [ "${APP:-0}" = 1 ]; then
+    "$root/host/make-app.sh" || exit 1
+    [ -x "$launcher" ] || { echo "no launcher at $launcher"; exit 1; }
+elif [ "${IMAGE:-0}" = 1 ]; then
+    CLAMIGA="$clamiga" "$root/host/make-image.sh" || exit 1
+fi
 rm -rf "$out"
 mkdir -p "$out/home" "$out/tmp-a" "$out/tmp-b" "$out/scratch"
 log="$out/drive.log"
@@ -106,9 +128,20 @@ check_leaks() {
 
 start_editor() {
     # $1 tmpdir, $2 log, $3 file
-    HOME="$out/home" TMPDIR="$1" \
-        "$clamiga" --no-userinit --heap 32M --non-interactive \
-        --load "$root/lisp/clamacs.lisp" -- "$3" </dev/null >"$2" 2>&1 &
+    if [ "${APP:-0}" = 1 ]; then
+        # The launcher's own line (no --no-userinit: the bundle is what a
+        # user starts; the private HOME has no .clamigarc anyway).
+        HOME="$out/home" TMPDIR="$1" \
+            "$launcher" "$3" </dev/null >"$2" 2>&1 &
+    elif [ "${IMAGE:-0}" = 1 ]; then
+        HOME="$out/home" TMPDIR="$1" \
+            "$clamiga" --no-userinit --heap 32M --non-interactive \
+            --image "$img" --eval "(clamacs::run)" -- "$3" </dev/null >"$2" 2>&1 &
+    else
+        HOME="$out/home" TMPDIR="$1" \
+            "$clamiga" --no-userinit --heap 32M --non-interactive \
+            --load "$root/lisp/clamacs.lisp" -- "$3" </dev/null >"$2" 2>&1 &
+    fi
     echo $!
 }
 
@@ -149,6 +182,14 @@ else
 fi
 if grep -q 'the page reported' "$out/editor-a.log"; then
     echo "FAIL the page reported an error (editor-a.log)" >>"$log"
+fi
+if [ "${APP:-0}" = 1 ] || [ "${IMAGE:-0}" = 1 ]; then
+    # An editor from the image loads nothing of the editor at start.
+    if grep -q '^; Loading .*/lisp/[a-z-]*\.lisp' "$out/editor-a.log"; then
+        echo "FAIL the editor loaded its sources although it started from the image" >>"$log"
+    else
+        echo "OK the editor came up from the image without loading its sources" >>"$log"
+    fi
 fi
 check_leaks "$out/editor-a.log" "the editor"
 
