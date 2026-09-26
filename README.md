@@ -59,12 +59,16 @@ to; a clamiga you started yourself is found through its TCP port
 name it -- an Amiga on the LAN included, when its port was started with
 `:host` and the editor with `--bind` (below).  **Clamiga > Talk to the
 Editor Itself** points everything at the editor's own image instead.  The
-**menu bar** at the top of the window is the Amiga's menu strip, drawn
-by the page (the toolkit has no native one): the same menus, the Emacs
-key beside each item, items dimmed by the same rules, the Buffers menu
-with the active buffer ticked, About with the toolkit lines (the
-platform's toolkit, webview, WebKit) and Help > Common Lisp HyperSpec
-opening the system's browser.  What the Amiga opens as windows of
+**menu bar** is the Amiga's menu strip: on macOS it is the screen's menu
+bar (with the usual application menu, Cmd-Q asking the editor to quit as
+the close button does; `CLAMACS_HOST_MENU=page` in the environment keeps
+it in the window instead), on Linux and Windows a bar at the top of the
+window drawn by the page (the toolkit has no native one) -- the same
+menus either way, the Emacs key beside each item, items dimmed by the
+same rules, the Buffers menu with the active buffer ticked, About with
+the toolkit lines (the platform's toolkit, webview, WebKit) and Help >
+Common Lisp HyperSpec opening the system's browser.  What the Amiga opens
+as windows of
 their own lives in the **dock** below the splitter: the tool buffers
 (the REPL, a description, an apropos) as tabs, and the Diagnostics,
 Debugger and Inspector panels beside them -- a diagnostics row jumps to

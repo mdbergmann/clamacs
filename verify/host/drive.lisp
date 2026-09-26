@@ -251,10 +251,15 @@ here), or \"\"."
   (cmd (format nil "EVAL (clamacs::menu-find ~S)" command))
   (and (= *rc* 0) (parse-integer *result* :junk-allowed t)))
 
+(defun menu-report (needle &optional (ticks 20))
+  "The menu bar's report -- the screen's menu on macOS, the page's bar
+elsewhere -- once it says NEEDLE, or \"\"."
+  (wait-eval "(clamacs::host-menu-report)" (escape-quotes needle) ticks))
+
 (defun page-menu-disabled ()
-  "The indices the page's report lists as disabled: (values LIST FOUND-P),
-FOUND-P NIL before the page reported anything."
-  (cmd "EVAL (clamacs::host-page-panels)")
+  "The indices the menu bar's report lists as disabled: (values LIST
+FOUND-P), FOUND-P NIL before there was a report."
+  (cmd "EVAL (clamacs::host-menu-report)")
   (let* ((key "disabled\\\":[")
          (at (and (= *rc* 0) (search key *result*))))
     (if (null at)
@@ -266,8 +271,8 @@ FOUND-P NIL before the page reported anything."
                   t)))))
 
 (defun wait-page-menu (index enabled ticks)
-  "Until the page's report shows the item at INDEX ENABLED (T) or dimmed
-\(NIL); NIL after TICKS half-seconds."
+  "Until the menu bar's report shows the item at INDEX ENABLED (T) or
+dimmed (NIL); NIL after TICKS half-seconds."
   (dotimes (i ticks nil)
     (multiple-value-bind (disabled found) (page-menu-disabled)
       (when (and found (eq enabled (not (member index disabled))))
@@ -394,19 +399,20 @@ the second editor's mode -- so the list is taken apart by hand.)"
     (if (string= *result* "disabled")
         (ok "Save is dimmed for a clean buffer")
         (fail "Save on a clean buffer is ~A" *result*))
-    ;; The page's own menu bar, not only the editor's account of it
+    ;; The menu bar itself (the screen's on macOS, the page's elsewhere),
+    ;; not only the editor's account of it
     (let ((save (menu-index "save-buffer")))
       (if (and save (wait-page-menu save nil 20))
-          (ok "the page's menu bar dims Save (item ~D)" save)
-          (fail "the page's menu bar does not dim Save (item ~A): ~A" save *result*))
+          (ok "the menu bar dims Save (item ~D)" save)
+          (fail "the menu bar does not dim Save (item ~A): ~A" save *result*))
       (cmd "INSERT (defun menu-test () 42)")
       (cmd "MENU save-buffer STATE")
       (if (string= *result* "enabled")
           (ok "the first edit enabled Save")
           (fail "Save after an edit is ~A" *result*))
       (if (and save (wait-page-menu save t 20))
-          (ok "the page's menu bar enabled Save after the edit")
-          (fail "the page's menu bar still dims Save: ~A" *result*)))
+          (ok "the menu bar enabled Save after the edit")
+          (fail "the menu bar still dims Save: ~A" *result*)))
     (cmd "MENU save-buffer")
     (if (and (= *rc* 0) (string= *result* "") (probe-file file))
         (ok "the menu saved the buffer")
@@ -428,6 +434,53 @@ the second editor's mode -- so the list is taken apart by hand.)"
   (if (result-is "2")
       (ok "the menu ran beginning-of-defun, CursorY ~A" *result*)
       (fail "the menu pick left CursorY= ~A" *result*))
+  ;; Where the menu is the host's own (macOS), the item itself is picked
+  ;; too: the shim performs its action, so the pick takes Cocoa's path to
+  ;; the editor's callback, which the MENU verb does not.  Elsewhere the
+  ;; page draws the bar and the verb is the pick.  A run with
+  ;; CLAMACS_HOST_MENU=page (`CLAMACS_HOST_MENU=page verify/host/run-drive.sh'
+  ;; on a Mac) is that second case on a host that has a bar of its own, and
+  ;; must not find the native one.
+  (let ((end (menu-index "end-of-defun"))
+        (page-asked (string-equal (or (ext:getenv "CLAMACS_HOST_MENU") "") "page")))
+    (cmd (format nil "EVAL (clamacs::host-menu-click 0 ~D)" end))
+    (cond ((result-is "\"no native menu\"")
+           (if page-asked
+               (ok "CLAMACS_HOST_MENU=page: the page draws the menu bar; the MENU verb is the pick")
+               (ok "the page draws the menu bar here; the MENU verb is the pick")))
+          (page-asked
+           (fail "CLAMACS_HOST_MENU=page, yet the host's own menu bar answered ~A" *result*))
+          ((not (result-is "\"picked\""))
+           (fail "picking End of Defun on the host's menu bar gave ~A" *result*))
+          (t
+           (cmd "TE GETCURSOR LINE")
+           (if (result-is "7")
+               (ok "the host's own menu ran end-of-defun, CursorY ~A" *result*)
+               (fail "the host's menu pick left CursorY= ~A" *result*))
+           ;; A Buffers item picked the same way.  sample.lisp is the active
+           ;; buffer here, so a pick of it would pass whether or not the
+           ;; callback fired: sample2.lisp is picked first (it can only become
+           ;; active through the shim's `which' 1 path), then sample.lisp
+           ;; back, which LEG-BUFFERS expects ticked.  The positions are the
+           ;; BUFFERS lines', the bar counted, as the shim counts them.
+           (let* ((lines (buffers-lines))
+                  (other (position "  sample2.lisp" lines :test #'string=))
+                  (home (position "> sample.lisp" lines :test #'string=)))
+             (if (not (and other home))
+                 (fail "BUFFERS before the Buffers pick gave ~{~A~^|~}" lines)
+                 (progn
+                   (cmd (format nil "EVAL (clamacs::host-menu-click 1 ~D)" other))
+                   (let ((r *result*))
+                     (cmd "GETFILE")
+                     (if (and (string= r "\"picked\"") (result-has "sample2.lisp"))
+                         (ok "the host's Buffers menu pick (item ~D) activated sample2.lisp" other)
+                         (fail "the host's Buffers pick of item ~D gave ~A, active ~A" other r *result*)))
+                   (cmd (format nil "EVAL (clamacs::host-menu-click 1 ~D)" home))
+                   (let ((r *result*))
+                     (cmd "GETFILE")
+                     (if (and (string= r "\"picked\"") (result-has "sample.lisp"))
+                         (ok "the host's Buffers menu pick (item ~D) activated sample.lisp again" home)
+                         (fail "the host's Buffers pick of item ~D gave ~A, active ~A" home r *result*)))))))))
   (cmd "MENU clamacs-repl-clear STATE")
   (if (string= *result* "disabled")
       (ok "Clear Transcript is dimmed outside the REPL")
@@ -484,13 +537,13 @@ the second editor's mode -- so the list is taken apart by hand.)"
              (not (member "> sample.lisp" b :test #'string=)))
         (ok "the tick moved to sample2.lisp")
         (fail "after the pick BUFFERS gave ~{~A~^|~}" b)))
-  ;; The page's Buffers menu shows the same lines, the tick included
-  (if (string/= (page-panels "\"> sample2.lisp\"") "")
-      (ok "the page's Buffers menu ticks sample2.lisp")
-      (fail "the page's Buffers menu: ~A" *result*))
-  (if (string/= (page-panels "\"  sample.lisp\"") "")
-      (ok "the page's Buffers menu lists sample.lisp unticked")
-      (fail "the page's Buffers menu: ~A" *result*))
+  ;; The menu bar's own Buffers menu shows the same lines, the tick included
+  (if (string/= (menu-report "\"> sample2.lisp\"") "")
+      (ok "the menu bar's Buffers menu ticks sample2.lisp")
+      (fail "the menu bar's Buffers menu: ~A" *result*))
+  (if (string/= (menu-report "\"  sample.lisp\"") "")
+      (ok "the menu bar's Buffers menu lists sample.lisp unticked")
+      (fail "the menu bar's Buffers menu: ~A" *result*))
   (cmd "MENU clamacs-room")
   (let* ((b (buffers-lines))
          (bar (position "-" b :test #'string=))

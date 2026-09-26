@@ -98,7 +98,8 @@
                        color: var(--bar-fg); }
   .panel-foot button:disabled { color: var(--dim); }
   /* The menu bar (phase H4): the menu strip of menu.lisp drawn by the page,
-     since webview has no API for a native one.  A title opens its popup
+     since webview has no API for a native one (on macOS the shim puts it on
+     the screen's menu bar and this one is hidden).  A title opens its popup
      below it; an item shows its label and, on the right, the Emacs key
      that runs the same command; a disabled item is dimmed; the Buffers
      menu's items are remade by Lisp as buffers come and go, the active

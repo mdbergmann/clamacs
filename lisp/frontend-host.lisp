@@ -30,11 +30,12 @@
 ;;;;     one turn of the Cocoa loop at a time and drains the mailbox in
 ;;;;     between, so a worker thread's stop-the-world collection waits at
 ;;;;     most one step.
-;;;;   - The page draws the menu bar (webview has no native one) from the
-;;;;     table of menu.lisp, sent once; MENU-UPDATE keeps its enable states
-;;;;     and the Buffers menu in step after every entry, and a pick comes
-;;;;     back as a table index, so the menu is the third entrance to the
-;;;;     command table here as under MUI.
+;;;;   - The menu bar is the table of menu.lisp, sent once: on macOS to the
+;;;;     shim, which puts it on the screen's menu bar, elsewhere to the
+;;;;     page, which draws it (webview has no native one); MENU-UPDATE
+;;;;     keeps its enable states and the Buffers menu in step after every
+;;;;     entry, and a pick comes back as a table index either way, so the
+;;;;     menu is the third entrance to the command table here as under MUI.
 ;;;;
 ;;;; The page may be absent: an editor made without a window (the tests)
 ;;;; keeps its flushed batches in HOST-EDITOR-EVALS instead, and the
@@ -150,11 +151,15 @@ otherwise; the page's stylesheet starts from the same figure.")
   (dbg-open nil)
   (insp-open nil)
   (page-panels nil)
-  ;; The menu bar as Lisp told the page to show it (see "The menu bar"
-  ;; below): whether the table went out (nothing is synced before), one
-  ;; enable flag per table entry, the Buffers menu's entries and the ticked
-  ;; document, the documents behind its items in order.
+  ;; The menu bar as Lisp told the page -- or the shim, NATIVE-MENU (see
+  ;; "The menu bar" below) -- to show it: whether the table went out
+  ;; (nothing is synced before), one enable flag per table entry, the
+  ;; Buffers menu's entries and the ticked document, the documents behind
+  ;; its items in order.  Without a shim a native menu's calls go onto
+  ;; NATIVE-CALLS, as the page's batches go onto EVALS.
   (menus-sent nil)
+  (native-menu nil)
+  (native-calls '())
   (menu-enabled nil)
   (buffers-shown '())
   (buffers-active nil)
@@ -1013,35 +1018,108 @@ behind the page."
 ;;; The menu bar (menu.lisp)
 ;;; ------------------------------------------------------------------
 ;;;
-;;; The page draws the menu strip -- webview has no API for a native one
-;;; -- from the table SEND-MENUS hands it once at start, one entry per
-;;; table index.  A pick comes back as that index (clamacsMenu) and runs
-;;; MENU-PICK on the active document, so the menu is the third entrance
-;;; to the command table here as it is under MUI, never a second
-;;; implementation.  MENU-UPDATE, after every entry, brings the enable
-;;; states in step with MENU-STATE (only what changed is sent) and the
-;;; Buffers menu in step with BUFFER-MENU (remade when its entries or the
-;;; ticked document changed), as the MUI frontend's does after a command
-;;; and after every mailbox drain.
+;;; The menu strip is the table SEND-MENUS hands out once at start, one
+;;; entry per table index.  Where the host has a menu bar of its own --
+;;; macOS, the screen's -- the shim builds it there
+;;; (clamacs_host_menu_set) and the page's bar stays hidden; elsewhere the
+;;; page draws it, webview having no API for a native one.  A pick comes
+;;; back as that index either way (the shim's callback, the clamacsMenu
+;;; binding) and runs MENU-PICK on the active document, so the menu is
+;;; the third entrance to the command table here as it is under MUI,
+;;; never a second implementation.  MENU-UPDATE, after every entry, brings
+;;; the enable states in step with MENU-STATE (only what changed is sent)
+;;; and the Buffers menu in step with BUFFER-MENU (remade when its entries
+;;; or the ticked document changed), as the MUI frontend's does after a
+;;; command and after every mailbox drain.  CLAMACS_HOST_MENU=page in the
+;;; environment keeps the page's bar on a host that has its own.
 
-(defun send-menus (editor)
-  "The table to the page, and the enable states forgotten so the next
-MENU-UPDATE sends every one."
+(defun menu-table-text (entries)
+  "ENTRIES, the table, as the shim takes it: one line per entry in
+order, `kind<TAB>title<TAB>keys', the kind in lower case."
+  (format nil "~{~A~^~%~}"
+          (mapcar (lambda (e)
+                    (format nil "~A~C~A~C~A"
+                            (string-downcase (symbol-name (menu-entry-kind e)))
+                            #\Tab (or (menu-entry-title e) "")
+                            #\Tab (or (menu-entry-keys e) "")))
+                  entries)))
+
+(defun buffers-menu-text (menu active)
+  "The Buffers MENU (BUFFER-MENU's list) with ACTIVE ticked, as the shim
+takes it: one line per entry, spelled as the BUFFERS verb spells them."
+  (format nil "~{~A~^~%~}"
+          (mapcar (lambda (e)
+                    (cond ((eq e :bar) "-")
+                          ((eq (cdr e) active) (format nil "> ~A" (car e)))
+                          (t (format nil "  ~A" (car e)))))
+                  menu)))
+
+(defun native-menu-wanted-p ()
+  "False when CLAMACS_HOST_MENU=page asks for the page's bar on a host
+that has a menu bar of its own."
+  (let ((env (ext:getenv "CLAMACS_HOST_MENU")))
+    (not (and env (string-equal env "page")))))
+
+(defun native-menu-callback (editor which n)
+  "The shim's pick callback: WHICH 0 is the table's item N, WHICH 1 the
+N-th Buffers line.  It runs inside an entry, as a binding does
+(CALL-WITH-ENTRY: the WITH-ENTRY macro is defined further down), and is
+dropped while a requester runs its own loop."
+  (unless (host-editor-in-modal editor)
+    (call-with-entry editor
+                     (lambda ()
+                       (if (= which 0)
+                           (host-menu-pick editor n)
+                           (host-buffers-pick editor n))))))
+
+(defun native-menu-install (editor)
+  "The table onto the host's own menu bar through the shim, when it has
+one: true then.  Picks come back through NATIVE-MENU-CALLBACK."
+  (when (and (host-editor-shim editor) (native-menu-wanted-p))
+    (let ((cb (ffi:make-callback
+               :void '(:int32 :int32 :pointer)
+               (lambda (which n arg)
+                 (declare (ignore arg))
+                 (native-menu-callback editor which n)))))
+      (push cb (host-editor-callbacks editor))
+      (/= 0 (ffi:with-foreign-string (table (menu-table-text (menu-entries)))
+              (shim editor "clamacs_host_menu_set" :int32 '(:pointer :pointer :pointer :pointer)
+                    (host-editor-win editor) table cb (ffi:make-foreign-pointer 0)))))))
+
+(defun send-menus (editor &key (native (native-menu-install editor)))
+  "The table to the host's menu bar when NATIVE (the shim took it), or
+else to the page (an empty table hides the page's bar), and the enable
+states forgotten so the next MENU-UPDATE sends every one."
+  (setf (host-editor-native-menu editor) native)
   (ck editor "setMenus"
-      (coerce (mapcar (lambda (e)
-                        (list (menu-entry-kind e)
-                              (or (menu-entry-title e) "")
-                              (or (menu-entry-keys e) "")))
-                      (menu-entries))
-              'vector))
+      (if (host-editor-native-menu editor)
+          #()
+          (coerce (mapcar (lambda (e)
+                            (list (menu-entry-kind e)
+                                  (or (menu-entry-title e) "")
+                                  (or (menu-entry-keys e) "")))
+                          (menu-entries))
+                  'vector)))
   (setf (host-editor-menus-sent editor) t
         (host-editor-menu-enabled editor) nil
         (host-editor-buffers-shown editor) '()
         (host-editor-buffers-active editor) nil
         (host-editor-buffers-docs editor) #()))
 
+(defun native-menu-enable (editor index flag)
+  (if (host-editor-shim editor)
+      (shim editor "clamacs_host_menu_enable" :void '(:int32 :int32) index (if flag 1 0))
+      (push (list :enable index flag) (host-editor-native-calls editor))))
+
+(defun native-menu-buffers (editor text)
+  (if (host-editor-shim editor)
+      (ffi:with-foreign-string (lines text)
+        (shim editor "clamacs_host_menu_buffers" :void '(:pointer) lines))
+      (push (list :buffers text) (host-editor-native-calls editor))))
+
 (defun menu-enable-sync (editor)
-  "menuEnable for every item whose state differs from what the page shows."
+  "The enable state of every item whose state differs from what the
+menu bar shows."
   (let ((want (menu-enabled-items editor))
         (shown (host-editor-menu-enabled editor)))
     (loop for flag in want
@@ -1049,27 +1127,72 @@ MENU-UPDATE sends every one."
           do (let ((entry (menu-entry index)))
                (when (and (eq (menu-entry-kind entry) :item)
                           (or (null shown) (not (eq flag (nth index shown)))))
-                 (ck editor "menuEnable" index flag))))
+                 (if (host-editor-native-menu editor)
+                     (native-menu-enable editor index flag)
+                     (ck editor "menuEnable" index flag)))))
     (setf (host-editor-menu-enabled editor) want)))
 
 (defun buffers-menu-sync (editor)
-  "setBuffers when the Buffers menu's entries or its tick are no longer
-what the page shows: `-' for the bar, [label, ticked] for a buffer."
+  "The Buffers menu remade when its entries or its tick are no longer
+what the menu bar shows: to the page `-' for the bar and [label, ticked]
+for a buffer, to the shim the BUFFERS verb's lines."
   (let ((want (buffer-menu editor))
         (active (editor-active-document editor)))
     (unless (and (buffer-menu-equal want (host-editor-buffers-shown editor))
                  (eq active (host-editor-buffers-active editor)))
-      (ck editor "setBuffers"
-          (coerce (mapcar (lambda (e)
-                            (if (eq e :bar)
-                                "-"
-                                (list (car e) (eq (cdr e) active))))
-                          want)
-                  'vector))
+      (if (host-editor-native-menu editor)
+          (native-menu-buffers editor (buffers-menu-text want active))
+          (ck editor "setBuffers"
+              (coerce (mapcar (lambda (e)
+                                (if (eq e :bar)
+                                    "-"
+                                    (list (car e) (eq (cdr e) active))))
+                              want)
+                      'vector)))
       (setf (host-editor-buffers-shown editor) want
             (host-editor-buffers-active editor) active
             (host-editor-buffers-docs editor)
             (coerce (mapcar (lambda (e) (if (eq e :bar) nil (cdr e))) want) 'vector)))))
+
+(defun host-menu-click (which n &optional (editor *editor*))
+  "For a script: pick an item of the host's own menu bar as the mouse
+would -- WHICH 0 and the table index N, or WHICH 1 and the N-th Buffers
+line -- through the shim, which performs the NSMenuItem's action, so the
+pick takes the whole path: Cocoa, the callback, the entry.  Answers
+\"picked\", or \"no native menu\" where the page draws the bar (the page's
+items are picked through the port's MENU verb then)."
+  (cond ((not (and editor (host-editor-shim editor) (host-editor-native-menu editor)))
+         "no native menu")
+        ((/= 0 (shim editor "clamacs_host_menu_click" :int32 '(:int32 :int32) which n))
+         "picked")
+        (t "no such item")))
+
+(defun page-menu-report (panels)
+  "The `menu' object of the page's report PANELS (clamacsPanels), or NIL:
+it holds arrays only, so it ends at its first brace."
+  (let* ((key "\"menu\":{")
+         (start (search key panels)))
+    (when start
+      (let ((end (position #\} panels :start start)))
+        (when end
+          (subseq panels (+ start (length key) -1) (1+ end)))))))
+
+(defun host-menu-report (&optional (editor *editor*))
+  "What the menu bar shows, read off the bar itself -- the shim's items
+when the menu is the host's, the page's last report otherwise -- as JSON:
+the item count, the dimmed table indices, the Buffers lines as the BUFFERS
+verb spells them.  For a script's `EVAL (clamacs::host-menu-report)' over
+the port, so the run checks what is on the screen beside HOST-PANEL-STATE,
+the editor's own account.  \"no report\" when there is none yet."
+  (or (and editor
+           (if (host-editor-native-menu editor)
+               (when (host-editor-shim editor)
+                 (let ((p (shim editor "clamacs_host_menu_report" :pointer '())))
+                   (unless (ffi:null-pointer-p p)
+                     (unwind-protect (ffi:foreign-to-string p)
+                       (shim editor "clamacs_host_free" :void '(:pointer) p)))))
+               (page-menu-report (host-page-panels editor))))
+      "no report"))
 
 (defun menu-update (editor)
   "The menu bar in step with the editor's state, after every entry.
@@ -1550,6 +1673,9 @@ page has reported ready."
 (defun host-close (editor)
   "The window, the callbacks, the libraries -- nothing OS-owned outlives
 START."
+  (when (and (host-editor-shim editor) (host-editor-native-menu editor))
+    (shim editor "clamacs_host_menu_clear" :void '())
+    (setf (host-editor-native-menu editor) nil))
   (when (host-editor-w editor)
     (wv editor "webview_destroy" :int32 '(:pointer) (host-editor-w editor))
     (setf (host-editor-w editor) nil

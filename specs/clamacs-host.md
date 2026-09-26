@@ -58,8 +58,11 @@ no command, no test and no port verb knows which frontend answered:
     too, later.
 
 Not parity, and not planned: split windows of one buffer (the MUI
-editor has none either), a native menu bar (webview has no API for one;
-the page draws it), non-Latin-1 text (the editor is 8-bit everywhere).
+editor has none either), non-Latin-1 text (the editor is 8-bit
+everywhere).  The menu bar is native where the host has one of its own
+-- macOS, where the shim builds the screen's menu from the table
+(webview has no API for one) -- and drawn by the page elsewhere; see
+"The menu bar" under H4.
 
 ## Decisions
 
@@ -683,6 +686,54 @@ with the memory note updated.
   and the runtime's own `%repl-stop` on the Amiga, where those stacks
   were Fast RAM lost per launch.  With it the leak-tracking drive ends
   with `0 block(s), 0 bytes` for both editors.
+- **The menu bar, native on macOS (2026-09-26, after H6).**  A Mac keeps
+  its menus on the screen, and webview makes no main menu at all (so
+  Cmd-Q did nothing), so the shim grew a Cocoa body for it:
+  `clamacs_host_menu_set(win, table, fn, arg)` builds `NSApp.mainMenu`
+  from the table -- `menu-table-text`, one `kind<TAB>title<TAB>keys`
+  line per entry in table order, so an item's position is its table
+  index -- behind the one application menu Cocoa expects (Hide, Hide
+  Others, Show All, Quit = `performClose:` on the window, the close
+  button's path, so the editor decides); a pick is `fn(0, index)` for a
+  table item and `fn(1, n)` for the n-th Buffers line, run inside an
+  entry through `host-menu-pick` / `host-buffers-pick` exactly as the
+  page's bindings are, and dropped while a requester runs its own loop.
+  `clamacs_host_menu_enable(index, flag)` is what `menu-enable-sync`
+  calls (the menus have `autoenablesItems` off, so the editor's rules
+  decide), `clamacs_host_menu_buffers(lines)` remakes the Buffers menu
+  from the `BUFFERS` verb's lines (`buffers-menu-text`; the tick is the
+  item's state), `clamacs_host_menu_report()` reads the NSMenuItems back
+  as the page reports its own bar (`{"items","disabled","buffers"}`),
+  `clamacs_host_menu_click(which, n)` performs an item's action for a
+  script (`host-menu-click`: the drive picks End of Defun and, from the
+  Buffers menu, the other buffer and then the first again -- never the
+  ticked one alone, which would pass with the callback dropped -- that
+  way, so Cocoa's path to the callback is run, which the
+  `MENU` verb never touches -- the first native pick crashed the editor
+  on a `with-entry` used above the macro's definition, and no gate saw
+  it), and `clamacs_host_menu_clear()` at `host-close` puts the menu bar
+  back.  The application menu's title is the bundle's `CFBundleName`, or
+  the process name without a bundle (`clamiga` from `run.sh`), so the
+  shim sets that key in the main bundle's info dictionary before
+  installing the menu; a title set on the NSMenu is ignored.  The Emacs
+  chord beside an item is an attributed run (smaller,
+  dimmed, monospace) and never a key equivalent: a key equivalent would
+  take the key from the page before it arrived.  The GTK and Win32
+  bodies answer 0 from `menu_set` and the page draws the bar as before;
+  `CLAMACS_HOST_MENU=page` asks for that on a Mac too.  `send-menus`
+  decides once at start (`host-editor-native-menu`) and tells the page
+  an empty table, which hides its bar; `host-menu-report` answers the
+  shim's report or the page's `menu` object, and `drive.lisp`'s menu and
+  Buffers legs read that (`menu-report`), so the same run checks the
+  screen's menu on a Mac and the page's on Linux.  `CLAMACS_HOST_MENU=page
+  verify/host/run-drive.sh` runs the page's bar on a Mac: the drive then
+  fails if `host-menu-click` finds a native menu, and the `MENU` verb is
+  the pick.  The host tests cover the two text formats, the syncs of a
+  native-menu editor without a shim (onto `host-editor-native-calls`, as
+  batches go onto `evals`), the report's two sources, the environment
+  switch (`native-menu-wanted-p`, set through libc `setenv`) and the
+  shim's callback (`native-menu-callback`: `which` 0 a table item, 1 a
+  Buffers line, both dropped while a requester runs its own loop).
 
 ### H5 -- the second process: TCP
 

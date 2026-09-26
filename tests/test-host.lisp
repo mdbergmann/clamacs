@@ -1159,6 +1159,132 @@ batch of both taken."
       (is (search "CK.setBuffers([[\"(unnamed)\",true],\"-\",[\"*clamacs-scratch*\",false]]);"
                   (host-take-evals editor))))))
 
+(deftest host-native-menu-takes-the-table-as-lines-and-its-syncs-go-to-the-shim
+  (flet ((tabbed (&rest fields) (format nil "~{~A~^	~}" fields)))
+    ;; The table as the shim takes it: one line per entry, in order
+    (let ((text (menu-table-text (menu-entries))))
+      (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New" "")
+                         (tabbed "item" "Open..." "C-x C-f"))
+                  text))
+      (is (search (lines "" (tabbed "bar" "" "") "") text))
+      (is (search (lines (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
+                         (tabbed "title" "Help" ""))
+                  text))
+      (is-equal (count #\Newline text) (1- (menu-count)))))
+  ;; The Buffers menu as the shim takes it: the BUFFERS verb's lines
+  (is-equal (buffers-menu-text '(("a.lisp" . :a) ("b.lisp" . :b) :bar ("*clamacs-repl*" . :r)) :b)
+            (lines "  a.lisp" "> b.lisp" "-" "  *clamacs-repl*"))
+  (is-equal (buffers-menu-text '() nil) "")
+  ;; An editor whose menu is the host's: the page's bar is told an empty
+  ;; table, and the enable states and the Buffers lines go to the shim --
+  ;; onto NATIVE-CALLS without one -- never to the page
+  (let ((editor (host-test-editor)))
+    (with-entry (editor) (send-menus editor :native t))
+    (host-test-document editor "one")
+    (let ((js (host-take-evals editor))
+          (calls (reverse (host-editor-native-calls editor))))
+      (is (search "CK.setMenus([]);" js))
+      (is (not (search "menuEnable" js)))
+      (is (not (search "setBuffers" js)))
+      (is-equal (count :enable calls :key #'first)
+                (count :item (menu-entries) :key #'menu-entry-kind))
+      (is (member (list :enable (menu-find 'find-file) t) calls :test #'equal))
+      (is (member (list :enable (menu-find 'save-buffer) nil) calls :test #'equal))
+      (is (member (list :enable (menu-find 'clamacs-repl) nil) calls :test #'equal))
+      (is (member (list :buffers "> (unnamed)") calls :test #'equal)))
+    ;; Nothing changed: nothing said.  The first edit enables Save, alone
+    (setf (host-editor-native-calls editor) '())
+    (with-entry (editor) nil)
+    (is-equal (host-editor-native-calls editor) '())
+    (host-type-text editor "x")
+    (is-equal (host-editor-native-calls editor) (list (list :enable (menu-find 'save-buffer) t)))
+    (is (not (search "menuEnable" (host-take-evals editor))))
+    ;; A second buffer remakes the Buffers menu, the tick on the new one;
+    ;; the editor's own account reads the same as with the page's bar
+    (setf (host-editor-native-calls editor) '())
+    (host-test-document editor "two")
+    (is (member (list :buffers (lines "  (unnamed)" "> (unnamed)<2>"))
+                (host-editor-native-calls editor) :test #'equal))
+    (is (search "buffers (  (unnamed)|> (unnamed)<2>)" (host-panel-state :menu editor)))
+    (is-equal (editor-buffer-menu-lines editor) '("  (unnamed)" "> (unnamed)<2>"))
+    ;; A pick by the shim's position activates the edited first buffer,
+    ;; and the port's verbs read the state as before: Save follows it
+    (with-entry (editor) (host-buffers-pick editor 0))
+    (is-equal (editor-buffer-menu-lines editor) '("> (unnamed)" "  (unnamed)<2>"))
+    (is-equal (nth-value 1 (port-command editor "MENU save-buffer STATE")) "enabled")
+    (is (member (list :enable (menu-find 'save-buffer) t) (host-editor-native-calls editor) :test #'equal))
+    ;; No shim: no report of the bar
+    (is-equal (host-menu-report editor) "no report")))
+
+(defun host-test-setenv (name value)
+  "libc's setenv in this process -- unsetenv for a NIL VALUE -- which is
+what EXT:GETENV reads.  lisp/transport-tcp.lisp makes the same calls, but
+loading it here would also replace the wire starter the other tests use."
+  (ffi:with-foreign-string (n name)
+    (if value
+        (ffi:with-foreign-string (v value)
+          (ffi:call-foreign (ffi:symbol-pointer "setenv" nil) :int32 '(:pointer :pointer :int32)
+                            (list n v 1)))
+        (ffi:call-foreign (ffi:symbol-pointer "unsetenv" nil) :int32 '(:pointer) (list n)))))
+
+(deftest host-native-menu-is-wanted-unless-the-environment-asks-for-the-page
+  (let ((saved (ext:getenv "CLAMACS_HOST_MENU")))
+    (unwind-protect
+         (progn
+           (host-test-setenv "CLAMACS_HOST_MENU" nil)
+           (is (native-menu-wanted-p))
+           (host-test-setenv "CLAMACS_HOST_MENU" "page")
+           (is (not (native-menu-wanted-p)))
+           (host-test-setenv "CLAMACS_HOST_MENU" "PAGE")
+           (is (not (native-menu-wanted-p)))
+           ;; Anything else, and an empty value, leave the host's own bar
+           (host-test-setenv "CLAMACS_HOST_MENU" "")
+           (is (native-menu-wanted-p))
+           (host-test-setenv "CLAMACS_HOST_MENU" "native")
+           (is (native-menu-wanted-p))
+           ;; Wanted or not, an editor without a shim has no bar of its own
+           (host-test-setenv "CLAMACS_HOST_MENU" nil)
+           (is (null (native-menu-install (host-test-editor)))))
+      (host-test-setenv "CLAMACS_HOST_MENU" saved))))
+
+(deftest host-native-menu-callback-picks-by-which-and-is-dropped-in-a-modal
+  (multiple-value-bind (editor doc) (host-menu-editor (lines "(defun a ()" "  1)" "" "(defun b ()" "  2)"))
+    (doc-set-point doc (doc-end doc))
+    ;; A requester runs its own loop: a pick is dropped, whichever menu
+    (setf (host-editor-in-modal editor) t)
+    (native-menu-callback editor 0 (menu-find 'beginning-of-defun))
+    (is-equal (doc-point doc) (doc-end doc))
+    (setf (host-editor-in-modal editor) nil)
+    ;; `which' 0: the table's item, run on the active document
+    (native-menu-callback editor 0 (menu-find 'beginning-of-defun))
+    (is-equal (doc-index-line doc (doc-point doc)) 3)
+    ;; `which' 1: the n-th Buffers line
+    (let ((d2 (host-test-document editor "two")))
+      (is (eq (editor-active-document editor) d2))
+      (setf (host-editor-in-modal editor) t)
+      (native-menu-callback editor 1 0)
+      (is (eq (editor-active-document editor) d2))
+      (setf (host-editor-in-modal editor) nil)
+      (native-menu-callback editor 1 0)
+      (is (eq (editor-active-document editor) doc))
+      (native-menu-callback editor 1 1)
+      (is (eq (editor-active-document editor) d2))
+      ;; A line off the menu, and an index off the table: nothing, no error
+      (native-menu-callback editor 1 7)
+      (native-menu-callback editor 0 (menu-count))
+      (is (eq (editor-active-document editor) d2)))))
+
+(deftest host-menu-report-is-the-page-s-menu-object-when-the-page-draws-the-bar
+  (let ((editor (host-test-editor)))
+    (with-entry (editor) (send-menus editor :native nil))
+    (is-equal (host-menu-report editor) "no report")
+    (with-entry (editor)
+      (host-panels-report editor "{\"menu\":{\"items\":52,\"disabled\":[4,23],\"buffers\":[\"> a\",\"-\",\"  *b*\"]},\"dock\":{\"open\":false}}"))
+    (is-equal (host-menu-report editor)
+              "{\"items\":52,\"disabled\":[4,23],\"buffers\":[\"> a\",\"-\",\"  *b*\"]}")
+    (is (null (page-menu-report "{\"dock\":{\"open\":false}}")))
+    (is-equal (host-menu-report nil) "no report")))
+
 (deftest host-without-a-menu-bar-the-buffers-verb-still-answers
   ;; An editor the table was never sent to (the tests' plain one) answers
   ;; BUFFERS from the model and sends the page nothing about menus.

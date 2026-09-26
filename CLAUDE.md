@@ -141,7 +141,16 @@ calls `refresh-user-paths` first, because `*init-file*` and
 machine's HOME -- `make-image.sh` verifies under another HOME for exactly
 that.  `IMAGE=1` / `APP=1 verify/host/run-drive.sh` drive an editor
 started from the image / through the bundle's launcher (both green, 170
-OK).
+OK).  Since 2026-09-26 the menu bar is **native on macOS**: `send-menus`
+hands the table to the shim (`clamacs_host_menu_set`, the screen's menu
+with an application menu in front, Cmd-Q = the close button's path) and
+the page an empty table (its bar hidden); `menu-enable-sync` and
+`buffers-menu-sync` branch on `host-editor-native-menu`, a pick comes
+back through the shim's callback as the same table index, and
+`host-menu-report` reads the bar back from whichever draws it, which is
+what `drive.lisp` checks.  GTK and Win32 answer 0 and keep the page's
+bar; `CLAMACS_HOST_MENU=page` asks for the page's on a Mac.  Never make
+a Cocoa key equivalent of an item: it takes the key from the page.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

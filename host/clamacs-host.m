@@ -5,7 +5,9 @@
  * reaches a GC safepoint every few milliseconds instead of parking in
  * webview_run), a wake from another thread, the requesters, the file
  * panels, the beep, the clipboard, the URL opener, the window's frame and
- * its close button.  Built into libclamacs-host.{dylib,so,dll} by
+ * its close button -- and on macOS the menu bar, the screen's, built from
+ * the editor's menu table (the page draws its own where the host has no
+ * menu of its own).  Built into libclamacs-host.{dylib,so,dll} by
  * host/build.sh and called through ffi:call-foreign; every entry is plain
  * C, and the same on every host:
  *
@@ -298,6 +300,289 @@ const char *clamacs_host_toolkit(void)
     return line;
 }
 
+/* ---- the menu bar ---------------------------------------------------- */
+
+/* The editor's menu table on the screen's menu bar, where a Mac keeps
+ * its menus (webview makes no main menu at all, so until now Cmd-Q did
+ * nothing).  TABLE is the table of menu.lisp, one entry per line in
+ * order -- "kind<TAB>title<TAB>keys", kind one of title, item, bar,
+ * buffers -- and an item's position in it is its table index, which a
+ * pick hands back: FN(0, index, ARG) for an item of the table,
+ * FN(1, n, ARG) for the n-th line of the Buffers menu (the bar counts).
+ * The key an item shows is the editor's Emacs chord (C-x C-s), drawn
+ * dimmed beside the label: it is not a Cocoa key equivalent -- the page
+ * handles every key, and a menu key equivalent would take the key away
+ * from it before it arrived.  The one application menu Cocoa expects
+ * comes first, with Hide and a Quit (Cmd-Q) that asks the window to
+ * close, which is the close button's path -- the editor decides.  The
+ * items enable nothing by themselves (autoenablesItems off): the editor
+ * says which are enabled, through clamacs_host_menu_enable.  Answers 1;
+ * a host without a menu bar of its own answers 0 and the page draws it. */
+@interface ClamacsMenuTarget : NSObject
+@property (nonatomic, assign) void (*fn)(int32_t, int32_t, void *);
+@property (nonatomic, assign) void *arg;
+@property (nonatomic, weak) NSWindow *window;
+@property (nonatomic, strong) NSMenu *previous;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMenuItem *> *items;
+@property (nonatomic, strong) NSMenu *buffers;
+@property (nonatomic, strong) NSMutableArray<NSString *> *bufferLines;
+@end
+
+@implementation ClamacsMenuTarget
+- (void)pick:(NSMenuItem *)sender
+{
+    if (self.fn)
+        self.fn(0, (int32_t)sender.tag, self.arg);
+}
+- (void)pickBuffer:(NSMenuItem *)sender
+{
+    if (self.fn)
+        self.fn(1, (int32_t)sender.tag, self.arg);
+}
+- (void)quit:(id)sender
+{
+    (void)sender;
+    [self.window performClose:nil];
+}
+@end
+
+static ClamacsMenuTarget *menu_target;
+
+/* The label, and the Emacs key after it in a smaller, dimmed monospace
+ * run -- the shortcut column of the Amiga's strip, as near as a Cocoa
+ * item gets without a key equivalent. */
+static NSAttributedString *menu_item_title(NSString *label, NSString *keys)
+{
+    NSFont *font = [NSFont menuFontOfSize:0];
+    NSMutableAttributedString *s =
+        [[NSMutableAttributedString alloc] initWithString:label
+                                               attributes:@{NSFontAttributeName: font}];
+    if (keys.length > 0) {
+        NSFont *mono = [NSFont monospacedSystemFontOfSize:font.pointSize - 2
+                                                   weight:NSFontWeightRegular];
+        NSDictionary *dim = @{NSFontAttributeName: mono,
+                              NSForegroundColorAttributeName: [NSColor secondaryLabelColor]};
+        [s appendAttributedString:
+            [[NSAttributedString alloc] initWithString:[@"    " stringByAppendingString:keys]
+                                            attributes:dim]];
+    }
+    return s;
+}
+
+static NSMenu *menu_application(void)
+{
+    NSMenu *app = [[NSMenu alloc] initWithTitle:@"Clamacs"];
+    NSMenuItem *others;
+    [app addItemWithTitle:@"Hide Clamacs" action:@selector(hide:) keyEquivalent:@"h"];
+    others = [app addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:)
+                     keyEquivalent:@"h"];
+    others.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    [app addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+    [app addItem:[NSMenuItem separatorItem]];
+    [app addItemWithTitle:@"Quit Clamacs" action:@selector(quit:) keyEquivalent:@"q"].target = menu_target;
+    return app;
+}
+
+int clamacs_host_menu_set(void *win, const char *table,
+                          void (*fn)(int32_t, int32_t, void *), void *arg)
+{
+    @autoreleasepool {
+        NSString *text = text_arg(table);
+        NSMenu *main, *menu = nil;
+        NSMenuItem *top;
+        NSInteger index = 0;
+        if (text == nil)
+            return 0;
+        if (menu_target == nil) {
+            menu_target = [[ClamacsMenuTarget alloc] init];
+            menu_target.previous = NSApp.mainMenu;
+        }
+        menu_target.fn = fn;
+        menu_target.arg = arg;
+        menu_target.window = (__bridge NSWindow *)win;
+        menu_target.items = [NSMutableDictionary dictionary];
+        menu_target.buffers = nil;
+        menu_target.bufferLines = [NSMutableArray array];
+
+        main = [[NSMenu alloc] initWithTitle:@"MainMenu"];
+        top = [main addItemWithTitle:@"" action:nil keyEquivalent:@""];
+        top.submenu = menu_application();
+        for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+            NSArray<NSString *> *f = [line componentsSeparatedByString:@"\t"];
+            NSString *kind = f[0];
+            NSString *title = f.count > 1 ? f[1] : @"";
+            NSString *keys = f.count > 2 ? f[2] : @"";
+            if ([kind isEqualToString:@"title"]) {
+                top = [main addItemWithTitle:title action:nil keyEquivalent:@""];
+                menu = [[NSMenu alloc] initWithTitle:title];
+                menu.autoenablesItems = NO;
+                top.submenu = menu;
+                if ([title isEqualToString:@"Help"])
+                    NSApp.helpMenu = menu;
+            } else if (menu == nil) {
+                /* an entry before the first title: nowhere to put it */
+            } else if ([kind isEqualToString:@"bar"]) {
+                [menu addItem:[NSMenuItem separatorItem]];
+            } else if ([kind isEqualToString:@"buffers"]) {
+                menu_target.buffers = menu;
+            } else if ([kind isEqualToString:@"item"]) {
+                NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title
+                                                              action:@selector(pick:)
+                                                       keyEquivalent:@""];
+                item.attributedTitle = menu_item_title(title, keys);
+                item.target = menu_target;
+                item.tag = index;
+                [menu addItem:item];
+                menu_target.items[@(index)] = item;
+            }
+            index++;
+        }
+        /* The application menu's title is the bundle's CFBundleName, or the
+         * process name without a bundle (`clamiga' from run.sh; the bundle
+         * says Clamacs).  AppKit reads it from the main bundle's info
+         * dictionary when the menu is installed, and that dictionary is
+         * mutable in practice: the name is set there first. */
+        {
+            NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
+            if ([info isKindOfClass:[NSMutableDictionary class]] && info[@"CFBundleName"] == nil)
+                ((NSMutableDictionary *)info)[@"CFBundleName"] = @"Clamacs";
+        }
+        NSApp.mainMenu = main;
+        return 1;
+    }
+}
+
+void clamacs_host_menu_enable(int index, int flag)
+{
+    @autoreleasepool {
+        NSMenuItem *item = menu_target ? menu_target.items[@(index)] : nil;
+        if (item)
+            item.enabled = flag != 0;
+    }
+}
+
+/* The Buffers menu remade from LINES, one per line as the editor's
+ * BUFFERS verb spells them: "-" a bar, "> label" the ticked buffer,
+ * "  label" another.  A pick hands back the line's position. */
+void clamacs_host_menu_buffers(const char *lines)
+{
+    @autoreleasepool {
+        NSString *text = text_arg(lines);
+        NSMenu *menu = menu_target ? menu_target.buffers : nil;
+        NSInteger n = 0;
+        if (text == nil || menu == nil)
+            return;
+        [menu removeAllItems];
+        [menu_target.bufferLines removeAllObjects];
+        for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+            if (line.length == 0)
+                continue;
+            if ([line isEqualToString:@"-"]) {
+                [menu addItem:[NSMenuItem separatorItem]];
+            } else {
+                BOOL ticked = [line hasPrefix:@"> "];
+                NSString *label = line.length >= 2 ? [line substringFromIndex:2] : line;
+                NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:label
+                                                              action:@selector(pickBuffer:)
+                                                       keyEquivalent:@""];
+                item.target = menu_target;
+                item.tag = n;
+                item.state = ticked ? NSControlStateValueOn : NSControlStateValueOff;
+                [menu addItem:item];
+            }
+            [menu_target.bufferLines addObject:line];
+            n++;
+        }
+    }
+}
+
+/* For a script: perform the action of an item as a click would -- WHICH
+ * 0 and a table index, 1 and a Buffers position -- so the whole path
+ * from the NSMenuItem to the editor's callback is exercised.  1 when
+ * there was such an item (a disabled one is passed over, as the mouse
+ * would), 0 otherwise. */
+int clamacs_host_menu_click(int which, int n)
+{
+    @autoreleasepool {
+        NSMenuItem *item = nil;
+        if (menu_target == nil)
+            return 0;
+        if (which == 0) {
+            item = menu_target.items[@(n)];
+        } else if (menu_target.buffers && n >= 0 && n < (int)menu_target.buffers.numberOfItems) {
+            item = [menu_target.buffers itemAtIndex:n];
+            if (item.isSeparatorItem)
+                item = nil;
+        }
+        if (item == nil)
+            return 0;
+        if (item.enabled)
+            [item.menu performActionForItemAtIndex:[item.menu indexOfItem:item]];
+        return 1;
+    }
+}
+
+static void json_string(NSMutableString *out, NSString *s)
+{
+    NSUInteger i;
+    [out appendString:@"\""];
+    for (i = 0; i < s.length; i++) {
+        unichar c = [s characterAtIndex:i];
+        if (c == '"' || c == '\\')
+            [out appendFormat:@"\\%C", c];
+        else if (c < 0x20)
+            [out appendFormat:@"\\u%04x", (unsigned)c];
+        else
+            [out appendFormat:@"%C", c];
+    }
+    [out appendString:@"\""];
+}
+
+/* What the menu bar shows, as the page reports its own: the item count,
+ * the dimmed table indices in order, the Buffers lines -- JSON, malloc'd
+ * (clamacs_host_free); NULL without a menu.  Read off the NSMenuItems, so
+ * a script checks what is on the screen, not what the editor said. */
+char *clamacs_host_menu_report(void)
+{
+    @autoreleasepool {
+        NSMutableString *out;
+        NSArray<NSNumber *> *indices;
+        NSUInteger i;
+        BOOL first = YES;
+        if (menu_target == nil)
+            return NULL;
+        indices = [menu_target.items.allKeys sortedArrayUsingSelector:@selector(compare:)];
+        out = [NSMutableString stringWithFormat:@"{\"items\":%lu,\"disabled\":[",
+               (unsigned long)indices.count];
+        for (NSNumber *index in indices) {
+            if (!menu_target.items[index].enabled) {
+                [out appendFormat:@"%s%@", first ? "" : ",", index];
+                first = NO;
+            }
+        }
+        [out appendString:@"],\"buffers\":["];
+        for (i = 0; i < menu_target.bufferLines.count; i++) {
+            if (i > 0)
+                [out appendString:@","];
+            json_string(out, menu_target.bufferLines[i]);
+        }
+        [out appendString:@"]}"];
+        return strdup([out UTF8String]);
+    }
+}
+
+/* The menu bar as it was before, and nothing of the editor's kept. */
+void clamacs_host_menu_clear(void)
+{
+    @autoreleasepool {
+        if (menu_target) {
+            NSApp.mainMenu = menu_target.previous;
+            NSApp.helpMenu = nil;
+            menu_target = nil;
+        }
+    }
+}
+
 #elif defined(CLAMACS_HOST_GTK)
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
@@ -533,6 +818,16 @@ const char *clamacs_host_toolkit(void)
     }
     return line;
 }
+
+/* No menu bar of the host's here: the page draws the editor's. */
+int clamacs_host_menu_set(void *win, const char *table,
+                          void (*fn)(int32_t, int32_t, void *), void *arg)
+{ (void)win; (void)table; (void)fn; (void)arg; return 0; }
+void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
+void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+char *clamacs_host_menu_report(void) { return NULL; }
+int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
+void clamacs_host_menu_clear(void) {}
 
 #elif defined(_WIN32)
 #include <windows.h>
@@ -865,6 +1160,16 @@ const char *clamacs_host_toolkit(void)
     return line;
 }
 
+/* No menu bar of the host's here: the page draws the editor's. */
+int clamacs_host_menu_set(void *win, const char *table,
+                          void (*fn)(int32_t, int32_t, void *), void *arg)
+{ (void)win; (void)table; (void)fn; (void)arg; return 0; }
+void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
+void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+char *clamacs_host_menu_report(void) { return NULL; }
+int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
+void clamacs_host_menu_clear(void) {}
+
 #else /* another host: every entry says "not available" */
 
 int clamacs_host_step(void *w, int ms) { (void)w; (void)ms; return -1; }
@@ -884,5 +1189,13 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)
 { (void)win; (void)fn; (void)arg; }
 const char *clamacs_host_toolkit(void) { return "no native shim on this host"; }
+int clamacs_host_menu_set(void *win, const char *table,
+                          void (*fn)(int32_t, int32_t, void *), void *arg)
+{ (void)win; (void)table; (void)fn; (void)arg; return 0; }
+void clamacs_host_menu_enable(int index, int flag) { (void)index; (void)flag; }
+void clamacs_host_menu_buffers(const char *lines) { (void)lines; }
+char *clamacs_host_menu_report(void) { return NULL; }
+int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
+void clamacs_host_menu_clear(void) {}
 
 #endif

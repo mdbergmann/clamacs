@@ -325,7 +325,9 @@
   // ---- the menu bar ----------------------------------------------------------
   //
   // The menu strip of menu.lisp, drawn here: webview has no API for a
-  // native one.  CK.setMenus hands the table over, one [kind, title, keys]
+  // native one.  (On macOS the shim puts the strip on the screen's menu
+  // bar instead, and CK.setMenus gets an empty table, which hides the
+  // bar here.)  CK.setMenus hands the table over, one [kind, title, keys]
   // per entry, indexed as Lisp indexes it; a pick is told to Lisp as that
   // index (clamacsMenu), which runs the command on the active document as
   // MUI's MenuAction does, and CK.menuEnable dims an item.  The Buffers
@@ -586,10 +588,12 @@
     setMiniLabel(label) { miniLabel.textContent = label; },
 
     // The menu bar.  ENTRIES is the table of menu.lisp: [kind, title,
-    // keys] per entry, kind "title", "item", "bar" or "buffers".
+    // keys] per entry, kind "title", "item", "bar" or "buffers"; an empty
+    // table hides the bar (the host's own shows the menus).
     setMenus(entries) {
       menuClose();
       menubar.textContent = "";
+      menubar.style.display = entries.length ? "" : "none";
       menuItems.clear();
       buffersPopup = null;
       let popup = null;
