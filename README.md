@@ -288,9 +288,10 @@ the gutter (`:gutter-bg :gutter-fg`), the chrome (`:bar :bar-fg
 :font-size`); a colour is `#rrggbb`.  A misspelt key or colour is
 reported with the file's line; a `load-theme` of a name that is not
 defined falls back to the default with a message, so the editor always
-comes up.  A macro reads the menu with `THEMES` and picks with `THEMES
-<label>`.  Every key is honoured (the page's colours are these variables).
-See `tests/test-theme.lisp` and `tests/test-host.lisp` (the View menu).
+comes up.  A macro reads the menu with `THEMES` and picks with
+`THEMES <label>`.  Every key is honoured (the page's colours are these
+variables).  See `tests/test-theme.lisp` and `tests/test-host.lisp` (the
+View menu).
 
 ## Window positions
 
