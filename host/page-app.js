@@ -13,13 +13,15 @@
 // Inspector) whose lists and buttons hand a row number or a line back to
 // Lisp; the page tells Lisp what the panels show (clamacsPanels) after
 // every change, so a script can check the page did what it was told.
-// The menu bar comes with H4.
+// Phase H4: the menu bar, drawn here from the table of menu.lisp, its
+// enable states and the Buffers menu, reported the same way.
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
          lineNumbers, drawSelection, highlightActiveLine} = window.CM;
 
   const $ = (id) => document.getElementById(id);
+  const menubar = $("menubar");
   const sourceTabs = $("source-tabs"), views = $("views");
   const dockEl = $("dock"), splitter = $("splitter"), dockTabs = $("dock-tabs"), dockViews = $("dock-views");
   const status = $("status"), message = $("message");
@@ -320,11 +322,123 @@
   inspPart.addEventListener("click", () => lisp("clamacsInspPart", inspParts.selected));
   inspBack.addEventListener("click", () => lisp("clamacsInspBack"));
 
-  // What the panels show, told to Lisp once per change (a batch of changes
-  // is one report): what a script checks through the port.
+  // ---- the menu bar ----------------------------------------------------------
+  //
+  // The menu strip of menu.lisp, drawn here: webview has no API for a
+  // native one.  CK.setMenus hands the table over, one [kind, title, keys]
+  // per entry, indexed as Lisp indexes it; a pick is told to Lisp as that
+  // index (clamacsMenu), which runs the command on the active document as
+  // MUI's MenuAction does, and CK.menuEnable dims an item.  The Buffers
+  // menu (the entry of kind "buffers") holds what CK.setBuffers last gave
+  // -- "-" for a bar, [label, ticked] for a buffer -- and a pick there is
+  // the item's position (clamacsBuffers).  A title opens on a click and the
+  // open menu follows the mouse along the bar; a click anywhere else or
+  // Escape closes it, and none of it moves the keyboard off the view.
+
+  const menuItems = new Map();   // table index -> item element
+  let buffersPopup = null;       // the Buffers menu's popup
+  let buffersLines = [];         // what it shows, spelled as Lisp's BUFFERS verb spells it
+  let openMenu = null;           // the title element whose popup is open
+
+  function menuClose() {
+    if (openMenu) { openMenu.classList.remove("open"); openMenu = null; }
+  }
+  function menuOpen(title) {
+    if (openMenu === title) return;
+    menuClose();
+    openMenu = title;
+    title.classList.add("open");
+  }
+  function makeMenuItem(popup, label, keys, onPick) {
+    const item = document.createElement("div");
+    item.className = "menu-item";
+    const left = document.createElement("span");
+    const tick = document.createElement("span");
+    tick.className = "tick";
+    const text = document.createElement("span");
+    text.textContent = label;
+    left.appendChild(tick);
+    left.appendChild(text);
+    const right = document.createElement("span");
+    right.className = "keys";
+    right.textContent = keys || "";
+    item.appendChild(left);
+    item.appendChild(right);
+    item.addEventListener("mousedown", (ev) => ev.preventDefault());
+    item.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      if (item.classList.contains("disabled")) return;
+      menuClose();
+      onPick();
+    });
+    popup.appendChild(item);
+    item.tick = tick;
+    return item;
+  }
+  function makeMenuSep(popup) {
+    const sep = document.createElement("div");
+    sep.className = "menu-sep";
+    popup.appendChild(sep);
+  }
+  function makeMenuTitle(label) {
+    const title = document.createElement("div");
+    title.className = "menu-title";
+    const name = document.createElement("span");
+    name.textContent = label;
+    const popup = document.createElement("div");
+    popup.className = "menu-popup";
+    title.appendChild(name);
+    title.appendChild(popup);
+    title.addEventListener("mousedown", (ev) => {
+      // Inside the popup the item's own handler applies.
+      if (ev.target !== name && ev.target !== title) return;
+      ev.preventDefault();
+      if (openMenu === title) menuClose(); else menuOpen(title);
+    });
+    title.addEventListener("mouseenter", () => { if (openMenu && openMenu !== title) menuOpen(title); });
+    menubar.appendChild(title);
+    return popup;
+  }
+  function fillBuffers(lines) {
+    buffersLines = [];
+    if (!buffersPopup) return;
+    buffersPopup.textContent = "";
+    lines.forEach((line, n) => {
+      if (line === "-") {
+        makeMenuSep(buffersPopup);
+        buffersLines.push("-");
+        return;
+      }
+      const [label, ticked] = line;
+      const item = makeMenuItem(buffersPopup, label, "", () => lisp("clamacsBuffers", n));
+      item.tick.textContent = ticked ? "\u2713" : "";
+      buffersLines.push((ticked ? "> " : "  ") + label);
+    });
+  }
+  document.addEventListener("mousedown", (ev) => {
+    if (openMenu && !menubar.contains(ev.target)) menuClose();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (openMenu && ev.key === "Escape") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      menuClose();
+    }
+  }, true);
+  function menuState() {
+    const disabled = [];
+    for (const [index, item] of menuItems) if (item.classList.contains("disabled")) disabled.push(index);
+    disabled.sort((a, b) => a - b);
+    return {items: menuItems.size, disabled, buffers: buffersLines};
+  }
+
+  // What the menu bar, the dock and the panels show, told to Lisp once per
+  // change (a batch of changes is one report): what a script checks
+  // through the port.
   let reportPending = false;
   function panelState() {
     return {
+      menu: menuState(),
       dock: {open: dockShown !== null, shown: dockShown, height: dockEl.offsetHeight || parseInt(dockEl.style.height) || 0},
       diagnostics: {open: diagItem.open, rows: diagList.rows.length, selected: diagList.selected},
       debugger: {open: dbgItem.open, level: panels.debugger.level, condition: panels.debugger.condition,
@@ -470,6 +584,36 @@
     },
     setMiniText(text) { mini.value = text; },
     setMiniLabel(label) { miniLabel.textContent = label; },
+
+    // The menu bar.  ENTRIES is the table of menu.lisp: [kind, title,
+    // keys] per entry, kind "title", "item", "bar" or "buffers".
+    setMenus(entries) {
+      menuClose();
+      menubar.textContent = "";
+      menuItems.clear();
+      buffersPopup = null;
+      let popup = null;
+      entries.forEach((e, index) => {
+        const [kind, title, keys] = e;
+        if (kind === "title") popup = makeMenuTitle(title);
+        else if (!popup) return;
+        else if (kind === "bar") makeMenuSep(popup);
+        else if (kind === "buffers") buffersPopup = popup;
+        else if (kind === "item")
+          menuItems.set(index, makeMenuItem(popup, title, keys, () => lisp("clamacsMenu", index)));
+      });
+      fillBuffers([]);
+      reportPanels();
+    },
+    menuEnable(index, flag) {
+      const item = menuItems.get(index);
+      if (item) item.classList.toggle("disabled", !flag);
+      reportPanels();
+    },
+    setBuffers(lines) {
+      fillBuffers(lines);
+      reportPanels();
+    },
 
     // The dock and the panels.  A panel opens without taking the keyboard
     // unless said otherwise (dbgRaise, inspOpen): the debugger arrives

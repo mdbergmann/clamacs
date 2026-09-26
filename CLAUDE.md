@@ -77,7 +77,24 @@ panel to the snapshot (`dock`, `errors`, `debugger`, `inspector` lines).
 A tab the user picks is told to Lisp (`clamacsActivate` for a tool
 buffer, `clamacsDockShown` for a panel), and whether a document is a dock
 tab is `hdoc-dock-p`, fixed when its tab is made: `tool-document-p` asked
-later says no once `C-x C-w` gave the buffer a file.
+later says no once `C-x C-w` gave the buffer a file.  Phase H4
+(2026-09-26) brought the host editor to par on the menu side: the page
+draws the menu strip from `menu-entries` (`CK.setMenus` once at start,
+`CK.menuEnable` for what changed after every entry, `CK.setBuffers` when
+the Buffers menu's entries or its tick changed -- `menu-update` in
+`frontend-host.lisp`, the twin of the MUI one), a pick comes back as the
+table index (`clamacsMenu` -> `menu-pick`, refused when the item is
+dimmed now) or the Buffers position (`clamacsBuffers`), About's toolkit
+lines are the shim's platform line plus `webview_version()` and the
+WebKit token of the user agent, and the page's report (`clamacsPanels`)
+carries `menu` (the dimmed indices, the Buffers lines) so `drive.lisp`
+checks the page's menu bar beside the editor's account
+(`host-panel-state :menu`).  An editor the table was never sent to (the
+tests' plain one) syncs nothing and answers `BUFFERS` from the model.
+`MEMTRACK=1 verify/host/run-drive.sh` runs both editors under the
+superproject's `DEBUG_MEM_TRACK` build and fails on any off-heap block
+still allocated at exit -- the shutdown criterion; run it after touching
+`host-open`/`host-close`, the port or the callbacks.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

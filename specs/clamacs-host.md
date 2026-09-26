@@ -368,15 +368,15 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsMiniInput` | `text` | the input line changed on its own (paste) |
 | `clamacsActivate` | `docId` | a tab was clicked / a view focused |
 | `clamacsCloseTab` | `docId` | a tab's close button |
-| `clamacsMenu` | `index` | a menu item picked (the table index) |
-| `clamacsBuffers` | `n` | a Buffers-menu item picked |
+| `clamacsMenu` | `index` | a menu item picked (the table index): `menu-pick` on the active document, refused when the item is dimmed by now |
+| `clamacsBuffers` | `n` | a Buffers-menu item picked, by its position in what `setBuffers` last gave (the bar counts) |
 | `clamacsDiagPick` | `row` | a diagnostics row selected |
 | `clamacsDbgFrame` / `clamacsDbgFrameOpen` / `clamacsDbgRestart` / `clamacsDbgEval` / `clamacsDbgButton` | `n` / `n` / `n` / `text` / `"continue"\|"abort"` | the debugger panel |
 | `clamacsInspPart` / `clamacsInspBack` | `n` / -- | the inspector panel |
 | `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
 | `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
 | `clamacsDockResized` | `height` | for the snapshot |
-| `clamacsPanels` | `json` | what the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
+| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, the Buffers lines spelled as the `BUFFERS` verb spells them), the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
 | `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document |
 
 Every binding runs on the main thread inside `webview_dispatch`'s turn;
@@ -634,6 +634,44 @@ with the memory note updated.
 - Done when: every item of "What parity means" 1-7 and 10 is ticked
   against the MUI frontend, the drive passes PHASE 5 in full, and
   `README.md` + `CLAUDE.md` describe the host editor.
+- **Done 2026-09-26** (branch `host-h4`): 603 Lisp tests (43 for the host
+  frontend: the table sent once and every item's state after it, only
+  the changed state after an edit, a pick running its command on the
+  active document and a dimmed pick refused, About's lines, the Buffers
+  menu remade as buffers come and go and its tick moves, a pick by
+  position and by label, an editor without the table syncing nothing),
+  `run-drive.sh` green with 158 `OK` lines (152 in H3): the menu leg
+  now checks the page's own menu bar -- Save dimmed and enabled again,
+  read from `clamacsPanels` -- beside the editor's `MENU ... STATE`, the
+  Buffers leg the page's lines and tick, and About's text names the
+  three toolkit lines with real versions (`webview 0.12.0, WebKit
+  605.1.15`); `run-smoke.sh` / `host-keys.sh` still green.  What it
+  settled: the page draws the menu bar from the table (`CK.setMenus`
+  once at start, before the first document), `menu-update` after every
+  entry sends `menuEnable` for what changed and `setBuffers` when the
+  entries or the tick changed -- the MUI frontend's two syncs -- and a
+  pick is the table index (`clamacsMenu`, refused when the item is
+  dimmed by now) or the position in the Buffers menu (`clamacsBuffers`);
+  an editor the table was never sent to (the tests' plain one, as an
+  MUI editor whose strip could not be built) syncs nothing and answers
+  `BUFFERS` from the model.  Items 1-7 and 10 of "What parity means"
+  tick against MUI; the HyperSpec, the requesters, the palettes, the
+  markers, the arglist and the beep were in place since H1-H3.  What it
+  found: the shutdown criterion.  `MEMTRACK=1 run-drive.sh` (both editors
+  under the superproject's `DEBUG_MEM_TRACK` build, the leak report
+  checked) showed each editor leaving 3-4 worker threads' stacks
+  behind -- the port's listener and connection threads, the self
+  transport's worker, the REPL thread: threads that had *finished* but
+  were only ever polled with `thread-alive-p`, never joined, so neither
+  `join-thread` nor the wrapper's finalizer (their wrappers stay
+  reachable from the port struct) freed them, and the make-thread
+  reaper runs only when the table is full.  The fix is the runtime's:
+  `cl_thread_shutdown` reaps finished, unclaimed workers before the
+  registry goes (cl-amiga, with a scenario in
+  `tests/test_memleak_tracked.sh`), which also covers the MUI editor
+  and the runtime's own `%repl-stop` on the Amiga, where those stacks
+  were Fast RAM lost per launch.  With it the leak-tracking drive ends
+  with `0 block(s), 0 bytes` for both editors.
 
 ### H5 -- the second process: TCP
 

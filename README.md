@@ -44,11 +44,17 @@ host/run.sh file.lisp ...        # builds what is missing, then starts the edito
 
 Everything Emacs about it is the same code as on the Amiga: the keys
 (Option is Meta, ESC too; Command keys stay the system's), Lisp mode, the
-prompts, the requesters.  What is there today is the document window --
-files, editing, colouring, search, the minibuffer -- and the Lisp behind
-it: the REPL, the debugger, the inspector, introspection and LOAD all
-work against the editor's own image (`C-c C-z`, `C-x C-e`, `M-.`, ...),
-with a separate clamiga to follow.  What the Amiga opens as windows of
+prompts, the requesters, the menus.  The document window has files,
+editing, colouring, search, the minibuffer and the status line with the
+arglist; the Lisp behind it -- the REPL, the debugger, the inspector,
+introspection and LOAD -- works against the editor's own image (`C-c
+C-z`, `C-x C-e`, `M-.`, ...), with a separate clamiga to follow.  The
+**menu bar** at the top of the window is the Amiga's menu strip, drawn
+by the page (the toolkit has no native one): the same menus, the Emacs
+key beside each item, items dimmed by the same rules, the Buffers menu
+with the active buffer ticked, About with the toolkit lines (macOS,
+webview, WebKit) and Help > Common Lisp HyperSpec opening the system's
+browser.  What the Amiga opens as windows of
 their own lives in the **dock** below the splitter: the tool buffers
 (the REPL, a description, an apropos) as tabs, and the Diagnostics,
 Debugger and Inspector panels beside them -- a diagnostics row jumps to
@@ -58,7 +64,8 @@ line evaluates in the selected frame, a part descends and Back comes up;
 a panel's close takes it off the screen and `M-x clamacs-debugger` /
 `C-c I` bring it back.  The dock collapses when nothing is shown in it,
 and its height is part of the window snapshot (`dock` in
-`~/.clamacs-windows.cfg`).  The menu bar follows.  `host/build.sh`
+`~/.clamacs-windows.cfg`, written by Windows > Snapshot Windows and
+read at the next start).  `host/build.sh`
 needs the network once, for the webview library and the CodeMirror
 packages (both pinned and checked); the editor itself does not.  The init
 file is `~/.clamacsrc`, the window layout `~/.clamacs-windows.cfg`.
@@ -258,6 +265,7 @@ make -f Makefile.mos             # MorphOS: native build on the box, see the fil
 verify/host/run-smoke.sh         # the host frontend's ground: window, page, shim, wake
 verify/host/host-keys.sh         # the host editor typed into through its page, unattended
 verify/host/run-drive.sh         # the host editor's acceptance run over its own port
+MEMTRACK=1 verify/host/run-drive.sh # the same under a leak-tracking clamiga: nothing may outlive exit
 ```
 
 The Lisp editor's tests run everything but `frontend-mui.lisp` on the host

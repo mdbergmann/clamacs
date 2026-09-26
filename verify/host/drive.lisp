@@ -244,6 +244,34 @@ Moves the cursor."
 here), or \"\"."
   (wait-eval "(clamacs::host-page-panels)" (escape-quotes needle) ticks))
 
+(defun menu-index (command)
+  "The table index of COMMAND's menu item, asked of the editor."
+  (cmd (format nil "EVAL (clamacs::menu-find ~S)" command))
+  (and (= *rc* 0) (parse-integer *result* :junk-allowed t)))
+
+(defun page-menu-disabled ()
+  "The indices the page's report lists as disabled: (values LIST FOUND-P),
+FOUND-P NIL before the page reported anything."
+  (cmd "EVAL (clamacs::host-page-panels)")
+  (let* ((key "disabled\\\":[")
+         (at (and (= *rc* 0) (search key *result*))))
+    (if (null at)
+        (values '() nil)
+        (let* ((start (+ at (length key)))
+               (end (position #\] *result* :start start)))
+          (values (read-from-string
+                   (concatenate 'string "(" (substitute #\Space #\, (subseq *result* start end)) ")"))
+                  t)))))
+
+(defun wait-page-menu (index enabled ticks)
+  "Until the page's report shows the item at INDEX ENABLED (T) or dimmed
+\(NIL); NIL after TICKS half-seconds."
+  (dotimes (i ticks nil)
+    (multiple-value-bind (disabled found) (page-menu-disabled)
+      (when (and found (eq enabled (not (member index disabled))))
+        (return t)))
+    (pause 25)))
+
 (defun check-panels (what state-needle page-needle)
   "WHAT is (panel step): one OK for the editor's account of the panel
 and one for the page's report.  (SECOND is this file's own function --
@@ -364,11 +392,19 @@ the second editor's mode -- so the list is taken apart by hand.)"
     (if (string= *result* "disabled")
         (ok "Save is dimmed for a clean buffer")
         (fail "Save on a clean buffer is ~A" *result*))
-    (cmd "INSERT (defun menu-test () 42)")
-    (cmd "MENU save-buffer STATE")
-    (if (string= *result* "enabled")
-        (ok "the first edit enabled Save")
-        (fail "Save after an edit is ~A" *result*))
+    ;; The page's own menu bar, not only the editor's account of it
+    (let ((save (menu-index "save-buffer")))
+      (if (and save (wait-page-menu save nil 20))
+          (ok "the page's menu bar dims Save (item ~D)" save)
+          (fail "the page's menu bar does not dim Save (item ~A): ~A" save *result*))
+      (cmd "INSERT (defun menu-test () 42)")
+      (cmd "MENU save-buffer STATE")
+      (if (string= *result* "enabled")
+          (ok "the first edit enabled Save")
+          (fail "Save after an edit is ~A" *result*))
+      (if (and save (wait-page-menu save t 20))
+          (ok "the page's menu bar enabled Save after the edit")
+          (fail "the page's menu bar still dims Save: ~A" *result*)))
     (cmd "MENU save-buffer")
     (if (and (= *rc* 0) (string= *result* "") (probe-file file))
         (ok "the menu saved the buffer")
@@ -397,7 +433,21 @@ the second editor's mode -- so the list is taken apart by hand.)"
   (cmd "MENU clamacs-hyperspec STATE")
   (if (string= *result* "enabled")
       (ok "the Help menu has the HyperSpec")
-      (fail "MENU clamacs-hyperspec STATE gave ~A" *result*)))
+      (fail "MENU clamacs-hyperspec STATE gave ~A" *result*))
+  ;; About is a native requester, which a script cannot dismiss: its text
+  ;; is asked for instead.  The toolkit lines name what the window is made
+  ;; of, which proves the webview library answered its version.
+  (cmd "MENU clamacs-about STATE")
+  (if (string= *result* "enabled")
+      (ok "the Project menu has About")
+      (fail "MENU clamacs-about STATE gave ~A" *result*))
+  (cmd "EVAL (clamacs::about-text clamacs::*editor*)")
+  (if (and (= *rc* 0) (search "Cocoa/WebKit on macOS" *result*)
+           (search "webview " *result*) (search ", WebKit " *result*)
+           (not (search "unknown" *result*)))
+      (ok "About names the toolkit: ~A"
+          (substitute #\| #\Newline (subseq *result* 0 (min 160 (length *result*)))))
+      (fail "About's toolkit lines: ~A" *result*)))
 
 (defun buffers-lines ()
   "BUFFERS as a list of lines."
@@ -426,6 +476,13 @@ the second editor's mode -- so the list is taken apart by hand.)"
              (not (member "> sample.lisp" b :test #'string=)))
         (ok "the tick moved to sample2.lisp")
         (fail "after the pick BUFFERS gave ~{~A~^|~}" b)))
+  ;; The page's Buffers menu shows the same lines, the tick included
+  (if (string/= (page-panels "\"> sample2.lisp\"") "")
+      (ok "the page's Buffers menu ticks sample2.lisp")
+      (fail "the page's Buffers menu: ~A" *result*))
+  (if (string/= (page-panels "\"  sample.lisp\"") "")
+      (ok "the page's Buffers menu lists sample.lisp unticked")
+      (fail "the page's Buffers menu: ~A" *result*))
   (cmd "MENU clamacs-room")
   (let* ((b (buffers-lines))
          (bar (position "-" b :test #'string=))

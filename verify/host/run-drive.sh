@@ -13,6 +13,12 @@
 #
 #   verify/host/run-drive.sh            under ../build/host/clamiga
 #   GCSTRESS=1 verify/host/run-drive.sh under ../build/host-gcstress/clamiga
+#   MEMTRACK=1 verify/host/run-drive.sh under ../build/host-memtrack/clamiga
+#                                       (the superproject's `make test-memleak`
+#                                       build) with CLAMIGA_MEM_DIAG=1: both
+#                                       editors must end with every off-heap
+#                                       block handed back -- the shutdown
+#                                       criterion of phase H4
 #   CLAMIGA=... names another binary.
 #
 # Result: build/host-frontend/drive/drive.log (the drive's OK/FAIL/INFO
@@ -30,6 +36,11 @@ if [ "${GCSTRESS:-0}" = 1 ]; then
     CLAMIGA_GC_STRESS=1
     export CLAMIGA_GC_STRESS
     factor=10
+elif [ "${MEMTRACK:-0}" = 1 ]; then
+    clamiga=${CLAMIGA:-"$super/build/host-memtrack/clamiga"}
+    CLAMIGA_MEM_DIAG=1
+    export CLAMIGA_MEM_DIAG
+    factor=1
 else
     clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
     factor=1
@@ -73,6 +84,22 @@ wait_for_exit() {
         n=$((n + 1))
     done
     return 0
+}
+
+check_leaks() {
+    # $1 editor log, $2 name.  A DEBUG_MEM_TRACK build under
+    # CLAMIGA_MEM_DIAG=1 prints what is still allocated at exit, with the
+    # file:line of every block; any build without the line is not checked.
+    if grep -q '\[mem\] leak report:' "$1"; then
+        if grep -q '\[mem\] leak report: 0 block(s), 0 bytes' "$1"; then
+            echo "OK $2 handed every off-heap block back at exit" >>"$log"
+        else
+            echo "FAIL $2 leaked off-heap memory at exit:" >>"$log"
+            grep '\[mem\]' "$1" >>"$log"
+        fi
+    elif [ "${MEMTRACK:-0}" = 1 ]; then
+        echo "FAIL $2 printed no leak report (not a DEBUG_MEM_TRACK build?)" >>"$log"
+    fi
 }
 
 start_editor() {
@@ -121,12 +148,14 @@ fi
 if grep -q 'the page reported' "$out/editor-a.log"; then
     echo "FAIL the page reported an error (editor-a.log)" >>"$log"
 fi
+check_leaks "$out/editor-a.log" "the editor"
 
 # --- the second editor, against the layout file the drive wrote --------
 if [ -f "$cfg" ]; then
     pid_b=$(start_editor "$out/tmp-b" "$out/editor-b.log" "$root/verify/realamiga/sample2.lisp")
     run_drive "$out/tmp-b" second
     wait_for_exit "$pid_b" $((60 * factor)) "the second editor"
+    check_leaks "$out/editor-b.log" "the second editor"
     rm -f "$cfg"
     if [ -f "$cfg" ]; then
         echo "FAIL the layout file could not be deleted" >>"$log"

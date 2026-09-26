@@ -1028,6 +1028,148 @@ fake transport that finds CLAMIGA: (values editor doc tr wire)."
     (is-equal (host-panel-state :dock nil) "no editor")
     (delete-file cfg)))
 
+;;; --- the menu bar (phase H4) ---------------------------------------------------
+
+(defun host-menu-editor (&optional (text "") path)
+  "A host editor without a window that was handed the menu table, as
+START hands it before the first document, and a document on it; the
+batch of both taken."
+  (let ((editor (host-test-editor)))
+    (with-entry (editor) (send-menus editor))
+    (let ((doc (host-test-document editor text path)))
+      (values editor doc (host-take-evals editor)))))
+
+(defun menu-enable-call (command flag)
+  (format nil "CK.menuEnable(~D,~A);" (menu-find command) (if flag "true" "false")))
+
+(defun menu-disabled-indices (editor)
+  "The indices HOST-PANEL-STATE :MENU lists as disabled."
+  (let* ((state (host-panel-state :menu editor))
+         (start (search "disabled (" state)))
+    (read-from-string state t nil :start (+ start (length "disabled ")))))
+
+(defun count-calls (call js)
+  "How often CALL occurs in the batch JS."
+  (loop with start = 0 and n = 0
+        for at = (search call js :start2 start)
+        while at do (incf n) (setq start (1+ at))
+        finally (return n)))
+
+(deftest host-menu-bar-is-the-table-and-its-enable-states-follow-the-editor
+  (multiple-value-bind (editor doc js) (host-menu-editor "" nil)
+    ;; The table, one entry per index, at the head of the batch
+    (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New\",\"\"],[\"item\",\"Open...\",\"C-x C-f\"]," js))
+    (is (search "[\"bar\",\"\",\"\"]" js))
+    (is (search "[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
+    ;; Every item's state went out once: a clean unnamed buffer without a
+    ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
+    (is (search (menu-enable-call 'find-file t) js))
+    (is (search (menu-enable-call 'undo t) js))
+    (is (search (menu-enable-call 'save-buffer nil) js))
+    (is (search (menu-enable-call 'complete-symbol nil) js))
+    (is (search (menu-enable-call 'clamacs-repl nil) js))
+    (is (search (menu-enable-call 'clamacs-repl-clear nil) js))
+    (is-equal (count-calls "CK.menuEnable(" js)
+              (count :item (menu-entries) :key #'menu-entry-kind))
+    (is (search (format nil "items ~D disabled (" (count :item (menu-entries) :key #'menu-entry-kind))
+                (host-panel-state :menu editor)))
+    (is (member (menu-find 'save-buffer) (menu-disabled-indices editor)))
+    ;; Nothing changed: nothing said
+    (with-entry (editor) nil)
+    (is-equal (host-take-evals editor) "")
+    ;; The first edit enables Save -- and only Save is mentioned
+    (host-type-text editor "x")
+    (let ((js (host-take-evals editor)))
+      (is (search (menu-enable-call 'save-buffer t) js))
+      (is-equal (count-calls "CK.menuEnable(" js) 1))
+    (is (not (member (menu-find 'save-buffer) (menu-disabled-indices editor))))
+    ;; A prompt opened by the menu: `M-x' is Run Command...
+    (with-entry (editor) (host-menu-pick editor (menu-find 'execute-extended-command)))
+    (is (minibuffer-open-p doc))
+    (is (search "CK.openMini(\"M-x \",\"\");" (host-take-evals editor)))
+    (host-type editor "C-g")))
+
+(deftest host-menu-pick-runs-the-command-on-the-active-document
+  (multiple-value-bind (editor doc) (host-menu-editor (lines "(defun a ()" "  1)" "" "(defun b ()" "  2)"))
+    (doc-set-point doc (doc-end doc))
+    (with-entry (editor) (host-menu-pick editor (menu-find 'beginning-of-defun)))
+    (is-equal (doc-index-line doc (doc-point doc)) 3)
+    ;; A dimmed item is refused, however the page came to send it: Save on a
+    ;; clean buffer neither asks for a file nor writes one
+    (with-entry (editor) (host-menu-pick editor (menu-find 'save-buffer)))
+    (is-equal (host-editor-asked editor) '())
+    ;; A title, a bar, an index off the table, JSON null: nothing
+    (with-entry (editor) (host-menu-pick editor 0))
+    (with-entry (editor) (host-menu-pick editor (menu-count)))
+    (with-entry (editor) (host-menu-pick editor :null))
+    (is-equal (doc-index-line doc (doc-point doc)) 3)
+    ;; About: the requester, with the toolkit lines of a stubbed page
+    (with-entry (editor) (host-menu-pick editor (menu-find 'clamacs-about)))
+    (let ((asked (first (host-editor-asked editor))))
+      (is (search "clamacs 0." (first asked)))
+      (is (search "no native shim (page stubbed)" (first asked)))
+      (is (search "webview unknown, WebKit unknown" (first asked)))
+      (is-equal (second asked) '(:ok)))
+    ;; Help > HyperSpec goes to the browser
+    (with-entry (editor) (host-menu-pick editor (menu-find 'clamacs-hyperspec)))
+    (is-equal (host-editor-urls editor) (list *hyperspec-url*))
+    (is-equal (doc-message-text doc) (format nil "Opened ~A" *hyperspec-url*))))
+
+(deftest host-webkit-version-is-read-off-the-user-agent
+  (is-equal (webkit-version "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)")
+            "605.1.15")
+  (is-equal (webkit-version "AppleWebKit/700") "700")
+  (is-equal (webkit-version "Mozilla/5.0 Gecko/2010") "unknown")
+  (is-equal (webkit-version nil) "unknown"))
+
+(deftest host-buffers-menu-follows-the-documents-and-the-tick
+  (multiple-value-bind (editor d1 js) (host-menu-editor "one")
+    (is (search "CK.setBuffers([[\"(unnamed)\",true]]);" js))
+    (let ((d2 (host-test-document editor "two")))
+      ;; A second unnamed buffer: Emacs's <2>, the tick on the new one
+      (is (search "CK.setBuffers([[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" (host-take-evals editor)))
+      (is-equal (editor-buffer-menu-lines editor) '("  (unnamed)" "> (unnamed)<2>"))
+      (is (search "buffers (  (unnamed)|> (unnamed)<2>)" (host-panel-state :menu editor)))
+      ;; A pick by the page's position activates; only the tick is remade
+      (with-entry (editor) (host-buffers-pick editor 0))
+      (is (eq (editor-active-document editor) d1))
+      (is (search "CK.setBuffers([[\"(unnamed)\",true],[\"(unnamed)<2>\",false]]);" (host-take-evals editor)))
+      ;; The port's BUFFERS verb reads the page's lines and picks by label
+      (is-equal (nth-value 1 (port-command editor "BUFFERS"))
+                (format nil "> (unnamed)~%  (unnamed)<2>"))
+      (is-equal (nth-value 1 (port-command editor "BUFFERS (unnamed)<2>")) "")
+      (is (eq (editor-active-document editor) d2))
+      (is-equal (nth-value 1 (port-command editor "BUFFERS nobody")) "no such buffer")
+      ;; A position off the menu, or null, changes nothing
+      (with-entry (editor) (host-buffers-pick editor 7))
+      (with-entry (editor) (host-buffers-pick editor :null))
+      (is (eq (editor-active-document editor) d2))
+      ;; A tool buffer goes below the bar; the bar's position is not a pick
+      (with-entry (editor) (show-text-window editor "*clamacs-scratch*" nil "hello"))
+      (is (search "CK.setBuffers([[\"(unnamed)\",false],[\"(unnamed)<2>\",false],\"-\",[\"*clamacs-scratch*\",true]]);"
+                  (host-take-evals editor)))
+      (with-entry (editor) (host-buffers-pick editor 2))
+      (is-equal (doc-name (editor-active-document editor)) "*clamacs-scratch*")
+      (with-entry (editor) (host-buffers-pick editor 1))
+      (is (eq (editor-active-document editor) d2))
+      ;; A closed buffer leaves the menu
+      (with-entry (editor) (run-command d2 'kill-buffer))
+      (reap editor)
+      (is (search "CK.setBuffers([[\"(unnamed)\",true],\"-\",[\"*clamacs-scratch*\",false]]);"
+                  (host-take-evals editor))))))
+
+(deftest host-without-a-menu-bar-the-buffers-verb-still-answers
+  ;; An editor the table was never sent to (the tests' plain one) answers
+  ;; BUFFERS from the model and sends the page nothing about menus.
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "x")))
+    (declare (ignore doc))
+    (is-equal (nth-value 1 (port-command editor "BUFFERS")) "> (unnamed)")
+    (let ((js (host-take-evals editor)))
+      (is (not (search "menuEnable" js)))
+      (is (not (search "setBuffers" js))))))
+
 ;;; --- the program's command line ------------------------------------------------
 
 (deftest host-command-line-keeps-the-files-in-order-and-takes-bind-out

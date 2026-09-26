@@ -97,6 +97,28 @@
                        border: 1px solid var(--line); border-radius: 4px; background: var(--bar);
                        color: var(--bar-fg); }
   .panel-foot button:disabled { color: var(--dim); }
+  /* The menu bar (phase H4): the menu strip of menu.lisp drawn by the page,
+     since webview has no API for a native one.  A title opens its popup
+     below it; an item shows its label and, on the right, the Emacs key
+     that runs the same command; a disabled item is dimmed; the Buffers
+     menu's items are remade by Lisp as buffers come and go, the active
+     one ticked. */
+  #menubar { flex: none; display: flex; background: var(--bar); color: var(--bar-fg);
+             border-bottom: 1px solid var(--line); user-select: none; position: relative; }
+  .menu-title { padding: 4px 10px; cursor: default; white-space: nowrap; position: relative; }
+  .menu-title.open { background: var(--tab-active); }
+  .menu-popup { display: none; position: absolute; top: 100%; left: 0; min-width: 220px;
+                background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.25); padding: 4px 0; z-index: 10; }
+  .menu-title.open .menu-popup { display: block; }
+  .menu-item { display: flex; justify-content: space-between; gap: 24px; padding: 3px 14px;
+               white-space: nowrap; cursor: default; }
+  .menu-item:hover { background: var(--selection); }
+  .menu-item.disabled { color: var(--dim); }
+  .menu-item.disabled:hover { background: transparent; }
+  .menu-item .keys { color: var(--dim); font-family: "SF Mono", Menlo, monospace; font-size: 11px; }
+  .menu-item .tick { display: inline-block; width: 12px; }
+  .menu-sep { height: 1px; margin: 4px 0; background: var(--line); }
   #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
             border-top: 1px solid var(--line); white-space: pre; overflow: hidden;
             font-family: "SF Mono", Menlo, monospace; font-size: 12px; }
@@ -110,6 +132,7 @@
 </head>
 <body>
 <div id="wrap">
+  <div id="menubar"></div>
   <div id="sources">
     <div id="source-tabs" class="tabs"></div>
     <div id="views"></div>

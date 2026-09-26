@@ -30,6 +30,11 @@
 ;;;;     one turn of the Cocoa loop at a time and drains the mailbox in
 ;;;;     between, so a worker thread's stop-the-world collection waits at
 ;;;;     most one step.
+;;;;   - The page draws the menu bar (webview has no native one) from the
+;;;;     table of menu.lisp, sent once; MENU-UPDATE keeps its enable states
+;;;;     and the Buffers menu in step after every entry, and a pick comes
+;;;;     back as a table index, so the menu is the third entrance to the
+;;;;     command table here as under MUI.
 ;;;;
 ;;;; The page may be absent: an editor made without a window (the tests)
 ;;;; keeps its flushed batches in HOST-EDITOR-EVALS instead, and the
@@ -111,7 +116,16 @@ otherwise; the page's stylesheet starts from the same figure.")
   (diag-selected nil)
   (dbg-open nil)
   (insp-open nil)
-  (page-panels nil))
+  (page-panels nil)
+  ;; The menu bar as Lisp told the page to show it (see "The menu bar"
+  ;; below): whether the table went out (nothing is synced before), one
+  ;; enable flag per table entry, the Buffers menu's entries and the ticked
+  ;; document, the documents behind its items in order.
+  (menus-sent nil)
+  (menu-enabled nil)
+  (buffers-shown '())
+  (buffers-active nil)
+  (buffers-docs #()))
 
 (defclass host-document (document)
   ((id :initarg :id :reader hdoc-id)
@@ -924,11 +938,34 @@ page before anything opens it."
 
 ;;; --- About, the browser (menu.lisp)
 
+(defun webview-version (editor)
+  "The webview library's version, \"MAJOR.MINOR.PATCH\": the three
+unsigned ints that start webview_version()'s struct."
+  (let ((info (wv editor "webview_version" :pointer '())))
+    (if (ffi:null-pointer-p info)
+        "unknown"
+        (format nil "~D.~D.~D" (ffi:peek-u32 info 0) (ffi:peek-u32 info 4) (ffi:peek-u32 info 8)))))
+
+(defun webkit-version (user-agent)
+  "The engine's version out of the page's user agent -- the token after
+`AppleWebKit/' -- or \"unknown\"."
+  (let ((at (and user-agent (search "AppleWebKit/" user-agent))))
+    (if at
+        (let* ((start (+ at (length "AppleWebKit/")))
+               (end (or (position #\Space user-agent :start start) (length user-agent))))
+          (subseq user-agent start end))
+        "unknown")))
+
 (defmethod editor-toolkit-lines ((editor host-editor))
+  "The toolkit lines of About: the platform the shim reports, and the
+two things the window is made of -- the webview library and the WebKit
+behind the page."
   (list (if (host-editor-shim editor)
             (ffi:foreign-to-string (shim editor "clamacs_host_toolkit" :pointer '()))
             "no native shim (page stubbed)")
-        (format nil "webview, user agent ~A" (or (host-editor-user-agent editor) "unknown"))))
+        (format nil "webview ~A, WebKit ~A"
+                (if (host-editor-webview editor) (webview-version editor) "unknown")
+                (webkit-version (host-editor-user-agent editor)))))
 
 (defmethod doc-open-url ((doc host-document) url)
   (let ((editor (doc-editor doc)))
@@ -938,6 +975,111 @@ page before anything opens it."
                    (shim editor "clamacs_host_open_url" :int32 '(:pointer) p)))
            :opened)
           (t :refused))))
+
+;;; ------------------------------------------------------------------
+;;; The menu bar (menu.lisp)
+;;; ------------------------------------------------------------------
+;;;
+;;; The page draws the menu strip -- webview has no API for a native one
+;;; -- from the table SEND-MENUS hands it once at start, one entry per
+;;; table index.  A pick comes back as that index (clamacsMenu) and runs
+;;; MENU-PICK on the active document, so the menu is the third entrance
+;;; to the command table here as it is under MUI, never a second
+;;; implementation.  MENU-UPDATE, after every entry, brings the enable
+;;; states in step with MENU-STATE (only what changed is sent) and the
+;;; Buffers menu in step with BUFFER-MENU (remade when its entries or the
+;;; ticked document changed), as the MUI frontend's does after a command
+;;; and after every mailbox drain.
+
+(defun send-menus (editor)
+  "The table to the page, and the enable states forgotten so the next
+MENU-UPDATE sends every one."
+  (ck editor "setMenus"
+      (coerce (mapcar (lambda (e)
+                        (list (menu-entry-kind e)
+                              (or (menu-entry-title e) "")
+                              (or (menu-entry-keys e) "")))
+                      (menu-entries))
+              'vector))
+  (setf (host-editor-menus-sent editor) t
+        (host-editor-menu-enabled editor) nil
+        (host-editor-buffers-shown editor) '()
+        (host-editor-buffers-active editor) nil
+        (host-editor-buffers-docs editor) #()))
+
+(defun menu-enable-sync (editor)
+  "menuEnable for every item whose state differs from what the page shows."
+  (let ((want (menu-enabled-items editor))
+        (shown (host-editor-menu-enabled editor)))
+    (loop for flag in want
+          for index from 0
+          do (let ((entry (menu-entry index)))
+               (when (and (eq (menu-entry-kind entry) :item)
+                          (or (null shown) (not (eq flag (nth index shown)))))
+                 (ck editor "menuEnable" index flag))))
+    (setf (host-editor-menu-enabled editor) want)))
+
+(defun buffers-menu-sync (editor)
+  "setBuffers when the Buffers menu's entries or its tick are no longer
+what the page shows: `-' for the bar, [label, ticked] for a buffer."
+  (let ((want (buffer-menu editor))
+        (active (editor-active-document editor)))
+    (unless (and (buffer-menu-equal want (host-editor-buffers-shown editor))
+                 (eq active (host-editor-buffers-active editor)))
+      (ck editor "setBuffers"
+          (coerce (mapcar (lambda (e)
+                            (if (eq e :bar)
+                                "-"
+                                (list (car e) (eq (cdr e) active))))
+                          want)
+                  'vector))
+      (setf (host-editor-buffers-shown editor) want
+            (host-editor-buffers-active editor) active
+            (host-editor-buffers-docs editor)
+            (coerce (mapcar (lambda (e) (if (eq e :bar) nil (cdr e))) want) 'vector)))))
+
+(defun menu-update (editor)
+  "The menu bar in step with the editor's state, after every entry.
+Nothing before the table went out (an editor the tests make without one)."
+  (when (host-editor-menus-sent editor)
+    (menu-enable-sync editor)
+    (buffers-menu-sync editor)))
+
+(defun host-menu-pick (editor index)
+  "The clamacsMenu binding: the item at INDEX was picked.  Run only when
+the item is enabled now -- the page dims what Lisp told it to, but the
+state may have moved since the last report."
+  (when (and (integerp index) (menu-item-enabled-p editor index))
+    (menu-pick editor index)))
+
+(defun host-buffers-pick (editor n)
+  "The clamacsBuffers binding: the Buffers menu's item N, as the page
+counts its entries (the bar included), activates its document."
+  (let ((docs (host-editor-buffers-docs editor)))
+    (when (and (integerp n) (<= 0 n) (< n (length docs)))
+      (buffer-menu-pick editor (aref docs n)))))
+
+(defmethod editor-buffer-menu-lines ((editor host-editor))
+  "What the page's Buffers menu shows, brought up to date first -- the
+port's verbs run from the mailbox, not inside a menu pick.  Without a
+menu bar (the table not sent), what it should be."
+  (cond ((not (host-editor-menus-sent editor)) (call-next-method))
+        (t
+         (buffers-menu-sync editor)
+         (let ((active (host-editor-buffers-active editor)))
+           (mapcar (lambda (e)
+                     (cond ((eq e :bar) "-")
+                           ((eq (cdr e) active) (format nil "> ~A" (car e)))
+                           (t (format nil "  ~A" (car e)))))
+                   (host-editor-buffers-shown editor))))))
+
+(defmethod editor-buffer-menu-pick ((editor host-editor) label)
+  (cond ((not (host-editor-menus-sent editor)) (call-next-method))
+        (t
+         (buffers-menu-sync editor)
+         (let ((n (position-if (lambda (e) (and (consp e) (string= (car e) label)))
+                               (host-editor-buffers-shown editor))))
+           (and n (host-buffers-pick editor n))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The dock: the tool buffers and the three panels as tabs
@@ -1104,6 +1246,14 @@ fractional zoom reports a fractional height; it is rounded to whole pixels."
   (flet ((open-word (flag) (if flag "open" "closed"))
          (row-word (n) (if n (princ-to-string n) "none")))
     (ecase panel
+      (:menu
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~})"
+               (count :item (menu-entries) :key #'menu-entry-kind)
+               (loop for flag in (host-editor-menu-enabled editor)
+                     for index from 0
+                     when (and (not flag) (eq (menu-entry-kind (menu-entry index)) :item))
+                       collect index)
+               (editor-buffer-menu-lines editor)))
       (:dock
        (format nil "~A height ~D shown ~A"
                (open-word (host-editor-dock-open editor))
@@ -1154,11 +1304,6 @@ area, and on the console when there is none."
     (if doc
         (doc-message doc (substitute #\Space #\Newline text))
         (format *error-output* "clamacs: ~A~%" text))))
-
-(defun menu-update (editor)
-  "The menu strip follows the editor's state -- phase H4."
-  (declare (ignore editor))
-  nil)
 
 (defun after-entry (editor)
   "The page brought in step and the batch sent: after every entry.  A
@@ -1245,6 +1390,9 @@ ticks can arrive then."
           (let ((doc (host-document-by-id editor doc-id)))
             (when doc (close-document doc)))))
   (bind editor "clamacsTick" (lambda () (host-tick editor)))
+  ;; The menu bar (phase H4)
+  (bind editor "clamacsMenu" (lambda (index) (host-menu-pick editor index)))
+  (bind editor "clamacsBuffers" (lambda (n) (host-buffers-pick editor n)))
   ;; The dock and the panels (phase H3).  A row number the page sends for
   ;; "nothing selected" is JSON null: ROW-ARG makes it NIL.
   (bind editor "clamacsDiagPick" (lambda (row) (host-diag-pick editor (row-arg row))))
@@ -1409,6 +1557,7 @@ last tab closes."
            (unwind-protect
                 (progn
                   (with-entry (editor)
+                    (send-menus editor)
                     (place-dock editor)
                     (if files
                         (dolist (path files)
