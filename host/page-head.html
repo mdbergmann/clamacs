@@ -59,8 +59,14 @@
   .cm-editor { height: 100%; font-size: var(--font-size); }
   .cm-scroller { font-family: var(--font-family); line-height: 1.35; }
   .cm-content { caret-color: var(--cursor); }
-  .cm-gutters { background: var(--gutter-bg); color: var(--gutter-fg); border-right: 1px solid var(--line); }
-  .cm-activeLine { background: var(--active-line); }
+  /* CodeMirror's own light and dark themes set the gutter, the active
+     line and the cursor with class-scoped rules that outrank a plain
+     selector, so these are !important: the theme's variables must win. */
+  .cm-gutters { background-color: var(--gutter-bg) !important; color: var(--gutter-fg) !important;
+                border-right: 1px solid var(--line) !important; }
+  .cm-activeLineGutter { background-color: var(--active-line) !important; }
+  .cm-activeLine { background-color: var(--active-line) !important; }
+  .cm-cursor, .cm-dropCursor { border-left-color: var(--cursor) !important; }
   .cm-selectionBackground, ::selection { background: var(--selection) !important; }
   .ck-comment { color: var(--c-comment); }
   .ck-string { color: var(--c-string); }

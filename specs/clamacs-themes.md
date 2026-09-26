@@ -364,6 +364,17 @@ Done 2026-09-26.  What T2 settled beyond the text above:
   second editor comes up in (`run-drive.sh` names it
   `CLAMACS_DRIVE_RC`).  The smoke run sets a theme through `CK.theme`
   and reads it back from `CK.state()`.
+- **CodeMirror styles the gutter, the active line and the cursor
+  itself** (`&light .cm-gutters {backgroundColor: #f5f5f5}` and the dark
+  twin, class-scoped, so they outrank the page's plain `.cm-gutters`
+  rule): the first user run (2026-09-26) showed an unthemed line-number
+  column.  Those four rules of the page are `!important` now, and the
+  page's report carries `gutter`, the gutter's *painted* background as
+  `getComputedStyle` sees it, spelled `#rrggbb`; `host-panel-state
+  :theme` answers `gutter #..` from `:gutter-bg` and the drive's
+  `check-theme` compares the two -- the one colour read off the painted
+  page rather than off a variable, which is what catches this class of
+  bug.
 - **Tests with a theme pick bind `*editor*`** to the test's editor:
   `load-theme` reaches the frontend through the running editor, which
   the tests' plain editors are not; and a port verb's batch is flushed

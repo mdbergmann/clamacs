@@ -587,15 +587,18 @@ the second editor's mode -- so the list is taken apart by hand.)"
   (let ((line (find-if (lambda (l) (and (> (length l) 1) (char= (char l 0) #\>))) (themes-lines))))
     (and line (subseq line 2))))
 
-(defun check-theme (step name dark bg keyword)
+(defun check-theme (step name dark bg keyword gutter)
   "The editor's account and the page's report of the theme NAME, with
-BG and KEYWORD the colours both must show."
+BG and KEYWORD the colours both must show and GUTTER what the page must
+have painted the line-number gutter with -- CodeMirror styles the gutter
+itself, so this is the one colour read off the painted page rather than
+off a variable."
   (let ((want (format nil "~A ~A bg ~A keyword ~A" name (if dark "dark" "light") bg keyword)))
     (if (string/= (panel-state :theme want) "")
         (ok "~A: the editor shows ~A" step want)
         (fail "~A: the editor's theme says ~A (wanted ~A)" step *result* want)))
-  (let ((want (format nil "\"theme\":{\"bg\":\"~A\",\"keyword\":\"~A\",\"scheme\":\"~A\"}"
-                      bg keyword (if dark "dark" "light"))))
+  (let ((want (format nil "\"theme\":{\"bg\":\"~A\",\"keyword\":\"~A\",\"scheme\":\"~A\",\"gutter\":\"~A\"}"
+                      bg keyword (if dark "dark" "light") gutter)))
     (if (string/= (page-panels want) "")
         (ok "~A: the page painted ~A" step want)
         (fail "~A: the page reports ~A (wanted ~A)" step *result* want))))
@@ -612,9 +615,9 @@ BG and KEYWORD the colours both must show."
   ;; palette for it: the light one, or the dark one
   (cmd "EVAL (clamacs::host-panel-state :theme)")
   (cond ((result-has "system dark")
-         (check-theme "the default" "dark" t "#1e1e1e" "#569cd6"))
+         (check-theme "the default" "dark" t "#1e1e1e" "#569cd6" "#1e1e1e"))
         ((result-has "system light")
-         (check-theme "the default" "light" nil "#ffffff" "#0000ff"))
+         (check-theme "the default" "light" nil "#ffffff" "#0000ff" "#f7f7f7"))
         (t (fail "the page did not report the system's scheme: ~A" *result*)))
   (if (probe-file *rc-file*)
       (fail "an init file is there before any pick: ~A" *rc-file*)
@@ -630,7 +633,7 @@ BG and KEYWORD the colours both must show."
   (if (string/= (menu-report "\"> Solarized Dark\"") "")
       (ok "the menu bar's View menu ticks Solarized Dark")
       (fail "the menu bar's View menu: ~A" *result*))
-  (check-theme "Solarized Dark" "solarized-dark" t "#002b36" "#859900")
+  (check-theme "Solarized Dark" "solarized-dark" t "#002b36" "#859900" "#073642")
   (if (file-has-line *rc-file* "(load-theme :solarized-dark)")
       (ok "the pick was written to ~A" *rc-file*)
       (fail "~A does not hold the pick" *rc-file*))
@@ -646,14 +649,14 @@ BG and KEYWORD the colours both must show."
            (if (equal (theme-ticked) "One Dark")
                (ok "the host's View menu pick (item ~D) loaded One Dark" one-dark)
                (fail "the host's View menu pick left ~{~A~^|~}" (themes-lines)))
-           (check-theme "One Dark" "one-dark" t "#282c34" "#c678dd")
+           (check-theme "One Dark" "one-dark" t "#282c34" "#c678dd" "#282c34")
            (if (file-has-line *rc-file* "(load-theme :one-dark)")
                (ok "the host's pick was written to the init file")
                (fail "~A does not hold One Dark" *rc-file*)))))
   ;; A session-only pick (C-u M-x clamacs-theme's path) applies and
   ;; leaves the file alone
   (cmd "EVAL (clamacs::load-theme :gruvbox-dark :save nil)")
-  (check-theme "a session-only pick" "gruvbox-dark" t "#282828" "#fb4934")
+  (check-theme "a session-only pick" "gruvbox-dark" t "#282828" "#fb4934" "#282828")
   (if (file-has-line *rc-file* "(load-theme :gruvbox-dark)")
       (fail "a session-only pick was written to ~A" *rc-file*)
       (ok "a session-only pick left the init file alone"))
@@ -674,7 +677,7 @@ BG and KEYWORD the colours both must show."
   (if (equal (theme-ticked) "Drive Theme")
       (ok "the init file's define-theme and load-theme took: Drive Theme ticked")
       (fail "after loading the init file THEMES gave ~{~A~^|~}" (themes-lines)))
-  (check-theme "Drive Theme" "drive-theme" t "#282c34" "#ff9900")
+  (check-theme "Drive Theme" "drive-theme" t "#282c34" "#ff9900" "#282c34")
   (let ((th (themes-lines)))
     (if (and (member "-" th :test #'string=)
              (> (position "> Drive Theme" th :test #'string=) (position "-" th :test #'string=)))
@@ -1482,7 +1485,7 @@ wrote: it must come up where the file said, then quit."
   (if (equal (theme-ticked) "Drive Theme")
       (ok "the second editor came up in the init file's theme: Drive Theme ticked")
       (fail "the second editor's THEMES gave ~{~A~^|~}" (themes-lines)))
-  (check-theme "the second editor" "drive-theme" t "#282c34" "#ff9900")
+  (check-theme "the second editor" "drive-theme" t "#282c34" "#ff9900" "#282c34")
   (if (string/= (menu-report "\"> Drive Theme\"") "")
       (ok "the second editor's menu bar ticks Drive Theme")
       (fail "the second editor's menu bar: ~A" *result*))

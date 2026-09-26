@@ -1212,7 +1212,7 @@ batch of both taken."
         (is (< (search "CK.theme(" js) (search "CK.setDynamic(\"themes\"" js))))
       (is (search "(load-theme :solarized-dark)" (read-file-text *init-file*)))
       (is-equal (host-panel-state :theme editor)
-                "solarized-dark dark bg #002b36 keyword #859900 system unknown")
+                "solarized-dark dark bg #002b36 keyword #859900 system unknown gutter #073642")
       ;; The port's THEMES verb reads the page's lines and picks by label
       (is-equal (nth-value 1 (port-command editor "THEMES"))
                 (format nil "  Light~%  Dark~%  Solarized Light~%> Solarized Dark~%  One Dark~%  Gruvbox Dark"))
@@ -1265,7 +1265,8 @@ batch of both taken."
         (is (search "CK.theme([[\"--bg\",\"#ffffff\"],[\"--fg\",\"#1f1f1f\"],[\"--dim\",\"#6a6a6a\"]" js))
         (is (search "[\"--font-family\",\"\\\"SF Mono\\\", Menlo, monospace\"],[\"--font-size\",\"14px\"]],false);" js))
         (is-equal (count-calls "CK.theme(" js) 1))
-      (is-equal (host-panel-state :theme editor) "light light bg #ffffff keyword #0000ff system unknown")
+      (is-equal (host-panel-state :theme editor)
+                "light light bg #ffffff keyword #0000ff system unknown gutter #f7f7f7")
       ;; The page reports the system dark at ready: the default follows,
       ;; and so does an editor without a pick
       (host-ready editor "Mozilla/5.0 AppleWebKit/605.1.15" "dark")
@@ -1276,7 +1277,8 @@ batch of both taken."
       (is (eq (active-theme) (find-theme :dark)))
       (with-entry (editor) (send-theme editor))
       (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" (host-take-evals editor)))
-      (is-equal (host-panel-state :theme editor) "dark dark bg #1e1e1e keyword #569cd6 system dark")
+      (is-equal (host-panel-state :theme editor)
+                "dark dark bg #1e1e1e keyword #569cd6 system dark gutter #1e1e1e")
       ;; A pick made before the page came up (the init file's) wins over
       ;; the scheme
       (setf *theme* (find-theme :solarized-light))

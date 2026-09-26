@@ -1507,15 +1507,17 @@ a script's `EVAL (clamacs::host-panel-state :debugger)' over the port."
                (editor-dynamic-menu-lines editor :buffers)
                (editor-dynamic-menu-lines editor :themes)))
       (:theme
-       ;; The theme in effect, and the two colours the page's report
-       ;; carries, so a script compares the two accounts
+       ;; The theme in effect, and the colours the page's report carries
+       ;; -- two variables and the gutter's painted background -- so a
+       ;; script compares the two accounts
        (let ((theme (active-theme)))
-         (format nil "~A ~A bg ~A keyword ~A system ~A"
+         (format nil "~A ~A bg ~A keyword ~A system ~A gutter ~A"
                  (theme-name-string (theme-name theme))
                  (if (theme-dark theme) "dark" "light")
                  (theme-resolve theme :bg)
                  (theme-resolve theme :keyword)
-                 (or (host-editor-scheme editor) "unknown"))))
+                 (or (host-editor-scheme editor) "unknown")
+                 (theme-resolve theme :gutter-bg))))
       (:dock
        (format nil "~A height ~D shown ~A"
                (open-word (host-editor-dock-open editor))

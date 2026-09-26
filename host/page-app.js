@@ -449,11 +449,24 @@
   // proves the page painted what Lisp said.
 
   const rootStyle = document.documentElement.style;
+  // A computed colour, `rgb(r, g, b)', as the theme spells it, `#rrggbb'
+  // (anything else, `rgba(...)' or a name, as it came).
+  function hexColour(value) {
+    const m = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value || "");
+    if (!m) return value || "";
+    return "#" + [m[1], m[2], m[3]].map(n => (+n).toString(16).padStart(2, "0")).join("");
+  }
+  // The report carries two of the variables as the page computes them,
+  // the scheme, and what the line-number gutter is really painted with:
+  // CodeMirror styles the gutter itself, so a variable that never reaches
+  // it shows here and nowhere else.
   function themeState() {
     const computed = getComputedStyle(document.documentElement);
+    const gutters = document.querySelector(".cm-gutters");
     return {bg: computed.getPropertyValue("--bg").trim(),
             keyword: computed.getPropertyValue("--c-keyword").trim(),
-            scheme: document.documentElement.dataset.theme || ""};
+            scheme: document.documentElement.dataset.theme || "",
+            gutter: gutters ? hexColour(getComputedStyle(gutters).backgroundColor) : ""};
   }
   const systemScheme = () =>
     window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
