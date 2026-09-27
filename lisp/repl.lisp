@@ -358,32 +358,41 @@ user stays in the buffer."
              (doc-message doc "Interrupting ..."))))))
 
 (define-command clamacs-repl (doc arg)
+  "Open or raise the REPL window."
   (declare (ignore arg))
   (repl-switch doc))
 
 (define-command clamacs-interrupt (doc arg)
+  "Interrupt what the REPL thread is evaluating."
   (declare (ignore arg))
   (repl-interrupt doc))
 
 (defmacro define-repl-command (name (doc) &body body)
-  "A command that acts in the REPL window and nowhere else."
-  `(define-command ,name (,doc arg)
-     (declare (ignore arg))
-     (cond ((not (repl-mode-p ,doc))
-            (doc-message ,doc "Not in the REPL window (C-c C-z goes there)")
-            (doc-beep ,doc))
-           (t ,@body))))
+  "A command that acts in the REPL window and nowhere else.  A docstring
+first in BODY is the command's."
+  (let ((docstring (and (stringp (first body)) (rest body) (list (pop body)))))
+    `(define-command ,name (,doc arg)
+       ,@docstring
+       (declare (ignore arg))
+       (cond ((not (repl-mode-p ,doc))
+              (doc-message ,doc "Not in the REPL window (C-c C-z goes there)")
+              (doc-beep ,doc))
+             (t ,@body)))))
 
 (define-repl-command clamacs-repl-return (doc)
+  "Send the input to the REPL, or add a line while the form is unfinished."
   (repl-return doc))
 
 (define-repl-command clamacs-repl-previous-input (doc)
+  "Replace the input with the previous one from the history."
   (repl-history-walk doc t))
 
 (define-repl-command clamacs-repl-next-input (doc)
+  "Replace the input with the next one from the history."
   (repl-history-walk doc nil))
 
 (define-repl-command clamacs-repl-clear (doc)
+  "Clear the REPL transcript, keeping the prompt."
   (repl-clear doc))
 
 ;;; ------------------------------------------------------------------

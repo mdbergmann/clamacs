@@ -180,68 +180,87 @@ command was a kill too, at the front for a backward kill."
 ;;; ------------------------------------------------------------------
 
 (define-command forward-char (doc arg)
+  "Move forward one character; ARG times, backwards when negative."
   (repeat-move doc (if (< arg 0) :left :right) arg))
 
 (define-command backward-char (doc arg)
+  "Move back one character; ARG times, forwards when negative."
   (repeat-move doc (if (< arg 0) :right :left) arg))
 
 (define-command next-line (doc arg)
+  "Move down one line; ARG times."
   (repeat-move doc (if (< arg 0) :up :down) arg))
 
 (define-command previous-line (doc arg)
+  "Move up one line; ARG times."
   (repeat-move doc (if (< arg 0) :down :up) arg))
 
 (define-command beginning-of-line (doc arg)
+  "Move to the start of the line."
   (declare (ignore arg))
   (doc-move doc :line-start))
 
 (define-command end-of-line (doc arg)
+  "Move to the end of the line."
   (declare (ignore arg))
   (doc-move doc :line-end))
 
 (define-command forward-word (doc arg)
+  "Move to the end of the word; ARG words."
   (repeat-move doc :next-word arg))
 
 (define-command backward-word (doc arg)
+  "Move to the start of the word; ARG words."
   (repeat-move doc :previous-word arg))
 
 (define-command beginning-of-buffer (doc arg)
+  "Move to the start of the buffer."
   (declare (ignore arg))
   (doc-move doc :text-start))
 
 (define-command end-of-buffer (doc arg)
+  "Move to the end of the buffer."
   (declare (ignore arg))
   (doc-move doc :text-end))
 
 (define-command scroll-up (doc arg)
+  "Scroll down one page (the text moves up); ARG pages."
   (repeat-move doc :next-page arg))
 
 (define-command scroll-down (doc arg)
+  "Scroll up one page (the text moves down); ARG pages."
   (repeat-move doc :previous-page arg))
 
 (define-command recenter (doc arg)
+  "Repaint the window, recolouring the whole buffer."
   (declare (ignore arg))
   (colour-all doc))
 
 (define-command delete-char (doc arg)
+  "Delete the character after the cursor; ARG of them."
   (repeat-edit doc :delete arg))
 
 (define-command backward-delete-char (doc arg)
+  "Delete the character before the cursor; ARG of them."
   (repeat-edit doc :backspace arg))
 
 (define-command undo (doc arg)
+  "Undo the last edit."
   (declare (ignore arg))
   (doc-edit doc :undo))
 
 (define-command redo (doc arg)
+  "Redo the last undone edit."
   (declare (ignore arg))
   (doc-edit doc :redo))
 
 (define-command mark-whole-buffer (doc arg)
+  "Select the whole buffer: mark at the end, cursor at the start."
   (declare (ignore arg))
   (doc-edit doc :select-all))
 
 (define-command keyboard-quit (doc arg)
+  "Quit: drop the mark and the selection, abandon a prompt or a prefix key."
   (declare (ignore arg))
   (setf (doc-mark doc) nil)
   (doc-edit doc :select-none)
@@ -252,6 +271,7 @@ command was a kill too, at the front for a backward kill."
 ;;; ------------------------------------------------------------------
 
 (define-command kill-word (doc arg)
+  "Kill to the end of the word (ARG words); the text goes on the kill ring."
   (let ((start (doc-point doc)))
     (repeat-move doc :next-word arg)
     (let ((stop (doc-point doc)))
@@ -259,11 +279,13 @@ command was a kill too, at the front for a backward kill."
       (kill-text doc (take-region doc start stop t) nil))))
 
 (define-command backward-kill-word (doc arg)
+  "Kill back to the start of the word (ARG words)."
   (let ((stop (doc-point doc)))
     (repeat-move doc :previous-word arg)
     (kill-text doc (take-region doc (doc-point doc) stop t) t)))
 
 (define-command kill-line (doc arg)
+  "Kill to the end of the line, or the newline when at the end; ARG lines."
   (multiple-value-bind (text base point) (doc-context doc)
     (declare (simple-string text) (fixnum point))
     (let ((len (length text))
@@ -300,10 +322,12 @@ command was a kill too, at the front for a backward kill."
       (setf (doc-mark doc) nil))))
 
 (define-command kill-region (doc arg)
+  "Kill the region between mark and cursor onto the kill ring (cut)."
   (declare (ignore arg))
   (region-command doc t))
 
 (define-command kill-ring-save (doc arg)
+  "Save the region on the kill ring without deleting it (copy)."
   (declare (ignore arg))
   (region-command doc nil))
 
@@ -313,12 +337,14 @@ command was a kill too, at the front for a backward kill."
            (doc-beep doc))))
 
 (define-command yank (doc arg)
+  "Insert the last killed text (paste)."
   (declare (ignore arg))
   (let ((ring (doc-kill-ring doc)))
     (kill-reset-yank ring)
     (yank-text doc (kill-current ring))))
 
 (define-command yank-pop (doc arg)
+  "Replace the text just yanked with the kill before it."
   (declare (ignore arg))
   (cond ((not (member (doc-last-command doc) '(yank yank-pop)))
          (doc-message doc "Previous command was not a yank")
@@ -336,11 +362,13 @@ command was a kill too, at the front for a backward kill."
 ;;; ------------------------------------------------------------------
 
 (define-command set-mark-command (doc arg)
+  "Set the mark at the cursor."
   (declare (ignore arg))
   (setf (doc-mark doc) (doc-point doc))
   (doc-message doc "Mark set"))
 
 (define-command exchange-point-and-mark (doc arg)
+  "Swap the cursor and the mark."
   (declare (ignore arg))
   (let ((mark (doc-mark doc))
         (point (doc-point doc)))
@@ -374,24 +402,31 @@ as it goes, and a complaint when it does not go at all."
              (doc-beep doc))))))
 
 (define-command forward-sexp (doc arg)
+  "Move over the next balanced expression; ARG of them."
   (sexp-move doc arg #'sexp-forward))
 
 (define-command backward-sexp (doc arg)
+  "Move back over the previous balanced expression; ARG of them."
   (sexp-move doc arg #'sexp-backward))
 
 (define-command backward-up-list (doc arg)
+  "Move up out of the enclosing list, to before its opening paren."
   (sexp-move doc arg #'sexp-up))
 
 (define-command down-list (doc arg)
+  "Move down into the next list, to after its opening paren."
   (sexp-move doc arg #'sexp-down))
 
 (define-command beginning-of-defun (doc arg)
+  "Move to the start of the top-level form."
   (sexp-move doc arg #'sexp-defun-start))
 
 (define-command end-of-defun (doc arg)
+  "Move to the end of the top-level form."
   (sexp-move doc arg #'sexp-defun-end))
 
 (define-command kill-sexp (doc arg)
+  "Kill the balanced expression after the cursor."
   (declare (ignore arg))
   (multiple-value-bind (text base point) (doc-context-full doc)
     (let ((stop (sexp-forward text point)))
@@ -404,6 +439,7 @@ as it goes, and a complaint when it does not go at all."
              (doc-beep doc))))))
 
 (define-command insert-parentheses (doc arg)
+  "Insert a pair of parentheses and put the cursor between them."
   (declare (ignore arg))
   (doc-insert doc "()")
   (doc-move doc :left))
@@ -451,15 +487,18 @@ in the text keeps its position relative to it."
         (reindent-line doc (doc-index-line doc (doc-point doc)) column)))))
 
 (define-command indent-for-tab-command (doc arg)
+  "Indent the current line as Lisp."
   (declare (ignore arg))
   (indent-current-line doc))
 
 (define-command newline-and-indent (doc arg)
+  "Insert a newline and indent the new line as Lisp."
   (declare (ignore arg))
   (doc-insert doc (string #\Newline))
   (indent-current-line doc))
 
 (define-command indent-region (doc arg)
+  "Indent every line of the region as Lisp."
   (declare (ignore arg))
   (multiple-value-bind (start stop) (region-bounds doc)
     (when start

@@ -51,6 +51,12 @@ cursor and returns true when PATTERN was found."))
   continuation               ; function of the document and the answer
   completer                  ; function of the input: matches and common
   history                    ; a HISTORY, or NIL for answers not worth one
+  ;; What the last TAB offered, for the next TAB to cycle through: the
+  ;; matches, the one in the line (-1 = the common prefix), and the text
+  ;; that TAB left there -- an input that differs from it was edited since.
+  (candidates '())
+  (candidate-index -1)
+  (candidates-text nil)
   ;; isearch
   (anchor 0)                 ; where the search started
   (backwards nil))
@@ -158,27 +164,64 @@ current state does not bind as undefined."
            (member key *minibuffer-keys-prompt*))
        t))
 
+(defun minibuffer-offer (doc matches common &optional shown)
+  "Put the common prefix COMMON of the ambiguous MATCHES in the line, name
+the first few (SHOWN standing in for them when given), and keep them for
+the next TAB to cycle through.  For a completer that runs the whole show
+itself (the symbol completer) as much as for MINIBUFFER-COMPLETE."
+  (let ((mini (doc-minibuffer doc)))
+    (doc-set-minibuffer-text doc common)
+    (doc-message doc (completions-message matches shown))
+    (when mini
+      (setf (minibuffer-candidates mini) matches
+            (minibuffer-candidate-index mini) -1
+            (minibuffer-candidates-text mini) (copy-seq common)))))
+
+(defun minibuffer-forget-candidates (mini)
+  (setf (minibuffer-candidates mini) '()
+        (minibuffer-candidate-index mini) -1
+        (minibuffer-candidates-text mini) nil))
+
+(defun minibuffer-cycle (doc mini)
+  "TAB again on what the last TAB left: the next candidate goes into the
+line, whole, round and round; the echo area counts.  RET takes it."
+  (let* ((matches (minibuffer-candidates mini))
+         (n (length matches))
+         (index (mod (1+ (minibuffer-candidate-index mini)) n))
+         (text (nth index matches)))
+    (setf (minibuffer-candidate-index mini) index
+          (minibuffer-candidates-text mini) (copy-seq text))
+    (doc-set-minibuffer-text doc text)
+    (message doc "[~D/~D]" (1+ index) n)))
+
 (defun minibuffer-complete (doc mini)
   "TAB: complete the input as far as it goes, and say what is left -- the
 first few candidates by name, since the editor has no completions buffer
 and the echo area is where the user sees what `M-x' (or a theme, a file
-name) has to offer."
-  (let ((completer (minibuffer-completer mini)))
-    (if (null completer)
-        (doc-beep doc)
-        (multiple-value-bind (matches common shown)
-            (funcall completer (doc-minibuffer-text doc))
-          (cond ((eq matches :handled)
-                 ;; The completer did the whole job itself -- the symbol
-                 ;; completer, whose candidates come from clamiga later.
-                 )
-                ((null matches)
-                 (doc-message doc "[No match]"))
-                (t
-                 (doc-set-minibuffer-text doc common)
-                 (if (null (rest matches))
-                     (doc-message doc "[Sole completion]")
-                     (doc-message doc (completions-message matches shown)))))))))
+name) has to offer.  TAB again, with the line as the last TAB left it,
+cycles through the candidates instead."
+  (let ((completer (minibuffer-completer mini))
+        (text (doc-minibuffer-text doc)))
+    (cond ((null completer)
+           (doc-beep doc))
+          ((and (minibuffer-candidates mini)
+                (equal text (minibuffer-candidates-text mini)))
+           (minibuffer-cycle doc mini))
+          (t
+           (minibuffer-forget-candidates mini)
+           (multiple-value-bind (matches common shown) (funcall completer text)
+             (cond ((eq matches :handled)
+                    ;; The completer did the whole job itself -- the symbol
+                    ;; completer, whose candidates come from clamiga later
+                    ;; and go through MINIBUFFER-OFFER when they are many.
+                    )
+                   ((null matches)
+                    (doc-message doc "[No match]"))
+                   ((null (rest matches))
+                    (doc-set-minibuffer-text doc common)
+                    (doc-message doc "[Sole completion]"))
+                   (t
+                    (minibuffer-offer doc matches common shown))))))))
 
 (defun minibuffer-key (doc key)
   "Act on KEY when it is the minibuffer's.  True when it was, and must not
@@ -268,10 +311,12 @@ start over from the anchor with the longer or shorter pattern."
     (doc-open-minibuffer doc (minibuffer-label mini) "")))
 
 (define-command isearch-forward (doc arg)
+  "Search forward incrementally as the pattern is typed; C-s again finds the next."
   (declare (ignore arg))
   (isearch-start doc nil))
 
 (define-command isearch-backward (doc arg)
+  "Search backward incrementally; C-r again finds the previous."
   (declare (ignore arg))
   (isearch-start doc t))
 
@@ -280,6 +325,7 @@ start over from the anchor with the longer or shorter pattern."
 ;;; ------------------------------------------------------------------
 
 (define-command execute-extended-command (doc arg)
+  "Run a command by name (M-x); TAB completes and lists the names."
   (declare (ignore arg))
   (prompt doc "M-x "
           (lambda (doc answer)
@@ -291,6 +337,7 @@ start over from the anchor with the longer or shorter pattern."
           :history (editor-command-history (doc-editor doc))))
 
 (define-command goto-line (doc arg)
+  "Move to a line, asked for by its number."
   (declare (ignore arg))
   (prompt doc "Goto line: "
           (lambda (doc answer)

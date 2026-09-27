@@ -193,3 +193,77 @@
                                          '(("C-x nonsense" find-file)))
                            nil)
         (error () t))))
+
+;;; --- the listing --------------------------------------------------------------
+
+(deftest command-keys-come-from-the-tables
+  (is-equal (command-keys 'forward-char) '(("C-f" . :global)))
+  ;; Every spelling, in table order.
+  (is-equal (command-keys 'undo) '(("C-/" . :global) ("C-_" . :global) ("C-x u" . :global)))
+  ;; The Lisp map's and the REPL's after the global ones.
+  (is-equal (command-keys 'forward-sexp) '(("C-M-f" . :lisp)))
+  (is-equal (command-keys 'clamacs-interrupt)
+            '(("C-c C-b" . :lisp) ("C-c C-c" . :repl) ("C-c C-b" . :repl)))
+  ;; No key at all.
+  (is-equal (command-keys 'clamacs-about) '())
+  (is-equal (command-keys 'no-such-command) '())
+  ;; The column: each map marked once, after its keys.
+  (is-equal (command-keys-text 'undo) "C-/, C-_, C-x u")
+  (is-equal (command-keys-text 'complete-symbol) "M-TAB, C-M-i [Lisp]")
+  (is-equal (command-keys-text 'clamacs-interrupt) "C-c C-b [Lisp], C-c C-c, C-c C-b [REPL]")
+  (is-equal (command-keys-text 'clamacs-repl-clear) "C-c M-o [REPL]")
+  (is-equal (command-keys-text 'clamacs-about) ""))
+
+(deftest command-doc-line-is-the-first-line
+  (is-equal (command-doc-line 'forward-char)
+            "Move forward one character; ARG times, backwards when negative.")
+  ;; A docstring of several lines: the first.
+  (is-equal (command-doc-line 'kill-emacs)
+            "Quit without asking: unsaved changes are discarded.  What a macro or an")
+  ;; Through DEFINE-REPL-COMMAND too.
+  (is-equal (command-doc-line 'clamacs-repl-clear) "Clear the REPL transcript, keeping the prompt.")
+  ;; Declared, not implemented.
+  (register-command 'listing-probe-command)
+  (is-equal (command-doc-line 'listing-probe-command) "(not implemented)"))
+
+(deftest every-shipped-command-has-a-docstring
+  ;; The listing shows the first line of each: a command without one shows
+  ;; nothing there.  The test files' own commands are the exceptions.
+  (dolist (name (command-names))
+    (let ((command (find-command name)))
+      (when (and (command-function command)
+                 (not (member name '("x" "test-say-hello" "my-init-command" "insert-date")
+                              :test #'string=)))
+        (when (string= (command-doc-line command) "")
+          (test-failure name " has no docstring"))))))
+
+(deftest command-listing-text-has-every-command
+  (let* ((text (command-listing-text))
+         (lines (split-lines text)))
+    ;; The heading counts them and says how to run one.
+    (is (search (format nil "~D commands.  M-x runs one by name" (length (command-names)))
+                (first lines)))
+    (is-equal (subseq (second lines) 0 7) "Command")
+    ;; One line per command, in registration order, name first.
+    (let ((rows (nthcdr 3 lines)))
+      (is-equal (length rows) (length (command-names)))
+      (loop for name in (command-names)
+            for row in rows
+            do (unless (and (> (length row) (length name))
+                            (string= name row :end2 (length name))
+                            (char= (char row (length name)) #\Space))
+                 (test-failure row (format nil " does not begin with ~A" name)))))
+    ;; Keys and description sit on the line.
+    (let ((row (find-if (lambda (l) (string= "forward-char" l :end2 (min 12 (length l)))) lines)))
+      (is (search "C-f" row))
+      (is (search "Move forward one character" row)))
+    (let ((row (find-if (lambda (l) (string= "clamacs-interrupt" l :end2 (min 17 (length l)))) lines)))
+      (is (search "C-c C-b [Lisp], C-c C-c, C-c C-b [REPL]" row))
+      (is (search "Interrupt what the REPL thread" row)))
+    ;; A key column wider than its width pushes the description right.
+    (let ((row (find-if (lambda (l) (string= "clamacs-describe-symbol" l :end2 (min 23 (length l)))) lines)))
+      (is (search "C-c C-d d, C-c C-d C-d [Lisp] Describe" row)))
+    ;; What the user binds counts too.
+    (let ((*global-bindings* (append *global-bindings* '(("C-c z" clamacs-about)))))
+      (is-equal (command-keys-text 'clamacs-about) "C-c z")
+      (is (search "C-c z" (command-listing-text))))))

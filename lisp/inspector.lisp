@@ -70,14 +70,17 @@ and open it with the keyboard."))
                (wire-request wire doc :inspect "POP")))))))
 
 (define-command clamacs-inspect (doc arg)
+  "Evaluate a form in clamiga and open its value in the inspector window."
   (declare (ignore arg))
   (prompt-for-form doc "Inspect value (evaluated): " #'inspect-form))
 
 (define-command clamacs-inspector-part (doc arg)
+  "Descend into a part of the inspected value, by its number."
   (declare (ignore arg))
   (inspect-part doc nil))
 
 (define-command clamacs-inspector-pop (doc arg)
+  "Go back to the value inspected before this one."
   (declare (ignore arg))
   (inspect-pop doc))
 

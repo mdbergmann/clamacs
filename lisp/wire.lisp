@@ -427,6 +427,7 @@ not for keys."
       (wire-request wire doc :load (format nil "LOAD ~A" path)))))
 
 (define-command clamacs-load-buffer (doc arg)
+  "Save the buffer and LOAD its file in clamiga."
   (declare (ignore arg))
   (cond ((null (doc-path doc))
          (doc-message doc "Save the buffer to a file first")
@@ -441,6 +442,7 @@ not for keys."
     (message doc "Loading ~A ..." path)))
 
 (define-command clamacs-load-file (doc arg)
+  "LOAD a file in clamiga, asked for in the minibuffer."
   (declare (ignore arg))
   (prompt-for-file doc "Load file: " #'load-file-into-lisp :title "Load File"))
 
@@ -450,6 +452,7 @@ not for keys."
   (ask-file-then doc "Load File" nil (doc-directory doc) #'load-file-into-lisp))
 
 (define-command clamacs-compile-file (doc arg)
+  "COMPILE-FILE the buffer's file in clamiga and list the diagnostics."
   (declare (ignore arg))
   (cond ((null (doc-path doc))
          (doc-message doc "Save the buffer to a file first")
@@ -464,6 +467,7 @@ not for keys."
                (message doc "Compiling ~A ..." (doc-name doc))))))))
 
 (define-command clamacs-eval-defun (doc arg)
+  "Evaluate the top-level form at the cursor in clamiga."
   (declare (ignore arg))
   (multiple-value-bind (text base point) (doc-context-full doc)
     (let* ((start (or (sexp-defun-start text point) 0))
@@ -474,6 +478,7 @@ not for keys."
             (t (wire-eval doc (doc-text doc (+ base start) (+ base stop))))))))
 
 (define-command clamacs-eval-last-sexp (doc arg)
+  "Evaluate the expression before the cursor in clamiga."
   (declare (ignore arg))
   (multiple-value-bind (text base point) (doc-context-full doc)
     (multiple-value-bind (start stop) (sexp-last-sexp text point)
@@ -483,6 +488,7 @@ not for keys."
             (t (wire-eval doc (doc-text doc (+ base start) (+ base stop))))))))
 
 (define-command clamacs-eval-region (doc arg)
+  "Evaluate the region in clamiga."
   (declare (ignore arg))
   (multiple-value-bind (start stop) (region-bounds doc)
     (when start
@@ -492,6 +498,7 @@ not for keys."
             (doc-beep doc))))))
 
 (define-command clamacs-eval-expression (doc arg)
+  "Evaluate a form typed in the minibuffer in clamiga."
   (declare (ignore arg))
   (prompt-for-form doc "Eval: "
                    (lambda (doc answer)
@@ -499,6 +506,7 @@ not for keys."
                        (wire-eval doc answer)))))
 
 (define-command clamacs-connect (doc arg)
+  "Find clamiga's port and connect to it."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -507,6 +515,7 @@ not for keys."
           (doc-message doc "No clamiga port found")))))
 
 (define-command run-lisp (doc arg)
+  "Start a clamiga of our own and connect to it."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -515,6 +524,7 @@ not for keys."
           (doc-message doc (launch-failure-text wire))))))
 
 (define-command clamacs-show-errors (doc arg)
+  "Show the diagnostics of the last load or compile."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -523,11 +533,13 @@ not for keys."
                                :open t))))
 
 (define-command clamacs-next-error (doc arg)
+  "Go to the next diagnostic's line."
   (declare (ignore arg))
   (when (require-wire doc)
     (step-diagnostic doc 1)))
 
 (define-command clamacs-previous-error (doc arg)
+  "Go to the previous diagnostic's line."
   (declare (ignore arg))
   (when (require-wire doc)
     (step-diagnostic doc -1)))

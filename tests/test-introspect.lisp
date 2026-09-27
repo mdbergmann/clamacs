@@ -328,6 +328,28 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is-equal (fake-state doc) "twice-again|")
     (is (null (fake-prompt doc)))))
 
+(deftest tab-again-cycles-through-the-symbol-candidates
+  ;; The candidates clamiga sent are the minibuffer's to cycle through,
+  ;; nothing more on the wire.
+  (multiple-value-bind (doc tr wire) (make-wired-fake "twic|")
+    (declare (ignore wire))
+    (run-command doc 'complete-symbol)
+    (deliver-package tr)
+    (fake-deliver tr 0 (lines "twice" "twice-again" "twice-of"))
+    ;; The hand-over shows the prompt; the first TAB lists.
+    (is-equal (fake-prompt doc) "Complete: twice")
+    (type-keys doc "TAB")
+    (is-equal (fake-mini-label doc) "[3 completions: twice twice-again twice-of]")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[1/3]twice")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[2/3]twice-again")
+    (type-keys doc "TAB TAB")
+    (is-equal (fake-prompt doc) "[1/3]twice")
+    (is-equal (length (fake-sent-commands tr)) 2)
+    (type-keys doc "TAB RET")
+    (is-equal (fake-state doc) "twice-again|")))
+
 (deftest the-minibuffer-asks-again-when-the-candidates-do-not-cover
   (multiple-value-bind (doc tr wire) (make-wired-fake "twic|")
     (declare (ignore wire))

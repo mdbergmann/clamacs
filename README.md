@@ -155,9 +155,12 @@ A command is any function of the document and the numeric argument written
 against the frontend protocol (`lisp/frontend.lisp`, `lisp/commands.lisp`
 are the examples); `M-x`, the menu and the ARexx port's `EVAL` all find it
 by name.  At the `M-x` prompt TAB completes the name and, while it is
-still ambiguous, lists the first few candidates in the echo area -- TAB on
-an empty line says how many commands there are and names the first of
-them.  `bind-key` refuses a key sequence that clashes with a binding
+still ambiguous, lists the first few candidates in the echo area; TAB
+again cycles through them, and RET takes the one in the line.  TAB on an
+empty line says how many commands there are and names the first of them.
+**Help > List Commands** (`M-x clamacs-list-commands`) opens a window
+listing every command with its keys and what it does -- the ones from
+the init file included.  `bind-key` refuses a key sequence that clashes with a binding
 already there (`C-c d x` after `C-c d`, or `C-x` on its own): a key is a
 command or a prefix, not both.  Binding the same keys again replaces the
 earlier binding.

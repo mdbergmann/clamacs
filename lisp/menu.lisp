@@ -172,6 +172,7 @@
      (make-menu-entry :dynamic :always :buffers nil nil nil)
 
      (title "Help")
+     (item 'clamacs-list-commands       :always        "List Commands"          nil       :global)
      (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global))))
 
 (defun menu-entries ()
@@ -488,6 +489,7 @@ About requester: the MUI and TextEditor.mcc versions.")
                   (t (wire-port-name wire))))))
 
 (define-command clamacs-about (doc arg)
+  "Show the About requester: versions, the toolkit, the connection."
   (declare (ignore arg))
   (doc-ask doc (about-text (doc-editor doc)) '(:ok)))
 
@@ -525,5 +527,17 @@ thing they came for."
      nil)))
 
 (define-command clamacs-hyperspec (doc arg)
+  "Open the Common Lisp HyperSpec in the browser."
   (declare (ignore arg))
   (open-url doc *hyperspec-url*))
+
+;;; ------------------------------------------------------------------
+;;; Help > List Commands
+;;; ------------------------------------------------------------------
+
+(define-command clamacs-list-commands (doc arg)
+  "List every command with its keys and what it does, in a window."
+  (declare (ignore arg))
+  (unless (show-text-window (doc-editor doc) "*clamacs-commands*" nil
+                            (command-listing-text))
+    (doc-message doc "Cannot open *clamacs-commands*")))

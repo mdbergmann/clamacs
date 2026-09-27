@@ -134,4 +134,7 @@ longest common prefix, as COMPLETE returns them."
  clamacs-snapshot-windows clamacs-hyperspec clamacs-about
  ;; The colour theme (theme.lisp): the View menu's items and the init
  ;; file's form both end in the same LOAD-THEME this command calls.
- clamacs-theme)
+ clamacs-theme
+ ;; Every command with its keys and its docstring's first line, in a
+ ;; window (menu.lisp; the text is COMMAND-LISTING-TEXT in bindings.lisp).
+ clamacs-list-commands)

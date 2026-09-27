@@ -153,6 +153,7 @@ zero and below): such a hand-edited entry counts as none."
     count))
 
 (define-command clamacs-snapshot-windows (doc arg)
+  "Save every open window's position and size for the next start."
   (declare (ignore arg))
   (snapshot-take doc))
 

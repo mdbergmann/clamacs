@@ -257,6 +257,7 @@ editor cannot talk to itself.")
                  (funcall *self-transport-maker* (wire-editor wire))))))
 
 (define-command clamacs-connect-self (doc arg)
+  "Point the REPL, the evals and introspection at the editor's own Lisp."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -275,6 +276,7 @@ editor cannot talk to itself.")
                  (doc-message doc "Switching to the editor itself ..."))))))))
 
 (define-command clamacs-connect-clamiga (doc arg)
+  "Point the REPL, the evals and introspection at clamiga again."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -307,6 +309,7 @@ that decides whether the next program starts is exec's AvailMem.")
             system)))
 
 (define-command clamacs-room (doc arg)
+  "Show the editor's heap use and the system's free memory in a window."
   (declare (ignore arg))
   (let ((editor (doc-editor doc)))
     (unless (show-text-window editor "*clamacs-room*" nil (room-text editor))

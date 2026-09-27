@@ -193,26 +193,32 @@ for the form."
              (message doc "Evaluating in frame ~D ..." frame))))))
 
 (define-command clamacs-debugger (doc arg)
+  "Show the debugger window for the REPL's current error."
   (declare (ignore arg))
   (debug-show doc))
 
 (define-command clamacs-debugger-abort (doc arg)
+  "Leave the debugger and return to the REPL prompt."
   (declare (ignore arg))
   (debug-abort doc))
 
 (define-command clamacs-debugger-continue (doc arg)
+  "Take the CONTINUE restart in the debugger."
   (declare (ignore arg))
   (debug-continue doc))
 
 (define-command clamacs-debugger-restart (doc arg)
+  "Take a restart in the debugger, by its number."
   (declare (ignore arg))
   (debug-restart doc nil))
 
 (define-command clamacs-debugger-frame (doc arg)
+  "Show the locals of a backtrace frame, by its number."
   (declare (ignore arg))
   (debug-frame doc nil))
 
 (define-command clamacs-debugger-eval (doc arg)
+  "Evaluate a form in the selected backtrace frame."
   (declare (ignore arg))
   (debug-eval doc nil))
 

@@ -350,12 +350,14 @@ cancelled."
             :history (editor-file-history (doc-editor doc)))))
 
 (define-command find-file (doc arg)
+  "Open a file, asked for in the minibuffer with completion (a new buffer for a new name)."
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
                    (lambda (doc path) (find-file-named doc path nil))
                    :title "Open"))
 
 (define-command find-file-other-window (doc arg)
+  "Open a file in a window of its own."
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
                    (lambda (doc path) (find-file-named doc path t))
@@ -379,12 +381,14 @@ cancelled."
                  (lambda (doc path) (find-file-named doc path t))))
 
 (define-command clamacs-new-buffer (doc arg)
+  "Open an empty, unnamed Lisp buffer in a new window."
   (declare (ignore arg))
   (unless (open-document (doc-editor doc) nil)
     (doc-message doc "Cannot open a new window")
     (doc-beep doc)))
 
 (define-command write-file (doc arg)
+  "Save the buffer under a name asked for in the minibuffer."
   (declare (ignore arg))
   (prompt-for-file doc "Write file: " #'save-file
                    :initial (or (doc-path doc) "") :save t :title "Save As"))
@@ -396,6 +400,7 @@ current one."
   (ask-file-then doc "Save As" t (or (doc-path doc) "") #'save-file))
 
 (define-command save-buffer (doc arg)
+  "Save the buffer to its file, asking for a name when it has none."
   (if (doc-path doc)
       (save-file doc (doc-path doc))
       (write-file doc arg)))
@@ -435,6 +440,7 @@ requester already) and the window stays."
     t))
 
 (define-command kill-buffer (doc arg)
+  "Close the buffer and its window, asking about unsaved changes."
   (declare (ignore arg))
   (close-document doc))
 
@@ -444,6 +450,7 @@ requester already) and the window stays."
     (or (first rest) (first docs))))
 
 (define-command other-window (doc arg)
+  "Activate the next window."
   (declare (ignore arg))
   (let ((next (next-document doc)))
     (when (and next (not (eq next doc)))
@@ -451,9 +458,11 @@ requester already) and the window stays."
 
 ;;; One document per window, so switching buffers is switching windows.
 (define-command switch-to-buffer (doc arg)
+  "Switch to the next buffer (its window is activated)."
   (other-window doc arg))
 
 (define-command save-buffers-kill-emacs (doc arg)
+  "Quit the editor, asking about every unsaved buffer."
   (declare (ignore arg))
   ;; The frontend's event loop sees the flag and leaves; it closes the
   ;; windows through CLOSE-DOCUMENT, which asks about each unsaved text.

@@ -118,7 +118,7 @@
   ;; The reason the menu exists for these: they have no key.
   (dolist (command '(clamacs-new-buffer clamacs-connect run-lisp clamacs-compile-file
                      clamacs-arglist clamacs-debugger clamacs-snapshot-windows
-                     clamacs-hyperspec clamacs-about))
+                     clamacs-hyperspec clamacs-about clamacs-list-commands))
     (is (menu-find command))))
 
 (deftest every-shortcut-shown-runs-its-command
@@ -519,6 +519,30 @@
       (is (search "openurl.library is not installed" (first asked))))
     (is-equal (fake-last-message doc) "openurl.library not found")
     (is-equal (length (fake-urls doc)) 3)))
+
+(deftest list-commands-opens-a-window-with-the-listing
+  (let* ((doc (make-fake "|"))
+         (editor (doc-editor doc)))
+    (run-command doc 'clamacs-list-commands)
+    (let ((out (editor-active-document editor)))
+      (is (not (eq out doc)))
+      (is-equal (doc-name out) "*clamacs-commands*")
+      (is (tool-document-p out))
+      (is (not (doc-lisp-mode out)))
+      (is-equal (doc-point out) 0)
+      (is-equal (fake-text out) (command-listing-text))
+      (is (search "clamacs-list-commands" (fake-text out)))
+      ;; Again: the same window, refreshed, not a second one.
+      (doc-activate doc)
+      (run-command doc 'clamacs-list-commands)
+      (is (eq (editor-active-document editor) out))
+      (is-equal (count "*clamacs-commands*" (editor-documents editor)
+                       :key #'doc-name :test #'equal)
+                1))
+    ;; Help > List Commands is that command, always live.
+    (let ((e (menu-entry (menu-find 'clamacs-list-commands))))
+      (is-equal (menu-entry-title e) "List Commands")
+      (is-equal (menu-entry-rule e) :always))))
 
 ;;; --- the init file ------------------------------------------------------------
 

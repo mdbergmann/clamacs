@@ -270,6 +270,7 @@ last edit, the arglist is looked up quietly."
           (intro-arglist-serial state) (doc-edit-serial doc))))
 
 (define-command clamacs-arglist (doc arg)
+  "Show the argument list of the function at the cursor in the echo area."
   (declare (ignore arg))
   (arglist-lookup doc t))
 
@@ -307,8 +308,8 @@ it goes, and say what is left."
            (doc-set-minibuffer-text doc (first matches))
            (doc-message doc "[Sole completion]"))
           (t
-           (doc-set-minibuffer-text doc common)
-           (doc-message doc (completions-message matches))))))
+           ;; Kept in the minibuffer too, so TAB again cycles through them.
+           (minibuffer-offer doc matches common)))))
 
 (defun ask-completions (doc kind prefix)
   (when (ask doc kind (format nil "COMPLETE ~A" prefix))
@@ -340,6 +341,7 @@ and the input line are its own business."
   (doc-insert doc text))
 
 (define-command complete-symbol (doc arg)
+  "Complete the symbol before the cursor, asking clamiga for the candidates."
   (declare (ignore arg))
   (let ((point (doc-point doc))
         (state (doc-intro doc)))
@@ -412,6 +414,7 @@ and the input line are its own business."
         (t (ask doc :source-location (format nil "SOURCE-LOCATION ~A" name)))))
 
 (define-command clamacs-edit-definition (doc arg)
+  "Jump to the definition of the symbol at the cursor."
   (declare (ignore arg))
   (let ((sym (symbol-at-point doc)))
     (if sym
@@ -444,6 +447,7 @@ and the input line are its own business."
                   (goto-line-1 target line)))))))))
 
 (define-command clamacs-pop-definition (doc arg)
+  "Return to where the last jump to a definition started."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (loc (locstack-pop (editor-locations editor))))
@@ -475,6 +479,7 @@ and the input line are its own business."
         (t (ask doc :describe (format nil "DESCRIBE ~A" name)))))
 
 (define-command clamacs-describe-symbol (doc arg)
+  "Describe a symbol (the one at the cursor) in a window."
   (declare (ignore arg))
   (prompt-for-symbol doc "Describe symbol: " #'describe-named
                      :initial (or (symbol-at-point doc) "")))
@@ -484,6 +489,7 @@ and the input line are its own business."
         (t (ask doc :apropos (format nil "APROPOS ~A" text)))))
 
 (define-command clamacs-apropos (doc arg)
+  "List the symbols whose names contain a string, in a window."
   (declare (ignore arg))
   (prompt doc "Apropos: " #'apropos-named))
 
@@ -497,10 +503,12 @@ and the input line are its own business."
                 (concatenate 'string (if full "MACROEXPAND " "MACROEXPAND-1 ") form))))))
 
 (define-command clamacs-macroexpand-1 (doc arg)
+  "Expand the macro form at the cursor once, in a window."
   (declare (ignore arg))
   (macroexpand-at-point doc nil))
 
 (define-command clamacs-macroexpand (doc arg)
+  "Expand the macro form at the cursor fully, in a window."
   (declare (ignore arg))
   (macroexpand-at-point doc t))
 

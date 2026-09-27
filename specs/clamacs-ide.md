@@ -239,7 +239,10 @@ quit), Edit (undo/redo, cut/copy/paste, select all, search, go to line,
 `M-x`), Lisp (indentation, defun motion, the phase-2 introspection),
 Clamiga (connect, start clamiga, load/compile, the evals, interrupt, the
 error list), Windows (REPL, inspector, debugger, the REPL's own
-commands, other window) and Help (the Common Lisp HyperSpec, 2026-09-14:
+commands, other window) and Help (List Commands, 2026-09-27: every
+command with its keys and its docstring's first line in
+`*clamacs-commands*`, `command-listing-text` in bindings.lisp; and the
+Common Lisp HyperSpec, 2026-09-14:
 `clamacs-hyperspec` hands the URL to `openurl.library`, which MorphOS
 ships and the OpenURL package supplies on AmigaOS 3; without it the URL
 is shown in a requester -- `src/url.c`).  Cursor and word motion and the

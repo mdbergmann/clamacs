@@ -181,6 +181,36 @@
               "[6 completions: clamacs-debugger clamacs-debugger-abort clamacs-debugger-continue clamacs-debugger-restart clamacs-debugger-frame clamacs-debugger-eval]")
     (type-keys doc "C-g")))
 
+(deftest tab-again-cycles-through-the-candidates
+  (let ((doc (make-fake "|hello")))
+    (type-keys doc "M-x")
+    (type-text doc "kill-r")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[2 completions: kill-region kill-ring-save]kill-r")
+    ;; TAB on what TAB left: the candidates in turn, whole, counted.
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[1/2]kill-region")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[2/2]kill-ring-save")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[1/2]kill-region")
+    ;; An edit ends the round: TAB completes what is typed now.
+    (type-keys doc "BS BS BS BS")
+    (is-equal (fake-mini-text doc) "kill-re")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[Sole completion]kill-region")
+    ;; A sole completion offers nothing to cycle through.
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[Sole completion]kill-region")
+    ;; RET takes the candidate in the line.
+    (type-keys doc "C-g M-x")
+    (type-text doc "kill-r")
+    (type-keys doc "TAB TAB TAB")
+    (is-equal (fake-mini-text doc) "kill-ring-save")
+    (type-keys doc "RET")
+    (is-equal (doc-last-command doc) 'kill-ring-save)
+    (is-equal (fake-state doc) "|hello")))
+
 (deftest m-x-history-walks-with-m-p-and-m-n
   (let ((doc (make-fake "|ab")))
     (type-keys doc "M-x")

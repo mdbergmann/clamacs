@@ -145,6 +145,71 @@ that prefix's whole map away."
       (:repl (setq *repl-bindings* (append *repl-bindings* (list spec))))))
   command)
 
+;;; ------------------------------------------------------------------
+;;; The listing: what `M-x' offers, for a window
+;;; ------------------------------------------------------------------
+
+(defun command-keys (command)
+  "The key sequences bound to COMMAND (a symbol), each with the map it is
+in: (\"C-f\" . :global), global ones first, then the Lisp map's and the
+REPL window's -- what the user bound in the init file included.  NIL for
+a command with no key."
+  (let ((keys '()))
+    (dolist (map '(:global :lisp :repl))
+      (dolist (spec (binding-specs-own map))
+        (when (eq (second spec) command)
+          (push (cons (first spec) map) keys))))
+    (nreverse keys)))
+
+(defun binding-specs-own (map)
+  "The specs of MAP alone (BINDING-SPECS lays the REPL's over the Lisp
+map's)."
+  (ecase map
+    (:global *global-bindings*)
+    (:lisp *lisp-bindings*)
+    (:repl *repl-bindings*)))
+
+(defun command-keys-text (command)
+  "COMMAND's keys for the listing's column: `C-/, C-_, C-x u', the Lisp
+map's and the REPL's each marked once -- `M-TAB, C-M-i [Lisp]'.  \"\"
+for a command with no key."
+  (let ((keys (command-keys command))
+        (parts '()))
+    (dolist (map '((:global . "") (:lisp . " [Lisp]") (:repl . " [REPL]")))
+      (let ((own (remove (car map) keys :key #'cdr :test-not #'eq)))
+        (when own
+          (push (format nil "~{~A~^, ~}~A" (mapcar #'car own) (cdr map)) parts))))
+    (format nil "~{~A~^, ~}" (nreverse parts))))
+
+(defun command-doc-line (command)
+  "The first line of COMMAND's docstring; \"\" when it has none, and a
+note when the command is declared but not implemented (COMMAND-FUNCTION)."
+  (cond ((null (command-function command)) "(not implemented)")
+        (t (let ((doc (or (documentation command 'function) "")))
+             (subseq doc 0 (or (position #\Newline doc) (length doc)))))))
+
+(defconstant +listing-name-width+ 34)
+(defconstant +listing-keys-width+ 26)
+
+(defun command-listing-text ()
+  "Every command, one per line in registration order -- the grouping of
+command.lisp, which is also the order `M-x TAB' lists them in -- with
+its keys and the first line of its docstring, under a heading that says
+how to run one.  What `clamacs-list-commands' shows."
+  (with-output-to-string (out)
+    (format out "~D commands.  M-x runs one by name (TAB completes; TAB again cycles).~%~%"
+            (length (command-names)))
+    (format out "~vA~vA~A~%" +listing-name-width+ "Command" +listing-keys-width+ "Keys" "Description")
+    (format out "~vA~vA~A~%" +listing-name-width+ "-------" +listing-keys-width+ "----" "-----------")
+    (dolist (name (command-names))
+      (let* ((command (find-command name))
+             (keys (command-keys-text command))
+             (doc (command-doc-line command)))
+        ;; A long key column pushes the description right rather than
+        ;; running into it.
+        (format out "~vA~vA~A~%" +listing-name-width+ name
+                (max +listing-keys-width+ (1+ (length keys))) keys doc)))))
+
 (defun global-keymap ()
   "A fresh copy of the default global map."
   (add-bindings (make-keymap "global") *global-bindings*))
