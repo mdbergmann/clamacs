@@ -1,5 +1,7 @@
 # Clamacs
 
+![The Clamacs icon: a lambda on a blue card, the icon of Clamacs.app on a Mac and the lambda card of the Workbench icons](docs/screenshots/clamacs-icon.png)
+
 An Emacs-flavoured Common Lisp IDE for AmigaOS 3 and MorphOS: a native MUI
 editor with Emacs key handling that talks to a running
 [CL-Amiga](https://github.com/mdbergmann/cl-amiga) (`clamiga`) over its ARexx
