@@ -143,7 +143,9 @@
     (type-keys doc "M-x")
     (type-text doc "kill-r")
     (type-keys doc "TAB")
-    (is-equal (fake-prompt doc) "[2 completions]kill-r")
+    ;; Ambiguous: the candidates are named, there being no completions
+    ;; buffer to show them in.
+    (is-equal (fake-prompt doc) "[2 completions: kill-region kill-ring-save]kill-r")
     (type-text doc "i")
     (type-keys doc "TAB")
     (is-equal (fake-mini-text doc) "kill-ring-save")
@@ -156,6 +158,28 @@
     (type-keys doc "RET")
     (is-equal (fake-last-message doc) "[No match]")
     (is-equal (fake-beeps doc) 1)))
+
+(deftest m-x-tab-on-an-empty-line-shows-what-there-is
+  ;; The way to find out what `M-x' offers: the count of every command,
+  ;; the first eight by name, and an ellipsis for the rest.  Nothing goes
+  ;; into the line (the names have nothing in common).
+  (let ((doc (make-fake "|")))
+    (type-keys doc "M-x")
+    (type-keys doc "TAB")
+    (is-equal (fake-mini-text doc) "")
+    (is-equal (fake-mini-label doc)
+              (format nil "[~D completions:~{ ~A~} ...]"
+                      (length (command-names))
+                      (subseq (command-names) 0 8)))
+    (is (> (length (command-names)) 8))
+    (is-equal (subseq (command-names) 0 2) '("forward-char" "backward-char"))
+    ;; Typing on narrows it, and the ellipsis goes once eight or fewer remain.
+    (type-text doc "clamacs-debugger")
+    (type-keys doc "TAB")
+    (is-equal (fake-mini-text doc) "clamacs-debugger")
+    (is-equal (fake-mini-label doc)
+              "[6 completions: clamacs-debugger clamacs-debugger-abort clamacs-debugger-continue clamacs-debugger-restart clamacs-debugger-frame clamacs-debugger-eval]")
+    (type-keys doc "C-g")))
 
 (deftest m-x-history-walks-with-m-p-and-m-n
   (let ((doc (make-fake "|ab")))

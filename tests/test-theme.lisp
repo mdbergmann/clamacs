@@ -705,7 +705,7 @@ THUNK's value."
         (type-text doc "sol")
         (type-keys doc "TAB")
         (is-equal (fake-mini-text doc) "solarized-")
-        (is-equal (doc-message-text doc) "[2 completions]")
+        (is-equal (doc-message-text doc) "[2 completions: solarized-light solarized-dark]")
         (type-text doc "d")
         (type-keys doc "TAB")
         (is-equal (fake-mini-text doc) "solarized-dark")
@@ -733,7 +733,8 @@ THUNK's value."
         ;; TAB on nothing lists them all; a miss says so.
         (run-command doc 'clamacs-theme)
         (type-keys doc "TAB")
-        (is-equal (doc-message-text doc) "[6 completions]")
+        (is-equal (doc-message-text doc)
+                  "[6 completions: light dark solarized-light solarized-dark one-dark gruvbox-dark]")
         (type-text doc "zzz")
         (type-keys doc "TAB")
         (is-equal (doc-message-text doc) "[No match]")

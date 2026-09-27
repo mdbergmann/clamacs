@@ -93,6 +93,21 @@
 (deftest completion-handles-no-candidates
   (is-equal (completions '() "x") '(() "")))
 
+(deftest completions-message-names-the-first-few
+  ;; What TAB says at an ambiguous prompt: the count, then the names.
+  (is-equal (completions-message '("kill-region" "kill-ring-save"))
+            "[2 completions: kill-region kill-ring-save]")
+  ;; Eight are shown in full; a ninth brings the ellipsis.
+  (is-equal (completions-message '("a" "b" "c" "d" "e" "f" "g" "h"))
+            "[8 completions: a b c d e f g h]")
+  (is-equal (completions-message '("a" "b" "c" "d" "e" "f" "g" "h" "i"))
+            "[9 completions: a b c d e f g h ...]")
+  ;; SHOWN stands in for the matches, one for one -- a file's base name
+  ;; for its path.
+  (is-equal (completions-message '("/x/y/alpha.lisp" "/x/y/alps.txt")
+                                 '("alpha.lisp" "alps.txt"))
+            "[2 completions: alpha.lisp alps.txt]"))
+
 (deftest split-lines-from-a-reply
   ;; COMPLETE answers one candidate per line; the last line may or may not
   ;; end in a newline, and an Amiga reply can carry CR.

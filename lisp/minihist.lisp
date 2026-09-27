@@ -98,6 +98,21 @@ many matches as it likes and says how many there are."
     (values (nreverse matches)
             (if first (subseq first 0 common-len) ""))))
 
+(defconstant +complete-shown+ 8)
+
+(defun completions-message (matches &optional shown)
+  "`[3 completions: a b c]': the count and the first few by name, which is
+what TAB says when the input is still ambiguous -- the editor has no
+completions buffer, so the echo area is where the user sees what there is.
+SHOWN, when given, is what to print for each match instead of the match
+itself (a file's base name for its path).  Past +COMPLETE-SHOWN+ names an
+ellipsis stands for the rest."
+  (let ((n (length matches))
+        (names (or shown matches)))
+    (format nil "[~D completions:~{ ~A~}~A]" n
+            (subseq names 0 (min n +complete-shown+))
+            (if (> n +complete-shown+) " ..." ""))))
+
 (defun split-lines (text)
   "The non-empty lines of TEXT, trailing CR and spaces stripped.  A candidate
 list that came from clamiga: COMPLETE answers one symbol per line, and this

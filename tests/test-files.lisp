@@ -174,30 +174,33 @@ separator."
 
 (deftest tab-completes-a-file-name-against-its-directory
   (let ((dir (completion-fixture)))
-    (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "al"))
+    (multiple-value-bind (matches common shown) (complete-path (concatenate 'string dir "al"))
       (is-equal matches (list (concatenate 'string dir "alpha.lisp")
                               (concatenate 'string dir "alps.txt")))
-      (is-equal common (concatenate 'string dir "alp")))
+      (is-equal common (concatenate 'string dir "alp"))
+      ;; The names to list: the base names, the directory being on the line.
+      (is-equal shown '("alpha.lisp" "alps.txt")))
     ;; Case does not matter for the typed part; the completion is the
     ;; file's own spelling.
     (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "ALPH"))
       (is-equal matches (list (concatenate 'string dir "alpha.lisp")))
       (is-equal common (concatenate 'string dir "alpha.lisp")))
     ;; A directory completes with its separator, so the next TAB descends.
-    (multiple-value-bind (matches common) (complete-path (concatenate 'string dir "s"))
+    (multiple-value-bind (matches common shown) (complete-path (concatenate 'string dir "s"))
       (is-equal matches (list (concatenate 'string dir "sub/")))
-      (is-equal common (concatenate 'string dir "sub/")))
+      (is-equal common (concatenate 'string dir "sub/"))
+      (is-equal shown '("sub/")))
     ;; Nothing there, or no such directory: nothing, not an error.
     (is-equal (complete-path (concatenate 'string dir "zzz")) '())
     (is-equal (complete-path (temp-path "no-such-dir/x")) '())
     ;; Through the keys: the common prefix goes into the line, and the
-    ;; count is said.
+    ;; candidates are listed by base name.
     (let ((doc (make-fake "|")))
       (type-keys doc "C-x C-f")
       (type-text doc (concatenate 'string dir "al"))
       (type-keys doc "TAB")
       (is-equal (fake-mini-text doc) (concatenate 'string dir "alp"))
-      (is-equal (fake-mini-label doc) "[2 completions]")
+      (is-equal (fake-mini-label doc) "[2 completions: alpha.lisp alps.txt]")
       (type-text doc "h")
       (type-keys doc "TAB")
       (is-equal (fake-mini-text doc) (concatenate 'string dir "alpha.lisp"))
@@ -220,13 +223,16 @@ separator."
         (is (member (concatenate 'string dir "alpha.lisp") matches :test #'string=))
         (is (member (concatenate 'string dir "Alps.txt") matches :test #'string=))
         (is-equal common typed))
-      ;; Through the keys: the line stays, the count is said.
+      ;; Through the keys: the line stays, both names are listed (in the
+      ;; directory's order, which is the file system's).
       (let ((doc (make-fake "|")))
         (type-keys doc "C-x C-f")
         (type-text doc typed)
         (type-keys doc "TAB")
         (is-equal (fake-mini-text doc) typed)
-        (is-equal (fake-mini-label doc) "[2 completions]")
+        (let ((label (fake-mini-label doc)))
+          (is (or (string= label "[2 completions: alpha.lisp Alps.txt]")
+                  (string= label "[2 completions: Alps.txt alpha.lisp]"))))
         (type-keys doc "C-g")))))
 
 (deftest tab-after-a-device-name-opens-the-requester-there

@@ -67,9 +67,10 @@ cursor and returns true when PATTERN was found."))
 (defun prompt (doc label continuation &key (initial "") completer history)
   "Ask for a line of input.  CONTINUATION is called with DOC and the answer
 once the user accepts it; C-g or ESC abandons it.  COMPLETER, a function of the
-input returning what COMPLETE returns (or :HANDLED when it completed and
-said so itself), is what TAB uses; HISTORY, a HISTORY, is what M-p and M-n
-walk and where the answer is recorded."
+input returning what COMPLETE returns -- the matches and their common
+prefix, and as an optional third value what to show for each match -- or
+:HANDLED when it completed and said so itself, is what TAB uses; HISTORY,
+a HISTORY, is what M-p and M-n walk and where the answer is recorded."
   (setf (doc-minibuffer doc)
         (make-minibuffer :prompt label continuation completer history))
   (doc-open-minibuffer doc label initial))
@@ -158,10 +159,14 @@ current state does not bind as undefined."
        t))
 
 (defun minibuffer-complete (doc mini)
+  "TAB: complete the input as far as it goes, and say what is left -- the
+first few candidates by name, since the editor has no completions buffer
+and the echo area is where the user sees what `M-x' (or a theme, a file
+name) has to offer."
   (let ((completer (minibuffer-completer mini)))
     (if (null completer)
         (doc-beep doc)
-        (multiple-value-bind (matches common)
+        (multiple-value-bind (matches common shown)
             (funcall completer (doc-minibuffer-text doc))
           (cond ((eq matches :handled)
                  ;; The completer did the whole job itself -- the symbol
@@ -173,7 +178,7 @@ current state does not bind as undefined."
                  (doc-set-minibuffer-text doc common)
                  (if (null (rest matches))
                      (doc-message doc "[Sole completion]")
-                     (message doc "[~D completions]" (length matches)))))))))
+                     (doc-message doc (completions-message matches shown)))))))))
 
 (defun minibuffer-key (doc key)
   "Act on KEY when it is the minibuffer's.  True when it was, and must not

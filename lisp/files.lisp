@@ -279,7 +279,9 @@ file is there but cannot be read."
 (defun complete-path (text)
   "Completion of the file name in TEXT against its directory, as COMPLETE
 answers: the matching paths, directories with a `/' after them so the
-next TAB descends, and their common prefix.  The name part is matched
+next TAB descends, and their common prefix; as third value the matches'
+base names, which is what the echo area lists (the directory is on the
+line already).  The name part is matched
 without regard to case (AmigaDOS has none; nor does the Mac), and the
 completion is the file's own spelling.  COMPLETE finds the common prefix
 case-sensitively, so two matches that differ only in case inside the typed
@@ -301,7 +303,11 @@ counts.  A directory that cannot be listed matches nothing."
                 matches))))
     (multiple-value-bind (matches common) (complete (nreverse matches) "")
       (values matches
-              (if (< (length common) (length text)) text common)))))
+              (if (< (length common) (length text)) text common)
+              (mapcar (lambda (path)
+                        ;; The base name, a directory's `/' kept.
+                        (subseq path (length dir)))
+                      matches)))))
 
 (defun ask-file-then (doc title save initial continuation)
   "The requester, titled TITLE, opening at INITIAL; the path chosen goes

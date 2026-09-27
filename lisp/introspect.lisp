@@ -277,7 +277,6 @@ last edit, the arglist is looked up quietly."
 ;;; Completion
 ;;; ------------------------------------------------------------------
 
-(defconstant +complete-shown+ 8)
 ;;; ext.dev:*max-completions*: a reply this long may have been cut.
 (defconstant +complete-cap+ 200)
 
@@ -297,14 +296,6 @@ cap a longer prefix may match symbols that were never sent)."
          (prefix-p (coerce prefix 'simple-string) (coerce text 'simple-string))
          (not (and (intro-completions-capped state)
                    (> (length text) (length prefix)))))))
-
-(defun completions-message (matches)
-  "`[3 completions: a b c]', the first few by name -- the symbol
-completions come from clamiga and the user cannot see the list."
-  (let ((n (length matches)))
-    (format nil "[~D completions:~{ ~A~}~A]" n
-            (subseq matches 0 (min n +complete-shown+))
-            (if (> n +complete-shown+) " ..." ""))))
 
 (defun apply-candidates (doc state text)
   "Complete TEXT in the minibuffer from the candidates on hand: as far as
