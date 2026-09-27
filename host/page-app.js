@@ -17,13 +17,18 @@
 // enable states and the dynamic groups (Buffers, View), reported the
 // same way.  Phase T2 (specs/clamacs-themes.md): a theme is the page's
 // CSS variables set by Lisp through CK.theme, reported the same way.
+// Phase H7: the same page runs in every window the editor opens -- a
+// tab's context menu asks Lisp to show it in a window of its own
+// (clamacsDetach) or to bring it back (clamacsAttach); Lisp moves the
+// tab between the pages (removeDoc in one, makeDoc in the other), and a
+// window whose source region is empty lets its dock fill it.
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
          lineNumbers, drawSelection, highlightActiveLine} = window.CM;
 
   const $ = (id) => document.getElementById(id);
-  const menubar = $("menubar");
+  const wrap = $("wrap"), menubar = $("menubar");
   const sourceTabs = $("source-tabs"), views = $("views");
   const dockEl = $("dock"), splitter = $("splitter"), dockTabs = $("dock-tabs"), dockViews = $("dock-views");
   const status = $("status"), message = $("message");
@@ -103,14 +108,20 @@
   let activeId = null;         // the document with the keyboard
   let shownSource = null;      // the source document displayed on top
   let dockShown = null;        // the dock item displayed, or null: collapsed
+  let detached = false;        // this page is a detached window's (CK.setDetached)
 
   function refreshTabs() {
+    let sources = 0;
     for (const d of docs.values()) {
       if (d.dock) continue;
+      sources++;
       d.holder.classList.toggle("active", d.id === shownSource);
       d.tab.classList.toggle("shown", d.id === shownSource);
       d.tab.classList.toggle("active", d.id === activeId);
     }
+    // No source tabs (a window holding the REPL or a panel alone): the
+    // dock fills the window.
+    wrap.classList.toggle("no-sources", sources === 0);
     for (const item of dockItems.values()) {
       item.el.classList.toggle("active", item.name === dockShown);
       item.tab.classList.toggle("shown", item.name === dockShown);
@@ -153,7 +164,11 @@
     reportPanels();
   }
 
-  function makeTab(bar, label, onPick, onClose) {
+  // A tab: its label, a close button, and a context menu (TABNAME is
+  // what Lisp knows the tab by: a document's id, a panel's name) that
+  // shows the tab in a window of its own or, in a detached window,
+  // brings it back to the main one.
+  function makeTab(bar, label, onPick, onClose, tabName) {
     const tab = document.createElement("div");
     tab.className = "tab";
     const name = document.createElement("span");
@@ -165,13 +180,62 @@
     tab.appendChild(name);
     tab.appendChild(close);
     tab.addEventListener("mousedown", (ev) => {
+      if (ev.button === 2) return;
       ev.preventDefault();
       if (ev.target === close) onClose(); else onPick();
+    });
+    tab.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      tabMenuOpen(ev.clientX, ev.clientY, tabName);
     });
     bar.appendChild(tab);
     tab.nameSpan = name;
     return tab;
   }
+
+  // ---- the tab's context menu -------------------------------------------
+  //
+  // One popup for the page, filled when it opens; a pick tells Lisp and
+  // nothing moves here until Lisp says so.  A click anywhere else, or
+  // Escape, closes it.
+
+  const tabMenu = document.createElement("div");
+  tabMenu.id = "tab-menu";
+  tabMenu.className = "menu-popup";
+  document.body.appendChild(tabMenu);
+  let tabMenuFor = null;
+
+  function tabMenuClose() {
+    tabMenu.style.display = "none";
+    tabMenuFor = null;
+  }
+  function tabMenuItem(label, onPick) {
+    const item = document.createElement("div");
+    item.className = "menu-item";
+    const text = document.createElement("span");
+    text.textContent = label;
+    item.appendChild(text);
+    item.addEventListener("mousedown", (ev) => ev.preventDefault());
+    item.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      const name = tabMenuFor;
+      tabMenuClose();
+      onPick(name);
+    });
+    tabMenu.appendChild(item);
+  }
+  function tabMenuOpen(x, y, name) {
+    tabMenu.textContent = "";
+    tabMenuFor = name;
+    tabMenuItem("Show in separate window", (n) => lisp("clamacsDetach", n));
+    if (detached) tabMenuItem("Move to main window", (n) => lisp("clamacsAttach", n));
+    tabMenu.style.display = "block";
+    // Kept on the page: shifted left or up when it would run off it.
+    const w = tabMenu.offsetWidth, h = tabMenu.offsetHeight;
+    tabMenu.style.left = Math.max(0, Math.min(x, window.innerWidth - w)) + "px";
+    tabMenu.style.top = Math.max(0, Math.min(y, window.innerHeight - h)) + "px";
+  }
+  tabMenuClose();
 
   // ---- documents -------------------------------------------------------
 
@@ -290,7 +354,8 @@
     // when Lisp shows a panel (CK.dbgOpen and friends) it knows already.
     const tab = makeTab(dockTabs, label,
                         () => { dockShow(name); lisp("clamacsDockShown", name); },
-                        () => { dockHide(name); lisp("clamacsPanelClose", name); });
+                        () => { dockHide(name); lisp("clamacsPanelClose", name); },
+                        name);
     const item = {name, tab, el, kind: "panel", open: false};
     dockItems.set(name, item);
     return item;
@@ -423,12 +488,14 @@
   }
   document.addEventListener("mousedown", (ev) => {
     if (openMenu && !menubar.contains(ev.target)) menuClose();
+    if (tabMenuFor !== null && !tabMenu.contains(ev.target)) tabMenuClose();
   });
   document.addEventListener("keydown", (ev) => {
-    if (openMenu && ev.key === "Escape") {
+    if ((openMenu || tabMenuFor !== null) && ev.key === "Escape") {
       ev.preventDefault();
       ev.stopPropagation();
       menuClose();
+      tabMenuClose();
     }
   }, true);
   function menuState() {
@@ -476,6 +543,8 @@
   // script checks through the port.
   let reportPending = false;
   function panelState() {
+    const source = [], dock = [];
+    for (const d of docs.values()) (d.dock ? dock : source).push(d.id);
     return {
       menu: menuState(),
       theme: themeState(),
@@ -485,7 +554,11 @@
                  restarts: dbgRestarts.rows.length, hasContinue: panels.debugger.hasContinue,
                  frames: dbgFrames.rows.length, frame: dbgFrames.selected, locals: dbgLocals.rows.length},
       inspector: {open: inspItem.open, type: panels.inspector.type, depth: panels.inspector.depth,
-                  object: panels.inspector.object, parts: inspParts.rows.length, part: inspParts.selected}
+                  object: panels.inspector.object, parts: inspParts.rows.length, part: inspParts.selected},
+      // Which documents this page holds, and whether it is a detached
+      // window's: what a script checks after a move (phase H7)
+      tabs: {source, dock, active: activeId},
+      detached
     };
   }
   function reportPanels() {
@@ -529,12 +602,14 @@
       (doc.dock ? dockViews : views).appendChild(doc.holder);
       doc.tab = makeTab(doc.dock ? dockTabs : sourceTabs, name,
                         () => lisp("clamacsActivate", id),
-                        () => lisp("clamacsCloseTab", id));
+                        () => lisp("clamacsCloseTab", id),
+                        id);
       doc.nameSpan = doc.tab.nameSpan;
       doc.view = makeView(doc);
       docs.set(id, doc);
       if (doc.dock) dockItems.set(id, {name: id, tab: doc.tab, el: doc.holder, kind: "doc", open: true});
       if (activeId === null) CK.activateDoc(id);
+      reportPanels();
     },
     removeDoc(id) {
       const doc = docs.get(id);
@@ -556,6 +631,7 @@
         if (next && docs.has(next)) CK.activateDoc(next);
       }
       refreshTabs();
+      reportPanels();
     },
     activateDoc(id) {
       const doc = docs.get(id);
@@ -564,6 +640,7 @@
       if (doc.dock) dockShow(id); else showSource(id);
       document.title = doc.name;
       if (!mini.classList.contains("open")) doc.view.focus();
+      reportPanels();
     },
     setText(id, text) {
       const doc = docs.get(id);
@@ -714,6 +791,18 @@
       dockShow("inspector");
       inspParts.el.focus();
     },
+    // A panel taken out of this window's dock (it is shown in another
+    // window's, phase H7): off the tab bar, the rows kept.
+    panelHide(name) {
+      if (name === "debugger") dbgItem.tab.nameSpan.textContent = "Debugger";
+      dockHide(name);
+    },
+    // This page is a detached window's: its tab menus offer the way back.
+    setDetached(flag) {
+      detached = !!flag;
+      document.body.classList.toggle("detached", detached);
+      reportPanels();
+    },
     terminate() { /* the page asks nothing further */ },
 
     // Diagnostics for the smoke run and the tests: what the page holds,
@@ -764,6 +853,15 @@
   mini.addEventListener("input", () => lisp("clamacsMiniInput", mini.value));
 
   setInterval(() => lisp("clamacsTick"), 300);
+
+  // The window itself gaining the keyboard (the user came back to it
+  // from another of the editor's windows): the document it displays is
+  // the active one again, which Lisp's echo row and status line follow.
+  // An element's focus does not bubble; the window's own is the target.
+  window.addEventListener("focus", (ev) => {
+    if ((ev.target === window || ev.target === document) && activeId !== null)
+      lisp("clamacsActivate", activeId);
+  });
 
   // Ready, with the system's colour scheme: what the default theme follows.
   lisp("clamacsReady", navigator.userAgent, systemScheme());

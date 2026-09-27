@@ -68,9 +68,10 @@ everywhere).  The menu bar is native where the host has one of its own
 
 ### One native window, tabs and a dock
 
-`webview_create` makes one window; a second instance is not something the
-library promises.  The page therefore holds every "window" of the MUI
-editor as a **tab**:
+`webview_create` makes one window.  The page holds every "window" of
+the MUI editor as a **tab** -- and, since H7, a tab can be shown in a
+window of its own, which is a second `webview_create` with the same
+page in it (the pinned library serves any number of instances; see H7):
 
 - the top region: the source buffers (files, the unnamed buffer), one
   CodeMirror view each, one tab bar;
@@ -88,12 +89,14 @@ title is the active document's.  This is what a 2026 IDE looks like, which
 is what the user asked for ("nice looking"), and it is one webview
 instance, one event loop, one page -- the shape the spike proved.
 
-Geometry for the snapshot: `doc-geometry` answers the native window's
-frame for every document (they share it); `editor-aux-windows` answers
-`("dock" left top width height)` for the dock, plus the three panel roles
-with the dock's geometry, so `GETWINDOW` and the layout file keep their
-meaning.  At startup `layout-place "doc1"` places the native window and
-the "dock" entry sizes the dock.
+Geometry for the snapshot: `doc-geometry` answers the frame of the
+window the document's tab is in (the main window's for all of them until
+one is shown separately); `editor-aux-windows` answers `("dock" left top
+width height)` for the main window's dock, plus the three panel roles
+with the geometry of the dock each is in, so `GETWINDOW` and the layout
+file keep their meaning.  At startup `layout-place "doc1"` places the
+native window and the "dock" entry sizes the dock; a detached window is
+placed at its first tab's role.
 
 ### Keys go to Lisp first, and Lisp owns the text
 
@@ -382,13 +385,17 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsInspPart` / `clamacsInspBack` | `n` / -- | the inspector panel |
 | `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
 | `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
-| `clamacsDockResized` | `height` | for the snapshot |
-| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the dock and the panels show, after every change (one report per batch): kept verbatim for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
-| `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document |
+| `clamacsDockResized` | `height` | for the snapshot; the sending window's dock |
+| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the dock and the panels show, plus the page's tabs (`tabs`: the source and dock document ids, the active one) and whether it is a detached window's (`detached`), after every change (one report per batch): kept verbatim per window for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
+| `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document (the main window's page's; a detached page's is bound to nothing) |
+| `clamacsDetach` / `clamacsAttach` | `name` | a tab's context menu (H7): the document id or panel name shown in a window of its own / moved back into the main window |
 
 Every binding runs on the main thread inside `webview_dispatch`'s turn;
 its handler is bracketed by the batch flush and `after-command`
-(`menu-update`, a quit carried out by the loop).
+(`menu-update`, a quit carried out by the loop).  Every window's page
+has every binding; a document's id names the document whichever page
+sends it, and what is the page's own (ready, the dock's height, the
+report) goes to that page's window.
 
 ### Calls (Lisp → page, `webview_eval` of `CK.<name>(...)`)
 
@@ -406,8 +413,13 @@ variables, set on the document element; `dark` sets `data-theme`),
 `showDiagnostics(rows, open)`, `selectDiagnostic(row)`, `dbgOpen(level,
 condition, restarts, hasContinue)`, `dbgClose()`, `dbgRaise()`,
 `dbgFrames(rows)`, `dbgSelectFrame(n)`, `dbgLocals(rows)`, `inspOpen(type,
-depth, object, parts)`, `setDock(height)`, `terminate()` (the page asks
-nothing further).
+depth, object, parts)`, `setDock(height)`, `panelHide(name)` (the panel
+off this window's dock: it is shown in another window's, H7),
+`setDetached(flag)` (this page is a detached window's: its tab menus
+offer the way back), `terminate()` (the page asks nothing further).
+Every call goes to ONE window's page: a document's calls to the window
+that holds its tab, a panel's to the window its dock is in, the menu
+bar's states and the theme to every page (`ck-all`).
 
 Colours are mark decorations in a `StateField`, mapped through every
 change so they travel with the text as SetBlock's do; Lisp keeps none
@@ -876,6 +888,104 @@ with the memory note updated.
   conforming code, so it is runtime item R5, not something the test works
   around: the test keeps the inline spelling only, and the file's
   gc-stress run is the place it would show again.
+
+### H7 -- detached windows: a tab shown in a window of its own
+
+- **Done 2026-09-27** (branch `feat/host-detach-window`).  What the MUI
+  editor does with every document, the host does on request: a tab's
+  context menu (`Show in separate window`; in a detached window also
+  `Move to main window`) and `M-x clamacs-detach-window` /
+  `clamacs-attach-window`.  The library allows it: at the pinned commit
+  the Cocoa backend sets the application up once
+  (`get_and_set_is_first_instance`) and every later `webview_create`
+  makes an `NSWindow` of its own with its own `WKWebView`, the GTK and
+  Win32 inits are idempotent, and a `webview_destroy` never terminates
+  (the destructor's `on_window_destroyed(true)` skips it) -- so the
+  stepped loop, which pumps the application's events, serves every
+  window.  A `host-window` is one instance: its handles, its batch (one
+  `webview_eval` per entry AND window), its evals when there is no page,
+  its bindings' callbacks, its dock mirror and the page's last report.
+  Every `ck` call is routed by its target (`target-window`): a document
+  to the window that holds its tab, a panel to the window its dock is
+  in (`panel-windows`), the editor to the main window; the menu bar's
+  states and the theme go to every page (`ck-all`).
+- **The move.** A document's tab is `removeDoc` in one page and
+  `makeDoc` in the other, then the mirror is pushed whole (the shown
+  text reset, so `sync-document` sends one `applyEdit` with the point,
+  the modified flag), `colour-all` paints the colours again (they live
+  in the page), and the document is activated -- its window raised
+  (`clamacs_host_raise`) when the keyboard was in another.  A panel
+  moves by `panelHide` in the old page and a replay of its state into
+  the new one (`replay-panel`: the diagnostics rows and selection,
+  `dbgOpen` + `dbgFrames` + `dbgSelectFrame` + `dbgLocals` off the
+  debugger struct, `inspOpen` off the inspector's) -- nothing is
+  mirrored twice.  A new window's page is not up when the move is
+  asked for: the item waits on the window's `pending` list, and
+  `housekeeping` settles the window once `clamacsReady` came (the menu
+  table with every enable state and dynamic group as the bar shows them
+  now, or the empty table under the host's own menu; the theme; the
+  dock's height; `setDetached`), then moves the pending items in.
+  `clamacsReady` is the one binding not dropped during a modal
+  requester -- it only notes the flag, outside any entry -- so a page
+  that comes up under a requester is settled at the next turn.
+- **Closing.** A detached window whose last tab leaves is marked
+  `:empty` and taken down by the next turn (`destroy-window`: the
+  handles cleared first, since GTK drains its queue while destroying,
+  then `webview_destroy`, then the callbacks freed); its close button
+  marks it `:attach`, and everything in it goes back into the main
+  window, the document that had the keyboard keeping it.  The main
+  window's close button is the quit, as before; `host-close` takes the
+  detached windows down first.  The shim keeps the close hook ON the
+  window now (an associated object on Cocoa, object data on GTK, a
+  window property on Win32) instead of in a static -- and
+  `destroy-window` takes the hook off (`clamacs_host_on_close` with a
+  null function) BEFORE `webview_destroy`: on GTK the library closes
+  its window with `gtk_window_close`, which asks `delete-event`, and a
+  hook still answering TRUE kept the window alive while webview freed
+  its engine, so the page's next message ran on freed memory (the
+  Linux gate crashed at the second detach; found by bisecting the
+  branch against master in the container, 2026-09-27).  Cocoa's
+  `close` and Win32's `DestroyWindow` ask nothing, which is why the
+  Mac never showed it.
+- **The page.** Each window loads the same page; `refreshTabs` marks a
+  page without source tabs `no-sources`, whose dock fills the window
+  (a REPL or a panel alone); a tab's `contextmenu` opens a small popup
+  with the two items; the window's own `focus` event re-activates its
+  document (`clamacsActivate`), since the view's focus handler says
+  nothing when the page's own `activeId` is unchanged; the report grew
+  `tabs` and `detached`.
+- **The snapshot.** `doc-geometry` answers the document's window's
+  frame; `editor-aux-windows` answers the main window's dock under
+  `dock`, and each open panel under its MUI role with the frame of the
+  dock it is in (the whole window when that window has no source tabs).
+  A detached window is placed by `layout-place` at its first tab's role
+  -- a document's `docN`, a panel's `errors` / `debugger` / `inspector`,
+  the Amiga layout's own names, so the debugger shown separately comes
+  up where the Amiga's debugger window was -- and cascades 40 pixels
+  off the main window without an entry (`doc1` is the main window's
+  place, never a detached one's).
+- **What the tests and the drive check.** `tests/test-host.lisp`: the
+  move in both directions with each window's batch read back, the
+  pending path with a page that is not up, the last tab's close and
+  the close button, the three panels replayed, the menu bar and theme
+  on a new page and every later change on both, the commands and
+  their messages, the snapshot's roles.  `host-panel-state :windows`
+  is the account (`windows 2: 1 (doc1) 2 (doc2 debugger) active doc2`),
+  the panel states say `window N` when moved out, and
+  `host-page-panels` takes a window number.  `drive.lisp` has the
+  DETACH leg (a document out and back by the command and by the close
+  button, `GETWINDOW` following it and each page's report checked, the
+  error list out and back), 216 OK; `MEMTRACK=1` clean; the Linux
+  container gate 211 OK.  Two things the leg found: `makeDoc`,
+  `removeDoc` and `activateDoc` sent no report, so the page's `tabs`
+  were stale until some other change -- they report now; and the GTK
+  close-hook crash above.  `run-drive.sh` watches the editor now: a
+  `[FATAL]` report in its log stops the drive and fails the run at
+  once, where before the drive sat on the dead port for hours.  Known limits: the status line and echo row
+  of a window follow the active document only, so a window whose
+  document is not the active one keeps what it last showed; the
+  debugger and inspector open in the main window's dock, the user
+  moves them.
 
 ## Runtime items (commits in cl-amiga, each under every gate)
 

@@ -1545,3 +1545,446 @@ loading it here would also replace the wire starter the other tests use."
       (is (search "/page.html" file))
       (is-equal (host-frontend-dir) (subseq file 0 (- (length file) (length "page.html")))))
     (delete-file page)))
+
+;;; --- detached windows (phase H7) ---------------------------------------------
+;;;
+;;; A window without a page is ready at once, and HOUSEKEEPING settles it
+;;; and moves the tab in, as the loop does once a real page reported
+;;; ready; each window keeps the batches it would have sent to its page.
+
+(defun host-detach-now (editor name)
+  "NAME shown in a window of its own, the loop's turn taken: the window
+settled and the tab moved.  The message HOST-DETACH answered."
+  (let ((answer nil))
+    (with-entry (editor)
+      (setq answer (host-detach editor name))
+      (housekeeping editor))
+    answer))
+
+(deftest host-a-tab-shown-separately-moves-into-a-window-of-its-own
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "(defun a ())"))
+         (d2 (host-test-document editor "(defun b ())")))
+    (host-take-evals editor)
+    (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2) active doc2")
+    ;; The ask makes the window; nothing moves and nothing is sent until
+    ;; its page is up
+    (with-entry (editor)
+      (is-equal (host-detach editor "doc1") "doc1 detached"))
+    (let ((w2 (host-window editor 2)))
+      (is w2)
+      (is (not (host-window-settled w2)))
+      (is-equal (host-window-pending w2) (list d1))
+      (is (eq (hdoc-window d1) (host-editor-main editor)))
+      (is-equal (host-take-evals editor) "")
+      (is-equal (host-take-evals w2) "")
+      ;; Settled: the theme, the dock's height and the detached mark, then
+      ;; the tab made from the mirror -- the text, then the colours, then
+      ;; the activation -- while the main page loses the tab.  No menu
+      ;; table went out here, so none goes to the new page either.
+      (with-entry (editor) (housekeeping editor))
+      (is (host-window-settled w2))
+      (is (eq (hdoc-window d1) w2))
+      (is-equal (host-window-pending w2) '())
+      (let ((main-js (host-take-evals editor))
+            (js (host-take-evals w2)))
+        (is (search "CK.removeDoc(\"doc1\");" main-js))
+        (is (not (search "makeDoc" main-js)))
+        (is (not (search "setMenus" js)))
+        (is (search "CK.theme([" js))
+        (is (search "CK.setDock(200);CK.setDetached(true);" js))
+        (is (search "CK.makeDoc(\"doc1\",\"(unnamed)\",\"source\");CK.setTitle(\"doc1\",\"(unnamed)\");CK.applyEdit(\"doc1\",0,0,\"(defun a ())\"," js))
+        (is (search "CK.colour(\"doc1\",[[0,[[" js))
+        (is (search "CK.activateDoc(\"doc1\");" js))
+        (is (< (search "CK.applyEdit(" js) (search "CK.colour(" js)))
+        (is (< (search "CK.colour(" js) (search "CK.activateDoc(" js))))
+      (is (eq (editor-active-document editor) d1))
+      (is-equal (host-editor-raised editor) '(2))
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc2) 2 (doc1) active doc1")
+      ;; The window cascades off the main one (`doc1' is the main window's
+      ;; place), and each document answers its own window's frame
+      (is-equal (multiple-value-list (window-frame w2)) '(40 40 800 600))
+      (is-equal (multiple-value-list (doc-geometry d1)) '(40 40 800 600))
+      (is-equal (multiple-value-list (doc-geometry d2)) '(0 0 800 600))
+      ;; A key edits the moved document, and what it changes goes to its
+      ;; window alone -- the status line and the title with it
+      (host-type-text editor "x")
+      (is-equal (host-text d1) "x(defun a ())")
+      (let ((js (host-take-evals w2)))
+        (is (search "CK.applyEdit(\"doc1\",0,0,\"x\",1);" js))
+        (is (search "CK.setStatus(\"*(unnamed)  CL-USER  1:2\");" js)))
+      (is-equal (host-take-evals editor) "")
+      (is-equal (host-window-shown-title w2) "(unnamed)")
+      ;; Back: the tab is made in the main window again, and the window
+      ;; left empty goes at the next turn
+      (with-entry (editor)
+        (is-equal (host-attach editor "doc1") "doc1 attached"))
+      (is (eq (hdoc-window d1) (host-editor-main editor)))
+      (is (search "CK.makeDoc(\"doc1\",\"(unnamed)\",\"source\");" (host-take-evals editor)))
+      (is (search "CK.removeDoc(\"doc1\");" (host-take-evals w2)))
+      (is (eq (host-window-closing w2) :empty))
+      (with-entry (editor) (housekeeping editor))
+      (is (null (host-window editor 2)))
+      (is-equal (live-windows editor) (list (host-editor-main editor)))
+      (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2) active doc1")
+      ;; Already there, and a name no tab has
+      (with-entry (editor)
+        (is-equal (host-attach editor "doc1") "doc1 is in the main window"))
+      (is-equal (host-attach editor "nope") "no tab nope")
+      (is-equal (host-detach editor "nope") "no tab nope")
+      (is-equal (host-detach editor :null) "no tab NULL")
+      (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2) active doc1"))))
+
+(deftest host-a-detached-window-closes-with-its-last-tab-and-its-close-button-attaches
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (d3 (host-test-document editor "three")))
+    (host-detach-now editor "doc2")
+    (host-detach-now editor "doc3")
+    (is-equal (host-panel-state :windows editor) "windows 3: 1 (doc1) 2 (doc2) 3 (doc3) active doc3")
+    ;; C-x k on the only tab of window 3: the window goes, the keyboard
+    ;; to the oldest open document
+    (with-entry (editor) (run-command d3 'kill-buffer))
+    (is (doc-closing d3))
+    (is (eq (host-window-closing (host-window editor 3)) :empty))
+    (with-entry (editor) (housekeeping editor))
+    (is (null (host-window editor 3)))
+    (is (eq (editor-active-document editor) d1))
+    ;; Window 2's close button while the keyboard is in the main window:
+    ;; doc2 comes back, the keyboard stays where it was
+    (setf (host-window-closing (host-window editor 2)) :attach)
+    (with-entry (editor) (housekeeping editor))
+    (is (null (host-window editor 2)))
+    (is (eq (hdoc-window d2) (host-editor-main editor)))
+    (is (eq (editor-active-document editor) d1))
+    (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2) active doc1")
+    ;; ... and while the keyboard is in the closed window: its document keeps it
+    (host-detach-now editor "doc2")
+    (is (eq (editor-active-document editor) d2))
+    (setf (host-window-closing (host-window editor 4)) :attach)
+    (with-entry (editor) (housekeeping editor))
+    (is (null (host-window editor 4)))
+    (is (eq (editor-active-document editor) d2))
+    (is (search "CK.activateDoc(\"doc2\");" (host-take-evals editor)))
+    ;; A new document opens beside the active one, in its window
+    (host-detach-now editor "doc1")
+    (let ((d4 (host-test-document editor "four")))
+      (is (eq (hdoc-window d4) (host-window editor 5)))
+      (is (search "CK.makeDoc(\"doc4\",\"(unnamed)\",\"source\");" (host-take-evals (host-window editor 5))))
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc2) 5 (doc1 doc4) active doc4"))))
+
+(deftest host-closing-a-multi-tab-window-does-not-steal-focus-from-a-third
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (d3 (host-test-document editor "three")))
+    (declare (ignore d1))
+    (host-detach-now editor "doc2")
+    (let ((w2 (host-window editor 2))
+          (d4 (host-test-document editor "four")))
+      ;; D4 opens beside the active D2, so window 2 now has two tabs
+      (is (eq (hdoc-window d4) w2))
+      (host-detach-now editor "doc3")
+      (let ((w3 (host-window editor 3)))
+        (is (eq (editor-active-document editor) d3))
+        (is (eq (hdoc-window d3) w3))
+        ;; Window 2's close button, with two tabs to move and the keyboard
+        ;; really in window 3: ATTACH-ALL must not raise the main window as
+        ;; a side effect of moving the first tab back, only to raise
+        ;; window 3 again a moment later -- the keyboard never left it, so
+        ;; nothing should be raised at all.
+        (setf (host-editor-raised editor) '())
+        (setf (host-window-closing w2) :attach)
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 2)))
+        (is (eq (hdoc-window d2) (host-editor-main editor)))
+        (is (eq (hdoc-window d4) (host-editor-main editor)))
+        (is-equal (host-editor-raised editor) '())
+        (is (eq (editor-active-document editor) d3))
+        (is (eq (hdoc-window d3) w3))))))
+
+(deftest host-a-tool-buffer-shown-separately-is-its-windows-dock
+  (multiple-value-bind (editor doc repl tr) (host-repl-fixture)
+    (declare (ignore doc tr))
+    (host-detach-now editor (hdoc-id repl))
+    (let ((w2 (host-window editor 2)))
+      (is (search "CK.makeDoc(\"doc2\",\"*clamacs-repl*\",\"tool\");" (host-take-evals w2)))
+      (is (search "CK.removeDoc(\"doc2\");" (host-take-evals editor)))
+      ;; Each window's dock counts what is in it
+      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+      (is-equal (host-window-dock-shown w2) "doc2")
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1) 2 (doc2) active doc2")
+      ;; No source tab there: the dock is the whole window (the snapshot's
+      ;; `dock' line is the main window's, closed now)
+      (is-equal (multiple-value-list (dock-frame w2)) '(40 40 800 600))
+      (is-equal (editor-aux-windows editor) '())
+      ;; The splitter of that window: its own height
+      (with-entry (editor) (host-dock-resized w2 300))
+      (is-equal (host-window-dock-height w2) 300)
+      (is-equal (host-editor-dock-height editor) 200)
+      ;; Killing the REPL leaves the window empty: it goes
+      (with-entry (editor) (run-command repl 'kill-buffer))
+      (is (eq (host-window-closing w2) :empty))
+      (with-entry (editor) (housekeeping editor))
+      (is (null (host-window editor 2))))))
+
+(deftest host-a-panel-shown-separately-is-replayed-into-its-window
+  (multiple-value-bind (editor doc tr) (host-wired-editor "(x)")
+    (declare (ignore doc tr))
+    (with-entry (editor)
+      (editor-show-diagnostics editor '("a:1: ERROR: x" "a:2: ERROR: y") :open t)
+      (editor-select-diagnostic editor 1))
+    (host-take-evals editor)
+    ;; A closed panel cannot be shown separately; an open one is replayed
+    ;; into its window's dock once the window is up
+    (is-equal (host-detach editor "debugger") "the debugger panel is not open")
+    (is-equal (host-detach-now editor "diagnostics") "diagnostics detached")
+    (let ((w2 (host-window editor 2)))
+      (is (eq (panel-window editor "diagnostics") w2))
+      (is (search "CK.panelHide(\"diagnostics\");" (host-take-evals editor)))
+      (is (search "CK.showDiagnostics([\"a:1: ERROR: x\",\"a:2: ERROR: y\"],true);CK.selectDiagnostic(1);"
+                  (host-take-evals w2)))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 2 selected 1 window 2")
+      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+      (is-equal (host-window-dock-shown w2) "diagnostics")
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1) 2 (diagnostics) active doc1")
+      (is-equal (host-editor-raised editor) '(2))
+      ;; To the snapshot the panel is where its window is, under its MUI
+      ;; role; no source tab there, so the whole window
+      (is-equal (editor-aux-windows editor) '(("errors" 40 40 800 600)))
+      ;; What the panel is told next goes there
+      (with-entry (editor) (editor-select-diagnostic editor 0))
+      (is (search "CK.selectDiagnostic(0);" (host-take-evals w2)))
+      (is-equal (host-take-evals editor) "")
+      ;; The tab's close in that window: the panel off the screen, the
+      ;; window gone, the panel the main window's again
+      (with-entry (editor) (host-panel-close editor "diagnostics"))
+      (is (eq (host-window-closing w2) :empty))
+      (with-entry (editor) (housekeeping editor))
+      (is (null (host-window editor 2)))
+      (is (eq (panel-window editor "diagnostics") (host-editor-main editor)))
+      (is (search "closed rows 2" (host-panel-state :diagnostics editor)))
+      (with-entry (editor) (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+      (is (search "CK.showDiagnostics(" (host-take-evals editor)))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics"))
+    ;; The debugger, with its frames and locals
+    (let ((dbg (editor-debugger-state editor)))
+      (setf (debugger-level dbg) 1
+            (debugger-condition dbg) "SIMPLE-ERROR: bad"
+            (debugger-restarts dbg) '("0: ABORT")
+            (debugger-frames dbg) '("0: f" "1: g")
+            (debugger-frame dbg) 1
+            (debugger-locals dbg) '("X = 1"))
+      (with-entry (editor) (editor-debugger-open editor dbg))
+      (is-equal (host-panel-state :dock editor) "open height 200 shown debugger")
+      (host-take-evals editor)
+      (host-detach-now editor "debugger")
+      (let ((w3 (host-window editor 3)))
+        (is (search "CK.panelHide(\"debugger\");" (host-take-evals editor)))
+        (is (search "CK.dbgOpen(1,\"SIMPLE-ERROR: bad\",[\"0: ABORT\"],false);CK.dbgFrames([\"0: f\",\"1: g\"]);CK.dbgSelectFrame(1);CK.dbgLocals([\"X = 1\"]);"
+                    (host-take-evals w3)))
+        (is (search " window 3" (host-panel-state :debugger editor)))
+        ;; The main window's dock fell back to the diagnostics
+        (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
+        (is-equal (editor-aux-windows editor)
+                  '(("dock" 0 400 800 200) ("errors" 0 400 800 200) ("debugger" 40 40 800 600)))
+        ;; What the session sends next goes to that window; a raise raises it
+        (with-entry (editor) (editor-debugger-locals editor '("Y = 2")))
+        (is (search "CK.dbgLocals([\"Y = 2\"]);" (host-take-evals w3)))
+        (is-equal (host-take-evals editor) "")
+        (with-entry (editor) (editor-debugger-raise editor))
+        (is (search "CK.dbgRaise();" (host-take-evals w3)))
+        (is-equal (first (host-editor-raised editor)) 3)
+        ;; Its close takes the panel down there, and the window with it
+        (with-entry (editor) (editor-debugger-close editor))
+        (is (search "CK.dbgClose();" (host-take-evals w3)))
+        (is (eq (host-window-closing w3) :empty))
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 3)))
+        (is (eq (panel-window editor "debugger") (host-editor-main editor)))))
+    ;; The inspector, and the way back by the tab menu
+    (let ((insp (editor-inspector-state editor)))
+      (setf (inspector-type insp) "CONS"
+            (inspector-depth insp) 1
+            (inspector-object insp) "(1)"
+            (inspector-parts insp) '("0: Car = 1"))
+      (with-entry (editor) (editor-inspector-open editor insp))
+      (host-take-evals editor)
+      (host-detach-now editor "inspector")
+      (let ((w4 (host-window editor 4)))
+        (is (search "CK.inspOpen(\"CONS\",1,\"(1)\",[\"0: Car = 1\"]);" (host-take-evals w4)))
+        (is-equal (editor-aux-windows editor)
+                  '(("dock" 0 400 800 200) ("errors" 0 400 800 200) ("inspector" 40 40 800 600)))
+        (with-entry (editor)
+          (is-equal (host-attach editor "inspector") "inspector attached"))
+        (is (search "CK.inspOpen(\"CONS\",1,\"(1)\",[\"0: Car = 1\"]);" (host-take-evals editor)))
+        (is (search "CK.panelHide(\"inspector\");" (host-take-evals w4)))
+        (is-equal (host-panel-state :dock editor) "open height 200 shown inspector")
+        (is-equal (host-panel-state :inspector editor) "open type CONS depth 1 parts 1 object (1)")
+        (with-entry (editor)
+          (is-equal (host-attach editor "inspector") "inspector is in the main window"))
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 4)))))))
+
+(deftest host-a-panel-reopened-before-housekeeping-cancels-its-windows-stale-empty-mark
+  (multiple-value-bind (editor doc tr) (host-wired-editor "(x)")
+    (declare (ignore doc tr))
+    (with-entry (editor)
+      (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+    (host-take-evals editor)
+    (host-detach-now editor "diagnostics")
+    (let ((w2 (host-window editor 2)))
+      ;; Closed from its own tab: the window is marked :EMPTY for the next
+      ;; HOUSEKEEPING turn.  Before that turn runs, the panel reopens --
+      ;; PANEL-WINDOWS still maps it to this very window -- so the mark is
+      ;; stale: the window is showing something again and must not be
+      ;; destroyed out from under it.
+      (with-entry (editor) (host-panel-close editor "diagnostics"))
+      (is (eq (host-window-closing w2) :empty))
+      (with-entry (editor)
+        (editor-show-diagnostics editor '("a:1: ERROR: x" "a:2: ERROR: y") :open t))
+      (is (eq (panel-window editor "diagnostics") w2))
+      (with-entry (editor) (housekeeping editor))
+      (is (host-window editor 2))
+      (is (not (host-window-closing w2)))
+      (is (eq (panel-window editor "diagnostics") w2))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 2 selected none window 2"))))
+
+(deftest host-a-detached-window-gets-the-menu-bar-the-theme-and-every-later-change
+  (with-host-theme-state
+    (multiple-value-bind (editor doc js) (host-menu-editor "one" nil)
+      (declare (ignore doc js))
+      (setq *editor* editor)
+      (host-test-document editor "two")
+      (host-take-evals editor)
+      (host-detach-now editor "doc2")
+      (let* ((w2 (host-window editor 2))
+             (js (host-take-evals w2)))
+        ;; The table, every item's state and both groups as the bar shows
+        ;; them now, then the theme, before the tab
+        (is (search "CK.setMenus([[\"title\",\"Project\",\"\"]" js))
+        (is-equal (count-calls "CK.menuEnable(" js)
+                  (count :item (menu-entries) :key #'menu-entry-kind))
+        (is (search (menu-enable-call 'save-buffer nil) js))
+        (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" js))
+        (is (search "CK.setDynamic(\"themes\",[[\"Light\",true],[\"Dark\",false]" js))
+        (is (search "CK.theme([[\"--bg\",\"#ffffff\"]" js))
+        (is (< (search "CK.setMenus(" js) (search "CK.theme(" js)))
+        (is (< (search "CK.theme(" js) (search "CK.makeDoc(" js)))
+        ;; An edit enables Save on both bars; a theme picked reaches both
+        ;; pages, and the View group is remade on both
+        (host-type-text editor "x")
+        (is (search (menu-enable-call 'save-buffer t) (host-take-evals editor)))
+        (is (search (menu-enable-call 'save-buffer t) (host-take-evals w2)))
+        (with-entry (editor) (host-dynamic-pick editor :themes 1))
+        (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" (host-take-evals editor)))
+        (let ((js (host-take-evals w2)))
+          (is (search "CK.theme([[\"--bg\",\"#1e1e1e\"]" js))
+          (is (search "CK.setDynamic(\"themes\",[[\"Light\",false],[\"Dark\",true]" js)))))
+    ;; With the host's own menu bar the new page gets the empty table, so
+    ;; its bar stays hidden, and no enable state
+    (let ((editor (host-test-editor)))
+      (setq *editor* editor)
+      (with-entry (editor) (send-menus editor :native t))
+      (host-test-document editor "one")
+      (host-take-evals editor)
+      (host-detach-now editor "doc1")
+      (let ((js (host-take-evals (host-window editor 2))))
+        (is (search "CK.setMenus([]);" js))
+        (is (not (search "menuEnable" js)))
+        (is (not (search "setDynamic" js)))))))
+
+(deftest host-a-window-whose-page-is-not-up-holds-its-tab-back
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two")))
+    (declare (ignore d2))
+    (host-take-evals editor)
+    (with-entry (editor) (host-detach editor "doc1"))
+    (let ((w2 (host-window editor 2)))
+      ;; The page (stood in for here) has not reported ready: the turn
+      ;; settles nothing, and a second ask for the same window waits too
+      (setf (host-window-ready w2) nil)
+      (with-entry (editor) (housekeeping editor))
+      (is (not (host-window-settled w2)))
+      (is (eq (hdoc-window d1) (host-editor-main editor)))
+      (is-equal (host-take-evals w2) "")
+      (is (host-window editor 2))
+      ;; Ready from a later window's page: noted, and its scheme does not
+      ;; move the default theme (the main page's did)
+      (let ((default *default-theme*))
+        (host-ready w2 "UA" (if (eq default :dark) "light" "dark"))
+        (is (host-window-ready w2))
+        (is (eq *default-theme* default)))
+      (with-entry (editor) (housekeeping editor))
+      (is (host-window-settled w2))
+      (is (eq (hdoc-window d1) w2))
+      (is (search "CK.makeDoc(\"doc1\"" (host-take-evals w2)))
+      ;; Each page's report is its own
+      (is-equal (host-page-panels editor 2) "no report")
+      (is-equal (host-page-panels editor 9) "no window")
+      (is-equal (host-page-panels nil) "no report")
+      (with-entry (editor) (host-panels-report w2 "{\"detached\":true}"))
+      (is-equal (host-page-panels editor 2) "{\"detached\":true}")
+      (is-equal (host-page-panels editor) "no report")
+      ;; A document closed while its move waits: the window comes up empty
+      ;; and goes again
+      (with-entry (editor) (host-detach editor "doc2"))
+      (let ((w3 (host-window editor 3)))
+        (setf (host-window-ready w3) nil)
+        (with-entry (editor) (run-command (host-document-by-id editor "doc2") 'kill-buffer))
+        (is (not (host-window-closing w3)))
+        (host-ready w3 "UA")
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 3)))
+        (is-equal (host-panel-state :windows editor) "windows 2: 1 () 2 (doc1) active doc1")))))
+
+(deftest host-detach-and-attach-are-commands-with-messages
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "x")))
+    (with-entry (editor) (run-command doc 'clamacs-attach-window))
+    (is-equal (doc-message-text doc) "doc1 is in the main window")
+    (with-entry (editor) (run-command doc 'clamacs-detach-window))
+    (is-equal (doc-message-text doc) "doc1 detached")
+    (with-entry (editor) (housekeeping editor))
+    (is-equal (host-window-number (hdoc-window doc)) 2)
+    ;; From a detached window, showing separately again makes yet another
+    ;; window, and the emptied one goes
+    (with-entry (editor) (run-command doc 'clamacs-detach-window))
+    (with-entry (editor) (housekeeping editor))
+    (is-equal (host-window-number (hdoc-window doc)) 3)
+    (is (null (host-window editor 2)))
+    (with-entry (editor) (run-command doc 'clamacs-attach-window))
+    (is-equal (doc-message-text doc) "doc1 attached")
+    (is (main-window-p (hdoc-window doc)))
+    (with-entry (editor) (housekeeping editor))
+    (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1) active doc1")
+    ;; The window's echo row shows the message where the document is
+    (is (search "CK.setEcho(\"doc1 attached\");" (host-take-evals editor)))))
+
+(deftest host-snapshot-records-a-detached-window-under-its-tabs-role
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (cfg (temp-file "host-detach.cfg")))
+    (winstore-set (editor-layout editor) "doc2" 10 20 300 200)
+    (winstore-set (editor-layout editor) "debugger" 5 6 400 300)
+    (host-detach-now editor "doc2")
+    ;; Placed where the layout put its role
+    (is-equal (multiple-value-list (doc-geometry d2)) '(10 20 300 200))
+    (is-equal (multiple-value-list (doc-geometry d1)) '(0 0 800 600))
+    (is-equal (nth-value 1 (port-command editor "GETWINDOW")) "doc2 10 20 300 200")
+    ;; The debugger's window where the Amiga's debugger window was
+    (with-entry (editor) (editor-debugger-open editor (editor-debugger-state editor)))
+    (host-detach-now editor "debugger")
+    (is-equal (editor-aux-windows editor) '(("debugger" 5 6 400 300)))
+    (let ((*snapshot-files* (list cfg)))
+      (with-entry (editor) (run-command d2 'clamacs-snapshot-windows))
+      (is-equal (doc-message-text d2)
+                (format nil "Saved the positions of 3 window(s) to ~A" cfg))
+      (let ((text (read-file-text cfg)))
+        (is (search (format nil "~%doc1 0 0 800 600~%") text))
+        (is (search (format nil "~%doc2 10 20 300 200~%") text))
+        (is (search (format nil "~%debugger 5 6 400 300~%") text))))
+    (delete-file cfg)))

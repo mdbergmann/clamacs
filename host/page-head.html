@@ -88,6 +88,13 @@
   #splitter.open { display: block; }
   #dock { flex: none; display: none; flex-direction: column; height: 200px; min-height: 40px; }
   #dock.open { display: flex; }
+  /* A window without source tabs (phase H7: the REPL or a panel shown in
+     a window of its own) has no source region and no splitter; the dock
+     fills it. */
+  #wrap.no-sources #sources, #wrap.no-sources #splitter { display: none; }
+  #wrap.no-sources #dock.open { flex: 1; height: auto; }
+  /* The tab's context menu: the menu bar's popup, placed at the mouse. */
+  #tab-menu { position: fixed; top: 0; left: 0; min-width: 200px; z-index: 20; }
   #dock-views { flex: 1; position: relative; overflow: hidden; }
   .panel { position: absolute; inset: 0; display: none; flex-direction: column; overflow: hidden;
            font-family: var(--font-family); font-size: 12px; }

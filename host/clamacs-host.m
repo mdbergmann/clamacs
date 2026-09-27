@@ -4,12 +4,14 @@
  * of the event loop (the editor's run-loop steps it, so the main thread
  * reaches a GC safepoint every few milliseconds instead of parking in
  * webview_run), a wake from another thread, the requesters, the file
- * panels, the beep, the clipboard, the URL opener, the window's frame and
- * its close button -- and on macOS the menu bar, the screen's, built from
- * the editor's menu table (the page draws its own where the host has no
- * menu of its own).  Built into libclamacs-host.{dylib,so,dll} by
- * host/build.sh and called through ffi:call-foreign; every entry is plain
- * C, and the same on every host:
+ * panels, the beep, the clipboard, the URL opener, a window's frame, its
+ * close button and its raising (the editor opens a window per detached
+ * tab, so what is per window is kept ON the window, never in a static)
+ * -- and on macOS the menu bar, the screen's, built from the editor's
+ * menu table (the page draws its own where the host has no menu of its
+ * own).  Built into libclamacs-host.{dylib,so,dll} by host/build.sh and
+ * called through ffi:call-foreign; every entry is plain C, and the same
+ * on every host:
  *
  *   __APPLE__          Cocoa (the file is Objective-C there, hence .m)
  *   CLAMACS_HOST_GTK   GTK 3 on Linux and the BSDs (build.sh defines it
@@ -35,6 +37,7 @@
 
 #if defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
+#import <objc/runtime.h>
 
 /* ---- the event loop ------------------------------------------------- */
 
@@ -242,9 +245,12 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 }
 
 /* The close button asks the editor instead of closing the window: FN(ARG)
- * runs (save-buffers-kill-emacs, a Lisp callback) and the window stays;
- * the loop ends it when the editor is done.  Everything else the window
- * asks its delegate is forwarded to webview's own. */
+ * runs (save-buffers-kill-emacs for the main window, the tabs' return for
+ * a detached one -- Lisp callbacks) and the window stays; the loop ends it
+ * when the editor is done.  Everything else the window asks its delegate
+ * is forwarded to webview's own.  One delegate per window, kept alive by
+ * the window itself (an associated object), so a second window's hook
+ * never replaces the first's. */
 @interface ClamacsWindowDelegate : NSObject <NSWindowDelegate>
 @property (nonatomic, strong) id inner;
 @property (nonatomic, assign) void (*fn)(void *);
@@ -272,19 +278,32 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 }
 @end
 
-static ClamacsWindowDelegate *close_delegate;
+static const void *close_delegate_key = &close_delegate_key;
 
 void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)
 {
     @autoreleasepool {
         NSWindow *window = (__bridge NSWindow *)win;
-        if (close_delegate == nil) {
-            close_delegate = [[ClamacsWindowDelegate alloc] init];
-            close_delegate.inner = window.delegate;
-            window.delegate = close_delegate;
+        ClamacsWindowDelegate *delegate = objc_getAssociatedObject(window, close_delegate_key);
+        if (delegate == nil) {
+            delegate = [[ClamacsWindowDelegate alloc] init];
+            delegate.inner = window.delegate;
+            window.delegate = delegate;
+            objc_setAssociatedObject(window, close_delegate_key, delegate,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-        close_delegate.fn = fn;
-        close_delegate.arg = arg;
+        delegate.fn = fn;
+        delegate.arg = arg;
+    }
+}
+
+/* The window to the front with the keyboard: a document activated in
+ * another window than the one that had it. */
+void clamacs_host_raise(void *win)
+{
+    @autoreleasepool {
+        NSWindow *window = (__bridge NSWindow *)win;
+        [window makeKeyAndOrderFront:nil];
     }
 }
 
@@ -828,16 +847,20 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 
 /* The close button asks the editor: the delete-event handler runs FN(ARG)
  * and answers TRUE, so the window stays and webview's own "destroy"
- * handler never runs; the loop ends the window when the editor is done. */
-static void (*close_fn)(void *);
-static void *close_arg;
-static int close_connected;
+ * handler never runs; the loop ends the window when the editor is done.
+ * The hook is kept on the window (object data, freed with it): one per
+ * window. */
+struct close_hook {
+    void (*fn)(void *);
+    void *arg;
+};
 
 static gboolean on_delete(GtkWidget *widget, GdkEvent *event, gpointer arg)
 {
-    (void)widget; (void)event; (void)arg;
-    if (close_fn) {
-        close_fn(close_arg);
+    struct close_hook *hook = g_object_get_data(G_OBJECT(widget), "clamacs-close");
+    (void)event; (void)arg;
+    if (hook && hook->fn) {
+        hook->fn(hook->arg);
         return TRUE;
     }
     return FALSE;
@@ -845,12 +868,19 @@ static gboolean on_delete(GtkWidget *widget, GdkEvent *event, gpointer arg)
 
 void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)
 {
-    if (!close_connected) {
+    struct close_hook *hook = g_object_get_data(G_OBJECT(win), "clamacs-close");
+    if (hook == NULL) {
+        hook = g_new0(struct close_hook, 1);
+        g_object_set_data_full(G_OBJECT(win), "clamacs-close", hook, g_free);
         g_signal_connect(G_OBJECT(win), "delete-event", G_CALLBACK(on_delete), NULL);
-        close_connected = 1;
     }
-    close_fn = fn;
-    close_arg = arg;
+    hook->fn = fn;
+    hook->arg = arg;
+}
+
+void clamacs_host_raise(void *win)
+{
+    gtk_window_present(GTK_WINDOW(win));
 }
 
 const char *clamacs_host_toolkit(void)
@@ -1162,27 +1192,52 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 
 /* The close button asks the editor: the window procedure is wrapped, WM_CLOSE
  * runs FN(ARG) and is swallowed (webview's own procedure would destroy the
- * window); everything else goes to webview's. */
-static WNDPROC previous_wndproc;
-static void (*close_fn)(void *);
-static void *close_arg;
+ * window); everything else goes to webview's.  The hook and the previous
+ * procedure are kept on the window (a property), one per window, and
+ * freed with it. */
+struct close_hook {
+    WNDPROC previous;
+    void (*fn)(void *);
+    void *arg;
+};
 
 static LRESULT CALLBACK close_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (msg == WM_CLOSE && close_fn) {
-        close_fn(close_arg);
+    struct close_hook *hook = (struct close_hook *)GetPropW(hwnd, L"ClamacsClose");
+    WNDPROC previous;
+    if (hook == NULL)
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    if (msg == WM_CLOSE && hook->fn) {
+        hook->fn(hook->arg);
         return 0;
     }
-    return CallWindowProcW(previous_wndproc, hwnd, msg, wp, lp);
+    previous = hook->previous;
+    if (msg == WM_NCDESTROY) {
+        RemovePropW(hwnd, L"ClamacsClose");
+        free(hook);
+    }
+    return CallWindowProcW(previous, hwnd, msg, wp, lp);
 }
 
 void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)
 {
-    if (previous_wndproc == NULL)
-        previous_wndproc = (WNDPROC)SetWindowLongPtrW((HWND)win, GWLP_WNDPROC,
-                                                      (LONG_PTR)close_wndproc);
-    close_fn = fn;
-    close_arg = arg;
+    struct close_hook *hook = (struct close_hook *)GetPropW((HWND)win, L"ClamacsClose");
+    if (hook == NULL) {
+        hook = (struct close_hook *)calloc(1, sizeof *hook);
+        if (hook == NULL)
+            return;
+        SetPropW((HWND)win, L"ClamacsClose", hook);
+        hook->previous = (WNDPROC)SetWindowLongPtrW((HWND)win, GWLP_WNDPROC,
+                                                    (LONG_PTR)close_wndproc);
+    }
+    hook->fn = fn;
+    hook->arg = arg;
+}
+
+void clamacs_host_raise(void *win)
+{
+    ShowWindow((HWND)win, SW_SHOW);
+    SetForegroundWindow((HWND)win);
 }
 
 /* RtlGetVersion tells the truth where GetVersionEx answers what the
@@ -1236,6 +1291,7 @@ void clamacs_host_set_frame(void *win, int left, int top, int width, int height)
 { (void)win; (void)left; (void)top; (void)width; (void)height; }
 void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)
 { (void)win; (void)fn; (void)arg; }
+void clamacs_host_raise(void *win) { (void)win; }
 const char *clamacs_host_toolkit(void) { return "no native shim on this host"; }
 int clamacs_host_menu_set(void *win, const char *table,
                           void (*fn)(int32_t, int32_t, void *), void *arg)

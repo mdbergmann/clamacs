@@ -42,9 +42,16 @@
 ;;;;     THEME-CSS-VARS answers, at start and whenever LOAD-THEME runs, and
 ;;;;     the page's scheme (dark or light, from the system) reported at
 ;;;;     clamacsReady decides the default theme.
+;;;;   - A tab can be shown in a window of its own (the tab's context menu,
+;;;;     M-x clamacs-detach-window): a HOST-WINDOW is one webview instance
+;;;;     with the same page in it, and every CK call is routed by its target
+;;;;     -- a document to the window that holds it, a panel to the window it
+;;;;     was moved to, the editor to the main window.  The move itself is
+;;;;     what the mirror makes cheap: the tab is taken out of one page and
+;;;;     made in the other from the text Lisp holds (see "Detached windows").
 ;;;;
 ;;;; The page may be absent: an editor made without a window (the tests)
-;;;; keeps its flushed batches in HOST-EDITOR-EVALS instead, and the
+;;;; keeps its flushed batches in the window's EVALS instead, and the
 ;;;; requesters answer from a script, so the whole frontend short of the
 ;;;; window is host-tested by tests/test-host.lisp.
 
@@ -110,17 +117,57 @@ directory.  Each with a trailing slash."
   "The dock's height in pixels until the layout file or the splitter says
 otherwise; the page's stylesheet starts from the same figure.")
 
-(defstruct (host-editor (:include editor)
-                        (:constructor %make-host-editor ()))
-  ;; The two libraries and the webview: NIL for an editor without a
-  ;; window, whose batches go to EVALS.
-  webview shim w win
+(defstruct (host-window (:constructor %make-host-window (editor number)))
+  "One native window with the page in it: the main window, NUMBER 1, or
+a window a tab was shown in separately (see \"Detached windows\")."
+  editor
+  number
+  ;; The webview instance and its native window: NIL for a window
+  ;; without a page (the tests), whose batches go to EVALS.
+  w win
   (callbacks '())
-  ;; The batch: the CK calls of this entry, and the pending colour
-  ;; records of one document (see DOC-COLOUR).
+  ;; The batch: the CK calls of this entry to this window
   (batch (make-string-output-stream))
   (batch-empty t)
   (evals '())
+  ;; The page reported clamacsReady; SETTLED once the menus, the theme
+  ;; and the dock height went out (HOUSEKEEPING does it, from the loop);
+  ;; PENDING holds what moves in then -- documents and panel names -- so
+  ;; nothing is sent to a page that is not up yet.  The main window is
+  ;; settled from the start: HOST-OPEN waits for its page.
+  (ready nil)
+  (settled nil)
+  (pending '())
+  ;; What the status line and the window title show, to push only changes
+  (shown-status nil)
+  (shown-title nil)
+  ;; The dock of this window as Lisp told the page to show it (see "The
+  ;; dock" below): whether it is open and what it displays, its height.
+  ;; PAGE-PANELS is the page's own last report (clamacsPanels), JSON text.
+  (dock-open nil)
+  (dock-shown nil)
+  (dock-height +dock-default-height+)
+  (page-panels nil)
+  ;; Without a page: the frame WINDOW-FRAME answers, so a test sees where
+  ;; a window was placed
+  (stub-frame (list 0 0 800 600))
+  ;; :ATTACH when the close button was pressed, :EMPTY when the last tab
+  ;; left: HOUSEKEEPING takes the window down (the main window never)
+  (closing nil))
+
+(defstruct (host-editor (:include editor)
+                        (:constructor %%make-host-editor ()))
+  ;; The two libraries: NIL for an editor without a page (the tests)
+  webview shim
+  ;; The page's HTML, read once (every window gets the same page)
+  (page-html nil)
+  ;; The windows, the main one first (see "Detached windows"), and which
+  ;; window holds each panel that was moved out of the main one
+  (main nil)
+  (windows '())
+  (next-window 0)
+  (panel-windows '())            ; panel name -> window
+  ;; The pending colour records of one document (see DOC-COLOUR)
   (colour-doc nil)
   (colour-runs '())              ; run records, newest first
   (colour-lines (make-hash-table)) ; line -> runs, for lines cleared whole
@@ -128,38 +175,30 @@ otherwise; the page's stylesheet starts from the same figure.")
   (docs (make-hash-table :test 'equal))
   (next-id 0)
   active-doc
-  ;; The page reported clamacsReady; a modal requester is up
-  (ready nil)
+  ;; A modal requester is up
   (in-modal nil)
   user-agent
   ;; The system's colour scheme the page reported at ready, "dark" or
   ;; "light": what decides the default theme (theme.lisp)
   (scheme nil)
-  ;; What the status line and the window title show, to push only changes
-  (shown-status nil)
-  (shown-title nil)
   ;; Without a window: what the requesters answer (a test's script),
-  ;; what was asked, how often the beep sounded, the last clipboard text
+  ;; what was asked, how often the beep sounded, the last clipboard text,
+  ;; the windows raised
   (answers '())
   (asked '())
   (beeps 0)
   (clipboard nil)
   (urls '())
+  (raised '())
   ;; Keys still to push through the page (HOST-INJECT-KEYS)
   (inject '())
-  ;; The dock and the panels as Lisp told the page to show them (see "The
-  ;; dock" below): whether the dock is open and what it displays, the
-  ;; dock's height, each panel's open flag and selection.  PAGE-PANELS is
-  ;; the page's own last report of the same (clamacsPanels), JSON text.
-  (dock-open nil)
-  (dock-shown nil)
-  (dock-height +dock-default-height+)
+  ;; The panels as Lisp told the page to show them (see "The dock"
+  ;; below): each panel's open flag, the diagnostics rows and selection
   (diag-open nil)
   (diag-rows '())
   (diag-selected nil)
   (dbg-open nil)
   (insp-open nil)
-  (page-panels nil)
   ;; The menu bar as Lisp told the page -- or the shim, NATIVE-MENU (see
   ;; "The menu bar" below) -- to show it: whether the table went out
   ;; (nothing is synced before), one enable flag per table entry, and per
@@ -176,6 +215,8 @@ otherwise; the page's stylesheet starts from the same figure.")
 
 (defclass host-document (document)
   ((id :initarg :id :reader hdoc-id)
+   ;; The window whose page holds this document's tab
+   (window :initarg :window :accessor hdoc-window)
    (mirror :initform (make-mirror) :accessor hdoc-mirror)
    ;; What the page holds: the text, the selection, the modified flag
    (shown-text :initform "" :accessor hdoc-shown-text)
@@ -230,8 +271,66 @@ writes no exit log.")
   (active-document editor))
 
 (defun host-document-by-id (editor id)
-  (let ((doc (gethash id (host-editor-docs editor))))
+  (let ((doc (and (stringp id) (gethash id (host-editor-docs editor)))))
     (and doc (not (doc-closing doc)) doc)))
+
+;;; --- the windows
+
+(defun add-window (editor)
+  "A new HOST-WINDOW on EDITOR, numbered after the ones before it; the
+first one made is the main window."
+  (let ((window (%make-host-window editor (incf (host-editor-next-window editor)))))
+    (setf (host-editor-windows editor) (append (host-editor-windows editor) (list window)))
+    (unless (host-editor-main editor)
+      (setf (host-editor-main editor) window
+            (host-window-settled window) t))
+    window))
+
+(defun %make-host-editor ()
+  "An editor with its main window, without a page: HOST-OPEN gives the
+window one."
+  (let ((editor (%%make-host-editor)))
+    (add-window editor)
+    editor))
+
+(defun host-window (editor number)
+  "The window numbered NUMBER, or NIL."
+  (find number (host-editor-windows editor) :key #'host-window-number))
+
+(defun main-window-p (window)
+  (eq window (host-editor-main (host-window-editor window))))
+
+(defun live-windows (editor)
+  "The windows that are not on their way down, the main one first."
+  (remove-if #'host-window-closing (host-editor-windows editor)))
+
+(defun target-window (target)
+  "The window a CK call for TARGET goes to: a window itself, a
+document's own, the editor's main window."
+  (etypecase target
+    (host-window target)
+    (host-document (hdoc-window target))
+    (host-editor (host-editor-main target))))
+
+(defun window-documents (window)
+  "The open documents whose tabs are in WINDOW's page, oldest first."
+  (remove window (live-documents (host-window-editor window))
+          :key #'hdoc-window :test-not #'eq))
+
+(defun window-source-documents (window)
+  (remove-if #'hdoc-dock-p (window-documents window)))
+
+(defun active-window (editor)
+  "The window the active document is in, or the main window."
+  (let ((doc (active-document editor)))
+    (or (and doc (hdoc-window doc)) (host-editor-main editor))))
+
+;;; The two the tests read off the editor: the main window's.
+(defun host-editor-ready (editor)
+  (host-window-ready (host-editor-main editor)))
+
+(defun host-editor-dock-height (editor)
+  (host-window-dock-height (host-editor-main editor)))
 
 ;;; ------------------------------------------------------------------
 ;;; The foreign side: webview and the shim
@@ -243,80 +342,109 @@ writes no exit log.")
 (defun shim (editor name ret types &rest args)
   (ffi:call-foreign (ffi:symbol-pointer name (host-editor-shim editor)) ret types args))
 
-(defun wv-str (editor name &rest strings)
-  "Call NAME with the webview and one or more C strings."
+(defun wv-str (window name &rest strings)
+  "Call NAME with WINDOW's webview instance and one or more C strings."
   (let ((ptrs (mapcar #'ffi:foreign-string strings)))
     (unwind-protect
-         (ffi:call-foreign (ffi:symbol-pointer name (host-editor-webview editor)) :int32
+         (ffi:call-foreign (ffi:symbol-pointer name (host-editor-webview (host-window-editor window)))
+                           :int32
                            (cons :pointer (mapcar (constantly :pointer) ptrs))
-                           (cons (host-editor-w editor) ptrs))
+                           (cons (host-window-w window) ptrs))
       (mapc #'ffi:free-foreign ptrs))))
 
-(defun js-eval (editor js)
-  (wv-str editor "webview_eval" js))
+(defun js-eval (window js)
+  (wv-str window "webview_eval" js))
 
-(defun js-return (editor id json)
+(defun js-return (window id json)
   (let ((pid (ffi:foreign-string id)) (pjson (ffi:foreign-string json)))
     (unwind-protect
-         (wv editor "webview_return" :int32 '(:pointer :pointer :int32 :pointer)
-             (host-editor-w editor) pid 0 pjson)
+         (wv (host-window-editor window) "webview_return" :int32 '(:pointer :pointer :int32 :pointer)
+             (host-window-w window) pid 0 pjson)
       (ffi:free-foreign pid) (ffi:free-foreign pjson))))
 
 (defun host-step (editor ms)
-  "One turn of the event loop, at most MS milliseconds.  The bindings'
-callbacks run inside it."
-  (when (host-editor-w editor)
-    (shim editor "clamacs_host_step" :int32 '(:pointer :int32) (host-editor-w editor) ms)))
+  "One turn of the event loop, at most MS milliseconds: every window's
+events, since the loop is the application's.  The bindings' callbacks
+run inside it."
+  (let ((w (host-window-w (host-editor-main editor))))
+    (when w
+      (shim editor "clamacs_host_step" :int32 '(:pointer :int32) w ms))))
 
-(defun set-window-title (editor title)
-  (unless (equal title (host-editor-shown-title editor))
-    (setf (host-editor-shown-title editor) title)
-    (when (host-editor-w editor)
-      (wv-str editor "webview_set_title" title))))
+(defun set-window-title (window title)
+  (unless (equal title (host-window-shown-title window))
+    (setf (host-window-shown-title window) title)
+    (when (host-window-w window)
+      (wv-str window "webview_set_title" title))))
+
+(defun raise-window (window)
+  "WINDOW to the front with the keyboard, as MUI's window activation
+does; without a shim, noted on RAISED for a test."
+  (let ((editor (host-window-editor window)))
+    (cond ((and (host-editor-shim editor) (host-window-win window))
+           (shim editor "clamacs_host_raise" :void '(:pointer) (host-window-win window)))
+          ((null (host-editor-shim editor))
+           (push (host-window-number window) (host-editor-raised editor))))))
 
 ;;; ------------------------------------------------------------------
-;;; The batch: what Lisp tells the page, one eval per entry
+;;; The batch: what Lisp tells the page, one eval per entry and window
 ;;; ------------------------------------------------------------------
 
-(defun batch-js (editor js)
-  "Append JS, a statement, to the batch."
-  (flush-colours editor)
-  (let ((out (host-editor-batch editor)))
-    (write-string js out)
-    (write-char #\; out))
-  (setf (host-editor-batch-empty editor) nil))
+(defun batch-js (target js)
+  "Append JS, a statement, to TARGET's window's batch (TARGET-WINDOW)."
+  (let ((window (target-window target)))
+    (flush-colours (host-window-editor window))
+    (let ((out (host-window-batch window)))
+      (write-string js out)
+      (write-char #\; out))
+    (setf (host-window-batch-empty window) nil)))
 
-(defun ck (editor name &rest args)
-  "Append the call CK.NAME(ARGS...) to the batch.  A string argument is
-written as an ASCII JavaScript literal, a symbol as its lower-cased name,
-T and NIL as true and false, a list or vector as an array."
-  (flush-colours editor)
-  (let ((out (host-editor-batch editor)))
-    (write-string "CK." out)
-    (write-string name out)
-    (write-char #\( out)
-    (loop for (arg . more) on args
-          do (json-write arg out)
-             (when more (write-char #\, out)))
-    (write-string ");" out))
-  (setf (host-editor-batch-empty editor) nil))
+(defun ck (target name &rest args)
+  "Append the call CK.NAME(ARGS...) to the batch of TARGET's window: a
+document's own, the editor's main one, or the window given.  A string
+argument is written as an ASCII JavaScript literal, a symbol as its
+lower-cased name, T and NIL as true and false, a list or vector as an
+array."
+  (let ((window (target-window target)))
+    (flush-colours (host-window-editor window))
+    (let ((out (host-window-batch window)))
+      (write-string "CK." out)
+      (write-string name out)
+      (write-char #\( out)
+      (loop for (arg . more) on args
+            do (json-write arg out)
+               (when more (write-char #\, out)))
+      (write-string ");" out))
+    (setf (host-window-batch-empty window) nil)))
+
+(defun ck-all (editor name &rest args)
+  "CK.NAME(ARGS...) to every window whose page is up: what every page
+shows alike -- the menu bar's state, the theme."
+  (dolist (window (live-windows editor))
+    (when (host-window-settled window)
+      (apply #'ck window name args))))
+
+(defun flush-window-batch (window)
+  "WINDOW's batch to its page as one webview_eval -- or, without a page,
+onto its EVALS.  A failure inside it is reported by the page (clamacsLog)."
+  (unless (host-window-batch-empty window)
+    (let ((js (get-output-stream-string (host-window-batch window))))
+      (setf (host-window-batch-empty window) t)
+      (if (host-window-w window)
+          (js-eval window (concatenate 'string "try{" js
+                                       "}catch(e){clamacsLog(\"batch: \"+e)}"))
+          (push js (host-window-evals window))))))
 
 (defun flush-batch (editor)
-  "The batch to the page as one webview_eval -- or, without a page, onto
-EVALS.  A failure inside it is reported by the page (clamacsLog)."
+  "Every window's batch to its page."
   (flush-colours editor)
-  (unless (host-editor-batch-empty editor)
-    (let ((js (get-output-stream-string (host-editor-batch editor))))
-      (setf (host-editor-batch-empty editor) t)
-      (if (host-editor-w editor)
-          (js-eval editor (concatenate 'string "try{" js
-                                       "}catch(e){clamacsLog(\"batch: \"+e)}"))
-          (push js (host-editor-evals editor))))))
+  (mapc #'flush-window-batch (host-editor-windows editor)))
 
-(defun host-take-evals (editor)
-  "The batches flushed so far, oldest first as one string, and forgotten."
-  (prog1 (format nil "~{~A~}" (reverse (host-editor-evals editor)))
-    (setf (host-editor-evals editor) '())))
+(defun host-take-evals (target)
+  "The batches TARGET's window (TARGET-WINDOW: the editor's main one)
+flushed so far, oldest first as one string, and forgotten."
+  (let ((window (target-window target)))
+    (prog1 (format nil "~{~A~}" (reverse (host-window-evals window)))
+      (setf (host-window-evals window) '()))))
 
 ;;; ------------------------------------------------------------------
 ;;; Colours: DOC-COLOUR's runs, coalesced per line
@@ -365,7 +493,7 @@ wiping any earlier run on it."
         (setf (host-editor-colour-doc editor) nil
               (host-editor-colour-runs editor) '())
         (clrhash lines)
-        (ck editor "colour" (hdoc-id doc)
+        (ck doc "colour" (hdoc-id doc)
             (coerce (append runs (nreverse line-records)) 'vector))))))
 
 (defmethod doc-colour ((doc host-document) y x0 x1 colour)
@@ -426,26 +554,25 @@ mirror's selection when the point is at one of its ends."
   "What the page holds of DOC brought in step with the mirror: the text
 as one applyEdit, then the selection, then the modified flag.  Cheap when
 nothing changed: the text is compared by identity first."
-  (let* ((editor (doc-editor doc))
-         (id (hdoc-id doc))
+  (let* ((id (hdoc-id doc))
          (m (hdoc-mirror doc))
          (text (mirror-text m))
          (shown (hdoc-shown-text doc)))
     (declare (simple-string text shown))
     (unless (or (eq text shown) (string= text shown))
       (multiple-value-bind (from to insert) (text-diff shown text)
-        (ck editor "applyEdit" id from to insert (mirror-point m)))
+        (ck doc "applyEdit" id from to insert (mirror-point m)))
       (setf (hdoc-shown-text doc) text
             (hdoc-shown-head doc) (mirror-point m)
             (hdoc-shown-anchor doc) (mirror-point m)))
     (multiple-value-bind (head anchor) (shown-selection m)
       (unless (and (= head (hdoc-shown-head doc)) (= anchor (hdoc-shown-anchor doc)))
-        (ck editor "setPoint" id head anchor)
+        (ck doc "setPoint" id head anchor)
         (setf (hdoc-shown-head doc) head
               (hdoc-shown-anchor doc) anchor)))
     (let ((modified (and (mirror-modified m) t)))
       (unless (eq modified (hdoc-shown-modified doc))
-        (ck editor "setModified" id modified)
+        (ck doc "setModified" id modified)
         (setf (hdoc-shown-modified doc) modified)))))
 
 (defmethod doc-point ((doc host-document))
@@ -532,10 +659,15 @@ anything else, as the class answers FALSE."
 ;;; Presentation: the echo area, the status line, the title
 ;;; ------------------------------------------------------------------
 
+;;; The status line and the echo row are one per window, and show the
+;;; ACTIVE document's state: a document that is not the active one keeps
+;;; its message and status to itself until it is activated again, when
+;;; SHOW-ECHO-STATE renders them into its window.
+
 (defmethod doc-message ((doc host-document) text)
   (setf (hdoc-message-text doc) text)
   (when (host-active-p doc)
-    (ck (doc-editor doc) "setEcho" text)))
+    (ck doc "setEcho" text)))
 
 (defmethod doc-message-text ((doc host-document))
   (hdoc-message-text doc))
@@ -559,15 +691,15 @@ anything else, as the class answers FALSE."
               arglist))))
 
 (defun update-status (doc)
-  "The status line and the window title, when DOC is the active document
-and they changed."
+  "The status line and the title of DOC's window, when DOC is the active
+document and they changed."
   (when (host-active-p doc)
-    (let ((editor (doc-editor doc))
+    (let ((window (hdoc-window doc))
           (text (status-text doc)))
-      (unless (equal text (host-editor-shown-status editor))
-        (setf (host-editor-shown-status editor) text)
-        (ck editor "setStatus" text))
-      (set-window-title editor (doc-name doc)))))
+      (unless (equal text (host-window-shown-status window))
+        (setf (host-window-shown-status window) text)
+        (ck doc "setStatus" text))
+      (set-window-title window (doc-name doc)))))
 
 (defmethod doc-show-arglist ((doc host-document) text)
   (setf (hdoc-arglist doc) text)
@@ -575,21 +707,20 @@ and they changed."
 
 (defmethod doc-set-title ((doc host-document) title)
   (setf (hdoc-title doc) title)
-  (ck (doc-editor doc) "setTitle" (hdoc-id doc) title)
+  (ck doc "setTitle" (hdoc-id doc) title)
   (when (host-active-p doc)
-    (set-window-title (doc-editor doc) title)))
+    (set-window-title (hdoc-window doc) title)))
 
 (defun show-echo-state (doc)
-  "The echo row as DOC has it -- its prompt when one is open, else its
-message -- after DOC became the active document."
-  (let ((editor (doc-editor doc)))
-    (cond ((hdoc-mini-text doc)
-           (ck editor "openMini" (hdoc-mini-label doc) (hdoc-mini-text doc)))
-          (t
-           (ck editor "closeMini")
-           (ck editor "setEcho" (hdoc-message-text doc))))
-    (setf (host-editor-shown-status editor) nil)
-    (update-status doc)))
+  "The echo row of DOC's window as DOC has it -- its prompt when one is
+open, else its message -- after DOC became the active document."
+  (cond ((hdoc-mini-text doc)
+         (ck doc "openMini" (hdoc-mini-label doc) (hdoc-mini-text doc)))
+        (t
+         (ck doc "closeMini")
+         (ck doc "setEcho" (hdoc-message-text doc))))
+  (setf (host-window-shown-status (hdoc-window doc)) nil)
+  (update-status doc))
 
 ;;; ------------------------------------------------------------------
 ;;; The minibuffer's part
@@ -600,15 +731,15 @@ message -- after DOC became the active document."
         (hdoc-mini-text doc) (copy-seq initial)
         (hdoc-message-text doc) label)
   (when (host-active-p doc)
-    (ck (doc-editor doc) "openMini" label initial)))
+    (ck doc "openMini" label initial)))
 
 (defmethod doc-close-minibuffer ((doc host-document))
   (setf (hdoc-mini-label doc) nil
         (hdoc-mini-text doc) nil
         (hdoc-message-text doc) "")
   (when (host-active-p doc)
-    (ck (doc-editor doc) "closeMini")
-    (ck (doc-editor doc) "setEcho" "")))
+    (ck doc "closeMini")
+    (ck doc "setEcho" "")))
 
 (defmethod doc-minibuffer-text ((doc host-document))
   (or (hdoc-mini-text doc) ""))
@@ -616,13 +747,13 @@ message -- after DOC became the active document."
 (defmethod doc-set-minibuffer-text ((doc host-document) text)
   (setf (hdoc-mini-text doc) (copy-seq text))
   (when (host-active-p doc)
-    (ck (doc-editor doc) "setMiniText" text)))
+    (ck doc "setMiniText" text)))
 
 (defmethod doc-set-minibuffer-label ((doc host-document) label)
   (setf (hdoc-mini-label doc) label
         (hdoc-message-text doc) label)
   (when (host-active-p doc)
-    (ck (doc-editor doc) "setMiniLabel" label)))
+    (ck doc "setMiniLabel" label)))
 
 (defun host-mini-input (editor text)
   "The input line changed by itself (the page's input event): the new
@@ -835,38 +966,58 @@ page holds the result already."
 ;;; Documents and the window
 ;;; ------------------------------------------------------------------
 
+(defun doc-kind-string (doc)
+  (if (hdoc-dock-p doc) "tool" "source"))
+
 (defmethod editor-make-document ((editor host-editor) &key path name lisp-mode)
+  "A new document as a tab of the window the active document is in: a
+source tab, or a tab of that window's dock for a tool buffer."
   (let* ((id (format nil "doc~D" (incf (host-editor-next-id editor))))
          (doc (make-instance 'host-document :editor editor :path path
                                             :name (or name *unnamed*)
                                             :lisp-mode lisp-mode
-                                            :id id)))
+                                            :id id
+                                            :window (active-window editor))))
     (setf (gethash id (host-editor-docs editor)) doc
           (hdoc-dock-p doc) (tool-document-p doc))
-    (ck editor "makeDoc" id (doc-name doc) (if (hdoc-dock-p doc) "tool" "source"))
+    (ck doc "makeDoc" id (doc-name doc) (doc-kind-string doc))
     (doc-set-title doc (doc-name doc))
     (doc-activate doc)
     doc))
 
 (defmethod doc-activate ((doc host-document))
-  (let ((editor (doc-editor doc)))
+  "DOC's tab displayed with the keyboard, its window raised when the
+keyboard was in another one, its echo row and status line rendered."
+  (let* ((editor (doc-editor doc))
+         (before (host-editor-active-doc editor))
+         (window (hdoc-window doc)))
     (setf (host-editor-active-doc editor) doc)
     (when (hdoc-dock-p doc)
-      (dock-note-shown editor (hdoc-id doc)))
-    (ck editor "activateDoc" (hdoc-id doc))
+      (dock-note-shown window (hdoc-id doc)))
+    (ck doc "activateDoc" (hdoc-id doc))
+    (when (and before (not (eq (hdoc-window before) window)))
+      (raise-window window))
     (show-echo-state doc)))
 
 (defmethod doc-close-window ((doc host-document))
-  (let ((editor (doc-editor doc)))
+  "DOC's tab taken down; the next document of the same window takes
+the keyboard, else the oldest open one; a detached window left with
+nothing in it goes with it (HOUSEKEEPING)."
+  (let ((editor (doc-editor doc))
+        (window (hdoc-window doc)))
     (remhash (hdoc-id doc) (host-editor-docs editor))
-    (ck editor "removeDoc" (hdoc-id doc))
+    (ck doc "removeDoc" (hdoc-id doc))
     (when (hdoc-dock-p doc)
-      (dock-note-hidden editor (hdoc-id doc)))
+      (dock-note-hidden window (hdoc-id doc)))
     (when (eq (host-editor-active-doc editor) doc)
       (setf (host-editor-active-doc editor) nil)
-      (let ((next (first (live-documents editor))))
+      (let ((next (or (first (window-documents window))
+                      (first (live-documents editor)))))
         (when next
-          (doc-activate next))))))
+          (doc-activate next)
+          (unless (eq (hdoc-window next) window)
+            (raise-window (hdoc-window next))))))
+    (note-window-emptied window)))
 
 (defun reap (editor)
   "Forget the closed documents; the page took their tabs down already."
@@ -904,7 +1055,7 @@ while a native dialog runs its own loop."
                         (ffi:with-foreign-string (buttons (format nil "~{~A~^|~}"
                                                                   (mapcar #'choice-label choices)))
                           (shim editor "clamacs_host_ask" :int32 '(:pointer :pointer :pointer)
-                                (host-editor-win editor) text buttons))))))
+                                (host-window-win (active-window editor)) text buttons))))))
              (if (and (integerp n) (<= 0 n) (< n (length choices)))
                  (nth n choices)
                  (car (last choices))))))))
@@ -920,66 +1071,96 @@ while a native dialog runs its own loop."
                         (ffi:with-foreign-string (finitial initial)
                           (shim editor "clamacs_host_ask_file" :pointer
                                 '(:pointer :pointer :int32 :pointer)
-                                (host-editor-win editor) ftitle (if save 1 0) finitial))))))
+                                (host-window-win (active-window editor)) ftitle (if save 1 0) finitial))))))
              (unless (ffi:null-pointer-p p)
                (unwind-protect (ffi:foreign-to-string p)
                  (shim editor "clamacs_host_free" :void '(:pointer) p))))))))
 
 ;;; --- window positions (snapshot.lisp)
 
-(defun window-frame (editor)
-  "Left, top, width and height of the native window, or NIL without one."
-  (when (host-editor-win editor)
-    (let ((out (ffi:alloc-foreign 16)))
-      (unwind-protect
-           (progn
-             (shim editor "clamacs_host_get_frame" :void '(:pointer :pointer)
-                   (host-editor-win editor) out)
-             (values (ffi:peek-i32 out 0) (ffi:peek-i32 out 4)
-                     (ffi:peek-i32 out 8) (ffi:peek-i32 out 12)))
-        (ffi:free-foreign out)))))
+(defun window-frame (window)
+  "Left, top, width and height of WINDOW's native window -- without
+one, its stub frame."
+  (let ((editor (host-window-editor window))
+        (win (host-window-win window)))
+    (if win
+        (let ((out (ffi:alloc-foreign 16)))
+          (unwind-protect
+               (progn
+                 (shim editor "clamacs_host_get_frame" :void '(:pointer :pointer) win out)
+                 (values (ffi:peek-i32 out 0) (ffi:peek-i32 out 4)
+                         (ffi:peek-i32 out 8) (ffi:peek-i32 out 12)))
+            (ffi:free-foreign out)))
+        (values-list (host-window-stub-frame window)))))
 
-(defun place-window (editor)
-  "The native window where the layout file puts `doc1'."
-  (multiple-value-bind (left top width height) (layout-place editor "doc1")
-    (when (and left (host-editor-win editor))
-      (shim editor "clamacs_host_set_frame" :void '(:pointer :int32 :int32 :int32 :int32)
-            (host-editor-win editor) left top width height))))
+(defun set-window-frame (window left top width height)
+  (let ((editor (host-window-editor window))
+        (win (host-window-win window)))
+    (if win
+        (shim editor "clamacs_host_set_frame" :void '(:pointer :int32 :int32 :int32 :int32)
+              win left top width height)
+        (setf (host-window-stub-frame window) (list left top width height)))))
+
+(defconstant +cascade-offset+ 40
+  "How far a detached window without a stored place sits from the main
+window's corner.")
+
+(defun place-window (window role)
+  "WINDOW where the layout file puts ROLE -- the main window's `doc1',
+a detached window's first document's role or its panel's -- else, for a
+detached window, a cascade off the main window's frame (the main window
+keeps webview's own place: the layout said nothing).  ROLE `doc1' is the
+main window's place, never a detached window's."
+  (let ((editor (host-window-editor window)))
+    (multiple-value-bind (left top width height)
+        (if (and (not (main-window-p window)) (equal role "doc1"))
+            nil
+            (layout-place editor role))
+      (cond (left
+             (set-window-frame window left top width height))
+            ((not (main-window-p window))
+             (multiple-value-bind (mleft mtop mwidth mheight)
+                 (window-frame (host-editor-main editor))
+               (set-window-frame window (+ mleft +cascade-offset+) (+ mtop +cascade-offset+)
+                                 mwidth mheight)))))))
 
 (defmethod doc-geometry ((doc host-document))
-  (let ((editor (doc-editor doc)))
-    (and (not (doc-closing doc))
-         (if (host-editor-win editor)
-             (window-frame editor)
-             (values 0 0 800 600)))))
+  (and (not (doc-closing doc))
+       (window-frame (hdoc-window doc))))
 
-(defun dock-frame (editor)
-  "Where the dock is, as a window of its own would be: the bottom
-DOCK-HEIGHT pixels of the native window's frame."
-  (multiple-value-bind (left top width height)
-      (if (host-editor-win editor) (window-frame editor) (values 0 0 800 600))
-    (let ((dock (min (host-editor-dock-height editor) height)))
-      (values left (+ top (- height dock)) width dock))))
+(defun dock-frame (window)
+  "Where WINDOW's dock is, as a window of its own would be: the bottom
+DOCK-HEIGHT pixels of its frame -- the whole frame when the window has
+no source tabs, since the page lets the dock fill it then."
+  (multiple-value-bind (left top width height) (window-frame window)
+    (if (window-source-documents window)
+        (let ((dock (min (host-window-dock-height window) height)))
+          (values left (+ top (- height dock)) width dock))
+        (values left top width height))))
 
 (defmethod editor-aux-windows ((editor host-editor))
-  "The dock, when it is open, under the role `dock' -- the layout file's
-entry for its height -- and each open panel under the role the MUI
-frontend's window has, with the dock's frame, so a snapshot taken here
-keeps every role the Amiga file has."
-  (when (host-editor-dock-open editor)
-    (let ((frame (multiple-value-list (dock-frame editor))))
-      (append (list (cons "dock" frame))
-              (when (host-editor-diag-open editor) (list (cons "errors" frame)))
-              (when (host-editor-dbg-open editor) (list (cons "debugger" frame)))
-              (when (host-editor-insp-open editor) (list (cons "inspector" frame)))))))
+  "The main window's dock, when it is open, under the role `dock' -- the
+layout file's entry for its height -- and each open panel under the role
+the MUI frontend's window has, with the frame of the dock it is in, so a
+snapshot taken here keeps every role the Amiga file has and a panel
+shown in a window of its own comes up there again."
+  (let ((main (host-editor-main editor)))
+    (flet ((panel (name role open)
+             (when open
+               (list (cons role (multiple-value-list (dock-frame (panel-window editor name))))))))
+      (append (when (host-window-dock-open main)
+                (list (cons "dock" (multiple-value-list (dock-frame main)))))
+              (panel "diagnostics" "errors" (host-editor-diag-open editor))
+              (panel "debugger" "debugger" (host-editor-dbg-open editor))
+              (panel "inspector" "inspector" (host-editor-insp-open editor))))))
 
 (defun place-dock (editor)
   "The dock's height from the layout file's `dock' entry, told to the
-page before anything opens it."
+main window's page before anything opens it."
   (multiple-value-bind (left top width height) (layout-place editor "dock")
     (declare (ignore left top width))
     (when (and height (> height 0))
-      (setf (host-editor-dock-height editor) height)
+      (setf (host-window-dock-height (host-editor-main editor)) height)
       (ck editor "setDock" height))))
 
 ;;; --- About, the browser (menu.lisp)
@@ -1119,29 +1300,61 @@ one: true then.  Picks come back through NATIVE-MENU-CALLBACK."
                (lambda (which n arg)
                  (declare (ignore arg))
                  (native-menu-callback editor which n)))))
-      (push cb (host-editor-callbacks editor))
+      (push cb (host-window-callbacks (host-editor-main editor)))
       (/= 0 (ffi:with-foreign-string (table (menu-table-text editor))
               (shim editor "clamacs_host_menu_set" :int32 '(:pointer :pointer :pointer :pointer)
-                    (host-editor-win editor) table cb (ffi:make-foreign-pointer 0)))))))
+                    (host-window-win (host-editor-main editor)) table cb (ffi:make-foreign-pointer 0)))))))
+
+(defun menu-table-for-page (editor)
+  "The table as the page takes it: [kind, title, keys] per entry -- or
+empty, which hides the page's bar, when the menu is the host's own."
+  (if (host-editor-native-menu editor)
+      #()
+      (coerce (loop for e in (menu-entries)
+                    for index from 0
+                    collect (list (menu-wire-kind-string editor index)
+                                  (or (menu-entry-title e) "")
+                                  (or (menu-entry-keys e) "")))
+              'vector)))
 
 (defun send-menus (editor &key (native (native-menu-install editor)))
   "The table to the host's menu bar when NATIVE (the shim took it), or
 else to the page (an empty table hides the page's bar), and the enable
 states forgotten so the next MENU-UPDATE sends every one."
   (setf (host-editor-native-menu editor) native)
-  (ck editor "setMenus"
-      (if (host-editor-native-menu editor)
-          #()
-          (coerce (loop for e in (menu-entries)
-                        for index from 0
-                        collect (list (menu-wire-kind-string editor index)
-                                      (or (menu-entry-title e) "")
-                                      (or (menu-entry-keys e) "")))
-                  'vector)))
+  (ck editor "setMenus" (menu-table-for-page editor))
   (setf (host-editor-menus-sent editor) t
         (host-editor-menu-enabled editor) nil
         (host-editor-dynamic-shown editor) '()
         (host-editor-dynamic-objects editor) '()))
+
+(defun send-menus-to (window)
+  "What the menu bar shows, to the page of a WINDOW that came up after
+the table went out: the table, then every item's enable state and every
+dynamic group as the bar shows them now -- the host's own bar needs
+nothing, and an empty table hides the page's."
+  (let ((editor (host-window-editor window)))
+    (when (host-editor-menus-sent editor)
+      (ck window "setMenus" (menu-table-for-page editor))
+      (unless (host-editor-native-menu editor)
+        (loop for flag in (host-editor-menu-enabled editor)
+              for index from 0
+              when (eq (menu-entry-kind (menu-entry index)) :item)
+                do (ck window "menuEnable" index flag))
+        (dolist (which (editor-dynamic-groups editor))
+          (let ((shown (dynamic-menu-shown editor which)))
+            (when shown
+              (ck window "setDynamic" which (dynamic-menu-page-lines (car shown) (cdr shown))))))))))
+
+(defun dynamic-menu-page-lines (entries ticked)
+  "A dynamic group's ENTRIES as the page takes them: `-' for the bar,
+[label, ticked] for an item."
+  (coerce (mapcar (lambda (e)
+                    (if (eq e :bar)
+                        "-"
+                        (list (car e) (eq (cdr e) ticked))))
+                  entries)
+          'vector))
 
 (defun native-menu-enable (editor index flag)
   (if (host-editor-shim editor)
@@ -1168,7 +1381,7 @@ menu bar shows."
                           (or (null shown) (not (eq flag (nth index shown)))))
                  (if (host-editor-native-menu editor)
                      (native-menu-enable editor index flag)
-                     (ck editor "menuEnable" index flag)))))
+                     (ck-all editor "menuEnable" index flag)))))
     (setf (host-editor-menu-enabled editor) want)))
 
 (defun dynamic-menu-shown (editor which)
@@ -1187,13 +1400,7 @@ an item, to the shim the port verb's lines."
                    (eq ticked (cdr shown)))
         (if (host-editor-native-menu editor)
             (native-menu-dynamic editor which (dynamic-menu-text want ticked))
-            (ck editor "setDynamic" which
-                (coerce (mapcar (lambda (e)
-                                  (if (eq e :bar)
-                                      "-"
-                                      (list (car e) (eq (cdr e) ticked))))
-                                want)
-                        'vector)))
+            (ck-all editor "setDynamic" which (dynamic-menu-page-lines want ticked)))
         (setf (host-editor-dynamic-shown editor)
               (acons which (cons want ticked)
                      (remove which (host-editor-dynamic-shown editor) :key #'car))
@@ -1312,25 +1519,35 @@ menu bar (the table not sent), what it should be."
 ;;; that setting, reported at clamacsReady, is what the default theme
 ;;; follows, so an editor without a pick looks exactly as before.
 
+(defun theme-page-args (theme)
+  (list (mapcar (lambda (pair) (list (car pair) (cdr pair))) (theme-css-vars theme))
+        (and (theme-dark theme) t)))
+
 (defmethod editor-apply-theme ((editor host-editor) theme)
-  (ck editor "theme"
-      (mapcar (lambda (pair) (list (car pair) (cdr pair))) (theme-css-vars theme))
-      (and (theme-dark theme) t)))
+  (apply #'ck-all editor "theme" (theme-page-args theme)))
 
 (defun send-theme (editor)
   "The theme in effect to the page: at start, after the menus."
   (editor-apply-theme editor (active-theme)))
 
-(defun host-ready (editor user-agent &optional scheme)
-  "The clamacsReady binding: the page is up.  SCHEME, `dark' or `light'
-from the page's matchMedia, makes the same built-in the default theme;
-a page that does not say (an older page, the smoke's stub) leaves the
-default as it is."
-  (setf (host-editor-ready editor) t
-        (host-editor-user-agent editor) user-agent)
-  (when (member scheme '("dark" "light") :test #'equal)
-    (setf (host-editor-scheme editor) scheme
-          *default-theme* (if (string= scheme "dark") :dark :light))))
+(defun send-theme-to (window)
+  "The theme in effect to the page of a WINDOW that came up later."
+  (apply #'ck window "theme" (theme-page-args (active-theme))))
+
+(defun host-ready (target user-agent &optional scheme)
+  "The clamacsReady binding: the page of TARGET's window (TARGET-WINDOW)
+is up.  From the main window's page, the first, SCHEME -- `dark' or
+`light' from its matchMedia -- makes the same built-in the default
+theme; a page that does not say (an older page, the smoke's stub) leaves
+the default as it is.  A later window's page reports the same scheme and
+is told the theme in effect when it is settled (SETTLE-WINDOW)."
+  (let ((window (target-window target)))
+    (setf (host-window-ready window) t)
+    (when (main-window-p window)
+      (setf (host-editor-user-agent (host-window-editor window)) user-agent)
+      (when (member scheme '("dark" "light") :test #'equal)
+        (setf (host-editor-scheme (host-window-editor window)) scheme
+              *default-theme* (if (string= scheme "dark") :dark :light))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The dock: the tool buffers and the three panels as tabs
@@ -1359,38 +1576,79 @@ default as it is."
 ;;; clamacsActivate, a panel's tab clamacsDockShown.  Which documents are
 ;;; tabs of the dock is HDOC-DOCK-P, fixed when the tab was made.
 
-(defun dock-note-shown (editor name)
-  (setf (host-editor-dock-open editor) t
-        (host-editor-dock-shown editor) name))
+;;; Each window has a dock of its own, and a panel lives in one window's
+;;; dock: the main window's until it is moved out (MOVE-PANEL), which
+;;; PANEL-WINDOWS records.  A window's dock mirror counts what is in THAT
+;;; window.
 
-(defun dock-open-items (editor)
-  "The names of the dock's open items, panels first, as the page keeps
-them: which one takes over when the displayed item goes."
-  (append (when (host-editor-diag-open editor) (list "diagnostics"))
-          (when (host-editor-dbg-open editor) (list "debugger"))
-          (when (host-editor-insp-open editor) (list "inspector"))
-          (loop for doc in (live-documents editor)
+(defparameter *panel-names* '("diagnostics" "debugger" "inspector"))
+
+(defparameter *panel-roles* '(("diagnostics" . "errors") ("debugger" . "debugger")
+                              ("inspector" . "inspector"))
+  "Each panel's role in the layout file: the MUI frontend's window.")
+
+(defun panel-name-p (name)
+  (and (stringp name) (member name *panel-names* :test #'string=) t))
+
+(defun panel-role (name)
+  (cdr (assoc name *panel-roles* :test #'string=)))
+
+(defun panel-window (editor name)
+  "The window whose dock holds the panel NAME."
+  (or (cdr (assoc name (host-editor-panel-windows editor) :test #'string=))
+      (host-editor-main editor)))
+
+(defun set-panel-window (editor name window)
+  (setf (host-editor-panel-windows editor)
+        (remove name (host-editor-panel-windows editor) :key #'car :test #'string=))
+  (unless (main-window-p window)
+    (push (cons name window) (host-editor-panel-windows editor))))
+
+(defun panel-open-p (editor name)
+  (cond ((string= name "diagnostics") (host-editor-diag-open editor))
+        ((string= name "debugger") (host-editor-dbg-open editor))
+        ((string= name "inspector") (host-editor-insp-open editor))
+        (t nil)))
+
+(defun window-panels (window)
+  "The open panels in WINDOW's dock, in the page's order."
+  (let ((editor (host-window-editor window)))
+    (remove-if-not (lambda (name)
+                     (and (panel-open-p editor name)
+                          (eq (panel-window editor name) window)))
+                   *panel-names*)))
+
+(defun dock-note-shown (window name)
+  (setf (host-window-dock-open window) t
+        (host-window-dock-shown window) name))
+
+(defun dock-open-items (window)
+  "The names of WINDOW's dock's open items, panels first, as the page
+keeps them: which one takes over when the displayed item goes."
+  (append (window-panels window)
+          (loop for doc in (window-documents window)
                 when (hdoc-dock-p doc) collect (hdoc-id doc))))
 
-(defun dock-note-hidden (editor name)
-  (when (equal (host-editor-dock-shown editor) name)
-    (let ((next (first (dock-open-items editor))))
-      (setf (host-editor-dock-shown editor) next
-            (host-editor-dock-open editor) (and next t)))))
+(defun dock-note-hidden (window name)
+  (when (equal (host-window-dock-shown window) name)
+    (let ((next (first (dock-open-items window))))
+      (setf (host-window-dock-shown window) next
+            (host-window-dock-open window) (and next t)))))
 
 ;;; --- the diagnostics panel
 
 (defmethod editor-show-diagnostics ((editor host-editor) rows &key open)
   (setf (host-editor-diag-rows editor) rows
         (host-editor-diag-selected editor) nil)
-  (ck editor "showDiagnostics" (coerce rows 'vector) (and (or open rows) t))
-  (when (or open rows)
-    (setf (host-editor-diag-open editor) t)
-    (dock-note-shown editor "diagnostics")))
+  (let ((window (panel-window editor "diagnostics")))
+    (ck window "showDiagnostics" (coerce rows 'vector) (and (or open rows) t))
+    (when (or open rows)
+      (setf (host-editor-diag-open editor) t)
+      (dock-note-shown window "diagnostics"))))
 
 (defmethod editor-select-diagnostic ((editor host-editor) row)
   (setf (host-editor-diag-selected editor) row)
-  (ck editor "selectDiagnostic" row))
+  (ck (panel-window editor "diagnostics") "selectDiagnostic" row))
 
 (defun row-arg (n)
   "A row number from the page: a non-negative integer, or NIL for
@@ -1408,32 +1666,40 @@ row the list does not have (a stale page) selects nothing."
 
 ;;; --- the debugger panel
 
+(defun dbg-open-call (window dbg)
+  (ck window "dbgOpen" (debugger-level dbg) (debugger-condition dbg)
+      (coerce (debugger-restarts dbg) 'vector) (and (debugger-has-continue dbg) t)))
+
 (defmethod editor-debugger-open ((editor host-editor) dbg)
   (setf (host-editor-dbg-open editor) t)
-  (ck editor "dbgOpen" (debugger-level dbg) (debugger-condition dbg)
-      (coerce (debugger-restarts dbg) 'vector) (and (debugger-has-continue dbg) t))
-  ;; Shown, not given the keyboard: it arrives while the user may be typing.
-  (dock-note-shown editor "debugger"))
+  (let ((window (panel-window editor "debugger")))
+    (dbg-open-call window dbg)
+    ;; Shown, not given the keyboard: it arrives while the user may be typing.
+    (dock-note-shown window "debugger")))
 
 (defmethod editor-debugger-close ((editor host-editor))
   (when (host-editor-dbg-open editor)
     (setf (host-editor-dbg-open editor) nil)
-    (ck editor "dbgClose")
-    (dock-note-hidden editor "debugger")))
+    (let ((window (panel-window editor "debugger")))
+      (ck window "dbgClose")
+      (dock-note-hidden window "debugger")
+      (note-window-emptied window))))
 
 (defmethod editor-debugger-raise ((editor host-editor))
   (setf (host-editor-dbg-open editor) t)
-  (ck editor "dbgRaise")
-  (dock-note-shown editor "debugger"))
+  (let ((window (panel-window editor "debugger")))
+    (ck window "dbgRaise")
+    (dock-note-shown window "debugger")
+    (raise-window window)))
 
 (defmethod editor-debugger-frames ((editor host-editor) rows)
-  (ck editor "dbgFrames" (coerce rows 'vector)))
+  (ck (panel-window editor "debugger") "dbgFrames" (coerce rows 'vector)))
 
 (defmethod editor-debugger-select-frame ((editor host-editor) n)
-  (ck editor "dbgSelectFrame" n))
+  (ck (panel-window editor "debugger") "dbgSelectFrame" n))
 
 (defmethod editor-debugger-locals ((editor host-editor) rows)
-  (ck editor "dbgLocals" (coerce rows 'vector)))
+  (ck (panel-window editor "debugger") "dbgLocals" (coerce rows 'vector)))
 
 (defun host-dbg-button (editor which)
   "The clamacsDbgButton binding: `continue' or `abort'."
@@ -1449,54 +1715,83 @@ parked; the other two only go off the screen."
          (debug-window-closed editor))
         ((equal name "diagnostics")
          (setf (host-editor-diag-open editor) nil)
-         (dock-note-hidden editor name))
+         (dock-note-hidden (panel-window editor name) name)
+         (note-window-emptied (panel-window editor name)))
         ((equal name "inspector")
          (setf (host-editor-insp-open editor) nil)
-         (dock-note-hidden editor name))
+         (dock-note-hidden (panel-window editor name) name)
+         (note-window-emptied (panel-window editor name)))
         (t (error "The dock has no panel ~S" name))))
 
 (defun host-dock-shown (editor name)
   "The clamacsDockShown binding: the user clicked the tab of the panel NAME
-and the page displays it.  Told to the dock's mirror as any other showing
-is, so the next hide of the displayed item follows the page.  A name that
-is no open panel (a stale page, JSON null) changes nothing; a tool
-buffer's tab is clamacsActivate's."
-  (when (and (member name '("diagnostics" "debugger" "inspector") :test #'equal)
-             (member name (dock-open-items editor) :test #'equal))
-    (dock-note-shown editor name)))
+and the page displays it.  Told to the dock's mirror of the panel's window
+as any other showing is, so the next hide of the displayed item follows
+the page.  A name that is no open panel (a stale page, JSON null) changes
+nothing; a tool buffer's tab is clamacsActivate's."
+  (when (panel-name-p name)
+    (let ((window (panel-window editor name)))
+      (when (member name (dock-open-items window) :test #'equal)
+        (dock-note-shown window name)))))
 
 ;;; --- the inspector panel
 
+(defun insp-open-call (window insp)
+  (ck window "inspOpen" (inspector-type insp) (inspector-depth insp)
+      (inspector-object insp) (coerce (inspector-parts insp) 'vector)))
+
 (defmethod editor-inspector-open ((editor host-editor) insp)
   (setf (host-editor-insp-open editor) t)
-  (ck editor "inspOpen" (inspector-type insp) (inspector-depth insp)
-      (inspector-object insp) (coerce (inspector-parts insp) 'vector))
-  (dock-note-shown editor "inspector"))
+  (let ((window (panel-window editor "inspector")))
+    (insp-open-call window insp)
+    (dock-note-shown window "inspector")))
 
 ;;; --- the dock's height, and what the page reports
 
-(defun host-dock-resized (editor height)
-  "The clamacsDockResized binding: the splitter was dragged.  A page at a
-fractional zoom reports a fractional height; it is rounded to whole pixels."
+(defun host-dock-resized (target height)
+  "The clamacsDockResized binding: the splitter of TARGET's window was
+dragged.  A page at a fractional zoom reports a fractional height; it is
+rounded to whole pixels."
   (when (and (realp height) (> height 0))
-    (setf (host-editor-dock-height editor) (round height))))
+    (setf (host-window-dock-height (target-window target)) (round height))))
 
-(defun host-panels-report (editor json)
-  "The clamacsPanels binding: what the page shows, kept verbatim."
+(defun host-panels-report (target json)
+  "The clamacsPanels binding: what TARGET's window's page shows, kept
+verbatim."
   (when (stringp json)
-    (setf (host-editor-page-panels editor) json)))
+    (setf (host-window-page-panels (target-window target)) json)))
 
 ;;; --- for a script: what the panels show
 
+(defun window-contents-words (window)
+  "WINDOW's tabs as words: the source documents' ids, the dock's items."
+  (append (mapcar #'hdoc-id (window-source-documents window))
+          (dock-open-items window)))
+
+(defun panel-window-suffix (editor name)
+  "` window N' after a panel's state when it is not in the main window."
+  (let ((window (panel-window editor name)))
+    (if (main-window-p window) "" (format nil " window ~D" (host-window-number window)))))
+
 (defun host-panel-state (panel &optional (editor *editor*))
   "What the editor told the page to show for PANEL -- :MENU, :THEME,
-:DOCK, :DIAGNOSTICS, :DEBUGGER or :INSPECTOR -- as one line of words, for
-a script's `EVAL (clamacs::host-panel-state :debugger)' over the port."
+:DOCK (the main window's), :WINDOWS, :DIAGNOSTICS, :DEBUGGER or
+:INSPECTOR -- as one line of words, for a script's `EVAL
+\(clamacs::host-panel-state :debugger)' over the port.  A panel shown in
+a window of its own says `window N' at the end."
   (unless editor
     (return-from host-panel-state "no editor"))
   (flet ((open-word (flag) (if flag "open" "closed"))
          (row-word (n) (if n (princ-to-string n) "none")))
     (ecase panel
+      (:windows
+       ;; `windows 2: 1 (doc1 doc3) 2 (doc2 debugger) active doc2'
+       (let ((active (active-document editor)))
+         (format nil "windows ~D:~{ ~D (~{~A~^ ~})~} active ~A"
+                 (length (live-windows editor))
+                 (loop for w in (live-windows editor)
+                       append (list (host-window-number w) (window-contents-words w)))
+                 (if active (hdoc-id active) "none"))))
       (:menu
        (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
@@ -1519,18 +1814,20 @@ a script's `EVAL (clamacs::host-panel-state :debugger)' over the port."
                  (or (host-editor-scheme editor) "unknown")
                  (theme-resolve theme :gutter-bg))))
       (:dock
-       (format nil "~A height ~D shown ~A"
-               (open-word (host-editor-dock-open editor))
-               (host-editor-dock-height editor)
-               (or (host-editor-dock-shown editor) "nothing")))
+       (let ((main (host-editor-main editor)))
+         (format nil "~A height ~D shown ~A"
+                 (open-word (host-window-dock-open main))
+                 (host-window-dock-height main)
+                 (or (host-window-dock-shown main) "nothing"))))
       (:diagnostics
-       (format nil "~A rows ~D selected ~A"
+       (format nil "~A rows ~D selected ~A~A"
                (open-word (host-editor-diag-open editor))
                (length (host-editor-diag-rows editor))
-               (row-word (host-editor-diag-selected editor))))
+               (row-word (host-editor-diag-selected editor))
+               (panel-window-suffix editor "diagnostics")))
       (:debugger
        (let ((dbg (editor-debugger-state editor)))
-         (format nil "~A level ~D restarts ~D continue ~A frames ~D frame ~A locals ~D condition ~A"
+         (format nil "~A level ~D restarts ~D continue ~A frames ~D frame ~A locals ~D condition ~A~A"
                  (open-word (host-editor-dbg-open editor))
                  (debugger-level dbg)
                  (length (debugger-restarts dbg))
@@ -1538,22 +1835,296 @@ a script's `EVAL (clamacs::host-panel-state :debugger)' over the port."
                  (length (debugger-frames dbg))
                  (row-word (debugger-frame dbg))
                  (length (debugger-locals dbg))
-                 (debugger-condition dbg))))
+                 (debugger-condition dbg)
+                 (panel-window-suffix editor "debugger"))))
       (:inspector
        (let ((insp (editor-inspector-state editor)))
-         (format nil "~A type ~A depth ~D parts ~D object ~A"
+         (format nil "~A type ~A depth ~D parts ~D object ~A~A"
                  (open-word (host-editor-insp-open editor))
                  (inspector-type insp)
                  (inspector-depth insp)
                  (length (inspector-parts insp))
-                 (inspector-object insp)))))))
+                 (inspector-object insp)
+                 (panel-window-suffix editor "inspector")))))))
 
-(defun host-page-panels (&optional (editor *editor*))
-  "The page's own last report of what its dock and panels show
-\(clamacsPanels), as the JSON text it sent; \"no report\" before the
-first."
-  (or (and editor (host-editor-page-panels editor))
-      "no report"))
+(defun host-page-panels (&optional (editor *editor*) (number 1))
+  "The last report of the page of window NUMBER (the main window's)
+about what its menu bar, its dock and its panels show (clamacsPanels), as
+the JSON text it sent; \"no report\" before the first, \"no window\" for a
+number no window has."
+  (let ((window (and editor (host-window editor number))))
+    (cond ((null window) (if editor "no window" "no report"))
+          ((host-window-page-panels window))
+          (t "no report"))))
+
+;;; ------------------------------------------------------------------
+;;; Detached windows: a tab shown in a window of its own
+;;; ------------------------------------------------------------------
+;;;
+;;; What the MUI editor does with every document -- a window each -- the
+;;; host does on request: the tab's context menu (`Show in separate
+;;; window', clamacsDetach) or M-x clamacs-detach-window opens a second
+;;; webview instance with the same page in it and moves the tab there;
+;;; `Move to main window' (clamacsAttach, clamacs-attach-window) brings
+;;; it back, and so does the detached window's close button for
+;;; everything in it.  A window whose last tab closes goes down by
+;;; itself.  The library serves any number of instances (its Cocoa
+;;; backend sets the application up once and stops the loop only when
+;;; the last window it counts goes, which a webview_destroy of ours
+;;; never counts), and the stepped loop pumps the application's events,
+;;; every window's.
+;;;
+;;; The move is two things the mirror makes cheap: the tab is taken out
+;;; of one page (removeDoc) and made in the other (makeDoc) from the
+;;; text, the point and the modified flag Lisp holds, then coloured whole
+;;; -- the colours live in the page, so they are painted again.  A panel
+;;; moves by replaying its state (the rows of diag.lisp, the debugger and
+;;; inspector structs) into the other window's dock (REPLAY-PANEL).  A
+;;; new window's page is not up when the move is asked for, so the move
+;;; waits on the window's PENDING list until clamacsReady came and
+;;; HOUSEKEEPING settled the window with the menus, the theme and the
+;;; dock height -- nothing is ever sent to a page that is not there.
+;;; The layout file places a detached window at its first tab's role (a
+;;; document's `docN', a panel's MUI window role), so a debugger shown
+;;; separately comes up where the Amiga's debugger window was; without an
+;;; entry it cascades off the main window.
+
+(defun note-window-emptied (window)
+  "A detached window whose page holds no tab any more is closed by
+HOUSEKEEPING -- unless something is on its way in."
+  (when (and (not (main-window-p window))
+             (null (window-documents window))
+             (null (window-panels window))
+             (null (host-window-pending window)))
+    (setf (host-window-closing window) (or (host-window-closing window) :empty))))
+
+(defun open-window (editor role)
+  "A new window with the page in it, placed at the layout's ROLE (else
+cascaded), its page loading; what moves in waits for it to settle.
+Without a page (the tests) it is ready at once."
+  (let ((window (add-window editor)))
+    (when (host-editor-webview editor)
+      (let ((w (wv editor "webview_create" :pointer '(:int32 :pointer) 0 (ffi:make-foreign-pointer 0))))
+        (when (ffi:null-pointer-p w)
+          (setf (host-editor-windows editor) (remove window (host-editor-windows editor)))
+          (error "Clamacs: webview_create failed for a second window."))
+        (setf (host-window-w window) w)
+        (wv-str window "webview_set_title" "Clamacs")
+        (wv editor "webview_set_size" :int32 '(:pointer :int32 :int32 :int32) w 1000 700 0)
+        (setf (host-window-win window) (wv editor "webview_get_window" :pointer '(:pointer) w))
+        (install-bindings window)
+        ;; The close button moves everything back into the main window.
+        (install-close-hook window (lambda () (setf (host-window-closing window) :attach)))
+        (wv-str window "webview_set_html" (host-editor-page-html editor))))
+    (setf (host-window-dock-height window) (host-window-dock-height (host-editor-main editor)))
+    (place-window window role)
+    (unless (host-window-w window)
+      (setf (host-window-ready window) t))
+    window))
+
+(defun settle-window (window)
+  "WINDOW's page is up: the menus, the theme, the dock's height and the
+detached mark to it, then what was waiting to move in."
+  (setf (host-window-settled window) t)
+  (send-menus-to window)
+  (send-theme-to window)
+  (ck window "setDock" (host-window-dock-height window))
+  (ck window "setDetached" t)
+  (let ((pending (reverse (host-window-pending window))))
+    (setf (host-window-pending window) '())
+    (dolist (item pending)
+      (move-into window item)))
+  (note-window-emptied window))
+
+(defun move-into (window item)
+  "ITEM -- a document, or a panel's name -- into WINDOW: now when its
+page is up, else once it is."
+  (cond ((not (host-window-settled window))
+         (push item (host-window-pending window)))
+        ((typep item 'host-document)
+         (move-document item window))
+        (t
+         (move-panel (host-window-editor window) item window))))
+
+(defun move-document (doc window &key (activate t))
+  "DOC's tab out of its window and into WINDOW, made there from the
+mirror -- the text, the point, the modified flag, the colours -- and
+activated.  Nothing when DOC is there already or closing.  ACTIVATE NIL
+leaves the keyboard where it is: ATTACH-ALL moves several tabs at once
+and activates the true focus only once, after all of them have moved,
+so a moved tab's own activation never raises a window as a side effect
+and steals focus from wherever it really belongs."
+  (let ((old (hdoc-window doc)))
+    (unless (or (eq old window) (doc-closing doc))
+      (ck old "removeDoc" (hdoc-id doc))
+      (when (and (host-active-p doc) (hdoc-mini-text doc))
+        (ck old "closeMini"))
+      ;; Moved before the old dock's mirror is told, which counts what
+      ;; is in the window
+      (setf (hdoc-window doc) window)
+      (when (hdoc-dock-p doc)
+        (dock-note-hidden old (hdoc-id doc)))
+      (ck doc "makeDoc" (hdoc-id doc) (doc-name doc) (doc-kind-string doc))
+      (ck doc "setTitle" (hdoc-id doc) (hdoc-title doc))
+      ;; The new view is empty: what it shows is pushed from the mirror whole.
+      (setf (hdoc-shown-text doc) ""
+            (hdoc-shown-head doc) 0
+            (hdoc-shown-anchor doc) 0
+            (hdoc-shown-modified doc) nil)
+      (sync-document doc)
+      (setf (doc-paren-shown doc) nil)
+      (colour-all doc)
+      (show-paren doc)
+      (when activate (doc-activate doc))
+      (note-window-emptied old))))
+
+(defun replay-panel (editor name window)
+  "The panel NAME shown in WINDOW's dock from the state Lisp holds."
+  (cond ((string= name "diagnostics")
+         (ck window "showDiagnostics" (coerce (host-editor-diag-rows editor) 'vector) t)
+         (when (host-editor-diag-selected editor)
+           (ck window "selectDiagnostic" (host-editor-diag-selected editor))))
+        ((string= name "debugger")
+         (let ((dbg (editor-debugger-state editor)))
+           (dbg-open-call window dbg)
+           (ck window "dbgFrames" (coerce (debugger-frames dbg) 'vector))
+           (when (debugger-frame dbg)
+             (ck window "dbgSelectFrame" (debugger-frame dbg)))
+           (ck window "dbgLocals" (coerce (debugger-locals dbg) 'vector))))
+        ((string= name "inspector")
+         (insp-open-call window (editor-inspector-state editor))))
+  (dock-note-shown window name))
+
+(defun move-panel (editor name window &key (activate t))
+  "The open panel NAME out of the dock it is in and into WINDOW's,
+replayed there and raised.  Nothing when it is there already.  ACTIVATE
+NIL skips the raise: ATTACH-ALL moves several tabs at once and raises
+the window only once, after all of them have moved."
+  (let ((old (panel-window editor name)))
+    (unless (or (eq old window) (not (panel-open-p editor name)))
+      (ck old "panelHide" name)
+      (set-panel-window editor name window)
+      (dock-note-hidden old name)
+      (replay-panel editor name window)
+      (when activate (raise-window window))
+      (note-window-emptied old))))
+
+(defun host-detach (editor name)
+  "The clamacsDetach binding: the document with the page id NAME, or the
+panel NAME, shown in a window of its own.  Answers a message for a
+script -- what happened, or why nothing did."
+  (let ((doc (host-document-by-id editor name)))
+    (cond (doc
+           (move-into (open-window editor (doc-role doc)) doc)
+           (format nil "~A detached" name))
+          ((not (panel-name-p name))
+           (format nil "no tab ~A" name))
+          ((not (panel-open-p editor name))
+           (format nil "the ~A panel is not open" name))
+          (t
+           (move-into (open-window editor (panel-role name)) name)
+           (format nil "~A detached" name)))))
+
+(defun host-attach (editor name)
+  "The clamacsAttach binding: the document or the panel NAME back into
+the main window's page."
+  (let ((doc (host-document-by-id editor name))
+        (main (host-editor-main editor)))
+    (cond ((and doc (eq (hdoc-window doc) main))
+           (format nil "~A is in the main window" name))
+          (doc
+           (move-document doc main)
+           (format nil "~A attached" name))
+          ((not (panel-name-p name))
+           (format nil "no tab ~A" name))
+          ((eq (panel-window editor name) main)
+           (format nil "~A is in the main window" name))
+          (t
+           (move-panel editor name main)
+           (format nil "~A attached" name)))))
+
+(define-command clamacs-detach-window (doc arg)
+  "Show this buffer in a window of its own."
+  (declare (ignore arg))
+  (doc-message doc (host-detach (doc-editor doc) (hdoc-id doc))))
+
+(define-command clamacs-attach-window (doc arg)
+  "Move this buffer back into the main window."
+  (declare (ignore arg))
+  (doc-message doc (host-attach (doc-editor doc) (hdoc-id doc))))
+
+(defun attach-all (window)
+  "Everything in WINDOW back into the main window -- its close button --
+the document that had the keyboard keeping it.  Every tab moves quietly
+(ACTIVATE NIL): a moved tab's own activation would raise main as a side
+effect whenever the true focus is a third window, stealing it before the
+final activation below puts it back.  So the true focus is activated,
+and the right window raised, exactly once, after all tabs have moved."
+  (let* ((editor (host-window-editor window))
+         (main (host-editor-main editor))
+         (active (active-document editor)))
+    (dolist (doc (window-documents window))
+      (move-document doc main :activate nil))
+    (dolist (name (window-panels window))
+      (move-panel editor name main :activate nil))
+    (when (and active (not (doc-closing active)))
+      (doc-activate active))))
+
+(defun destroy-window (window)
+  "WINDOW's webview instance and callbacks released; the window
+forgotten.  The handles are cleared first, so a nested entry (GTK
+drains its queue while destroying) sends it nothing; and the close hook
+is taken off the native window first, because GTK's webview_destroy
+closes the window with gtk_window_close, which asks delete-event -- a
+hook still answering TRUE there keeps the window alive while webview
+frees its engine, and the page's next message runs on freed memory
+(the Linux gate's crash of 2026-09-27)."
+  (let ((editor (host-window-editor window))
+        (w (host-window-w window))
+        (win (host-window-win window)))
+    (setf (host-editor-windows editor) (remove window (host-editor-windows editor)))
+    (dolist (entry (host-editor-panel-windows editor))
+      (when (eq (cdr entry) window)
+        (set-panel-window editor (car entry) (host-editor-main editor))))
+    (setf (host-window-w window) nil
+          (host-window-win window) nil)
+    (when (and win (host-editor-shim editor))
+      (shim editor "clamacs_host_on_close" :void '(:pointer :pointer :pointer)
+            win (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0)))
+    (when w
+      (wv editor "webview_destroy" :int32 '(:pointer) w))
+    (dolist (cb (host-window-callbacks window))
+      (ffi:free-callback cb))
+    (setf (host-window-callbacks window) '())))
+
+(defun close-window (window)
+  "A detached window on its way down: its contents back into the main
+window when its close button asked (:ATTACH), then the window itself."
+  (when (eq (host-window-closing window) :attach)
+    (attach-all window))
+  (destroy-window window))
+
+(defun windows-housekeeping (editor)
+  "Between two turns: the windows whose page came up are settled (which
+moves tabs, and may empty the window they came from), then the ones on
+their way down are closed -- in this turn, whichever pass emptied them.
+An :EMPTY mark is stale once something is routed back into the window
+before this pass runs (a panel reopened, a document made there while its
+window was still the active one) -- re-checked here rather than trusted,
+or the window would be destroyed out from under what it is now showing."
+  (dolist (window (copy-list (host-editor-windows editor)))
+    (when (and (not (main-window-p window))
+               (host-window-ready window)
+               (not (host-window-settled window))
+               (not (host-window-closing window)))
+      (settle-window window)))
+  (dolist (window (copy-list (host-editor-windows editor)))
+    (when (and (not (main-window-p window)) (host-window-closing window))
+      (if (and (eq (host-window-closing window) :empty)
+               (or (window-documents window) (window-panels window)
+                   (host-window-pending window)))
+          (setf (host-window-closing window) nil)
+          (close-window window)))))
 
 ;;; ------------------------------------------------------------------
 ;;; An entry into Lisp: a binding, a drain, a turn of the loop
@@ -1595,28 +2166,45 @@ here, as the MUI widget's ContentsChanged hook would have."
 ;;; The bindings: what the page calls
 ;;; ------------------------------------------------------------------
 
-(defun bind (editor name function)
-  "Bind NAME in the page to FUNCTION, called with the parsed JSON
+(defun bind (window name function &key always)
+  "Bind NAME in WINDOW's page to FUNCTION, called with the parsed JSON
 arguments inside an entry; the promise is answered with true.  While a
 native dialog runs its own loop the call is dropped: only the timer's
-ticks can arrive then."
-  (let ((cb (ffi:make-callback
-             :void '(:pointer :pointer :pointer)
-             (lambda (id req arg)
-               (declare (ignore arg))
-               (unless (host-editor-in-modal editor)
-                 (let ((args (handler-case (json-parse (ffi:foreign-to-string req))
-                               (error (e)
-                                 (report-error editor e)
-                                 :bad))))
-                   (unless (eq args :bad)
-                     (with-entry (editor)
-                       (apply function args)))))
-               (js-return editor (ffi:foreign-to-string id) "true")))))
-    (push cb (host-editor-callbacks editor))
+ticks can arrive then -- except a binding bound ALWAYS (clamacsReady,
+which only notes that a page is up), called outside any entry."
+  (let* ((editor (host-window-editor window))
+         (cb (ffi:make-callback
+              :void '(:pointer :pointer :pointer)
+              (lambda (id req arg)
+                (declare (ignore arg))
+                (unless (and (host-editor-in-modal editor) (not always))
+                  (let ((args (handler-case (json-parse (ffi:foreign-to-string req))
+                                (error (e)
+                                  (report-error editor e)
+                                  :bad))))
+                    (unless (eq args :bad)
+                      (if always
+                          (apply function args)
+                          (with-entry (editor)
+                            (apply function args))))))
+                (js-return window (ffi:foreign-to-string id) "true")))))
+    (push cb (host-window-callbacks window))
     (ffi:with-foreign-string (pname name)
       (wv editor "webview_bind" :int32 '(:pointer :pointer :pointer :pointer)
-          (host-editor-w editor) pname cb (ffi:make-foreign-pointer 0)))))
+          (host-window-w window) pname cb (ffi:make-foreign-pointer 0)))))
+
+(defun install-close-hook (window function)
+  "The close button of WINDOW's native window asks FUNCTION instead of
+closing it (the shim's hook); the loop closes the window when the
+editor is done."
+  (let ((editor (host-window-editor window))
+        (cb (ffi:make-callback :void '(:pointer)
+                               (lambda (arg)
+                                 (declare (ignore arg))
+                                 (funcall function)))))
+    (push cb (host-window-callbacks window))
+    (shim editor "clamacs_host_on_close" :void '(:pointer :pointer :pointer)
+          (host-window-win window) cb (ffi:make-foreign-pointer 0))))
 
 (defun host-log (editor text)
   "The clamacsLog binding: the page reports a JavaScript error."
@@ -1631,47 +2219,57 @@ ticks can arrive then."
     (when doc
       (arglist-idle doc))))
 
-(defun install-bindings (editor)
-  (bind editor "clamacsReady"
-        (lambda (user-agent &optional scheme) (host-ready editor user-agent scheme)))
-  (bind editor "clamacsLog" (lambda (text) (host-log editor text)))
-  (bind editor "clamacsKey"
-        (lambda (doc-id key code ctrl alt meta shift target)
-          (host-key editor doc-id key code ctrl alt meta shift target)))
-  (bind editor "clamacsUpdate"
-        (lambda (doc-id changes head) (host-update editor doc-id changes head)))
-  (bind editor "clamacsCursor"
-        (lambda (doc-id head anchor) (host-cursor editor doc-id head anchor)))
-  (bind editor "clamacsMiniInput" (lambda (text) (host-mini-input editor text)))
-  (bind editor "clamacsActivate"
-        (lambda (doc-id)
-          (let ((doc (host-document-by-id editor doc-id)))
-            (when doc (doc-activate doc)))))
-  (bind editor "clamacsCloseTab"
-        (lambda (doc-id)
-          (let ((doc (host-document-by-id editor doc-id)))
-            (when doc (close-document doc)))))
-  (bind editor "clamacsTick" (lambda () (host-tick editor)))
-  ;; The menu bar (phase H4)
-  (bind editor "clamacsMenu" (lambda (index) (host-menu-pick editor index)))
-  (bind editor "clamacsDynamic"
-        (lambda (which n)
-          (let ((group (dynamic-group-named editor which)))
-            (when group (host-dynamic-pick editor group n)))))
-  ;; The dock and the panels (phase H3).  A row number the page sends for
-  ;; "nothing selected" is JSON null: ROW-ARG makes it NIL.
-  (bind editor "clamacsDiagPick" (lambda (row) (host-diag-pick editor (row-arg row))))
-  (bind editor "clamacsDbgFrame" (lambda (n) (debug-frame-selected editor (row-arg n))))
-  (bind editor "clamacsDbgFrameOpen" (lambda (n) (debug-frame-clicked editor (row-arg n))))
-  (bind editor "clamacsDbgRestart" (lambda (n) (debug-restart-clicked editor (row-arg n))))
-  (bind editor "clamacsDbgEval" (lambda (text) (debug-eval-entered editor text)))
-  (bind editor "clamacsDbgButton" (lambda (which) (host-dbg-button editor which)))
-  (bind editor "clamacsInspPart" (lambda (n) (inspect-part-clicked editor (row-arg n))))
-  (bind editor "clamacsInspBack" (lambda () (inspect-back-clicked editor)))
-  (bind editor "clamacsPanelClose" (lambda (name) (host-panel-close editor name)))
-  (bind editor "clamacsDockShown" (lambda (name) (host-dock-shown editor name)))
-  (bind editor "clamacsDockResized" (lambda (height) (host-dock-resized editor height)))
-  (bind editor "clamacsPanels" (lambda (json) (host-panels-report editor json))))
+(defun install-bindings (window)
+  "The bindings on WINDOW's page.  A document's id names the document
+whichever page sends it; what is the page's own -- ready, the dock's
+height, the report -- goes to the window."
+  (let ((editor (host-window-editor window)))
+    (bind window "clamacsReady"
+          (lambda (user-agent &optional scheme) (host-ready window user-agent scheme))
+          :always t)
+    (bind window "clamacsLog" (lambda (text) (host-log editor text)))
+    (bind window "clamacsKey"
+          (lambda (doc-id key code ctrl alt meta shift target)
+            (host-key editor doc-id key code ctrl alt meta shift target)))
+    (bind window "clamacsUpdate"
+          (lambda (doc-id changes head) (host-update editor doc-id changes head)))
+    (bind window "clamacsCursor"
+          (lambda (doc-id head anchor) (host-cursor editor doc-id head anchor)))
+    (bind window "clamacsMiniInput" (lambda (text) (host-mini-input editor text)))
+    (bind window "clamacsActivate"
+          (lambda (doc-id)
+            (let ((doc (host-document-by-id editor doc-id)))
+              (when doc (doc-activate doc)))))
+    (bind window "clamacsCloseTab"
+          (lambda (doc-id)
+            (let ((doc (host-document-by-id editor doc-id)))
+              (when doc (close-document doc)))))
+    ;; One timer serves the editor: the main window's page's.
+    (bind window "clamacsTick"
+          (if (main-window-p window) (lambda () (host-tick editor)) (lambda () nil)))
+    ;; The menu bar (phase H4)
+    (bind window "clamacsMenu" (lambda (index) (host-menu-pick editor index)))
+    (bind window "clamacsDynamic"
+          (lambda (which n)
+            (let ((group (dynamic-group-named editor which)))
+              (when group (host-dynamic-pick editor group n)))))
+    ;; The dock and the panels (phase H3).  A row number the page sends for
+    ;; "nothing selected" is JSON null: ROW-ARG makes it NIL.
+    (bind window "clamacsDiagPick" (lambda (row) (host-diag-pick editor (row-arg row))))
+    (bind window "clamacsDbgFrame" (lambda (n) (debug-frame-selected editor (row-arg n))))
+    (bind window "clamacsDbgFrameOpen" (lambda (n) (debug-frame-clicked editor (row-arg n))))
+    (bind window "clamacsDbgRestart" (lambda (n) (debug-restart-clicked editor (row-arg n))))
+    (bind window "clamacsDbgEval" (lambda (text) (debug-eval-entered editor text)))
+    (bind window "clamacsDbgButton" (lambda (which) (host-dbg-button editor which)))
+    (bind window "clamacsInspPart" (lambda (n) (inspect-part-clicked editor (row-arg n))))
+    (bind window "clamacsInspBack" (lambda () (inspect-back-clicked editor)))
+    (bind window "clamacsPanelClose" (lambda (name) (host-panel-close editor name)))
+    (bind window "clamacsDockShown" (lambda (name) (host-dock-shown editor name)))
+    (bind window "clamacsDockResized" (lambda (height) (host-dock-resized window height)))
+    (bind window "clamacsPanels" (lambda (json) (host-panels-report window json)))
+    ;; Detached windows (phase H7)
+    (bind window "clamacsDetach" (lambda (name) (host-detach editor name)))
+    (bind window "clamacsAttach" (lambda (name) (host-attach editor name)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Keys through the page, for the harness (verify/host/host-keys.sh)
@@ -1705,11 +2303,13 @@ thread waits for the main thread's safepoint.")
 
 (defun housekeeping (editor)
   "Between two turns: the closed documents forgotten, a quit carried out,
-the next injected key sent.  True when the last document is gone."
+the windows settled or closed, the next injected key sent.  True when
+the last document is gone."
   (reap editor)
   (when (editor-quitting editor)
     (quit-requested editor)
     (reap editor))
+  (windows-housekeeping editor)
   (inject-next-key editor)
   (null (live-documents editor)))
 
@@ -1740,58 +2340,49 @@ file -- valid UTF-8 as long as host/build.sh kept it ASCII."
       (subseq s 0 n))))
 
 (defun host-open (editor)
-  "The libraries, the window, the bindings, the page; returns once the
-page has reported ready."
+  "The libraries, the main window, its bindings, the page; returns once
+the page has reported ready."
   (let ((webview (host-frontend-file (host-library-name "libwebview")))
         (shim (host-frontend-file (host-library-name "libclamacs-host")))
-        (page (host-frontend-file "page.html")))
+        (page (host-frontend-file "page.html"))
+        (main (host-editor-main editor)))
     (dolist (file (list webview shim page))
       (unless (probe-file file)
         (error "Clamacs: ~A is missing -- run host/build.sh first (or point CLAMACS_HOST_FRONTEND at the directory that has it)." file)))
     (setf (host-editor-webview editor) (or (ffi:load-library webview)
                                            (error "Clamacs: ~A did not load." webview))
           (host-editor-shim editor) (or (ffi:load-library shim)
-                                        (error "Clamacs: ~A did not load." shim)))
+                                        (error "Clamacs: ~A did not load." shim))
+          (host-editor-page-html editor) (read-page page))
     (let ((w (wv editor "webview_create" :pointer '(:int32 :pointer) 0 (ffi:make-foreign-pointer 0))))
       (when (ffi:null-pointer-p w)
         (error "Clamacs: webview_create failed."))
-      (setf (host-editor-w editor) w))
-    (wv-str editor "webview_set_title" "Clamacs")
+      (setf (host-window-w main) w))
+    (wv-str main "webview_set_title" "Clamacs")
     (wv editor "webview_set_size" :int32 '(:pointer :int32 :int32 :int32)
-        (host-editor-w editor) 1000 700 0)
-    (setf (host-editor-win editor)
-          (wv editor "webview_get_window" :pointer '(:pointer) (host-editor-w editor)))
-    (place-window editor)
-    (install-bindings editor)
+        (host-window-w main) 1000 700 0)
+    (setf (host-window-win main)
+          (wv editor "webview_get_window" :pointer '(:pointer) (host-window-w main)))
+    (place-window main "doc1")
+    (install-bindings main)
     ;; The close button asks the editor: `save-buffers-kill-emacs', which
     ;; the loop carries out.
-    (let ((cb (ffi:make-callback :void '(:pointer)
-                                 (lambda (arg)
-                                   (declare (ignore arg))
-                                   (setf (editor-quitting editor) t)))))
-      (push cb (host-editor-callbacks editor))
-      (shim editor "clamacs_host_on_close" :void '(:pointer :pointer :pointer)
-            (host-editor-win editor) cb (ffi:make-foreign-pointer 0)))
-    (wv-str editor "webview_set_html" (read-page page))
+    (install-close-hook main (lambda () (setf (editor-quitting editor) t)))
+    (wv-str main "webview_set_html" (host-editor-page-html editor))
     (let ((deadline (+ (get-internal-real-time) (* 20 internal-time-units-per-second))))
-      (loop until (host-editor-ready editor)
+      (loop until (host-window-ready main)
             do (when (> (get-internal-real-time) deadline)
                  (error "Clamacs: the page did not report ready within 20 seconds."))
                (host-step editor +step-ms+)))))
 
 (defun host-close (editor)
-  "The window, the callbacks, the libraries -- nothing OS-owned outlives
-START."
+  "The windows -- the detached ones first, the main one last -- the
+callbacks, the libraries: nothing OS-owned outlives START."
   (when (and (host-editor-shim editor) (host-editor-native-menu editor))
     (shim editor "clamacs_host_menu_clear" :void '())
     (setf (host-editor-native-menu editor) nil))
-  (when (host-editor-w editor)
-    (wv editor "webview_destroy" :int32 '(:pointer) (host-editor-w editor))
-    (setf (host-editor-w editor) nil
-          (host-editor-win editor) nil))
-  (dolist (cb (host-editor-callbacks editor))
-    (ffi:free-callback cb))
-  (setf (host-editor-callbacks editor) '())
+  (dolist (window (reverse (host-editor-windows editor)))
+    (destroy-window window))
   (when (host-editor-shim editor)
     (ffi:close-library (host-editor-shim editor))
     (setf (host-editor-shim editor) nil))

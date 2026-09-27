@@ -148,12 +148,42 @@ start_editor() {
 }
 
 run_drive() {
-    # $1 tmpdir, $2 mode
+    # $1 tmpdir, $2 mode, $3 the editor's pid, $4 its log.  The drive is
+    # watched: an editor that crashes under it (a [FATAL] report in its
+    # log) leaves the drive waiting on the dead port for good, so the
+    # drive is stopped and the run fails at once instead of sitting there
+    # (the Linux gate sat for hours on a crashed editor, 2026-09-27).  An
+    # editor that exits without a report quit as the drive asked; the
+    # drive is given 30 s to notice and end.
     CLAMACS_DRIVE_DIR="$1/" CLAMACS_DRIVE_ROOT="$root/" \
     CLAMACS_DRIVE_TMP="$out/scratch/" CLAMACS_DRIVE_CFG="$cfg" \
     CLAMACS_DRIVE_RC="$out/home/.clamacsrc" \
         "$clamiga" --no-userinit --heap 16M --non-interactive \
-        --load "$here/drive.lisp" -- "$2" </dev/null 2>&1 | grep -v '^; Loading' >>"$log"
+        --load "$here/drive.lisp" -- "$2" </dev/null >"$out/drive-$2.out" 2>&1 &
+    drive_pid=$!
+    died=""
+    grace=30
+    while kill -0 "$drive_pid" 2>/dev/null; do
+        if ! kill -0 "$3" 2>/dev/null; then
+            if grep -q '^\[FATAL\]' "$4"; then
+                died="the editor crashed while the drive was running (its log has the report)"
+            elif [ "$grace" -le 0 ]; then
+                died="the editor exited but the drive did not end within 30 s"
+            else
+                grace=$((grace - 1))
+            fi
+            if [ -n "$died" ]; then
+                kill "$drive_pid" 2>/dev/null
+                break
+            fi
+        fi
+        sleep 1
+    done
+    wait "$drive_pid" 2>/dev/null
+    grep -v '^; Loading' "$out/drive-$2.out" >>"$log"
+    if [ -n "$died" ]; then
+        echo "FAIL $died" >>"$log"
+    fi
 }
 
 echo "=== run start ===" >"$log"
@@ -176,7 +206,7 @@ for f in clamacs-port clamacs-token; do
 done
 
 # --- the drive, which quits the editor at the end ----------------------
-run_drive "$out/tmp-a" main
+run_drive "$out/tmp-a" main "$pid_a" "$out/editor-a.log"
 wait_for_exit "$pid_a" $((60 * factor)) "the editor"
 if [ -f "$out/tmp-a/clamacs-port" ] || [ -f "$out/tmp-a/clamacs-token" ]; then
     echo "FAIL the port files are still there after the editor exited" >>"$log"
@@ -222,7 +252,7 @@ fi
 # --- the second editor, against the layout file the drive wrote --------
 if [ -f "$cfg" ]; then
     pid_b=$(start_editor "$out/tmp-b" "$out/editor-b.log" "$root/verify/realamiga/sample2.lisp")
-    run_drive "$out/tmp-b" second
+    run_drive "$out/tmp-b" second "$pid_b" "$out/editor-b.log"
     wait_for_exit "$pid_b" $((60 * factor)) "the second editor"
     check_leaks "$out/editor-b.log" "the second editor"
     rm -f "$cfg"

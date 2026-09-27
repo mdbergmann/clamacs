@@ -1425,6 +1425,86 @@ runs on, the token in the child's environment, and connects to it."
                (fail "the REPL did not come back to clamiga; the echo area says ~A" *result*))))
   (cmd "EVAL end-of-buffer"))
 
+(defun window-state (needle &optional (ticks 20))
+  "The editor's account of its windows once it says NEEDLE, or \"\"."
+  (wait-eval "(clamacs::host-panel-state :windows)" needle ticks))
+
+(defun wait-eval-without (form needle ticks)
+  "EVAL FORM until its answer no longer contains NEEDLE (a report that
+follows a change by a turn); \"\" after TICKS half-seconds."
+  (dotimes (i ticks "")
+    (cmd (concatenate 'string "EVAL " form))
+    (when (and (= *rc* 0) (not (search needle *result*)))
+      (return *result*))
+    (pause 25)))
+
+(defun leg-detach ()
+  ;; A tab shown in a window of its own (phase H7): the document's tab
+  ;; leaves the main window's page for a second one, whose page reports
+  ;; it, GETWINDOW answers that window's frame, and the tab comes back --
+  ;; by the command, and by the window's close button.  Then the error
+  ;; list, a panel, the same way.  The windows are numbered as they are
+  ;; made: 2 and 3 for the document, 4 for the panel.
+  (cmd (format nil "OPEN FILE ~A" (fixture "sample.lisp")))
+  (pause 10)
+  (cmd "EVAL (clamacs::hdoc-id (clamacs::editor-active-document clamacs::*editor*))")
+  (let ((id (string-trim "\"" *result*)))
+    (cmd "GETWINDOW")
+    (let ((before *result*))
+      (cmd "EVAL clamacs-detach-window")
+      (if (string/= (window-state (format nil " 2 (~A)" id)) "")
+          (ok "clamacs-detach-window showed ~A in a window of its own: ~A" id *result*)
+          (fail "after clamacs-detach-window the windows are ~A" *result*))
+      (let ((page (wait-eval "(clamacs::host-page-panels clamacs::*editor* 2)"
+                             (escape-quotes (format nil "\"source\":[\"~A\"]" id)) 20)))
+        (if (and (string/= page "") (search (escape-quotes "\"detached\":true") page))
+            (ok "the second window's page holds ~A and says it is detached" id)
+            (fail "the second window's page reports ~A" *result*)))
+      (if (string/= (wait-eval-without "(clamacs::host-page-panels)"
+                                       (escape-quotes (format nil "\"~A\"" id)) 20)
+                    "")
+          (ok "the main window's page no longer holds ~A" id)
+          (fail "the main window's page still reports ~A: ~A" id *result*))
+      (cmd "GETWINDOW")
+      (if (and (= *rc* 0) (string/= *result* before)
+               (string= (subseq *result* 0 (position #\Space *result*))
+                        (subseq before 0 (position #\Space before))))
+          (ok "GETWINDOW answers the detached window's frame: ~A (the main window's is ~A)" *result* before)
+          (fail "GETWINDOW after the detach gave ~A (before: ~A)" *result* before))
+      (cmd "EVAL clamacs-attach-window")
+      (if (string/= (window-state "windows 1:") "")
+          (ok "clamacs-attach-window brought ~A back: ~A" id *result*)
+          (fail "after clamacs-attach-window the windows are ~A" *result*))
+      (cmd "GETWINDOW")
+      (if (string= *result* before)
+          (ok "GETWINDOW answers the main window's frame again")
+          (fail "GETWINDOW after the attach gave ~A (before: ~A)" *result* before))
+      ;; The window's close button
+      (cmd "EVAL clamacs-detach-window")
+      (if (string/= (window-state "windows 2:") "")
+          (ok "shown separately again, in window 3")
+          (fail "the second detach left the windows at ~A" *result*))
+      (cmd "EVAL (setf (clamacs::host-window-closing (clamacs::host-window clamacs::*editor* 3)) :attach)")
+      (if (and (string/= (window-state "windows 1:") "") (search (format nil "1 (") *result*)
+               (search id *result*))
+          (ok "the detached window's close button moved ~A back: ~A" id *result*)
+          (fail "after the close button the windows are ~A" *result*))))
+  ;; A panel: the error list shown separately is replayed there, and the
+  ;; main window's page no longer shows it
+  (cmd "EVAL clamacs-show-errors")
+  (cmd "EVAL (clamacs::host-detach clamacs::*editor* \"diagnostics\")")
+  (check-panels '(:diagnostics "shown separately") "window 4" "\"diagnostics\":{\"open\":false")
+  (let ((page (wait-eval "(clamacs::host-page-panels clamacs::*editor* 4)"
+                         (escape-quotes "\"diagnostics\":{\"open\":true") 20)))
+    (if (string/= page "")
+        (ok "the panel's window shows the error list")
+        (fail "the panel's window reports ~A" *result*)))
+  (cmd "EVAL (clamacs::host-attach clamacs::*editor* \"diagnostics\")")
+  (check-panels '(:diagnostics "back in the main window") "open rows" "\"diagnostics\":{\"open\":true")
+  (if (string/= (window-state "windows 1:") "")
+      (ok "the panel's window went with it: ~A" *result*)
+      (fail "after the panel's return the windows are ~A" *result*)))
+
 (defun quit-editor ()
   "kill-emacs: what the run typed into the fixtures is discarded, no
 requester asked.  Then wait for the port to go."
@@ -1456,6 +1536,7 @@ requester asked.  Then wait for the port to go."
   (leg-debugger)
   (leg-inspector)
   (leg-own-lisp)
+  (leg-detach)
   ;; Leave the errors file active, as the Amiga run does.
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (pause 25)

@@ -212,6 +212,30 @@ View menu is in the strip and `THEMES` works over the port;
 the leg points at `T:` first), `THEME=one-dark
 verify/realamiga/run-lisp-editor.sh 040` starts the smoke run in a
 theme and photographs it (`build/amiga/shots-040/`).
+**Detached windows** (phase H7, 2026-09-27, spec section of the same
+name) let a host tab -- a source buffer, a tool buffer, a panel -- be
+shown in a window of its own (the tab's context menu, `M-x
+clamacs-detach-window`; `Move to main window` / `clamacs-attach-window`
+and the window's close button bring it back).  A `host-window` is one
+webview instance with the same page in it (the pinned library serves any
+number, and a `webview_destroy` never terminates), and every `ck` call
+is routed by its target: a document to the window that holds its tab, a
+panel to the window its dock is in, the editor to the main window, the
+menu states and the theme to every page.  Four rules: the move is made
+from the mirror (`removeDoc` in one page, `makeDoc` + one `applyEdit` +
+`colour-all` in the other; a panel is replayed off its struct), never
+copied across pages; nothing goes to a page that is not up -- a move
+waits on the window's `pending` list until `housekeeping` settles the
+window after `clamacsReady`, the one binding not dropped under a
+requester; a window empty of tabs is closed by the next turn, and the
+shim keeps a window's close hook ON the window (never a static), taken
+off again BEFORE `webview_destroy` -- GTK's close asks `delete-event`,
+and a hook answering TRUE there leaves the window alive over a freed
+engine (the Linux gate's crash, found by bisecting in the container); the
+snapshot places a detached window at its first tab's role (`docN`, or a
+panel's MUI role), cascaded when the layout has none.
+`host-panel-state :windows` and `host-page-panels` with a window number
+are what `drive.lisp`'s DETACH leg checks.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 
