@@ -314,7 +314,7 @@ locals of the selected frame, the eval-in-frame line and its buttons:
 ![The inspector panel](docs/screenshots/host-inspector.png)
 
 `C-c C-k` on a file with two mistakes fills the Diagnostics panel, and
-`C-x \`` puts the cursor on the first one with its message in the echo
+``C-x ` `` puts the cursor on the first one with its message in the echo
 area:
 
 ![The diagnostics panel](docs/screenshots/host-diagnostics.png)
