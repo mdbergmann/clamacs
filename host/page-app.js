@@ -466,7 +466,8 @@
     left.appendChild(text);
     const right = document.createElement("span");
     right.className = "keys";
-    right.textContent = "▸";
+    // The arrow as an escape, never the glyph: build.sh keeps the page pure ASCII.
+    right.textContent = "\u25b8";
     const sub = document.createElement("div");
     sub.className = "menu-popup";
     item.appendChild(left);
