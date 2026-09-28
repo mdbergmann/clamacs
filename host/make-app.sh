@@ -46,8 +46,10 @@ app="$out/Clamacs.app"
 [ -x "$clamiga" ] || { echo "make-app.sh: no clamiga at $clamiga (make host in the superproject)" >&2; exit 1; }
 
 "$here/build.sh" >/dev/null
-# The editor's image, this binary's own.
-if [ ! -f "$out/clamacs.img" ] || [ "$clamiga" -nt "$out/clamacs.img" ]; then
+# The editor's image, this binary's own -- and the sources' own: an image
+# older than the binary or than any of the editor's Lisp files is remade
+# (a bundle built after a lisp/ change once shipped the old editor).
+if "$here/image-stale.sh" "$out/clamacs.img" "$clamiga"; then
     CLAMIGA="$clamiga" "$here/make-image.sh" >/dev/null
 fi
 # The runtime's bare-boot image, for a clamiga the editor starts.

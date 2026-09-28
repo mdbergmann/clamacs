@@ -1024,7 +1024,12 @@ with the memory note updated.
   the row, `white-space: pre` and never clipped, grew the page sideways
   so the focused input line scrolled the buffer and the list out of
   view; the echo row clips its label and message with an ellipsis now
-  and never widens the page.  The host keeps the list on the document
+  and never widens the page.  The second user test saw no list at all:
+  `Clamacs.app` had been built after the change but started from the
+  heap image saved before it -- `make-app.sh` and `run.sh` remade the
+  image only when the clamiga binary was newer than it.  `host/image-stale.sh`
+  is the one test now: missing, older than the binary, or older than any
+  `lisp/*.lisp` or image script; `APP=1 run-drive.sh` drives the bundle.  The host keeps the list on the document
   (`hdoc-mini-completions`) and replays it with the prompt when the
   document becomes the active one again; the page reports it
   (`completions: {rows, selected}` in `clamacsPanels`) and the drive's

@@ -249,7 +249,10 @@ the candidate under it whole in the line -- and a click / double click
 (`clamacsPickCompletion` -> `minibuffer-pick`); the pure layer's one
 generic is `doc-show-completions` (the MUI String keeps its echo row,
 the default method), and the arrows are minibuffer keys at a prompt
-now, the history's when nothing is on offer.
+now, the history's when nothing is on offer.  A bundle or an `IMAGE=1`
+start remakes the heap image when it is older than the binary OR than
+any `lisp/*.lisp` (`host/image-stale.sh`): the binary alone was the
+test once and an app built after a lisp/ change shipped the old editor.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

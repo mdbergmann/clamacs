@@ -19,8 +19,9 @@ clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
 "$here/build.sh" >/dev/null || exit 1
 if [ "${IMAGE:-0}" = 1 ]; then
     img="$root/build/host-frontend/clamacs.img"
-    # An image is the binary's own: one older than the binary is remade.
-    if [ ! -f "$img" ] || [ "$clamiga" -nt "$img" ]; then
+    # An image is the binary's own, and the sources' own: one older than
+    # the binary or than any lisp/ file is remade (host/image-stale.sh).
+    if "$here/image-stale.sh" "$img" "$clamiga"; then
         CLAMIGA="$clamiga" "$here/make-image.sh" >/dev/null || exit 1
     fi
     exec "$clamiga" --heap 32M --non-interactive --image "$img" --eval "(clamacs::run)" -- "$@"
