@@ -45,10 +45,11 @@ cursor and returns true when PATTERN was found."))
   (:documentation "Show NAMES, what TAB has to offer, as a list the user
 moves a cursor through: INDEX is the entry the cursor is on, -1 for none
 (the common prefix is in the line); NIL hides the list.  Called again
-with the same NAMES when only the cursor moved.  The default does
-nothing, which is the MUI String's lot: its echo row names the first
-few candidates anyway, and TAB, <down> and <up> cycle them in the line
-with or without a list to look at.")
+with the same NAMES when only the cursor moved.  True when a list is
+shown, and then the echo row only counts the candidates; the default
+does nothing and answers NIL, which is the MUI String's lot: its echo
+row names the first few, and TAB, <down> and <up> cycle them in the
+line with or without a list to look at.")
   (:method ((doc document) names index)
     (declare (ignore names index))
     nil))
@@ -188,20 +189,23 @@ current state does not bind as undefined."
        t))
 
 (defun minibuffer-offer (doc matches common &optional shown)
-  "Put the common prefix COMMON of the ambiguous MATCHES in the line, name
-the first few (SHOWN standing in for them when given), show them as a
-list where the frontend has one, and keep them for the next TAB to cycle
-through.  For a completer that runs the whole show itself (the symbol
-completer) as much as for MINIBUFFER-COMPLETE."
-  (let ((mini (doc-minibuffer doc)))
+  "Put the common prefix COMMON of the ambiguous MATCHES in the line, show
+them as a list where the frontend has one and count them in the echo row
+-- or name the first few there (SHOWN standing in for them when given)
+where it has none -- and keep them for the next TAB to cycle through.
+For a completer that runs the whole show itself (the symbol completer) as
+much as for MINIBUFFER-COMPLETE."
+  (let* ((mini (doc-minibuffer doc))
+         (listed (when mini
+                   (setf (minibuffer-candidates mini) matches
+                         (minibuffer-candidates-shown mini) shown
+                         (minibuffer-candidate-index mini) -1
+                         (minibuffer-candidates-text mini) (copy-seq common))
+                   (doc-show-completions doc (or shown matches) -1))))
     (doc-set-minibuffer-text doc common)
-    (doc-message doc (completions-message matches shown))
-    (when mini
-      (setf (minibuffer-candidates mini) matches
-            (minibuffer-candidates-shown mini) shown
-            (minibuffer-candidate-index mini) -1
-            (minibuffer-candidates-text mini) (copy-seq common))
-      (doc-show-completions doc (or shown matches) -1))))
+    (doc-message doc (if listed
+                         (format nil "[~D completions]" (length matches))
+                         (completions-message matches shown)))))
 
 (defun minibuffer-forget-candidates (doc mini)
   "Drop what the last TAB offered, and the list with it."

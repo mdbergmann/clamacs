@@ -23,6 +23,11 @@
    (mini-label :initform nil :accessor fake-mini-label)
    (completions :initform nil :accessor fake-completions)   ; the list shown, or NIL
    (completion-index :initform -1 :accessor fake-completion-index)
+   ;; Whether this fake stands for a frontend WITH a completion list (the
+   ;; host's page: the echo row then only counts) or without one (the MUI
+   ;; String: the echo row names the candidates).  The list is recorded
+   ;; either way.
+   (lists-completions :initform nil :accessor fake-lists-completions)
    (title :initform nil :accessor fake-title)
    ;; The status line's arglist field
    (arglist :initform "" :accessor fake-arglist)
@@ -335,7 +340,8 @@ each coloured run, left to right, as a painter's algorithm gives it."
 
 (defmethod doc-show-completions ((doc fake-document) names index)
   (setf (fake-completions doc) names
-        (fake-completion-index doc) index))
+        (fake-completion-index doc) index)
+  (fake-lists-completions doc))
 
 (defmethod doc-search ((doc fake-document) pattern backwards again)
   (mirror-search (fake-mirror doc) pattern backwards again))

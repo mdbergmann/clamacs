@@ -998,8 +998,9 @@ off a variable."
         (fail "C-M-i on twic did not prompt"))
     (cmd "KEY TAB")
     (cmd "STATUS")
-    (if (and (result-has "3 completions") (result-has "twice-again"))
-        (ok "TAB listed them: ~A" *result*)
+    ;; The host's echo row counts them; the page's list names them.
+    (if (and (result-has "3 completions") (not (result-has "twice-again")))
+        (ok "TAB counted them: ~A" *result*)
         (fail "TAB in the minibuffer gave ~A" *result*))
     ;; The page shows them as a list above the status line; the arrows
     ;; move its cursor and the candidate under it into the line.

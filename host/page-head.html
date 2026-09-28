@@ -159,10 +159,16 @@
   #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
             border-top: 1px solid var(--line); white-space: pre; overflow: hidden;
             font-family: var(--font-family); font-size: 12px; }
+  /* The row never grows the page sideways (a long label or message would
+     scroll the focused input line into view and the rest of the page out
+     of it): the label and the message clip with an ellipsis, the input
+     keeps a width of its own. */
   #echo { flex: none; display: flex; padding: 3px 8px; min-height: 1.3em; background: var(--echo-bg);
-          color: var(--echo-fg); white-space: pre; font-family: var(--font-family); font-size: 12px; }
-  #mini-label { flex: none; }
-  #mini { flex: 1; border: 0; outline: 0; padding: 0; margin: 0; background: transparent;
+          color: var(--echo-fg); white-space: pre; font-family: var(--font-family); font-size: 12px;
+          overflow: hidden; }
+  #mini-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #message { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #mini { flex: 1; min-width: 8em; border: 0; outline: 0; padding: 0; margin: 0; background: transparent;
           color: inherit; font: inherit; display: none; }
   #mini.open { display: block; }
 </style>

@@ -452,7 +452,9 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (doc-minibuffer-text doc) "kill-r")
     (let ((js (host-take-evals editor)))
       (is (search "CK.showCompletions([\"kill-region\",\"kill-ring-save\"],-1);" js))
-      (is (search "CK.setMiniLabel(\"[2 completions: kill-region kill-ring-save]\");" js)))
+      ;; a frontend with a list counts the candidates in the echo row only
+      (is (search "CK.setMiniLabel(\"[2 completions]\");" js))
+      (is (not (search "kill-ring-save]" js))))
     ;; The arrows move the cursor: the list is not sent again
     (host-type editor "<down>" :target "mini")
     (is-equal (doc-minibuffer-text doc) "kill-region")
@@ -497,7 +499,7 @@ each, with the KeyboardEvent fields a real key would carry."
       (with-entry (editor) (doc-activate doc))
       (let ((js (host-take-evals editor)))
         ;; (the label is the completions message: a message at a prompt takes it)
-        (is (search "CK.openMini(\"[2 completions: kill-region kill-ring-save]\",\"kill-r\");" js))
+        (is (search "CK.openMini(\"[2 completions]\",\"kill-r\");" js))
         (is (search "CK.showCompletions([\"kill-region\",\"kill-ring-save\"],-1);" js))
         (is (< (search "openMini" js) (search "showCompletions" js))))
       (with-entry (editor) (doc-activate other))

@@ -272,6 +272,38 @@
     (type-keys doc "C-g")
     (is (null (fake-completions doc)))))
 
+;; A frontend that shows the list is told so by DOC-SHOW-COMPLETIONS's
+;; answer, and its echo row only counts the candidates: the names would
+;; be there twice, and a long line of them has no room in a row.
+(deftest a-frontend-with-a-list-gets-the-count-only
+  (let ((doc (make-fake "|hello")))
+    (setf (fake-lists-completions doc) t)
+    (type-keys doc "M-x")
+    (type-text doc "kill-r")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[2 completions]kill-r")
+    (is-equal (fake-completions doc) '("kill-region" "kill-ring-save"))
+    (type-keys doc "<down>")
+    (is-equal (fake-prompt doc) "[1/2]kill-region")
+    ;; the sole completion and no match say what they said
+    (type-keys doc "C-g M-x")
+    (type-text doc "kill-re")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[Sole completion]kill-region")
+    (type-text doc "zz")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[No match]kill-regionzz")
+    (type-keys doc "C-g")
+    ;; the shown names count the same
+    (prompt doc "F: " (lambda (d a) (declare (ignore d a)))
+            :completer (lambda (text)
+                         (declare (ignore text))
+                         (values '("/a/one" "/a/two") "/a/" '("one" "two"))))
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[2 completions]/a/")
+    (is-equal (fake-completions doc) '("one" "two"))
+    (type-keys doc "C-g")))
+
 ;; With nothing on offer the arrows are the history's, as in Emacs.
 (deftest the-arrows-walk-the-history-when-nothing-is-on-offer
   (let ((doc (make-fake "|ab")))

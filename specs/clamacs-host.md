@@ -1017,7 +1017,14 @@ with the memory note updated.
   (into the line) or a double click (and RET), the page's
   `clamacsPickCompletion` binding.  A completer's third value (what to
   show for a match, a file's base name) is what the list shows; the
-  line gets the match.  The host keeps the list on the document
+  line gets the match.  The generic answers true when a list is shown,
+  and `minibuffer-offer` then puts the count alone in the echo row
+  (`[11 completions]`) where the MUI editor's names the first eight --
+  the first user test had the names in the row AND in the list, and
+  the row, `white-space: pre` and never clipped, grew the page sideways
+  so the focused input line scrolled the buffer and the list out of
+  view; the echo row clips its label and message with an ellipsis now
+  and never widens the page.  The host keeps the list on the document
   (`hdoc-mini-completions`) and replays it with the prompt when the
   document becomes the active one again; the page reports it
   (`completions: {rows, selected}` in `clamacsPanels`) and the drive's

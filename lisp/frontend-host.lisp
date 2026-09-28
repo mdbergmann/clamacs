@@ -777,7 +777,10 @@ when NAMES is NIL.  Kept on the document for SHOW-ECHO-STATE."
     (when (host-active-p doc)
       (cond ((null names) (ck doc "hideCompletions"))
             (same (ck doc "selectCompletion" index))
-            (t (ck doc "showCompletions" names index))))))
+            (t (ck doc "showCompletions" names index))))
+    ;; A list it is (shown with the prompt when the document is not the
+    ;; active one): the echo row counts the candidates only.
+    t))
 
 (defun host-pick-completion (editor index accept)
   "The clamacsPickCompletion binding: row INDEX of the list clicked (ACCEPT
