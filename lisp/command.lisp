@@ -74,8 +74,11 @@ declared."
 
 (defun complete-command (prefix)
   "Completion over command names for the minibuffer: the matches and their
-longest common prefix, as COMPLETE returns them."
-  (complete (command-names) prefix))
+longest common prefix, as COMPLETE returns them -- and when no name
+starts with PREFIX, the names that contain it (COMPLETE-WITHIN): `eval-'
+finds clamacs-eval-defun and its kin, whose editor prefix a user typing
+Emacs's names has not learnt yet."
+  (complete-within (command-names) prefix))
 
 ;;; Order is not significant; it is grouped the way the phase-1 key table in
 ;;; specs/clamacs-ide.md is grouped, so the two can be read side by side.

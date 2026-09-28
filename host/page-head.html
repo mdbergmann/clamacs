@@ -133,7 +133,7 @@
   .menu-popup { display: none; position: absolute; top: 100%; left: 0; min-width: 220px;
                 background: var(--bg); color: var(--fg); border: 1px solid var(--line);
                 box-shadow: 0 4px 12px rgba(0,0,0,0.25); padding: 4px 0; z-index: 10; }
-  .menu-title.open .menu-popup { display: block; }
+  .menu-title.open > .menu-popup { display: block; }
   .menu-item { display: flex; justify-content: space-between; gap: 24px; padding: 3px 14px;
                white-space: nowrap; cursor: default; }
   .menu-item:hover { background: var(--selection); }
@@ -141,6 +141,11 @@
   .menu-item.disabled:hover { background: transparent; }
   .menu-item .keys { color: var(--dim); font-family: "SF Mono", Menlo, monospace; font-size: 11px; }
   .menu-item .tick { display: inline-block; width: 12px; }
+  /* A submenu (View > Themes): an item whose popup opens beside it while
+     the mouse is on it. */
+  .menu-item.submenu { position: relative; }
+  .menu-item.submenu > .menu-popup { top: -5px; left: 100%; }
+  .menu-item.submenu:hover > .menu-popup { display: block; }
   .menu-sep { height: 1px; margin: 4px 0; background: var(--line); }
   #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
             border-top: 1px solid var(--line); white-space: pre; overflow: hidden;

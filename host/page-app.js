@@ -402,7 +402,9 @@
   // that kind -- holds what CK.setDynamic(kind, lines) last gave -- "-"
   // for a bar, [label, ticked] for an item -- and a pick there is the
   // group and the item's position (clamacsDynamic); the page does not know
-  // what a buffer or a theme is.  A title opens on a click and the open
+  // what a buffer or a theme is.  A group with a title is a submenu of
+  // that name (View > Themes), opened beside its item while the mouse is
+  // on it; one without fills its menu.  A title opens on a click and the open
   // menu follows the mouse along the bar; a click anywhere else or Escape
   // closes it, and none of it moves the keyboard off the view.
 
@@ -449,6 +451,30 @@
     const sep = document.createElement("div");
     sep.className = "menu-sep";
     popup.appendChild(sep);
+  }
+  // An item that opens a submenu beside itself: the popup it answers is
+  // where the submenu's items go.
+  function makeSubmenu(popup, label) {
+    const item = document.createElement("div");
+    item.className = "menu-item submenu";
+    const left = document.createElement("span");
+    const tick = document.createElement("span");
+    tick.className = "tick";
+    const text = document.createElement("span");
+    text.textContent = label;
+    left.appendChild(tick);
+    left.appendChild(text);
+    const right = document.createElement("span");
+    right.className = "keys";
+    right.textContent = "▸";
+    const sub = document.createElement("div");
+    sub.className = "menu-popup";
+    item.appendChild(left);
+    item.appendChild(right);
+    item.appendChild(sub);
+    item.addEventListener("mousedown", (ev) => ev.preventDefault());
+    popup.appendChild(item);
+    return sub;
   }
   function makeMenuTitle(label) {
     const title = document.createElement("div");
@@ -705,8 +731,8 @@
     // The menu bar.  ENTRIES is the table of menu.lisp: [kind, title,
     // keys] per entry, kind "title", "item", "bar", "hidden" (an entry this
     // page does not draw; its line kept so the indices stay the table's)
-    // or a dynamic group's name; an empty table hides the bar (the host's
-    // own shows the menus).
+    // or a dynamic group's name (with a title: a submenu of that name);
+    // an empty table hides the bar (the host's own shows the menus).
     setMenus(entries) {
       menuClose();
       menubar.textContent = "";
@@ -721,7 +747,7 @@
         else if (kind === "bar") makeMenuSep(popup);
         else if (kind === "item")
           menuItems.set(index, makeMenuItem(popup, title, keys, () => lisp("clamacsMenu", index)));
-        else dynamicMenus.set(kind, {popup, lines: []});
+        else dynamicMenus.set(kind, {popup: title ? makeSubmenu(popup, title) : popup, lines: []});
       });
       reportPanels();
     },

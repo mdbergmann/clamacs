@@ -73,7 +73,11 @@
            (menu-find-dynamic :buffers)))
     (is-equal (menu-entry-dynamic (menu-entry (menu-find-dynamic :themes))) :themes)
     (is (null (menu-entry-dynamic (menu-entry 0))))
-    (is (null (menu-find-dynamic :nothing)))))
+    (is (null (menu-find-dynamic :nothing)))
+    ;; The themes go into a submenu named after them; the buffers fill
+    ;; their menu.
+    (is-equal (menu-entry-title (menu-entry (menu-find-dynamic :themes))) "Themes")
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :buffers)))))))
 
 (deftest a-title-with-nothing-drawn-under-it-is-hidden
   ;; The model draws every group: everything is drawn.

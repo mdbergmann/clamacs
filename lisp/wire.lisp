@@ -156,14 +156,16 @@ its port came up."
 
 (defun wire-connect (wire doc)
   "Make sure a port is known before queuing.  Without one, DOC is asked
-whether to start clamiga; a quiet caller (DOC NIL) just fails."
+whether to start clamiga; a quiet caller (DOC NIL) just fails.  A
+refusal answers :CANCELLED as second value; a launch that failed was
+reported to DOC."
   (cond ((wire-ready-p wire) t)
         ((null doc) nil)
         ((not (eq (doc-ask doc
                            "No running clamiga was found. Start one?"
                            '(:start :cancel))
                   :start))
-         nil)
+         (values nil :cancelled))
         ((wire-launch wire) t)
         (t (doc-message doc (launch-failure-text wire))
            nil)))
@@ -506,13 +508,15 @@ not for keys."
                        (wire-eval doc answer)))))
 
 (define-command clamacs-connect (doc arg)
-  "Find clamiga's port and connect to it."
+  "Find clamiga's port and connect to it; without one, offer to start clamiga."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
-      (if (wire-find-port wire)
-          (wire-request wire doc :version "VERSION")
-          (doc-message doc "No clamiga port found")))))
+      ;; WIRE-CONNECT finds the port, or asks whether to start clamiga
+      ;; and reports a launch that failed; a cancel is answered here.
+      (multiple-value-bind (connected why) (wire-connect wire doc)
+        (cond (connected (wire-request wire doc :version "VERSION"))
+              ((eq why :cancelled) (doc-message doc "No clamiga port found")))))))
 
 (define-command run-lisp (doc arg)
   "Start a clamiga of our own and connect to it."

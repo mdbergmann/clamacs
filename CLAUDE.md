@@ -159,7 +159,10 @@ byte, checked against `host/page-head.html` by `tests/test-theme.lisp`
 the init file's rewrite over the sexp scanner, `M-x clamacs-theme` with
 `C-u` for a session-only pick) and the menu's dynamic groups: the
 `:buffers` entry kind became `:dynamic` with a name, a View title with
-the `:themes` group sits before Buffers, and `dynamic-menu` /
+the `:themes` group sits before Buffers (in a `Themes` submenu since
+2026-09-28: a `:dynamic` entry's title names the submenu its items go
+in, none fills the menu -- the shim, the page and the MUI strip each
+make it), and `dynamic-menu` /
 `dynamic-menu-pick` / `editor-dynamic-menu-lines` / the `THEMES` verb are
 one path over the name.  Three rules: `load-theme` never errors on an
 unknown name (the editor must come up on any init file); the init file's
@@ -216,7 +219,10 @@ theme and photographs it (`build/amiga/shots-040/`).
 name) let a host tab -- a source buffer, a tool buffer, a panel -- be
 shown in a window of its own (the tab's context menu, `M-x
 clamacs-detach-window`; `Move to main window` / `clamacs-attach-window`
-and the window's close button bring it back).  A `host-window` is one
+bring it back, and so does the window's close button for a buffer --
+for a panel the close button CLOSES it, as its tab's close would, since
+2026-09-28: a panel that came back as a tab to be closed again was the
+complaint).  A `host-window` is one
 webview instance with the same page in it (the pinned library serves any
 number, and a `webview_destroy` never terminates), and every `ck` call
 is routed by its target: a document to the window that holds its tab, a

@@ -68,7 +68,7 @@ it in the window instead), on Linux and Windows a bar at the top of the
 window drawn by the page (the toolkit has no native one) -- the same
 menus either way, the Emacs key beside each item, items dimmed by the
 same rules, the Buffers menu with the active buffer ticked, the View
-menu's themes (below), About with
+menu's Themes submenu (below), About with
 the toolkit lines (the platform's toolkit, webview, WebKit) and Help >
 Common Lisp HyperSpec opening the system's browser.  What the Amiga opens
 as windows of
@@ -79,10 +79,15 @@ the error, a frame shows its locals (a double-click opens its source),
 a restart is invoked by double-click or the Invoke button, the eval
 line evaluates in the selected frame, a part descends and Back comes up;
 a panel's close takes it off the screen and `M-x clamacs-debugger` /
-`C-c I` bring it back.  The dock collapses when nothing is shown in it,
+`C-c I` / Show Errors bring it back.  The dock collapses when nothing is shown in it,
 and its height is part of the window snapshot (`dock` in
 `~/.clamacs-windows.cfg`, written by Windows > Snapshot Windows and
-read at the next start).  `host/build.sh`
+read at the next start).  Any tab -- a buffer, a tool buffer, a panel --
+can be shown in a **window of its own** (the tab's context menu, `M-x
+clamacs-detach-window`); `Move to main window` (`M-x
+clamacs-attach-window`) brings it back, and so does the window's close
+button for a buffer, while closing a panel's window closes the panel.
+`host/build.sh`
 needs the network once, for the webview library and the CodeMirror
 packages (both pinned and checked); the editor itself does not.  The init
 file is `~/.clamacsrc`, the window layout `~/.clamacs-windows.cfg`.
@@ -160,6 +165,10 @@ by name.  At the `M-x` prompt TAB completes the name and, while it is
 still ambiguous, lists the first few candidates in the echo area; TAB
 again cycles through them, and RET takes the one in the line.  TAB on an
 empty line says how many commands there are and names the first of them.
+When no command starts with what was typed, the ones that contain it are
+offered instead (`eval-` finds `clamacs-eval-defun` and its kin), the
+line left as typed; `M-TAB` on a symbol does the same, clamiga's
+`COMPLETE` falling back to the names that contain the text.
 **Help > List Commands** (`M-x clamacs-list-commands`) opens a window
 listing every command with its keys and what it does -- the ones from
 the init file included.  `bind-key` refuses a key sequence that clashes with a binding
@@ -189,7 +198,8 @@ matching, indentation -- follows the file name (`.lisp`, `.lsp`, `.cl`,
 `C-c C-c` (Eval Defun), `C-x C-e` (Eval Last Sexp), `C-c C-r` (Eval
 Region) and `C-c C-e` (Eval Expression...) run the form on clamiga's REPL
 thread: what it prints goes to the `*clamacs-repl*` transcript, its
-values to the buffer's echo area, and an error opens the debugger window
+values to the buffer's echo area and, as a `; Evaluated: ...` line above
+the prompt, into the transcript, and an error opens the debugger window
 with the erring stack still there.  The REPL window is opened and
 attached the first time you evaluate; `C-c C-b` interrupts.  When clamiga
 was restarted, the next evaluation finds the new one and attaches the
@@ -274,7 +284,7 @@ name, each entry also shows its directory. A macro can read the menu with
 
 ## Themes
 
-The **View** menu lists the colour themes, the one in effect ticked:
+**View > Themes** lists the colour themes, the one in effect ticked:
 Light and Dark (the editor's own two looks; the one the system's
 appearance calls for is the default), Solarized Light, Solarized Dark,
 One Dark and Gruvbox Dark.  Pick one there, or with `M-x clamacs-theme`

@@ -1866,8 +1866,12 @@ number no window has."
 ;;; window', clamacsDetach) or M-x clamacs-detach-window opens a second
 ;;; webview instance with the same page in it and moves the tab there;
 ;;; `Move to main window' (clamacsAttach, clamacs-attach-window) brings
-;;; it back, and so does the detached window's close button for
-;;; everything in it.  A window whose last tab closes goes down by
+;;; it back.  The detached window's close button brings its documents
+;;; back the same way -- a buffer is not lost by closing a window -- and
+;;; CLOSES its panels, as their tabs' close buttons would: a panel is a
+;;; view of state the editor keeps (Show Errors, M-x clamacs-debugger
+;;; bring it back), and a closed window that came back as a tab to close
+;;; again was the complaint.  A window whose last tab closes goes down by
 ;;; itself.  The library serves any number of instances (its Cocoa
 ;;; backend sets the application up once and stops the loop only when
 ;;; the last window it counts goes, which a webview_destroy of ours
@@ -1913,7 +1917,8 @@ Without a page (the tests) it is ready at once."
         (wv editor "webview_set_size" :int32 '(:pointer :int32 :int32 :int32) w 1000 700 0)
         (setf (host-window-win window) (wv editor "webview_get_window" :pointer '(:pointer) w))
         (install-bindings window)
-        ;; The close button moves everything back into the main window.
+        ;; The close button: the documents back into the main window, the
+        ;; panels closed (ATTACH-ALL).
         (install-close-hook window (lambda () (setf (host-window-closing window) :attach)))
         (wv-str window "webview_set_html" (host-editor-page-html editor))))
     (setf (host-window-dock-height window) (host-window-dock-height (host-editor-main editor)))
@@ -2054,19 +2059,21 @@ the main window's page."
   (doc-message doc (host-attach (doc-editor doc) (hdoc-id doc))))
 
 (defun attach-all (window)
-  "Everything in WINDOW back into the main window -- its close button --
-the document that had the keyboard keeping it.  Every tab moves quietly
-(ACTIVATE NIL): a moved tab's own activation would raise main as a side
-effect whenever the true focus is a third window, stealing it before the
-final activation below puts it back.  So the true focus is activated,
-and the right window raised, exactly once, after all tabs have moved."
+  "WINDOW's close button: its documents back into the main window, the
+document that had the keyboard keeping it, and its panels closed as
+their own close buttons close them (HOST-PANEL-CLOSE: the debugger's
+says the REPL is still parked).  Every tab moves quietly (ACTIVATE NIL):
+a moved tab's own activation would raise main as a side effect whenever
+the true focus is a third window, stealing it before the final
+activation below puts it back.  So the true focus is activated, and the
+right window raised, exactly once, after all tabs have moved."
   (let* ((editor (host-window-editor window))
          (main (host-editor-main editor))
          (active (active-document editor)))
     (dolist (doc (window-documents window))
       (move-document doc main :activate nil))
     (dolist (name (window-panels window))
-      (move-panel editor name main :activate nil))
+      (host-panel-close editor name))
     (when (and active (not (doc-closing active)))
       (doc-activate active))))
 
@@ -2098,8 +2105,9 @@ frees its engine, and the page's next message runs on freed memory
     (setf (host-window-callbacks window) '())))
 
 (defun close-window (window)
-  "A detached window on its way down: its contents back into the main
-window when its close button asked (:ATTACH), then the window itself."
+  "A detached window on its way down: its documents back into the main
+window and its panels closed when its close button asked (:ATTACH), then
+the window itself."
   (when (eq (host-window-closing window) :attach)
     (attach-all window))
   (destroy-window window))

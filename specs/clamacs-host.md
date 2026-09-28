@@ -932,8 +932,11 @@ with the memory note updated.
   `:empty` and taken down by the next turn (`destroy-window`: the
   handles cleared first, since GTK drains its queue while destroying,
   then `webview_destroy`, then the callbacks freed); its close button
-  marks it `:attach`, and everything in it goes back into the main
-  window, the document that had the keyboard keeping it.  The main
+  marks it `:attach`, and its documents go back into the main window,
+  the document that had the keyboard keeping it, while its panels are
+  CLOSED as their tabs' close buttons close them (`host-panel-close`;
+  since 2026-09-28 -- a panel that came back as a tab in the main
+  window, to be closed a second time, was the complaint).  The main
   window's close button is the quit, as before; `host-close` takes the
   detached windows down first.  The shim keeps the close hook ON the
   window now (an associated object on Cocoa, object data on GTK, a

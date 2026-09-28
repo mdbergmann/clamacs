@@ -1060,8 +1060,9 @@ batch of both taken."
     ;; The table, one entry per index, at the head of the batch
     (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New\",\"\"],[\"item\",\"Open...\",\"C-x C-f\"]," js))
     (is (search "[\"bar\",\"\",\"\"]" js))
-    ;; The two dynamic groups go out under their names
-    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    ;; The two dynamic groups go out under their names, the themes with
+    ;; the title of their submenu
+    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1302,7 +1303,7 @@ batch of both taken."
                          (tabbed "item" "Open..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
-      (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "" "")
+      (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "Themes" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))
@@ -1826,6 +1827,60 @@ settled and the tab moved.  The message HOST-DETACH answered."
           (is-equal (host-attach editor "inspector") "inspector is in the main window"))
         (with-entry (editor) (housekeeping editor))
         (is (null (host-window editor 4)))))))
+
+(deftest host-closing-a-panels-window-closes-the-panel
+  ;; The window's close button on a panel CLOSES it, as the tab's close
+  ;; does -- it does not come back as a tab in the main window to be
+  ;; closed a second time -- while a document in the same window goes
+  ;; back there.
+  (multiple-value-bind (editor doc tr) (host-wired-editor "(x)")
+    (declare (ignore doc tr))
+    (with-entry (editor)
+      (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+    (host-take-evals editor)
+    (is-equal (host-detach-now editor "diagnostics") "diagnostics detached")
+    (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1) 2 (diagnostics) active doc1")
+    (let ((w2 (host-window editor 2))
+          (d2 (host-test-document editor "two")))
+      (host-take-evals editor)
+      (with-entry (editor) (move-document d2 w2))
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1) 2 (doc2 diagnostics) active doc2")
+      (setf (host-window-closing w2) :attach)
+      (with-entry (editor) (housekeeping editor))
+      (is (null (host-window editor 2)))
+      (is (eq (hdoc-window d2) (host-editor-main editor)))
+      (is (not (host-editor-diag-open editor)))
+      (is (eq (panel-window editor "diagnostics") (host-editor-main editor)))
+      (is-equal (host-panel-state :diagnostics editor) "closed rows 1 selected none")
+      (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2) active doc2")
+      (let ((js (host-take-evals editor)))
+        (is (search "CK.makeDoc(\"doc2\"" js))
+        (is (not (search "CK.showDiagnostics(" js))))
+      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
+      ;; Show Errors brings it back, in the main window
+      (with-entry (editor) (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+      (is (search "CK.showDiagnostics(" (host-take-evals editor)))
+      (is-equal (host-panel-state :diagnostics editor) "open rows 1 selected none"))
+    ;; The debugger's window closed while the REPL is parked: the panel
+    ;; goes, the parked thread is announced as the tab's close announces it
+    (let ((dbg (editor-debugger-state editor)))
+      (setf (debugger-level dbg) 1
+            (debugger-condition dbg) "SIMPLE-ERROR: bad"
+            (debugger-restarts dbg) '("0: ABORT")
+            (debugger-frames dbg) '("0: f")
+            (debugger-frame dbg) 0
+            (debugger-locals dbg) '())
+      (with-entry (editor) (editor-debugger-open editor dbg))
+      (host-take-evals editor)
+      (host-detach-now editor "debugger")
+      (let ((w3 (host-window editor 3)))
+        (is (search " window 3" (host-panel-state :debugger editor)))
+        (setf (host-window-closing w3) :attach)
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 3)))
+        (is (not (host-editor-dbg-open editor)))
+        (is (search "closed" (host-panel-state :debugger editor)))
+        (is (not (search "CK.dbgOpen(" (host-take-evals editor))))))))
 
 (deftest host-a-panel-reopened-before-housekeeping-cancels-its-windows-stale-empty-mark
   (multiple-value-bind (editor doc tr) (host-wired-editor "(x)")

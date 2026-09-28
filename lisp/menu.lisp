@@ -40,7 +40,9 @@
   rule                      ; when an item is enabled, see MENU-RULE-HOLDS-P
   command                   ; the command symbol, or NIL; for a :dynamic
                             ; entry the group's name (:buffers, :themes)
-  title                     ; the label; the menu's name for a :title
+  title                     ; the label; the menu's name for a :title; for
+                            ; a :dynamic entry the name of the submenu its
+                            ; items go in, or NIL when they fill the menu
   keys                      ; the key shown beside it, or NIL
   ;; Which map the key lives in: :global, :lisp or :repl.  Only the test
   ;; reads it; the shortcut column shows the key regardless.
@@ -163,11 +165,13 @@
      (bar)
      (item 'clamacs-snapshot-windows    :always        "Snapshot Windows"       nil       :global)
 
-     ;; One item per theme (theme.lisp), the one in effect ticked.
+     ;; One item per theme (theme.lisp), the one in effect ticked, in a
+     ;; submenu of their own.
      (title "View")
-     (make-menu-entry :dynamic :always :themes nil nil nil)
+     (make-menu-entry :dynamic :always :themes "Themes" nil nil)
 
-     ;; One item per open buffer, made and remade as windows come and go.
+     ;; One item per open buffer, made and remade as windows come and go,
+     ;; filling the menu.
      (title "Buffers")
      (make-menu-entry :dynamic :always :buffers nil nil nil)
 
@@ -367,7 +371,9 @@ when DOC is still open."
 ;;; is two functions of the editor -- the entries with the one to tick,
 ;;; and the pick -- and everything else (the sync a frontend runs after
 ;;; every command, the lines the port answers, the pick by label) is
-;;; written once over the group's name.
+;;; written once over the group's name.  Its entry's TITLE says where
+;;; the items go: a submenu of that name (View > Themes), or, without
+;;; one, the menu itself (Buffers).
 
 (defun dynamic-menu (editor which)
   "The group WHICH as it should be now: a list of (LABEL . OBJECT) and

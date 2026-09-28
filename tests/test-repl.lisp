@@ -208,6 +208,9 @@
     (fake-inbound (doc-editor repl) (lines "RESULT 0 FOO" "1"))
     (is-equal (fake-last-message doc) "1")
     (is-equal (repl-window-package (doc-repl repl)) "CL-USER")
+    ;; The transcript keeps the record of the buffer eval, above the prompt.
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA" "; Evaluated: 1" "CL-USER> |"))
     ;; The next form at the prompt re-asserts the prompt's package.
     (type-text repl "(+ 1 1)")
     (type-keys repl "RET")
@@ -351,8 +354,56 @@
     (is-equal (fake-last-message repl) "The REPL is busy (C-c C-c interrupts)")
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "42"))
     (is-equal (fake-last-message doc) "42")
-    ;; The transcript kept its prompt and the typed input.
-    (is (search "CL-USER> 1|" (transcript repl)))))
+    ;; The transcript kept its prompt and the typed input, the outcome
+    ;; noted above them.
+    (is (search (lines "; Evaluated: 42" "CL-USER> 1|") (transcript repl)))))
+
+(deftest a-buffer-eval-is-noted-in-the-transcript
+  ;; What the echo area shows for a moment, the transcript keeps: the
+  ;; values, on a line of their own after output that ended without a
+  ;; newline; every value; clamiga's own note not doubled; a failure.
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (flet ((eval-from-buffer (values)
+             (setf (fake-messages doc) '())
+             (run-command doc 'clamacs-eval-last-sexp)
+             (is-equal (fake-last-sent tr) "REPL-EVAL (twice 21)")
+             (fake-deliver tr 0 "")
+             (fake-inbound (doc-editor repl) values)))
+      (fake-deliver tr 0 "Package is now CL-USER")   ; the IN-PACKAGE of the first
+      (eval-from-buffer (lines "RESULT 0 CL-USER" "FOO"))
+      (is-equal (fake-last-message doc) "FOO")
+      (is-equal (transcript repl)
+                (lines "; REPL attached to CLAMIGA" "; Evaluated: FOO" "CL-USER> |"))
+      ;; Output without a newline, then two values
+      (run-command doc 'clamacs-eval-last-sexp)
+      (fake-deliver tr 0 "")
+      (fake-inbound (doc-editor repl) "OUTPUT hello")
+      (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "1" "2"))
+      (is-equal (transcript repl)
+                (lines "; REPL attached to CLAMIGA" "; Evaluated: FOO" "hello"
+                       "; Evaluated: 1" ";   2" "CL-USER> |"))
+      ;; clamiga's `; No values'
+      (eval-from-buffer (lines "RESULT 0 CL-USER" "; No values"))
+      (is-equal (fake-last-message doc) "; No values")
+      (is (search (lines ";   2" "; Evaluated: No values" "CL-USER> |") (transcript repl)))
+      ;; A failure: what clamiga said, the buffer beeped
+      (eval-from-buffer (lines "RESULT 10 CL-USER" "ERROR: The variable X is unbound."))
+      (is-equal (fake-last-message doc) "ERROR: The variable X is unbound.")
+      (is (search (lines "; Evaluation failed: ERROR: The variable X is unbound." "CL-USER> |")
+                  (transcript repl)))
+      (is (not (doc-modified-p repl)))
+      ;; The prompt and its indices are where they were: typing lands after it
+      (type-text repl "(+ 1 1)")
+      (is (search "CL-USER> (+ 1 1)|" (transcript repl))))))
+
+(deftest the-eval-note-text
+  (is-equal (repl-eval-note-text 0 "FOO") (lines "; Evaluated: FOO" ""))
+  (is-equal (repl-eval-note-text 0 (lines "1" "2" "3")) (lines "; Evaluated: 1" ";   2" ";   3" ""))
+  (is-equal (repl-eval-note-text 0 "; No values") (lines "; Evaluated: No values" ""))
+  (is-equal (repl-eval-note-text 0 "") (lines "; Evaluated: no values" ""))
+  (is-equal (repl-eval-note-text 10 "ERROR: x") (lines "; Evaluation failed: ERROR: x" ""))
+  (is-equal (repl-eval-note-text 10 "") (lines "; Evaluation failed: no message" "")))
 
 (deftest a-refused-repl-eval-brings-the-prompt-back
   (multiple-value-bind (doc repl tr wire) (repl-fixture)

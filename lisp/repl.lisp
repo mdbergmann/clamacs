@@ -115,6 +115,41 @@ would print it."
   (repl-ensure-bol doc)
   (repl-append doc (format nil "; ~A~%" (apply #'format nil control args))))
 
+(defun repl-insert-above-prompt (doc text)
+  "TEXT into the transcript on a line of its own: above the prompt (or a
+READLINE's input) when one is showing -- after any output that ended
+without a newline, which gets its line break -- else at the end."
+  (let* ((state (doc-repl doc))
+         (at (or (repl-window-prompt-start state) (repl-window-input-start state))))
+    (cond (at
+           (let ((bol (repl-window-bol state)))
+             (when (and (> at 0) (char/= (char (doc-text doc (1- at) at) 0) #\Newline))
+               (repl-insert doc at (string #\Newline))
+               (incf at))
+             (repl-insert doc at text)
+             (setf (repl-window-bol state) bol)))   ; the end did not change
+          (t
+           (repl-ensure-bol doc)
+           (repl-append doc text)))))
+
+(defun repl-eval-note-text (rc values)
+  "What the transcript says of a buffer eval's outcome: `; Evaluated: FOO'
+-- every value on a line, the first with the label -- or `; Evaluation
+failed: ...' with clamiga's first line.  The `; ' clamiga puts before its
+own note (`; No values') is not doubled."
+  (let* ((lines (or (split-lines values) '("")))
+         (first (string-left-trim "; " (first lines))))
+    (if (/= rc +rc-ok+)
+        (format nil "; Evaluation failed: ~A~%" (if (string/= first "") first "no message"))
+        (format nil "; Evaluated: ~A~%~{;   ~A~%~}"
+                (if (string/= first "") first "no values")
+                (rest lines)))))
+
+(defun repl-eval-note (doc rc values)
+  "A buffer eval's outcome, above the prompt: the echo area of the buffer
+shows the first value for a moment, the transcript keeps the record."
+  (repl-insert-above-prompt doc (repl-eval-note-text rc values)))
+
 ;;; ------------------------------------------------------------------
 ;;; Packages
 ;;; ------------------------------------------------------------------
@@ -515,12 +550,15 @@ attaches, as a buffer eval's does, so the log is not shown to nobody."
     (cond
       (origin
        ;; A buffer eval: the values are that buffer's news, the transcript
-       ;; keeps its prompt (any output already went above it), and the
+       ;; keeps its prompt (any output already went above it, and the
+       ;; outcome goes there too, as a `; Evaluated:' line), and the
        ;; prompt's package is not touched.
        (setf (repl-session-origin session) nil)
        (repl-wire-package editor package)
        (when (debugger-active-p editor)
          (debug-left editor))
+       (when doc
+         (repl-eval-note doc rc values))
        (let ((from (live-doc origin))
              (line (first-line values)))
          (when from

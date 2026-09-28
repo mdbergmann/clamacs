@@ -1554,10 +1554,20 @@ when MUI would not build it: the editor still runs, keys and port intact."
                                        (mui:new-object :menuitem
                                                        m:+muia-menuitem-title+ +nm-barlabel+))))
                      (:dynamic
+                      ;; The group's items go into the menu, or into a
+                      ;; submenu of the entry's title (View > Themes): a
+                      ;; Menuitem with children is a submenu, and a
+                      ;; Family method adds to either.
                       (when menu
                         (let ((group (make-dyn-group (menu-entry-dynamic e)
                                                      (1+ (length (mui-editor-dyn-groups editor))))))
-                          (setf (dyn-group-menu group) menu)
+                          (setf (dyn-group-menu group)
+                                (if (menu-entry-title e)
+                                    (let ((sub (mui:new-object :menuitem
+                                                               m:+muia-menuitem-title+ (menu-entry-title e))))
+                                      (mui:do-method menu m:+muim-family-add-tail+ sub)
+                                      sub)
+                                    menu))
                           (setf (mui-editor-dyn-groups editor)
                                 (append (mui-editor-dyn-groups editor) (list group))))))
                      (:item

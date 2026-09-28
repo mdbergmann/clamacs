@@ -98,6 +98,24 @@ many matches as it likes and says how many there are."
     (values (nreverse matches)
             (if first (subseq first 0 common-len) ""))))
 
+(defun complete-within (candidates text)
+  "COMPLETE, and when no candidate starts with TEXT the candidates that
+contain it -- `eval-' finds clamacs-eval-defun, `foo-' the make-foo-thing
+clamiga sent back the same way: as the second value the line as typed
+(TEXT), so TAB lists and cycles without moving the input, unless one
+candidate alone contains it, which is what it completes to.  Nothing
+starts with an empty TEXT only when there are no candidates."
+  (multiple-value-bind (matches common) (complete candidates text)
+    (cond ((or matches (string= text ""))
+           (values matches common))
+          (t
+           (let ((inside (remove-if-not (lambda (name) (and name (search text name)))
+                                        candidates)))
+             (values inside
+                     (cond ((null inside) "")
+                           ((null (rest inside)) (first inside))
+                           (t text))))))))
+
 (defconstant +complete-shown+ 8)
 
 (defun completions-message (matches &optional shown)

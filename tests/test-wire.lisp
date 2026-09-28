@@ -434,9 +434,31 @@
 
 (deftest connect-and-run-lisp
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    ;; Connect without a port offers to start clamiga: refused, it says
+    ;; there is none; taken, the launch that failed is reported ...
+    (push :cancel (fake-answers doc))
     (run-command doc 'clamacs-connect)
+    (is-equal (first (fake-asked doc))
+              '("No running clamiga was found. Start one?" (:start :cancel)))
     (is-equal (fake-last-message doc) "No clamiga port found")
     (is (null (fake-transport-sent tr)))
+    (is-equal (fake-transport-launched tr) 0)
+    (push :start (fake-answers doc))
+    (run-command doc 'clamacs-connect)
+    (is-equal (fake-last-message doc) "Cannot start clamiga")
+    (is-equal (fake-transport-launched tr) 1)
+    (is (null (fake-transport-sent tr)))
+    ;; ... and one that worked is connected to, VERSION asked as after a find
+    (setf (fake-transport-launch-port tr) "CLAMIGA")
+    (push :start (fake-answers doc))
+    (run-command doc 'clamacs-connect)
+    (is-equal (fake-transport-launched tr) 2)
+    (is-equal (wire-port-name wire) "CLAMIGA")
+    (is-equal (fake-last-sent tr) "VERSION")
+    (fake-deliver tr 0 "CL-Amiga 0.11")
+    (is-equal (fake-last-message doc) "CL-Amiga 0.11")
+    (is (null (fake-answers doc))))
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (run-command doc 'run-lisp)
     (is-equal (fake-last-message doc) "Cannot start clamiga")
     (setf (fake-transport-launch-port tr) "CLAMIGA")
@@ -444,10 +466,11 @@
     (is-equal (fake-last-message doc) "Started clamiga")
     (is-equal (wire-port-name wire) "CLAMIGA")
     (setf (fake-messages doc) '())
-    ;; Connected already: no second launch.
+    ;; Connected already: no second launch, and Connect asks nothing.
     (run-command doc 'run-lisp)
     (is-equal (fake-transport-launched tr) 2)
     (run-command doc 'clamacs-connect)
+    (is (null (fake-asked doc)))
     (is-equal (fake-last-sent tr) "VERSION")
     (fake-deliver tr 0 "CL-Amiga 0.10")
     (is-equal (fake-last-message doc) "CL-Amiga 0.10")))

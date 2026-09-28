@@ -328,6 +328,47 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is-equal (fake-state doc) "twice-again|")
     (is (null (fake-prompt doc)))))
 
+(deftest candidates-that-only-contain-the-input-leave-it-as-typed
+  ;; No symbol starts with `foo-': clamiga answers the ones that contain
+  ;; it.  The minibuffer opens on the input as typed, TAB lists them
+  ;; without moving it, narrowing to one completes to that one, and the
+  ;; candidates on hand cover what is typed after them.
+  (multiple-value-bind (doc tr wire) (make-wired-fake "(foo-|)")
+    (declare (ignore wire))
+    (run-command doc 'complete-symbol)
+    (deliver-package tr)
+    (is-equal (fake-last-sent tr) "COMPLETE foo-")
+    (fake-deliver tr 0 (lines "get-foo-b" "make-foo-a"))
+    (is-equal (fake-prompt doc) "Complete: foo-")
+    (is-equal (fake-state doc) "(foo-|)")
+    (type-keys doc "TAB")
+    (is-equal (fake-mini-label doc) "[2 completions: get-foo-b make-foo-a]")
+    (is-equal (fake-mini-text doc) "foo-")
+    (is-equal (length (fake-sent-commands tr)) 2)
+    ;; TAB again cycles, as over prefix matches
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[1/2]get-foo-b")
+    (type-keys doc "TAB TAB")
+    (is-equal (fake-prompt doc) "[1/2]get-foo-b")
+    ;; Back to the typed text, then narrowed to one: complete to it
+    (type-keys doc "BS BS BS BS BS BS BS BS BS")
+    (type-text doc "foo-a")
+    (type-keys doc "TAB")
+    (is-equal (fake-mini-label doc) "[Sole completion]")
+    (is-equal (fake-mini-text doc) "make-foo-a")
+    (is-equal (length (fake-sent-commands tr)) 2)
+    (type-keys doc "RET")
+    (is-equal (fake-state doc) "(make-foo-a|)")))
+
+(deftest a-sole-candidate-containing-the-input-goes-into-the-buffer
+  (multiple-value-bind (doc tr wire) (make-wired-fake "foo-a|")
+    (declare (ignore wire))
+    (run-command doc 'complete-symbol)
+    (deliver-package tr)
+    (fake-deliver tr 0 "make-foo-a")
+    (is-equal (fake-state doc) "make-foo-a|")
+    (is-equal (fake-last-message doc) "[Sole completion]")))
+
 (deftest tab-again-cycles-through-the-symbol-candidates
   ;; The candidates clamiga sent are the minibuffer's to cycle through,
   ;; nothing more on the wire.

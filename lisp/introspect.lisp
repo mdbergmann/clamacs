@@ -300,8 +300,10 @@ cap a longer prefix may match symbols that were never sent)."
 
 (defun apply-candidates (doc state text)
   "Complete TEXT in the minibuffer from the candidates on hand: as far as
-it goes, and say what is left."
-  (multiple-value-bind (matches common) (complete (intro-completions state) text)
+it goes, and say what is left.  The candidates may CONTAIN the text
+rather than start with it (clamiga's COMPLETE falls back to that when
+nothing starts with it), so the match is COMPLETE-WITHIN's."
+  (multiple-value-bind (matches common) (complete-within (intro-completions state) text)
     (cond ((null matches)
            (doc-message doc "[No match]"))
           ((null (rest matches))
@@ -372,9 +374,10 @@ and the input line are its own business."
                     (doc-message doc "[Sole completion]"))
                    (t
                     ;; Ambiguous: the minibuffer takes over with the common
-                    ;; prefix, TAB there narrows it, RET puts the answer in
-                    ;; the buffer.
-                    (multiple-value-bind (matches common) (complete names prefix)
+                    ;; prefix (the input as typed when the candidates only
+                    ;; contain it), TAB there narrows it, RET puts the
+                    ;; answer in the buffer.
+                    (multiple-value-bind (matches common) (complete-within names prefix)
                       (declare (ignore matches))
                       (prompt doc "Complete: "
                               (lambda (doc answer)

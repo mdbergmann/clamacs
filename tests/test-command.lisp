@@ -61,6 +61,25 @@
 (deftest command-completion-no-match
   (is-equal (command-completions "zzz") '(() "")))
 
+(deftest command-completion-falls-back-to-names-containing-the-input
+  ;; No command starts with `eval-': the ones that contain it, in table
+  ;; order, and the line as typed (there are several).
+  (let ((got (command-completions "eval-")))
+    (is-equal (second got) "eval-")
+    (is (member "clamacs-eval-defun" (first got) :test #'string=))
+    (is (member "clamacs-eval-last-sexp" (first got) :test #'string=))
+    (is (member "clamacs-eval-region" (first got) :test #'string=))
+    (is (member "clamacs-eval-expression" (first got) :test #'string=))
+    (is (every (lambda (name) (search "eval-" name)) (first got)))
+    (is (< (position "clamacs-eval-defun" (first got) :test #'string=)
+           (position "clamacs-eval-expression" (first got) :test #'string=))))
+  ;; One name alone contains it: completed to it, as a sole prefix match is.
+  (is-equal (command-completions "-ring-s") '(("kill-ring-save") "kill-ring-save"))
+  ;; A prefix match is never diluted with the names that merely contain it.
+  (is-equal (command-completions "kill-r") '(("kill-region" "kill-ring-save") "kill-r"))
+  ;; Nothing contains it: nothing, as before.
+  (is-equal (command-completions "eval-zzz") '(() "")))
+
 (deftest clamacs-commands-are-namespaced
   ;; The commands that talk to clamiga carry the editor's own prefix, so
   ;; `M-x' completion separates them from ordinary editing commands.

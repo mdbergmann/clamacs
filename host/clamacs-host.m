@@ -329,7 +329,9 @@ const char *clamacs_host_toolkit(void)
  * indices stay the table's), or the name of a DYNAMIC GROUP (buffers,
  * themes): a menu whose items the editor remakes at run time through
  * clamacs_host_menu_dynamic -- the shim does not know what a buffer or
- * a theme is, it keeps a named list of lines.  An item's position in the
+ * a theme is, it keeps a named list of lines.  A dynamic group WITH a
+ * title is a submenu of that name inside its menu (View > Themes); one
+ * without fills the menu itself (Buffers).  An item's position in the
  * table is its table index, which a pick hands back: FN(0, index, ARG)
  * for an item of the table, FN(group, n, ARG) for the n-th line of a
  * dynamic group (the bar counts), GROUP the table index of the group's
@@ -458,9 +460,20 @@ int clamacs_host_menu_set(void *win, const char *table,
             } else if ([kind isEqualToString:@"bar"]) {
                 [menu addItem:[NSMenuItem separatorItem]];
             } else if (![kind isEqualToString:@"item"]) {
-                /* a dynamic group, named by its kind */
+                /* a dynamic group, named by its kind: the menu itself, or
+                 * a submenu of the group's title */
                 if (kind.length > 0 && menu_target.dynamic[kind] == nil) {
-                    menu_target.dynamic[kind] = menu;
+                    NSMenu *group = menu;
+                    if (title.length > 0) {
+                        NSMenuItem *sub = [[NSMenuItem alloc] initWithTitle:title
+                                                                     action:nil
+                                                              keyEquivalent:@""];
+                        group = [[NSMenu alloc] initWithTitle:title];
+                        group.autoenablesItems = NO;
+                        sub.submenu = group;
+                        [menu addItem:sub];
+                    }
+                    menu_target.dynamic[kind] = group;
                     menu_target.dynamicIndex[kind] = @(index);
                     menu_target.dynamicLines[kind] = [NSMutableArray array];
                     [menu_target.dynamicOrder addObject:kind];
@@ -487,6 +500,12 @@ int clamacs_host_menu_set(void *win, const char *table,
             if ([info isKindOfClass:[NSMutableDictionary class]] && info[@"CFBundleName"] == nil)
                 ((NSMutableDictionary *)info)[@"CFBundleName"] = @"Clamacs";
         }
+        /* AppKit adds "Show Tab Bar" and "Show All Tabs" (its window
+         * tabbing) to any menu titled View when the main menu is
+         * installed -- items the editor never made, gone again the first
+         * time the View menu's group was remade.  The editor's windows
+         * are not tabbed together: no such items. */
+        [NSWindow setAllowsAutomaticWindowTabbing:NO];
         NSApp.mainMenu = main;
         return 1;
     }
