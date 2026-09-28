@@ -33,8 +33,9 @@ run="$root/build/host-frontend/shots"
 rm -rf "$run"
 mkdir -p "$run/home" "$run/tmp" "$run/scratch"
 log="$run/shots.log"
-ledger="$run/ledger"
-mkdir -p "$ledger" && cp "$here/shots/accounts.lisp" "$here/shots/report.lisp" "$ledger/" || exit 1
+ledger=$(mktemp -d /tmp/ledger.XXXX) || exit 1
+trap 'rm -rf "$ledger"' EXIT
+cp "$here/shots/accounts.lisp" "$here/shots/report.lisp" "$ledger/" || exit 1
 
 HOME="$run/home" TMPDIR="$run/tmp" \
     "$clamiga" --no-userinit --heap 32M --non-interactive \

@@ -281,6 +281,14 @@ echo area:
 
 ![The diagnostics window](docs/screenshots/diagnostics.png)
 
+### On MorphOS
+
+The same editor on a MorphOS 3.20 box (MUI 4, 1920x1080): the ledger of
+`verify/host/shots/accounts.lisp` loaded with `C-c C-k`, the REPL window
+that fed it, and the debugger window an overdraft at the prompt opened:
+
+![The editor, the REPL and the debugger on MorphOS](docs/screenshots/morphos-debugger.png)
+
 ### On the host
 
 The same editor on a Mac (`host/run.sh`), taken from the running editor by
