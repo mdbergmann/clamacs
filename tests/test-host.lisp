@@ -440,6 +440,73 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (doc-message-text doc) "M-q is undefined")
     (is (search "CK.setMiniLabel(\"M-q is undefined\");" (host-take-evals editor)))))
 
+(deftest host-completion-list-follows-tab-and-the-arrows
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "hello")))
+    (host-take-evals editor)
+    (host-type editor "M-x")
+    (host-type-text editor "kill-r")
+    (host-take-evals editor)
+    ;; TAB: the candidates as a list, no cursor, the common prefix in the line
+    (host-type editor "TAB" :target "mini")
+    (is-equal (doc-minibuffer-text doc) "kill-r")
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.showCompletions([\"kill-region\",\"kill-ring-save\"],-1);" js))
+      (is (search "CK.setMiniLabel(\"[2 completions: kill-region kill-ring-save]\");" js)))
+    ;; The arrows move the cursor: the list is not sent again
+    (host-type editor "<down>" :target "mini")
+    (is-equal (doc-minibuffer-text doc) "kill-region")
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.selectCompletion(0);" js))
+      (is (search "CK.setMiniText(\"kill-region\");" js))
+      (is (not (search "showCompletions" js))))
+    (host-type editor "<up>" :target "mini")
+    (is-equal (doc-minibuffer-text doc) "kill-ring-save")
+    (is (search "CK.selectCompletion(1);" (host-take-evals editor)))
+    ;; A click in the page's list
+    (with-entry (editor) (host-pick-completion editor 0 0))
+    (is-equal (doc-minibuffer-text doc) "kill-region")
+    (is (search "CK.selectCompletion(0);" (host-take-evals editor)))
+    ;; An edit from the page hides it
+    (with-entry (editor) (host-mini-input editor "kill-regio"))
+    (is (search "CK.hideCompletions();" (host-take-evals editor)))
+    (is (minibuffer-open-p doc))
+    ;; A sole completion shows no list
+    (host-type editor "TAB" :target "mini")
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.setMiniLabel(\"[Sole completion]\");" js))
+      (is (not (search "Completions" js))))
+    ;; A double click takes the row: the prompt closes, the command runs
+    (with-entry (editor) (host-mini-input editor "kill-r"))
+    (host-type editor "TAB" :target "mini")
+    (host-take-evals editor)
+    (with-entry (editor) (host-pick-completion editor 1 1))
+    (is (not (minibuffer-open-p doc)))
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.selectCompletion(1);" js))
+      (is (search "CK.hideCompletions();" js))
+      (is (search "CK.closeMini();" js))
+      (is (< (search "hideCompletions" js) (search "closeMini" js))))
+    ;; The list is the document's: shown again with its prompt when the
+    ;; document becomes the active one again
+    (host-type editor "M-x")
+    (host-type-text editor "kill-r")
+    (host-type editor "TAB" :target "mini")
+    (let ((other (host-test-document editor "x")))
+      (is (search "CK.closeMini();" (host-take-evals editor)))
+      (with-entry (editor) (doc-activate doc))
+      (let ((js (host-take-evals editor)))
+        ;; (the label is the completions message: a message at a prompt takes it)
+        (is (search "CK.openMini(\"[2 completions: kill-region kill-ring-save]\",\"kill-r\");" js))
+        (is (search "CK.showCompletions([\"kill-region\",\"kill-ring-save\"],-1);" js))
+        (is (< (search "openMini" js) (search "showCompletions" js))))
+      (with-entry (editor) (doc-activate other))
+      (host-take-evals editor)
+      ;; A pick reaches the active document only
+      (with-entry (editor) (host-pick-completion editor 0 0))
+      (is-equal (doc-minibuffer-text doc) "kill-r")
+      (is-equal (host-take-evals editor) ""))))
+
 ;;; --- what the page changed on its own -------------------------------------------
 
 (deftest host-update-applies-the-pages-changes-to-the-mirror

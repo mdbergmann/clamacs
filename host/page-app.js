@@ -32,7 +32,7 @@
   const sourceTabs = $("source-tabs"), views = $("views");
   const dockEl = $("dock"), splitter = $("splitter"), dockTabs = $("dock-tabs"), dockViews = $("dock-views");
   const status = $("status"), message = $("message");
-  const miniLabel = $("mini-label"), mini = $("mini");
+  const miniLabel = $("mini-label"), mini = $("mini"), completions = $("completions");
 
   // A binding may not exist yet while the page loads (Lisp registers them
   // before webview_set_html, but a stub never hurts): call it when there.
@@ -340,6 +340,27 @@
     return list;
   }
 
+  // ---- the completion list -------------------------------------------------
+  //
+  // What TAB has to offer at a prompt, as a list above the status line
+  // (CK.showCompletions): the row the cursor is on is selected, a click
+  // puts a row's candidate into the input line (clamacsPickCompletion), a
+  // double click takes it as RET would.  Lisp moves the cursor
+  // (selectCompletion) as the arrows and TAB do, and hides the list
+  // (hideCompletions) when the line is edited or the prompt closes.  The
+  // list grows the bottom of the window by up to eight rows; the views
+  // give way, as a *Completions* window does in Emacs.
+
+  function completionsSelect(n) {
+    Array.from(completions.children).forEach((row, i) => row.classList.toggle("selected", i === n));
+    if (n >= 0 && n < completions.children.length) completions.children[n].scrollIntoView({block: "nearest"});
+  }
+  function completionsState() {
+    if (!completions.classList.contains("open")) return null;
+    const rows = Array.from(completions.children);
+    return {rows: rows.length, selected: rows.findIndex((row) => row.classList.contains("selected"))};
+  }
+
   // ---- the panels ----------------------------------------------------------
 
   const panels = {
@@ -582,6 +603,8 @@
                  frames: dbgFrames.rows.length, frame: dbgFrames.selected, locals: dbgLocals.rows.length},
       inspector: {open: inspItem.open, type: panels.inspector.type, depth: panels.inspector.depth,
                   object: panels.inspector.object, parts: inspParts.rows.length, part: inspParts.selected},
+      // The completion list at the prompt: its rows and the cursor's row
+      completions: completionsState(),
       // Which documents this page holds, and whether it is a detached
       // window's: what a script checks after a move (phase H7)
       tabs: {source, dock, active: activeId},
@@ -720,6 +743,7 @@
       mini.focus();
     },
     closeMini() {
+      CK.hideCompletions();
       mini.classList.remove("open");
       miniLabel.textContent = "";
       mini.value = "";
@@ -728,6 +752,31 @@
     },
     setMiniText(text) { mini.value = text; },
     setMiniLabel(label) { miniLabel.textContent = label; },
+    showCompletions(names, index) {
+      completions.textContent = "";
+      names.forEach((text, n) => {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.textContent = text;
+        // mousedown, prevented: the input line keeps the keyboard
+        row.addEventListener("mousedown", (ev) => { ev.preventDefault(); lisp("clamacsPickCompletion", n, 0); });
+        row.addEventListener("dblclick", () => lisp("clamacsPickCompletion", n, 1));
+        completions.appendChild(row);
+      });
+      completions.classList.add("open");
+      completionsSelect(index);
+      reportPanels();
+    },
+    selectCompletion(index) {
+      completionsSelect(index);
+      reportPanels();
+    },
+    hideCompletions() {
+      if (!completions.classList.contains("open")) return;
+      completions.classList.remove("open");
+      completions.textContent = "";
+      reportPanels();
+    },
 
     // The menu bar.  ENTRIES is the table of menu.lisp: [kind, title,
     // keys] per entry, kind "title", "item", "bar", "hidden" (an entry this
@@ -841,6 +890,7 @@
               head: doc ? doc.view.state.selection.main.head : null,
               status: status.textContent, message: message.textContent,
               mini: mini.classList.contains("open") ? miniLabel.textContent + mini.value : null,
+              completions: completionsState(),
               panels: panelState()};
     },
     lineColours(id, y) {
@@ -869,9 +919,10 @@
 
   // The input line edits itself, as the MUI String does, and reports its
   // contents (clamacsMiniInput); the keys that may be the minibuffer's --
-  // Control, Alt, Escape, Tab, Enter -- go to Lisp first.  A synthetic key
-  // goes to Lisp too, since dispatching it types nothing natively.
-  const MINI_KEYS = ["Escape", "Tab", "Enter"];
+  // Control, Alt, Escape, Tab, Enter, the arrows (the completion list's
+  // cursor, the history) -- go to Lisp first.  A synthetic key goes to
+  // Lisp too, since dispatching it types nothing natively.
+  const MINI_KEYS = ["Escape", "Tab", "Enter", "ArrowUp", "ArrowDown"];
   mini.addEventListener("keydown", (ev) => {
     const doc = docs.get(activeId);
     if (!doc) return;

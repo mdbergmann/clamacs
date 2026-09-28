@@ -6,8 +6,9 @@
 <style>
   /* The layout of specs/clamacs-host.md, "One native window, tabs and a
      dock": the source tabs on top, the dock below a splitter, one status
-     line and one echo/minibuffer row for the active document.  Two
-     palettes, picked by the system's setting -- the fallback before Lisp
+     line and one echo/minibuffer row for the active document (and the
+     completion list above the status line while TAB has something to
+     offer).  Two palettes, picked by the system's setting -- the fallback before Lisp
      sends a theme (specs/clamacs-themes.md): CK.theme sets these same
      variables on the document element, which every rule reads, and
      data-theme, which color-scheme follows. */
@@ -147,6 +148,14 @@
   .menu-item.submenu > .menu-popup { top: -5px; left: 100%; }
   .menu-item.submenu:hover > .menu-popup { display: block; }
   .menu-sep { height: 1px; margin: 4px 0; background: var(--line); }
+  /* What TAB has to offer at a prompt: a list above the status line, up
+     to eight rows tall, the row the cursor is on selected. */
+  #completions { flex: none; display: none; max-height: 10.6em; overflow: auto; background: var(--echo-bg);
+                 color: var(--echo-fg); border-top: 1px solid var(--line);
+                 font-family: var(--font-family); font-size: 12px; }
+  #completions.open { display: block; }
+  #completions .row { padding: 1px 8px; white-space: pre; cursor: default; }
+  #completions .row.selected { background: var(--selection); }
   #status { flex: none; padding: 3px 8px; background: var(--status-bg); color: var(--status-fg);
             border-top: 1px solid var(--line); white-space: pre; overflow: hidden;
             font-family: var(--font-family); font-size: 12px; }
@@ -206,6 +215,7 @@
       </div>
     </div>
   </div>
+  <div id="completions"></div>
   <div id="status"></div>
   <div id="echo"><span id="mini-label"></span><input id="mini" type="text" spellcheck="false"><span id="message"></span></div>
 </div>

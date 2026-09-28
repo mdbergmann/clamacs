@@ -241,7 +241,15 @@ engine (the Linux gate's crash, found by bisecting in the container); the
 snapshot places a detached window at its first tab's role (`docN`, or a
 panel's MUI role), cascaded when the layout has none.
 `host-panel-state :windows` and `host-page-panels` with a window number
-are what `drive.lisp`'s DETACH leg checks.
+are what `drive.lisp`'s DETACH leg checks.  **The completion list**
+(phase H8, 2026-09-28): what TAB offers at a prompt is also a list
+above the status line on the host (`CK.showCompletions`, the page's
+`completions` report), with a cursor `<down>` / `<up>` and TAB move --
+the candidate under it whole in the line -- and a click / double click
+(`clamacsPickCompletion` -> `minibuffer-pick`); the pure layer's one
+generic is `doc-show-completions` (the MUI String keeps its echo row,
+the default method), and the arrows are minibuffer keys at a prompt
+now, the history's when nothing is on offer.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

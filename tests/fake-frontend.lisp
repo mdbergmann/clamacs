@@ -21,6 +21,8 @@
    ;; The input line: NIL while hidden, else its contents; and its label.
    (mini-text :initform nil :accessor fake-mini-text)
    (mini-label :initform nil :accessor fake-mini-label)
+   (completions :initform nil :accessor fake-completions)   ; the list shown, or NIL
+   (completion-index :initform -1 :accessor fake-completion-index)
    (title :initform nil :accessor fake-title)
    ;; The status line's arglist field
    (arglist :initform "" :accessor fake-arglist)
@@ -330,6 +332,10 @@ each coloured run, left to right, as a painter's algorithm gives it."
 
 (defmethod doc-set-minibuffer-label ((doc fake-document) label)
   (setf (fake-mini-label doc) label))
+
+(defmethod doc-show-completions ((doc fake-document) names index)
+  (setf (fake-completions doc) names
+        (fake-completion-index doc) index))
 
 (defmethod doc-search ((doc fake-document) pattern backwards again)
   (mirror-search (fake-mirror doc) pattern backwards again))

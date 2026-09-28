@@ -227,6 +227,10 @@ a window a tab was shown in separately (see \"Detached windows\")."
    (message-text :initform "" :accessor hdoc-message-text)
    (mini-label :initform nil :accessor hdoc-mini-label)
    (mini-text :initform nil :accessor hdoc-mini-text)
+   ;; The completion list shown at the prompt (DOC-SHOW-COMPLETIONS), the
+   ;; names as given, and the row the cursor is on
+   (mini-completions :initform nil :accessor hdoc-mini-completions)
+   (mini-completion-index :initform -1 :accessor hdoc-mini-completion-index)
    (package :initform "CL-USER" :accessor hdoc-package)
    (arglist :initform "" :accessor hdoc-arglist)
    (title :initform "" :accessor hdoc-title)
@@ -715,7 +719,10 @@ document and they changed."
   "The echo row of DOC's window as DOC has it -- its prompt when one is
 open, else its message -- after DOC became the active document."
   (cond ((hdoc-mini-text doc)
-         (ck doc "openMini" (hdoc-mini-label doc) (hdoc-mini-text doc)))
+         (ck doc "openMini" (hdoc-mini-label doc) (hdoc-mini-text doc))
+         (when (hdoc-mini-completions doc)
+           (ck doc "showCompletions" (hdoc-mini-completions doc)
+               (hdoc-mini-completion-index doc))))
         (t
          (ck doc "closeMini")
          (ck doc "setEcho" (hdoc-message-text doc))))
@@ -729,13 +736,18 @@ open, else its message -- after DOC became the active document."
 (defmethod doc-open-minibuffer ((doc host-document) label initial)
   (setf (hdoc-mini-label doc) label
         (hdoc-mini-text doc) (copy-seq initial)
+        (hdoc-mini-completions doc) nil
+        (hdoc-mini-completion-index doc) -1
         (hdoc-message-text doc) label)
   (when (host-active-p doc)
     (ck doc "openMini" label initial)))
 
 (defmethod doc-close-minibuffer ((doc host-document))
+  ;; The page's closeMini hides the list with the line.
   (setf (hdoc-mini-label doc) nil
         (hdoc-mini-text doc) nil
+        (hdoc-mini-completions doc) nil
+        (hdoc-mini-completion-index doc) -1
         (hdoc-message-text doc) "")
   (when (host-active-p doc)
     (ck doc "closeMini")
@@ -754,6 +766,25 @@ open, else its message -- after DOC became the active document."
         (hdoc-message-text doc) label)
   (when (host-active-p doc)
     (ck doc "setMiniLabel" label)))
+
+(defmethod doc-show-completions ((doc host-document) names index)
+  "The page's list above the input line: filled when NAMES is a list it
+has not shown, its cursor moved when NAMES is the list it shows, hidden
+when NAMES is NIL.  Kept on the document for SHOW-ECHO-STATE."
+  (let ((same (and names (eq names (hdoc-mini-completions doc)))))
+    (setf (hdoc-mini-completions doc) names
+          (hdoc-mini-completion-index doc) index)
+    (when (host-active-p doc)
+      (cond ((null names) (ck doc "hideCompletions"))
+            (same (ck doc "selectCompletion" index))
+            (t (ck doc "showCompletions" names index))))))
+
+(defun host-pick-completion (editor index accept)
+  "The clamacsPickCompletion binding: row INDEX of the list clicked (ACCEPT
+0) or double-clicked (1) in the active document's window."
+  (let ((doc (active-document editor)))
+    (when (and doc (integerp index))
+      (minibuffer-pick doc index (and (realp accept) (/= accept 0))))))
 
 (defun host-mini-input (editor text)
   "The input line changed by itself (the page's input event): the new
@@ -2244,6 +2275,8 @@ height, the report -- goes to the window."
     (bind window "clamacsCursor"
           (lambda (doc-id head anchor) (host-cursor editor doc-id head anchor)))
     (bind window "clamacsMiniInput" (lambda (text) (host-mini-input editor text)))
+    (bind window "clamacsPickCompletion"
+          (lambda (index accept) (host-pick-completion editor index accept)))
     (bind window "clamacsActivate"
           (lambda (doc-id)
             (let ((doc (host-document-by-id editor doc-id)))

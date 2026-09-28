@@ -376,6 +376,7 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsUpdate` | `docId, [[from, to, inserted], ...], head` | a change CodeMirror made on its own |
 | `clamacsCursor` | `docId, head, anchor` | the selection moved on its own (mouse) |
 | `clamacsMiniInput` | `text` | the input line changed on its own (paste) |
+| `clamacsPickCompletion` | `row, accept` | a row of the completion list clicked (`accept` 0: the candidate into the line) or double-clicked (1: and taken, as RET) |
 | `clamacsActivate` | `docId` | a tab was clicked / a view focused |
 | `clamacsCloseTab` | `docId` | a tab's close button |
 | `clamacsMenu` | `index` | a menu item picked (the table index): `menu-pick` on the active document, refused when the item is dimmed by now |
@@ -407,6 +408,9 @@ kind]` paints one run over what is there, `kind` false clears),
 `setTitle(id, title)`, `setModified(id, flag)`,
 `setStatus(text)`, `setEcho(text)`, `openMini(label, text)`,
 `closeMini()`, `setMiniText(text)`, `setMiniLabel(label)`,
+`showCompletions(names, index)` (what TAB offered, as a list above the
+status line, the cursor on row `index` or none for -1),
+`selectCompletion(index)`, `hideCompletions()` (`closeMini` hides it too),
 `setMenus(json)`, `menuEnable(index, flag)`, `setDynamic(which, json)`,
 `theme(vars, dark)` (`vars` `[name, value]` pairs of the page's CSS
 variables, set on the document element; `dark` sets `data-theme`),
@@ -989,6 +993,39 @@ with the memory note updated.
   document is not the active one keeps what it last showed; the
   debugger and inspector open in the main window's dock, the user
   moves them.
+
+### H8 -- the completion list: a growable minibuffer with a cursor
+
+- **Done 2026-09-28.**  What TAB has to offer at a prompt (`M-x`, a file
+  name, a theme, a symbol from clamiga) was a count and the first eight
+  names in the echo row; on the host it is now also a list above the
+  status line, as `*Completions*` is in Emacs -- the views give way to
+  it, up to eight rows, more scroll.  The pure layer got one generic,
+  `doc-show-completions (doc names index)` (NIL hides; the default does
+  nothing, which is what the MUI String keeps: its echo row), called
+  from `minibuffer-offer`, from the cursor moves and from
+  `minibuffer-forget-candidates`, which `minibuffer-changed` now reaches
+  when an edit ends the offer, and `minibuffer-finish` when the prompt
+  closes.  The cursor: `<down>` and `<up>` are minibuffer keys at a
+  prompt now (`*minibuffer-keys-prompt*`, so the MUI String's key table
+  takes them too) -- while TAB's candidates are on offer they move
+  through them, the candidate under the cursor whole in the line and
+  counted `[2/3]` as TAB's cycling does (TAB moves the same cursor;
+  `<up>` from no cursor goes to the last); with nothing on offer they
+  walk the history as `M-p` / `M-n` do, as in Emacs.  The mouse:
+  `minibuffer-pick (doc index &optional accept)` is a click on a row
+  (into the line) or a double click (and RET), the page's
+  `clamacsPickCompletion` binding.  A completer's third value (what to
+  show for a match, a file's base name) is what the list shows; the
+  line gets the match.  The host keeps the list on the document
+  (`hdoc-mini-completions`) and replays it with the prompt when the
+  document becomes the active one again; the page reports it
+  (`completions: {rows, selected}` in `clamacsPanels`) and the drive's
+  completion leg checks the rows and the cursor after `<down>`.  Tests:
+  four in `test-minibuffer.lisp` (the arrows on an offer, the arrows on
+  the history, the pick, the shown names), one in `test-host.lisp` (the
+  page's calls, the pick binding, the replay), the key lists' tests
+  extended.
 
 ## Runtime items (commits in cl-amiga, each under every gate)
 

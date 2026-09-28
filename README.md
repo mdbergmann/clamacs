@@ -195,6 +195,15 @@ File... open the requester straight away.  Lisp mode -- colouring, paren
 matching, indentation -- follows the file name (`.lisp`, `.lsp`, `.cl`,
 `.asd`); an unnamed buffer is always in Lisp mode.
 
+Wherever the minibuffer completes -- `M-x`, a file name, a theme, a
+symbol -- TAB puts the common prefix in the line and names the candidates
+in the echo row, and TAB again cycles through them.  On the host they
+also appear as a list above the status line, as in Emacs: the arrow keys
+move a cursor through it (the candidate under the cursor is in the line,
+RET takes it), a click puts a row into the line and a double click takes
+it, and typing on takes the list down.  With no candidates on offer the
+arrows walk the prompt's history like `M-p` and `M-n`.
+
 `C-c C-c` (Eval Defun), `C-x C-e` (Eval Last Sexp), `C-c C-r` (Eval
 Region) and `C-c C-e` (Eval Expression...) run the form on clamiga's REPL
 thread: what it prints goes to the `*clamacs-repl*` transcript, its

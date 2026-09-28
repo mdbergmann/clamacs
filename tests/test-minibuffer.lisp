@@ -83,23 +83,23 @@
     (is (not (minibuffer-binds-p doc (k "C-g"))))
     (is (not (minibuffer-key doc (k "C-g"))))
     (prompt doc "P: " (lambda (d a) (declare (ignore d a))))
-    (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n"))
+    (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "<up>" "<down>"))
       (is (minibuffer-binds-p doc (k key))))
-    (dolist (key '("C-s" "C-r" "a" "RET" "C-f"))
+    (dolist (key '("C-s" "C-r" "a" "RET" "C-f" "<left>"))
       (is (not (minibuffer-binds-p doc (k key)))))
     (type-keys doc "C-g C-s")
     (dolist (key '("C-g" "ESC" "C-s" "C-r"))
       (is (minibuffer-binds-p doc (k key))))
-    (dolist (key '("TAB" "M-p" "M-n" "a"))
+    (dolist (key '("TAB" "M-p" "M-n" "a" "<up>" "<down>"))
       (is (not (minibuffer-binds-p doc (k key)))))))
 
 ;; The union a frontend takes from an active input line before it knows
 ;; the state (the MUI String's native key table): every key BINDS-P can
 ;; say yes to, and nothing else.
 (deftest minibuffer-ever-binds-is-the-union-of-the-states
-  (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "C-s" "C-r"))
+  (dolist (key '("C-g" "ESC" "TAB" "M-p" "M-n" "C-s" "C-r" "<up>" "<down>"))
     (is (minibuffer-ever-binds-p (k key))))
-  (dolist (key '("a" "RET" "C-f" "M-x" "S-TAB" "C-TAB" "M-ESC" "C-ESC"))
+  (dolist (key '("a" "RET" "C-f" "M-x" "S-TAB" "C-TAB" "M-ESC" "C-ESC" "<left>" "C-<up>"))
     (is (not (minibuffer-ever-binds-p (k key)))))
   ;; and it agrees with BINDS-P in both states
   (let ((doc (make-fake "|")))
@@ -210,6 +210,137 @@
     (type-keys doc "RET")
     (is-equal (doc-last-command doc) 'kill-ring-save)
     (is-equal (fake-state doc) "|hello")))
+
+;; The candidates TAB offers are a list where the frontend has one, with
+;; a cursor the arrows (and TAB) move; the candidate under the cursor is in
+;; the line.  No cursor (-1) = the common prefix is there.
+(deftest the-arrows-walk-the-candidates-tab-offered
+  (let ((doc (make-fake "|hello")))
+    (type-keys doc "M-x")
+    (type-text doc "kill-r")
+    (is (null (fake-completions doc)))
+    (type-keys doc "TAB")
+    (is-equal (fake-completions doc) '("kill-region" "kill-ring-save"))
+    (is-equal (fake-completion-index doc) -1)
+    (is-equal (fake-mini-text doc) "kill-r")
+    (type-keys doc "<down>")
+    (is-equal (fake-prompt doc) "[1/2]kill-region")
+    (is-equal (fake-completion-index doc) 0)
+    (type-keys doc "<down>")
+    (is-equal (fake-prompt doc) "[2/2]kill-ring-save")
+    (is-equal (fake-completion-index doc) 1)
+    ;; round, in both directions
+    (type-keys doc "<down>")
+    (is-equal (fake-completion-index doc) 0)
+    (type-keys doc "<up>")
+    (is-equal (fake-completion-index doc) 1)
+    (is-equal (fake-mini-text doc) "kill-ring-save")
+    ;; TAB moves the same cursor
+    (type-keys doc "TAB")
+    (is-equal (fake-completion-index doc) 0)
+    (is-equal (fake-completions doc) '("kill-region" "kill-ring-save"))
+    ;; An edit ends the offer: the list goes
+    (type-keys doc "BS")
+    (is (null (fake-completions doc)))
+    (is-equal (fake-completion-index doc) -1)
+    (is-equal (fake-mini-text doc) "kill-regio")
+    ;; <up> from the common prefix goes to the last candidate
+    (type-keys doc "C-g M-x")
+    (type-text doc "kill-r")
+    (type-keys doc "TAB <up>")
+    (is-equal (fake-prompt doc) "[2/2]kill-ring-save")
+    ;; RET takes the candidate, and the list goes with the prompt
+    (type-keys doc "RET")
+    (is (null (fake-completions doc)))
+    (is (not (minibuffer-open-p doc)))
+    (is-equal (doc-last-command doc) 'kill-ring-save)
+    ;; A sole completion and no match offer no list
+    (type-keys doc "M-x")
+    (type-text doc "kill-re")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[Sole completion]kill-region")
+    (is (null (fake-completions doc)))
+    (type-text doc "zz")
+    (type-keys doc "TAB")
+    (is-equal (fake-prompt doc) "[No match]kill-regionzz")
+    (is (null (fake-completions doc)))
+    ;; C-g with the list up takes it down
+    (type-keys doc "C-g M-x")
+    (type-text doc "kill-r")
+    (type-keys doc "TAB")
+    (is (fake-completions doc))
+    (type-keys doc "C-g")
+    (is (null (fake-completions doc)))))
+
+;; With nothing on offer the arrows are the history's, as in Emacs.
+(deftest the-arrows-walk-the-history-when-nothing-is-on-offer
+  (let ((doc (make-fake "|ab")))
+    (type-keys doc "M-x")
+    (type-text doc "forward-char")
+    (type-keys doc "RET M-x")
+    (type-text doc "end-of-line")
+    (type-keys doc "RET M-x <up>")
+    (is-equal (fake-mini-text doc) "end-of-line")
+    (type-keys doc "<up>")
+    (is-equal (fake-mini-text doc) "forward-char")
+    (type-keys doc "<down>")
+    (is-equal (fake-mini-text doc) "end-of-line")
+    (type-keys doc "<down>")
+    (is-equal (fake-mini-text doc) "")
+    ;; Once TAB offers candidates, the arrows are theirs again
+    (type-text doc "kill-r")
+    (type-keys doc "TAB <down>")
+    (is-equal (fake-mini-text doc) "kill-region")
+    (is-equal (fake-completion-index doc) 0)))
+
+;; The frontend's list may be clicked: the row goes into the line, a
+;; double click takes it.
+(deftest a-click-in-the-list-picks-a-candidate
+  (let ((doc (make-fake "|hello")))
+    (is (not (minibuffer-pick doc 0)))
+    (type-keys doc "M-x")
+    (type-text doc "kill-r")
+    (is (not (minibuffer-pick doc 0)))
+    (type-keys doc "TAB")
+    (is (not (minibuffer-pick doc 2)))
+    (is (not (minibuffer-pick doc -1)))
+    (is (not (minibuffer-pick doc nil)))
+    (is (minibuffer-pick doc 1))
+    (is-equal (fake-prompt doc) "[2/2]kill-ring-save")
+    (is-equal (fake-completion-index doc) 1)
+    (is (minibuffer-open-p doc))
+    ;; <down> goes on from the picked row
+    (type-keys doc "<down>")
+    (is-equal (fake-completion-index doc) 0)
+    (is-equal (fake-mini-text doc) "kill-region")
+    ;; A double click takes it
+    (is (minibuffer-pick doc 1 t))
+    (is (not (minibuffer-open-p doc)))
+    (is (null (fake-completions doc)))
+    (is-equal (doc-last-command doc) 'kill-ring-save)
+    ;; Not in a search
+    (type-keys doc "C-s")
+    (is (not (minibuffer-pick doc 0)))
+    (type-keys doc "C-g")))
+
+;; A completer may say what to show for each match (a file's base name
+;; for its path): the list shows that, the line gets the match.
+(deftest the-list-shows-the-names-the-completer-gives
+  (let ((doc (make-fake "|")))
+    (prompt doc "F: " (lambda (d a) (declare (ignore d a)))
+            :completer (lambda (text)
+                         (declare (ignore text))
+                         (values '("/a/one" "/a/two") "/a/" '("one" "two"))))
+    (type-keys doc "TAB")
+    (is-equal (fake-completions doc) '("one" "two"))
+    (is-equal (fake-prompt doc) "[2 completions: one two]/a/")
+    (type-keys doc "<down>")
+    (is-equal (fake-mini-text doc) "/a/one")
+    (is-equal (fake-completions doc) '("one" "two"))
+    (is-equal (fake-completion-index doc) 0)
+    (is (minibuffer-pick doc 1))
+    (is-equal (fake-mini-text doc) "/a/two")
+    (type-keys doc "C-g")))
 
 (deftest m-x-history-walks-with-m-p-and-m-n
   (let ((doc (make-fake "|ab")))
