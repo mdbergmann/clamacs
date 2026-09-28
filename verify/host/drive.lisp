@@ -1696,10 +1696,16 @@ wrote: it must come up where the file said, then quit."
       (ok "the second editor quit")
       (fail "the second editor did not quit")))
 
+(defvar *library* nil
+  "True when the file was loaded for its helpers only (verify/host/shots.lisp
+loads it under a mode of its own): no run, no quit.")
+
 (handler-case
     (cond ((string= *mode* "second") (second))
-          (t (main)))
+          ((string= *mode* "main") (main))
+          (t (setq *library* t)))
   (error (e)
     (fail "the drive itself failed: ~A" e)))
-(finish-output)
-(cl-user::quit 0)
+(unless *library*
+  (finish-output)
+  (cl-user::quit 0))

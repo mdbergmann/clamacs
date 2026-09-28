@@ -281,6 +281,41 @@ echo area:
 
 ![The diagnostics window](docs/screenshots/diagnostics.png)
 
+### On the host
+
+The same editor on a Mac (`host/run.sh`), taken from the running editor by
+`verify/host/shots.sh`, which drives it through the states below over its
+own port and photographs each one -- the file is
+`verify/host/shots/accounts.lisp`, a small ledger.
+
+The document window: the source with its colouring and the minimap, the
+`*clamacs-repl*` tab in the dock talking to the clamiga the editor
+started, a `; Evaluated:` note from `C-c C-c` and the arglist in the
+status line:
+
+![The host editor with the REPL in the dock](docs/screenshots/host-editor.png)
+
+An overdraft signalled at the prompt opens the Debugger panel: the
+condition, the restarts, the backtrace with the frame's source line, the
+locals of the selected frame, the eval-in-frame line and its buttons:
+
+![The debugger panel](docs/screenshots/host-debugger.png)
+
+`C-c I` on `*acct*` opens the Inspector panel with the structure's parts:
+
+![The inspector panel](docs/screenshots/host-inspector.png)
+
+`C-c C-k` on a file with two mistakes fills the Diagnostics panel, and
+`C-x \`` puts the cursor on the first one with its message in the echo
+area:
+
+![The diagnostics panel](docs/screenshots/host-diagnostics.png)
+
+The One Dark theme (View > Themes), and `M-x clamacs-eval` TAB with its
+candidates listed above the status line:
+
+![One Dark with the M-x completion list](docs/screenshots/host-completion.png)
+
 ## Buffers
 
 The **Buffers** menu lists every open buffer; picking one brings its
@@ -398,6 +433,7 @@ verify/host/run-drive.sh         # the host editor's acceptance run over its own
 MEMTRACK=1 verify/host/run-drive.sh # the same under a leak-tracking clamiga: nothing may outlive exit
 IMAGE=1 verify/host/run-drive.sh # the same with both editors started from the heap image (make host-image)
 APP=1 verify/host/run-drive.sh   # the same through Clamacs.app's launcher (make host-app; macOS)
+verify/host/shots.sh             # the README's host screenshots, taken from the running editor (macOS)
 make host-linux                  # the smoke run and the drive on Linux, in a container (verify/host/run-linux.sh)
 ```
 
