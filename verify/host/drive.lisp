@@ -687,6 +687,99 @@ off a variable."
       (ok "the init file's own form was not written back")
       (fail "the init file changed under the load: ~A" (with-open-file (in *rc-file*) (read-line in nil "")))))
 
+;;; The View menu's minimap item (specs/clamacs-host.md, phase H9): the
+;;; page draws the whole text in miniature beside the source view with
+;;; the lines on screen boxed, Lisp keeps the setting.  The page reports
+;;; what the shown map draws, so the box is checked at the top of a
+;;; 600-line file and after end-of-buffer; a pick through the verb and
+;;; through the host's own bar; the init file written -- and left saying
+;;; NIL, for the second editor to come up without the map.
+
+(defun minimap-lines ()
+  "MINIMAP as a list of lines."
+  (cmd "MINIMAP")
+  (result-lines))
+
+(defun check-minimap (step on)
+  "The editor's account and the page's report of the setting ON."
+  (if (string/= (panel-state :minimap (if on "on" "off")) "")
+      (ok "~A: the editor says the minimap is ~A" step (if on "on" "off"))
+      (fail "~A: host-panel-state :minimap says ~A" step *result*))
+  (if (string/= (page-panels (format nil "\"minimap\":{\"on\":~A" (if on "true" "false"))) "")
+      (ok "~A: the page ~A the map" step (if on "shows" "hides"))
+      (fail "~A: the page's minimap report: ~A" step *result*)))
+
+(defun leg-minimap ()
+  (if (equal (minimap-lines) '("> Minimap"))
+      (ok "the View menu's Minimap item is ticked by default")
+      (fail "MINIMAP gave ~{~A~^|~}" (minimap-lines)))
+  (check-minimap "the default" t)
+  ;; A file taller than the view: the map holds every line (600 and the
+  ;; empty one after the last newline, as the page counts), the box the
+  ;; first ones, and follows the view to the end
+  (write-file (scratch "minimap.lisp")
+              (with-output-to-string (out)
+                (dotimes (i 300)
+                  (format out "(defun minimap-~D (x) ; line ~D~%  (+ x ~D))~%" i (1+ (* 2 i)) i))))
+  (cmd (format nil "OPEN FILE ~A" (scratch "minimap.lisp")))
+  (cmd "EVAL beginning-of-buffer")
+  (if (string/= (page-panels "\"minimap\":{\"on\":true,\"lines\":601,\"top\":1,") "")
+      (ok "the page's map holds all 601 lines and boxes the view from line 1")
+      (fail "the page's map at the top of the file: ~A" *result*))
+  ;; (the page reports the box a moment after the scroll: waited for)
+  (cmd "EVAL end-of-buffer")
+  (if (string/= (page-panels "\"lines\":601,\"top\":571,\"bottom\":601,") "")
+      (ok "after end-of-buffer the box reaches line 601")
+      (fail "the page's map after end-of-buffer: ~A" *result*))
+  (cmd "EVAL kill-buffer")
+  ;; A pick through the verb hides it: the tick, the menu bar, the page,
+  ;; the file
+  (cmd "MINIMAP Minimap")
+  (if (result-is "")
+      (ok "picking View > Minimap")
+      (fail "MINIMAP Minimap gave ~A" *result*))
+  (if (equal (minimap-lines) '("  Minimap"))
+      (ok "the tick is off the Minimap item")
+      (fail "after the pick MINIMAP gave ~{~A~^|~}" (minimap-lines)))
+  (if (string/= (menu-report "\"  Minimap\"") "")
+      (ok "the menu bar's View menu shows the item unticked")
+      (fail "the menu bar's View menu: ~A" *result*))
+  (check-minimap "hidden" nil)
+  (if (file-has-line *rc-file* "(show-minimap nil)")
+      (ok "the pick was written to ~A" *rc-file*)
+      (fail "~A does not hold the minimap's form" *rc-file*))
+  (if (file-has-line *rc-file* "(load-theme :drive-theme)")
+      (ok "the theme's form is still there")
+      (fail "the minimap's form displaced the theme's in ~A" *rc-file*))
+  ;; The host's own bar (macOS): the item itself performs its action,
+  ;; and its neighbour, the Themes submenu, is still in the menu
+  (cmd "EVAL (clamacs::host-menu-click :minimap 0)")
+  (cond ((result-is "\"no native menu\"")
+         (ok "the page draws the View menu here; the MINIMAP verb is the pick"))
+        ((not (result-is "\"picked\""))
+         (fail "picking Minimap on the host's menu bar gave ~A" *result*))
+        (t
+         (if (equal (minimap-lines) '("> Minimap"))
+             (ok "the host's View menu pick showed the minimap again")
+             (fail "the host's View menu pick left ~{~A~^|~}" (minimap-lines)))
+         (check-minimap "the host's pick" t)
+         (if (string/= (menu-report "\"> Drive Theme\"") "")
+             (ok "the Themes submenu survived the item's remake")
+             (fail "the menu bar after the remake: ~A" *result*))))
+  ;; Shown again through the setting itself: the form is replaced in
+  ;; place; then hidden for the second editor
+  (cmd "EVAL (clamacs::show-minimap t)")
+  (check-minimap "shown again" t)
+  (if (and (file-has-line *rc-file* "(show-minimap t)")
+           (not (file-has-line *rc-file* "(show-minimap nil)")))
+      (ok "the form was replaced in place")
+      (fail "~A after showing the minimap again" *rc-file*))
+  (cmd "MINIMAP Minimap")
+  (check-minimap "hidden for the second editor" nil)
+  (if (file-has-line *rc-file* "(show-minimap nil)")
+      (ok "the init file says (show-minimap nil)")
+      (fail "~A does not say (show-minimap nil)" *rc-file*)))
+
 (defun leg-keys ()
   (cmd (format nil "OPEN FILE ~A" (fixture "sample.lisp")))
   (cmd "EVAL beginning-of-buffer")
@@ -1547,6 +1640,7 @@ requester asked.  Then wait for the port to go."
   (leg-menu)
   (leg-buffers)
   (leg-themes)
+  (leg-minimap)
   (leg-keys)
   (leg-snapshot)
   (leg-start-clamiga)
@@ -1590,6 +1684,11 @@ wrote: it must come up where the file said, then quit."
   (if (string/= (menu-report "\"> Drive Theme\"") "")
       (ok "the second editor's menu bar ticks Drive Theme")
       (fail "the second editor's menu bar: ~A" *result*))
+  ;; ... and without the minimap, as the init file's (show-minimap nil) says
+  (if (equal (minimap-lines) '("  Minimap"))
+      (ok "the second editor came up without the minimap: the init file's form took")
+      (fail "the second editor's MINIMAP gave ~{~A~^|~}" (minimap-lines)))
+  (check-minimap "the second editor" nil)
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)

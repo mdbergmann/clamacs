@@ -55,15 +55,18 @@
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
                 (incf items))
                (:dynamic
-                ;; The place of a group made at run time: a menu of its own,
-                ;; named after the group.
-                (is (and (> i 0) (eq (menu-entry-kind (nth (1- i) entries)) :title)))
-                (is-equal (menu-entry-title (nth (1- i) entries))
+                ;; The place of a group made at run time: a menu holding
+                ;; nothing but groups, the first right after its title
+                ;; (the Buffers menu; View's themes, then its minimap item).
+                (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic))))
+                (is-equal (menu-entry-title
+                           (find :title (reverse (subseq entries 0 i)) :key #'menu-entry-kind))
                           (ecase (menu-entry-dynamic e)
                             (:buffers "Buffers")
-                            (:themes "View")))
-                (is (or (null next) (eq (menu-entry-kind next) :title))))))
-    (is-equal (count :dynamic entries :key #'menu-entry-kind) 2)
+                            (:themes "View")
+                            (:minimap "View")))
+                (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
+    (is-equal (count :dynamic entries :key #'menu-entry-kind) 3)
     (is-equal (menu-count) (length entries))
     (is-equal titles 8)
     (is (> items 30))
@@ -75,21 +78,66 @@
     (is (null (menu-entry-dynamic (menu-entry 0))))
     (is (null (menu-find-dynamic :nothing)))
     ;; The themes go into a submenu named after them; the buffers fill
-    ;; their menu.
+    ;; their menu; the minimap's item follows the Themes submenu.
     (is-equal (menu-entry-title (menu-entry (menu-find-dynamic :themes))) "Themes")
-    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :buffers)))))))
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :buffers)))))
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :minimap)))))
+    (is-equal (menu-find-dynamic :minimap) (1+ (menu-find-dynamic :themes)))))
 
 (deftest a-title-with-nothing-drawn-under-it-is-hidden
-  ;; The model draws every group: everything is drawn.
-  (let ((editor (make-fake-editor)))
+  ;; The model draws the two groups every frontend has: everything but
+  ;; the minimap's item (the host page's alone) is drawn, and View is
+  ;; drawn for its themes.
+  (let ((editor (make-fake-editor))
+        (minimap (menu-find-dynamic :minimap)))
     (is-equal (editor-dynamic-groups editor) '(:buffers :themes))
     (dotimes (i (menu-count))
-      (is (menu-entry-drawn-p editor i))
-      (is (not (eq (menu-wire-kind editor i) :hidden))))
+      (cond ((= i minimap)
+             (is (not (menu-entry-drawn-p editor i)))
+             (is (eq (menu-wire-kind editor i) :hidden)))
+            (t
+             (is (menu-entry-drawn-p editor i))
+             (is (not (eq (menu-wire-kind editor i) :hidden))))))
     (is-equal (menu-wire-kind editor 0) :title)
     (is-equal (menu-wire-kind editor (menu-find 'find-file)) :item)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
-    (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)))
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)
+    (is (menu-entry-drawn-p editor (1- (menu-find-dynamic :themes))))))
+
+(deftest the-minimap-item-is-a-setting-every-frontend-keeps
+  ;; The View menu's other group: one line, ticked while the minimap is
+  ;; shown; a pick toggles it and writes the init file, as a theme pick
+  ;; does -- on a frontend without a minimap too (the fake), since the
+  ;; init file is one file for every frontend.
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor doc))
+          (*minimap* t)
+          (*init-file* (temp-file "menu-minimap-rc")))
+      (unwind-protect
+           (progn
+             (is-equal (port editor "MINIMAP") '(0 "> Minimap"))
+             (is-equal (dynamic-menu editor :minimap) '(("Minimap" . :minimap)))
+             (is-equal (nth-value 1 (dynamic-menu editor :minimap)) :minimap)
+             (is-equal (port editor "MINIMAP Minimap") '(0 ""))
+             (is (null *minimap*))
+             (is-equal (port editor "MINIMAP") '(0 "  Minimap"))
+             (is (null (nth-value 1 (dynamic-menu editor :minimap))))
+             (is (search "(show-minimap nil)" (read-file-text *init-file*)))
+             (is-equal (port editor "MINIMAP nobody") '(0 "no such item"))
+             (is (null *minimap*))
+             ;; The command is the same toggle; C-u keeps it to the session
+             (is (find-command "clamacs-toggle-minimap"))
+             (run-command doc 'clamacs-toggle-minimap)
+             (is *minimap*)
+             (is-equal (fake-last-message doc) "Minimap on")
+             (is (search "(show-minimap t)" (read-file-text *init-file*)))
+             (run-command doc 'clamacs-toggle-minimap 4)
+             (is (null *minimap*))
+             (is-equal (fake-last-message doc) "Minimap off (this session)")
+             (is (search "(show-minimap t)" (read-file-text *init-file*)))
+             (is (not (search "(show-minimap nil)" (read-file-text *init-file*)))))
+        (delete-quietly *init-file*)))))
 
 (deftest menu-find-returns-the-item
   (let ((i (menu-find 'save-buffer)))

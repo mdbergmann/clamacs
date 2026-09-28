@@ -22,6 +22,10 @@
 // (clamacsDetach) or to bring it back (clamacsAttach); Lisp moves the
 // tab between the pages (removeDoc in one, makeDoc in the other), and a
 // window whose source region is empty lets its dock fill it.
+// Phase H9: a minimap beside every source view -- the whole text in
+// miniature, the part on screen boxed -- painted here from the text and
+// its colours; CK.setMinimap shows or hides it (View > Minimap, a
+// setting Lisp keeps).
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
@@ -136,6 +140,8 @@
   function showSource(id) {
     shownSource = id;
     refreshTabs();
+    const doc = docs.get(id);
+    if (doc && doc.map) doc.map.schedule(false);
   }
 
   // Display NAME in the dock, opening the dock; the keyboard is not moved.
@@ -264,6 +270,8 @@
             focus: () => { if (activeId !== doc.id) lisp("clamacsActivate", doc.id); return false; }
           }),
           EditorView.updateListener.of((u) => {
+            if (doc.map && (u.docChanged || u.transactions.some((tr) => tr.effects.some((e) => e.is(colourEffect)))))
+              doc.map.schedule(true);
             if (doc.applying) return;
             if (u.docChanged) {
               const changes = [];
@@ -288,6 +296,177 @@
   function applying(doc, fn) {
     doc.applying = true;
     try { fn(); } finally { doc.applying = false; }
+  }
+
+  // ---- the minimap ----------------------------------------------------------
+  //
+  // The whole text in miniature at the right edge of a source view
+  // (phase H9): one row per line, its words as bars one pixel per
+  // character, tinted as the runs are coloured (the same --c-* variables
+  // the text is painted with, so a theme carries over), and over it a
+  // box for the lines the view shows.  Every line is always on the map:
+  // the rows shrink when the text is taller than the map.  The picture
+  // is painted onto an offscreen canvas when the text, its colours, the
+  // theme or the size change; the visible canvas takes that picture and
+  // the box again on every scroll, which is cheap.  A click or a drag
+  // scrolls the view so the line under the mouse is centred.  Lisp keeps
+  // the setting (theme.lisp): CK.setMinimap shows or hides every map;
+  // dock documents have none.  The page reports what the shown map
+  // draws (`minimap' in clamacsPanels) when that changes, so a script
+  // proves the box follows the view.
+
+  const MAP_PITCH = 2;       // the row height while every line fits
+  let minimapOn = true;
+  const mapColours = {};     // kind -> what --c-<kind> computes to under this theme
+  function mapColour(kind) {
+    if (!(kind in mapColours))
+      mapColours[kind] = getComputedStyle(document.documentElement).getPropertyValue("--c-" + kind).trim() || null;
+    return mapColours[kind];
+  }
+  function forgetMapColours() {
+    for (const k of Object.keys(mapColours)) delete mapColours[k];
+  }
+
+  function makeMinimap(doc) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "minimap";
+    doc.holder.appendChild(canvas);
+    const view = doc.view;
+    const map = {doc, canvas, picture: document.createElement("canvas"), fg: "#808080",
+                 width: 0, height: 0, pitch: MAP_PITCH, lines: 0, top: 0, bottom: 0,
+                 dirty: true, frame: 0};
+    map.schedule = (repaint) => {
+      if (repaint) map.dirty = true;
+      if (!map.frame) map.frame = requestAnimationFrame(() => { map.frame = 0; drawMinimap(map); });
+    };
+    view.scrollDOM.addEventListener("scroll", () => map.schedule(false));
+    // The holder's size: 0 while another tab is shown, so showing this
+    // one is a resize too
+    if (window.ResizeObserver) new ResizeObserver(() => map.schedule(true)).observe(doc.holder);
+    canvas.addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      const go = (e) => {
+        const y = e.clientY - canvas.getBoundingClientRect().top;
+        const lines = view.state.doc.lines;
+        const line = Math.max(0, Math.min(lines - 1, Math.floor(y / map.pitch)));
+        view.dispatch({effects: EditorView.scrollIntoView(view.state.doc.line(line + 1).from, {y: "center"})});
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", go);
+        document.removeEventListener("mouseup", up);
+      };
+      document.addEventListener("mousemove", go);
+      document.addEventListener("mouseup", up);
+      go(ev);
+    });
+    return map;
+  }
+
+  // The picture: every line's runs of non-blank characters, one pixel
+  // per character up to the map's width, coloured as the text is (the
+  // paren highlights are backgrounds, not colours: skipped).  Several
+  // lines that land on one device row paint one.
+  function paintPicture(map) {
+    const {doc, picture} = map;
+    const state = doc.view.state, text = state.doc, lines = text.lines;
+    const dpr = window.devicePixelRatio || 1;
+    const W = map.width, H = map.height;
+    map.lines = lines;
+    map.pitch = Math.min(MAP_PITCH, H / Math.max(1, lines));
+    map.fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#808080";
+    picture.width = Math.round(W * dpr);
+    picture.height = Math.round(H * dpr);
+    const g = picture.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const colours = state.field(colourField);
+    const bar = map.pitch >= 2 ? 1 : map.pitch;
+    let lastRow = -1;
+    for (let i = 1; i <= lines; i++) {
+      const y = (i - 1) * map.pitch;
+      const row = Math.floor(y * dpr);
+      if (row === lastRow && map.pitch * dpr < 1) continue;
+      lastRow = row;
+      const line = text.line(i);
+      const s = line.text, len = Math.min(s.length, W);
+      const runs = [];
+      colours.between(line.from, line.from + len, (from, to, value) => {
+        const kind = value.spec.class.slice(3);
+        if (kind !== "paren-match" && kind !== "paren-bad") runs.push([from - line.from, to - line.from, kind]);
+      });
+      const kindAt = (x) => {
+        let kind = null;
+        for (const r of runs) if (r[0] <= x && x < r[1]) kind = r[2];
+        return kind;
+      };
+      let x = 0;
+      while (x < len) {
+        if (s.charCodeAt(x) <= 32) { x++; continue; }
+        const kind = kindAt(x);
+        let x1 = x + 1;
+        while (x1 < len && s.charCodeAt(x1) > 32 && kindAt(x1) === kind) x1++;
+        g.globalAlpha = kind ? 0.9 : 0.55;
+        g.fillStyle = (kind && mapColour(kind)) || map.fg;
+        g.fillRect(x, y, x1 - x, bar);
+        x = x1;
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  function drawMinimap(map) {
+    const {doc, canvas} = map;
+    if (!minimapOn || !canvas.isConnected) return;
+    const rect = canvas.getBoundingClientRect();
+    const W = Math.round(rect.width), H = Math.round(rect.height);
+    if (W === 0 || H === 0) return;            // not shown: painted when it is
+    const dpr = window.devicePixelRatio || 1;
+    if (W !== map.width || H !== map.height) {
+      map.width = W; map.height = H; map.dirty = true;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+    }
+    if (map.dirty) { paintPicture(map); map.dirty = false; }
+    const view = doc.view, scroller = view.scrollDOM;
+    const top = view.state.doc.lineAt(view.lineBlockAtHeight(scroller.scrollTop).from).number;
+    const bottom = view.state.doc.lineAt(view.lineBlockAtHeight(scroller.scrollTop + Math.max(0, scroller.clientHeight - 1)).from).number;
+    const g = canvas.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    g.drawImage(map.picture, 0, 0, W, H);
+    const y0 = (top - 1) * map.pitch, y1 = Math.min(H, bottom * map.pitch);
+    g.fillStyle = map.fg;
+    g.globalAlpha = 0.14;
+    g.fillRect(0, y0, W, Math.max(1, y1 - y0));
+    g.globalAlpha = 0.4;
+    g.fillRect(0, y0, W, 1);
+    g.fillRect(0, Math.max(y0, y1 - 1), W, 1);
+    g.globalAlpha = 1;
+    map.top = top; map.bottom = bottom;
+    if (doc.id === shownSource) reportMinimap();
+  }
+
+  // What the shown source document's map draws: for the report.
+  function minimapState() {
+    const doc = docs.get(shownSource);
+    const state = {on: minimapOn};
+    if (minimapOn && doc && doc.map && doc.map.width > 0) {
+      state.lines = doc.map.lines;
+      state.top = doc.map.top;
+      state.bottom = doc.map.bottom;
+      state.pitch = Math.round(doc.map.pitch * 1000) / 1000;
+    }
+    return state;
+  }
+  // A scroll is many events: the report goes when the box moved to
+  // other lines, and at most a few times a second.
+  let mapReported = "", mapReportTimer = 0;
+  function reportMinimap() {
+    const key = JSON.stringify(minimapState());
+    if (key === mapReported) return;
+    mapReported = key;
+    if (!mapReportTimer) mapReportTimer = setTimeout(() => { mapReportTimer = 0; reportPanels(); }, 150);
   }
 
   // ---- lists -------------------------------------------------------------
@@ -468,6 +647,15 @@
     item.tick = tick;
     return item;
   }
+  // A dynamic group without a title: a block of its own in the menu, so
+  // remaking it leaves the menu's other entries alone (View: the Themes
+  // submenu, then the minimap's item).
+  function makeMenuGroup(popup) {
+    const group = document.createElement("div");
+    group.className = "menu-group";
+    popup.appendChild(group);
+    return group;
+  }
   function makeMenuSep(popup) {
     const sep = document.createElement("div");
     sep.className = "menu-sep";
@@ -605,6 +793,8 @@
                   object: panels.inspector.object, parts: inspParts.rows.length, part: inspParts.selected},
       // The completion list at the prompt: its rows and the cursor's row
       completions: completionsState(),
+      // The minimap: shown or not, and what the shown source's map draws
+      minimap: minimapState(),
       // Which documents this page holds, and whether it is a detached
       // window's: what a script checks after a move (phase H7)
       tabs: {source, dock, active: activeId},
@@ -656,6 +846,7 @@
                         id);
       doc.nameSpan = doc.tab.nameSpan;
       doc.view = makeView(doc);
+      if (!doc.dock) doc.map = makeMinimap(doc);
       docs.set(id, doc);
       if (doc.dock) dockItems.set(id, {name: id, tab: doc.tab, el: doc.holder, kind: "doc", open: true});
       if (activeId === null) CK.activateDoc(id);
@@ -797,7 +988,7 @@
         else if (kind === "bar") makeMenuSep(popup);
         else if (kind === "item")
           menuItems.set(index, makeMenuItem(popup, title, keys, () => lisp("clamacsMenu", index)));
-        else dynamicMenus.set(kind, {popup: title ? makeSubmenu(popup, title) : popup, lines: []});
+        else dynamicMenus.set(kind, {popup: title ? makeSubmenu(popup, title) : makeMenuGroup(popup), lines: []});
       });
       reportPanels();
     },
@@ -816,6 +1007,16 @@
     theme(vars, dark) {
       for (const [name, value] of vars) rootStyle.setProperty(name, value);
       document.documentElement.dataset.theme = dark ? "dark" : "light";
+      forgetMapColours();
+      for (const d of docs.values()) if (d.map) d.map.schedule(true);
+      reportPanels();
+    },
+
+    // The minimap shown or hidden in this window (View > Minimap).
+    setMinimap(flag) {
+      minimapOn = !!flag;
+      document.documentElement.dataset.minimap = minimapOn ? "on" : "off";
+      for (const d of docs.values()) if (d.map) d.map.schedule(true);
       reportPanels();
     },
 
@@ -891,6 +1092,7 @@
               status: status.textContent, message: message.textContent,
               mini: mini.classList.contains("open") ? miniLabel.textContent + mini.value : null,
               completions: completionsState(),
+              minimap: minimapState(),
               panels: panelState()};
     },
     lineColours(id, y) {

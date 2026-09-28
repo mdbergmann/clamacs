@@ -387,7 +387,7 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
 | `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
 | `clamacsDockResized` | `height` | for the snapshot; the sending window's dock |
-| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the dock and the panels show, plus the page's tabs (`tabs`: the source and dock document ids, the active one) and whether it is a detached window's (`detached`), after every change (one report per batch): kept verbatim per window for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
+| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the minimap (`minimap`: `on`, and for the shown source view's map its `lines`, the boxed `top` and `bottom` lines and the row `pitch`; sent again when the box moves, at most a few times a second), the dock and the panels show, plus the page's tabs (`tabs`: the source and dock document ids, the active one) and whether it is a detached window's (`detached`), after every change (one report per batch): kept verbatim per window for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
 | `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document (the main window's page's; a detached page's is bound to nothing) |
 | `clamacsDetach` / `clamacsAttach` | `name` | a tab's context menu (H7): the document id or panel name shown in a window of its own / moved back into the main window |
 
@@ -414,6 +414,8 @@ status line, the cursor on row `index` or none for -1),
 `setMenus(json)`, `menuEnable(index, flag)`, `setDynamic(which, json)`,
 `theme(vars, dark)` (`vars` `[name, value]` pairs of the page's CSS
 variables, set on the document element; `dark` sets `data-theme`),
+`setMinimap(flag)` (the minimap beside every source view shown or
+hidden, H9; `data-minimap` on the document element),
 `showDiagnostics(rows, open)`, `selectDiagnostic(row)`, `dbgOpen(level,
 condition, restarts, hasContinue)`, `dbgClose()`, `dbgRaise()`,
 `dbgFrames(rows)`, `dbgSelectFrame(n)`, `dbgLocals(rows)`, `inspOpen(type,
@@ -1038,6 +1040,48 @@ with the memory note updated.
   the history, the pick, the shown names), one in `test-host.lisp` (the
   page's calls, the pick binding, the replay), the key lists' tests
   extended.
+
+### H9 -- the minimap: the whole text in miniature beside the view
+
+- **Done 2026-09-28.**  A source view has, at its right edge, the whole
+  buffer in miniature -- one row per line, its words as bars one pixel
+  per character, tinted with the same `--c-*` variables the text is
+  coloured with, so a theme carries over -- and over it a box for the
+  lines the view shows; a click or a drag on the map scrolls the view so
+  the line under the mouse is centred.  Every line is always on the map
+  (the rows shrink when the text is taller than the map: Sublime's
+  scaling, not VS Code's scrolling strip).  It is the page's alone
+  (`makeMinimap` in `page-app.js`: a canvas per source document, the
+  picture painted offscreen when the text, its colours, the theme or the
+  size change and copied with the box on every scroll; dock documents
+  have none), and the setting is Lisp's: `*minimap*` and `show-minimap`
+  in `theme.lisp`, kept exactly the theme's way -- three entrances (View
+  > Minimap, `M-x clamacs-toggle-minimap`, the init file's `(show-minimap
+  nil)`), one function, the form written into the init file by the
+  theme's rewrite machinery generalised over the form's head
+  (`init-form-persist`).  The menu item is a third dynamic group,
+  `:minimap`, one line ticked while the map is shown, listed only by the
+  host editor (`editor-dynamic-groups`; the MUI editor never shows it),
+  and a `MINIMAP [Minimap]` port verb is the twin of `THEMES`.  Two
+  things the group needed: a dynamic group without a title used to
+  *fill* its menu -- the page cleared the popup, the Cocoa shim
+  `removeAllItems` -- which was right for Buffers and would have wiped
+  View's Themes submenu, so both now replace the group's own items in
+  their place (a `.menu-group` block in the page, an items array and an
+  anchor item in the shim); and the frontend generic
+  `editor-apply-minimap` (`frontend.lisp`, the default does nothing) is
+  what `show-minimap` reaches the page through (`CK.setMinimap` to every
+  window, sent at start after the theme and to a later window when it
+  settles).  The page reports what the shown map draws (`minimap` in
+  `clamacsPanels`, debounced), `host-panel-state :minimap` is the
+  editor's account, and the drive's MINIMAP leg checks the box at the
+  top of a 600-line file and after `end-of-buffer`, the pick through the
+  verb and through the host's own bar (the Themes submenu surviving the
+  item's remake), the init file's form, and that the second editor comes
+  up without the map.  Tests: `test-menu.lisp` (the table's shape, the
+  verb and the command on the fake), `test-host.lisp` (the calls, the
+  tick, the file, the replay to a later window), `test-theme.lisp` (the
+  form's rewrite beside the theme's).
 
 ## Runtime items (commits in cl-amiga, each under every gate)
 

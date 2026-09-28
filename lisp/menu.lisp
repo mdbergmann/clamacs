@@ -166,9 +166,13 @@
      (item 'clamacs-snapshot-windows    :always        "Snapshot Windows"       nil       :global)
 
      ;; One item per theme (theme.lisp), the one in effect ticked, in a
-     ;; submenu of their own.
+     ;; submenu of their own -- and below it the minimap's one item,
+     ;; ticked while it is shown, which only a frontend that draws a
+     ;; minimap lists (EDITOR-DYNAMIC-GROUPS: the host's page does, the
+     ;; MUI editor does not and never shows the entry).
      (title "View")
      (make-menu-entry :dynamic :always :themes "Themes" nil nil)
+     (make-menu-entry :dynamic :always :minimap nil nil nil)
 
      ;; One item per open buffer, made and remade as windows come and go,
      ;; filling the menu.
@@ -377,18 +381,22 @@ when DOC is still open."
 
 (defun dynamic-menu (editor which)
   "The group WHICH as it should be now: a list of (LABEL . OBJECT) and
-:BAR, and as second value the object whose item is ticked."
+:BAR, and as second value the object whose item is ticked.  The minimap's
+group is one item, ticked while the minimap is shown (theme.lisp)."
   (ecase which
     (:buffers (values (buffer-menu editor) (editor-active-document editor)))
-    (:themes (values (theme-menu) (active-theme)))))
+    (:themes (values (theme-menu) (active-theme)))
+    (:minimap (values (list (cons "Minimap" :minimap)) (and *minimap* :minimap)))))
 
 (defun dynamic-menu-pick (editor which object)
   "Pick OBJECT's item in the group WHICH as the mouse would: a buffer's
 window is activated, a theme loaded (and remembered, as LOAD-THEME
-does).  True when it was done."
+does), the minimap toggled (and remembered, as SHOW-MINIMAP does).  True
+when it was done."
   (ecase which
     (:buffers (buffer-menu-pick editor object))
-    (:themes (and (find-theme object) (load-theme object) t))))
+    (:themes (and (find-theme object) (load-theme object) t))
+    (:minimap (and (eq object :minimap) (progn (show-minimap (not *minimap*)) t)))))
 
 (defun dynamic-menu-equal (a b)
   "Whether the groups A and B show the same items for the same objects
@@ -472,6 +480,13 @@ a pick of the item with that label, answering \"\" or MISSING."
 ;;; THEMES [label]: the View menu from a macro -- the twin of BUFFERS.
 (define-port-verb "THEMES" (editor arg)
   (dynamic-menu-verb editor :themes arg "no such theme"))
+
+;;; MINIMAP [Minimap]: the View menu's minimap item from a macro -- its
+;;; line, ticked while the minimap is shown, or a pick, which toggles it.
+;;; The setting is kept on every frontend (the init file is one file);
+;;; only the host's page draws the map.
+(define-port-verb "MINIMAP" (editor arg)
+  (dynamic-menu-verb editor :minimap arg "no such item"))
 
 ;;; ------------------------------------------------------------------
 ;;; About

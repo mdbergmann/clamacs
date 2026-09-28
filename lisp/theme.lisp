@@ -14,7 +14,10 @@
 ;;;; Pure: no MUI, no OS types.  The init file's rewrite is string work
 ;;;; over the sexp scanner (THEME-PERSIST-TEXT); the file I/O goes through
 ;;;; a temp file and a swap (THEME-WRITE-FILE), since the file is the
-;;;; user's.
+;;;; user's.  The minimap setting at the end of the file -- one flag,
+;;;; the View menu's other item -- is kept the same way, with the same
+;;;; three entrances (the menu, `M-x clamacs-toggle-minimap', the init
+;;;; file's `(show-minimap ...)' form) ending in SHOW-MINIMAP.
 
 (in-package :clamacs)
 
@@ -350,7 +353,9 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 ;;; first top-level `(load-theme ...)' -- an open paren in column 0
 ;;; outside a string or comment, its head LOAD-THEME in any package --
 ;;; is replaced by exactly its own text; without one the form is appended
-;;; under a comment; every other byte stays.  A `#+amigaos' before a form
+;;; under a comment; every other byte stays.  (The same for the minimap's
+;;; `(show-minimap ...)': the machinery takes the form's head as a
+;;; parameter, INIT-FORM-PERSIST.)  A `#+amigaos' before a form
 ;;; puts its paren off column 0, so a guarded form is left alone, as a
 ;;; second form is (the first wins, as it does when the file loads), and
 ;;; a form the scanner cannot bound (unbalanced) is left alone too and the
@@ -362,15 +367,15 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (defun theme-form-text (name)
   (format nil "(load-theme :~A)" (theme-name-string name)))
 
-(defun theme-head-p (token)
-  "Whether TOKEN, an atom's text, names LOAD-THEME, with or without a
-package prefix."
+(defun theme-head-p (token &optional (head "load-theme"))
+  "Whether TOKEN, an atom's text, names HEAD (LOAD-THEME), with or
+without a package prefix."
   (let ((colon (position #\: token :from-end t)))
-    (string-equal (if colon (subseq token (1+ colon)) token) "load-theme")))
+    (string-equal (if colon (subseq token (1+ colon)) token) head)))
 
-(defun theme-form-bounds (text)
-  "The start and end of the top-level `(load-theme ...)' form in TEXT,
-two values, or NIL."
+(defun theme-form-bounds (text &optional (head "load-theme"))
+  "The start and end of the top-level `(HEAD ...)' form in TEXT -- the
+`(load-theme ...)' form -- two values, or NIL."
   (let* ((buf (sx-simple text))
          (len (length buf)))
     (declare (simple-string buf) (fixnum len))
@@ -378,25 +383,29 @@ two values, or NIL."
       (when (and (eq kind :open)
                  (or (= start 0) (char= (schar buf (1- start)) #\Newline)))
         (multiple-value-bind (k2 s2 e2) (sx-next buf len end)
-          (when (and (eq k2 :atom) (theme-head-p (subseq buf s2 e2)))
+          (when (and (eq k2 :atom) (theme-head-p (subseq buf s2 e2) head))
             (let ((close (sexp-forward buf start)))
               (return (and close (values start close))))))))))
+
+(defun init-form-persist-text (text head form comment)
+  "TEXT, the init file, with FORM as its `(HEAD ...)' form: the one it
+has replaced in place, or FORM appended under COMMENT."
+  (multiple-value-bind (start end) (theme-form-bounds text head)
+    (if start
+        (concatenate 'string (subseq text 0 start) form (subseq text end))
+        (concatenate 'string
+                     text
+                     (cond ((string= text "") "")
+                           ((char= (char text (1- (length text))) #\Newline)
+                            (string #\Newline))
+                           (t (format nil "~%~%")))
+                     comment (string #\Newline)
+                     form (string #\Newline)))))
 
 (defun theme-persist-text (text name)
   "TEXT, the init file, with `(load-theme :NAME)' as its theme form: the
 one it has replaced in place, or the form appended."
-  (let ((form (theme-form-text name)))
-    (multiple-value-bind (start end) (theme-form-bounds text)
-      (if start
-          (concatenate 'string (subseq text 0 start) form (subseq text end))
-          (concatenate 'string
-                       text
-                       (cond ((string= text "") "")
-                             ((char= (char text (1- (length text))) #\Newline)
-                              (string #\Newline))
-                             (t (format nil "~%~%")))
-                       *theme-persist-comment* (string #\Newline)
-                       form (string #\Newline))))))
+  (init-form-persist-text text "load-theme" (theme-form-text name) *theme-persist-comment*))
 
 ;;; The init file is the USER's, hand-written and often a dotfile manager's
 ;;; symlink, not a file the editor owns like the layout file: a write that
@@ -438,11 +447,12 @@ swapped in.  True when written; on NIL TARGET is untouched."
               (theme-swap-in tmp target))
       (delete-quietly tmp))))
 
-(defun theme-persist (name &optional (path *init-file*))
-  "The choice NAME into the init file PATH, which is made when missing.
-True when the file holds it now (an unchanged file is not rewritten);
-NIL when it could not be read or written, in which case the file is as it
-was."
+(defun init-form-persist (head form comment &optional (path *init-file*))
+  "FORM, the `(HEAD ...)' form of the init file PATH, into it (the file
+is made when missing), replacing the one there or appended under
+COMMENT.  True when the file holds it now (an unchanged file is not
+rewritten); NIL when it could not be read or written, in which case the
+file is as it was."
   (let* ((target (theme-persist-target path))
          (old (read-file-text target)))
     (cond ((and (null old) (probe-file target))
@@ -450,9 +460,15 @@ was."
            nil)
           (t
            (let* ((old (or old ""))
-                  (new (theme-persist-text old name)))
+                  (new (init-form-persist-text old head form comment)))
              (or (string= old new)
                  (theme-write-file target new)))))))
+
+(defun theme-persist (name &optional (path *init-file*))
+  "The choice NAME into the init file PATH: `(load-theme :NAME)' as its
+theme form.  True when the file holds it now, NIL when it could not be
+read or written (INIT-FORM-PERSIST)."
+  (init-form-persist "load-theme" (theme-form-text name) *theme-persist-comment* path))
 
 ;;; ------------------------------------------------------------------
 ;;; LOAD-THEME: the one implementation
@@ -548,3 +564,56 @@ for this session only and the init file is left alone."
                        (message doc "Theme: ~A~A" (theme-label theme)
                                 (if save "" " (this session)"))))))
             :completer #'theme-completer)))
+
+;;; ------------------------------------------------------------------
+;;; The minimap: the View menu's other item, kept the theme's way
+;;; ------------------------------------------------------------------
+
+;;; The minimap is the whole text in miniature beside the text area, the
+;;; part on screen marked -- what the host's page draws (page-app.js);
+;;; the MUI editor has none and never lists the menu item.  The SETTING
+;;; lives here, with the theme, because it is kept the same way: one
+;;; flag, *MINIMAP*, with three entrances -- View > Minimap (menu.lisp's
+;;; :MINIMAP group), `M-x clamacs-toggle-minimap' and the init file's
+;;; `(show-minimap nil)' -- all ending in SHOW-MINIMAP, which tells the
+;;; frontend (EDITOR-APPLY-MINIMAP) and writes the form into the init
+;;; file as LOAD-THEME writes its own.  Shown by default: the form is
+;;; written on the first change.
+
+(defvar *minimap* t
+  "Whether the minimap is shown, where the frontend has one.")
+
+(defparameter *minimap-persist-comment*
+  ";; Written by M-x clamacs-toggle-minimap and the View menu")
+
+(defun minimap-form-text (flag)
+  (format nil "(show-minimap ~A)" (if flag "t" "nil")))
+
+(defun minimap-persist (flag &optional (path *init-file*))
+  "The choice FLAG into the init file PATH: `(show-minimap T-or-NIL)' as
+its form, the theme's way (INIT-FORM-PERSIST)."
+  (init-form-persist "show-minimap" (minimap-form-text flag) *minimap-persist-comment* path))
+
+(defun show-minimap (flag &key (save t))
+  "Show the minimap when FLAG, hide it otherwise: *MINIMAP*, the frontend
+told, and -- unless SAVE is NIL, or the init file is loading its own form
+-- the choice written into the init file.  Answers the flag in effect.
+Callable from any thread, as LOAD-THEME is."
+  (let ((flag (and flag t)))
+    (setq *minimap* flag)
+    (let ((editor *editor*))
+      (when editor
+        (theme-on-editor-task (lambda () (editor-apply-minimap editor flag)))))
+    (when (and save *theme-persist*)
+      (unless (minimap-persist flag)
+        (theme-note "Cannot write ~A; the minimap setting holds for this session" *init-file*)))
+    flag))
+
+(define-command clamacs-toggle-minimap (doc arg)
+  "Show the minimap -- the whole buffer in miniature beside the text,
+the part on screen marked -- or hide it.  With `C-u' the change holds
+for this session only and the init file is left alone.  The MUI editor
+has no minimap; there the command only records the choice."
+  (let* ((save (eql arg 1))
+         (flag (show-minimap (not *minimap*) :save save)))
+    (message doc "Minimap ~A~A" (if flag "on" "off") (if save "" " (this session)"))))

@@ -1269,7 +1269,7 @@ behind the page."
 ;;; group by its entry's table index).
 
 (defmethod editor-dynamic-groups ((editor host-editor))
-  '(:buffers :themes))
+  '(:buffers :themes :minimap))
 
 (defun dynamic-group-named (editor name)
   "The dynamic group this frontend draws under NAME -- a keyword, or its
@@ -1568,6 +1568,23 @@ menu bar (the table not sent), what it should be."
   "The theme in effect to the page of a WINDOW that came up later."
   (apply #'ck window "theme" (theme-page-args (active-theme))))
 
+;;; The minimap (theme.lisp, SHOW-MINIMAP): the page draws it beside every
+;;; source view -- the whole text in miniature, the part on screen marked
+;;; -- and CK.setMinimap shows or hides it in every window.  Sent at start
+;;; after the theme, so an init file's `(show-minimap nil)' is honoured
+;;; before the first document, and to a later window when it settles.
+
+(defmethod editor-apply-minimap ((editor host-editor) flag)
+  (ck-all editor "setMinimap" (and flag t)))
+
+(defun send-minimap (editor)
+  "The minimap setting to the page: at start, after the theme."
+  (editor-apply-minimap editor *minimap*))
+
+(defun send-minimap-to (window)
+  "The minimap setting to the page of a WINDOW that came up later."
+  (ck window "setMinimap" (and *minimap* t)))
+
 (defun host-ready (target user-agent &optional scheme)
   "The clamacsReady binding: the page of TARGET's window (TARGET-WINDOW)
 is up.  From the main window's page, the first, SCHEME -- `dark' or
@@ -1809,8 +1826,8 @@ verbatim."
 
 (defun host-panel-state (panel &optional (editor *editor*))
   "What the editor told the page to show for PANEL -- :MENU, :THEME,
-:DOCK (the main window's), :WINDOWS, :DIAGNOSTICS, :DEBUGGER or
-:INSPECTOR -- as one line of words, for a script's `EVAL
+:MINIMAP, :DOCK (the main window's), :WINDOWS, :DIAGNOSTICS, :DEBUGGER
+or :INSPECTOR -- as one line of words, for a script's `EVAL
 \(clamacs::host-panel-state :debugger)' over the port.  A panel shown in
 a window of its own says `window N' at the end."
   (unless editor
@@ -1827,14 +1844,19 @@ a window of its own says `window N' at the end."
                        append (list (host-window-number w) (window-contents-words w)))
                  (if active (hdoc-id active) "none"))))
       (:menu
-       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~})"
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
                      when (and (not flag) (eq (menu-entry-kind (menu-entry index)) :item))
                        collect index)
                (editor-dynamic-menu-lines editor :buffers)
-               (editor-dynamic-menu-lines editor :themes)))
+               (editor-dynamic-menu-lines editor :themes)
+               (editor-dynamic-menu-lines editor :minimap)))
+      (:minimap
+       ;; The setting, as the page was told it; the page's report says
+       ;; what it drew (`minimap' in clamacsPanels)
+       (if *minimap* "on" "off"))
       (:theme
        ;; The theme in effect, and the colours the page's report carries
        ;; -- two variables and the gutter's painted background -- so a
@@ -1967,6 +1989,7 @@ detached mark to it, then what was waiting to move in."
   (setf (host-window-settled window) t)
   (send-menus-to window)
   (send-theme-to window)
+  (send-minimap-to window)
   (ck window "setDock" (host-window-dock-height window))
   (ck window "setDetached" t)
   (let ((pending (reverse (host-window-pending window))))
@@ -2462,6 +2485,7 @@ last tab closes."
                   (with-entry (editor)
                     (send-menus editor)
                     (send-theme editor)
+                    (send-minimap editor)
                     (place-dock editor)
                     (if files
                         (dolist (path files)

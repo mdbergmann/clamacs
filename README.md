@@ -51,7 +51,7 @@ Everything Emacs about it is the same code as on the Amiga: the keys
 stay the system's), Lisp mode, the
 prompts, the requesters, the menus.  The document window has files,
 editing, colouring, search, the minibuffer and the status line with the
-arglist; the Lisp behind it -- the REPL, the debugger, the inspector,
+arglist, and a minimap at its right edge (see below); the Lisp behind it -- the REPL, the debugger, the inspector,
 introspection and LOAD -- is a separate clamiga, as on the Amiga.
 **Clamiga > Start clamiga** (`M-x run-lisp`) starts one on the binary
 the editor runs on and connects to it, and the first `C-c C-c` offers
@@ -327,6 +327,20 @@ preferences, as does a buffer that is not in Lisp mode.  On a Workbench
 of 16 colours or fewer a dark theme applies its token colours only and
 leaves the text and background as they are, and says so once.  See
 `tests/test-theme.lisp` and `tests/test-host.lisp` (the View menu).
+
+## Minimap
+
+On the host a source buffer has, at its right edge, the whole text in
+miniature -- one row per line, the words as bars in the colours the
+text is painted with -- and a box over the lines that are on screen.
+Click or drag on it to scroll there.  **View > Minimap** shows or hides
+it, as does `M-x clamacs-toggle-minimap` (`C-u` keeps the change to this
+session), and the choice is remembered the way a theme is: one
+`(show-minimap nil)` form in your init file, nothing else touched.  A
+macro reads the item with `MINIMAP` and toggles it with `MINIMAP
+Minimap`.  The Amiga editor has no minimap and does not show the item.
+See `tests/test-host.lisp` (the View menu) and the MINIMAP leg of
+`verify/host/drive.lisp`.
 
 ## Window positions
 

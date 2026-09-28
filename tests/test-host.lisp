@@ -1131,7 +1131,7 @@ batch of both taken."
     (is (search "[\"bar\",\"\",\"\"]" js))
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
-    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1323,6 +1323,65 @@ batch of both taken."
       (is-equal (doc-message-text doc) "Theme: Gruvbox Dark (this session)")
       (is (search "(load-theme :mine)" (read-file-text *init-file*)))))))
 
+(deftest host-view-menu-toggles-the-minimap-and-remembers-it
+  ;; The View menu's other group (phase H9): the page draws the map, Lisp
+  ;; keeps the setting -- the tick, CK.setMinimap to every page, the init
+  ;; file's form, the port's verb, the command.
+  (with-host-theme-state
+    (let ((*minimap* t))
+      (multiple-value-bind (editor doc js) (host-menu-editor "one")
+        (with-host-editor (editor)
+          ;; The group went out with the table, ticked
+          (is (search "CK.setDynamic(\"minimap\",[[\"Minimap\",true]]);" js))
+          (is-equal (editor-dynamic-menu-lines editor :minimap) '("> Minimap"))
+          (is (search "minimap (> Minimap)" (host-panel-state :menu editor)))
+          (is-equal (host-panel-state :minimap editor) "on")
+          ;; START sends the setting after the theme; a later window gets
+          ;; it when it settles
+          (with-entry (editor) (send-minimap editor))
+          (is (search "CK.setMinimap(true);" (host-take-evals editor)))
+          (with-entry (editor) (send-minimap-to (host-editor-main editor)))
+          (is (search "CK.setMinimap(true);" (host-take-evals editor)))
+          ;; Nothing changed: nothing said
+          (with-entry (editor) nil)
+          (is-equal (host-take-evals editor) "")
+          ;; A pick by the page's position hides it: the page, then the
+          ;; tick, and the init file
+          (with-entry (editor) (host-dynamic-pick editor :minimap 0))
+          (is (null *minimap*))
+          (let ((js (host-take-evals editor)))
+            (is (search "CK.setMinimap(false);" js))
+            (is (search "CK.setDynamic(\"minimap\",[[\"Minimap\",false]]);" js))
+            (is (< (search "CK.setMinimap(" js) (search "CK.setDynamic(\"minimap\"" js))))
+          (is (search "(show-minimap nil)" (read-file-text *init-file*)))
+          (is-equal (host-panel-state :minimap editor) "off")
+          (is (search "minimap (  Minimap)" (host-panel-state :menu editor)))
+          ;; The port's verb reads the line and picks it
+          (is-equal (nth-value 1 (port-command editor "MINIMAP")) "  Minimap")
+          (is-equal (nth-value 1 (port-command editor "MINIMAP Minimap")) "")
+          (is *minimap*)
+          (flush-batch editor)
+          (is (search "CK.setMinimap(true);" (host-take-evals editor)))
+          (is (search "(show-minimap t)" (read-file-text *init-file*)))
+          (is-equal (nth-value 1 (port-command editor "MINIMAP Nobody")) "no such item")
+          ;; A position off the group: nothing
+          (with-entry (editor) (host-dynamic-pick editor :minimap 1))
+          (is *minimap*)
+          (is (eq (dynamic-group-named editor "minimap") :minimap))
+          ;; The command: C-u M-x clamacs-toggle-minimap leaves the file alone
+          (with-entry (editor) (run-command doc 'clamacs-toggle-minimap 4))
+          (is (null *minimap*))
+          (is-equal (doc-message-text doc) "Minimap off (this session)")
+          (is (search "CK.setMinimap(false);" (host-take-evals editor)))
+          (is (search "(show-minimap t)" (read-file-text *init-file*)))
+          ;; The init file's own form is loaded without being written back
+          (write-file-text *init-file* (format nil "(show-minimap t)~%"))
+          (is-equal (load-init-file *init-file*) t)
+          (is *minimap*)
+          (is-equal (read-file-text *init-file*) (format nil "(show-minimap t)~%"))
+          (flush-batch editor)
+          (is (search "CK.setMinimap(true);" (host-take-evals editor))))))))
+
 (deftest host-theme-goes-to-the-page-at-start-and-follows-the-system-scheme
   (with-host-theme-state
     (let ((editor (host-test-editor)))
@@ -1373,6 +1432,7 @@ batch of both taken."
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
       (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "Themes" "")
+                         (tabbed "minimap" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))

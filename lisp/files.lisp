@@ -494,9 +494,10 @@ and BIND-KEY forms in the CLAMACS package, mostly.  It runs after an image
 restores, so EXT:*IMAGE-RESTORED-P* lets it skip loads the image holds.")
 
 (defvar *theme-persist* t
-  "Whether LOAD-THEME (theme.lisp) writes the choice into the init file.
-Bound to NIL while the init file loads: its own `(load-theme ...)' form
-is the record, not something to write back into the file being read.")
+  "Whether LOAD-THEME and SHOW-MINIMAP (theme.lisp) write the choice into
+the init file.  Bound to NIL while the init file loads: its own
+`(load-theme ...)' or `(show-minimap ...)' form is the record, not
+something to write back into the file being read.")
 
 (defun load-init-file (&optional (path *init-file*))
   "LOAD PATH, the user's init file, when there is one, in the CLAMACS

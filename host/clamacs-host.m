@@ -352,10 +352,16 @@ const char *clamacs_host_toolkit(void)
 @property (nonatomic, strong) NSMenu *previous;
 @property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMenuItem *> *items;
 /* The dynamic groups by name: the menu, its entry's table index, the
- * lines it shows, and the names in table order for the report. */
+ * lines it shows, the items made for those lines (a group without a
+ * title shares its menu with what stands before it -- View's Themes
+ * submenu, then the minimap's item -- so a remake replaces ITS items,
+ * never the menu's), the item the group's items follow (NSNull at the
+ * start of the menu), and the names in table order for the report. */
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMenu *> *dynamic;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *dynamicIndex;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSString *> *> *dynamicLines;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableArray<NSMenuItem *> *> *dynamicItems;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, id> *dynamicAnchor;
 @property (nonatomic, strong) NSMutableArray<NSString *> *dynamicOrder;
 @end
 
@@ -438,6 +444,8 @@ int clamacs_host_menu_set(void *win, const char *table,
         menu_target.dynamic = [NSMutableDictionary dictionary];
         menu_target.dynamicIndex = [NSMutableDictionary dictionary];
         menu_target.dynamicLines = [NSMutableDictionary dictionary];
+        menu_target.dynamicItems = [NSMutableDictionary dictionary];
+        menu_target.dynamicAnchor = [NSMutableDictionary dictionary];
         menu_target.dynamicOrder = [NSMutableArray array];
 
         main = [[NSMenu alloc] initWithTitle:@"MainMenu"];
@@ -464,6 +472,11 @@ int clamacs_host_menu_set(void *win, const char *table,
                  * a submenu of the group's title */
                 if (kind.length > 0 && menu_target.dynamic[kind] == nil) {
                     NSMenu *group = menu;
+                    /* Without a title the items go after what the menu
+                     * holds so far; a submenu is the group's alone. */
+                    menu_target.dynamicAnchor[kind] =
+                        (title.length == 0 && menu.numberOfItems > 0)
+                            ? (id)menu.itemArray.lastObject : (id)[NSNull null];
                     if (title.length > 0) {
                         NSMenuItem *sub = [[NSMenuItem alloc] initWithTitle:title
                                                                      action:nil
@@ -476,6 +489,7 @@ int clamacs_host_menu_set(void *win, const char *table,
                     menu_target.dynamic[kind] = group;
                     menu_target.dynamicIndex[kind] = @(index);
                     menu_target.dynamicLines[kind] = [NSMutableArray array];
+                    menu_target.dynamicItems[kind] = [NSMutableArray array];
                     [menu_target.dynamicOrder addObject:kind];
                 }
             } else {
@@ -524,7 +538,10 @@ void clamacs_host_menu_enable(int index, int flag)
  * remade from LINES, one per line as the editor's BUFFERS and THEMES
  * verbs spell them: "-" a bar, "> label" the ticked item, "  label"
  * another.  A pick hands back the group's table index and the line's
- * position.  A group the table did not have: nothing. */
+ * position.  A group the table did not have: nothing.  Only the group's
+ * own items are replaced, in the place they had: a group without a
+ * title may share its menu (View: the Themes submenu, then the
+ * minimap's item). */
 void clamacs_host_menu_dynamic(const char *which, const char *lines)
 {
     @autoreleasepool {
@@ -532,30 +549,42 @@ void clamacs_host_menu_dynamic(const char *which, const char *lines)
         NSString *text = text_arg(lines);
         NSMenu *menu = (menu_target && name) ? menu_target.dynamic[name] : nil;
         NSMutableArray<NSString *> *shown;
+        NSMutableArray<NSMenuItem *> *items;
+        id anchor;
         NSNumber *group;
-        NSInteger n = 0;
+        NSInteger n = 0, at;
         if (text == nil || menu == nil)
             return;
         shown = menu_target.dynamicLines[name];
+        items = menu_target.dynamicItems[name];
+        anchor = menu_target.dynamicAnchor[name];
         group = menu_target.dynamicIndex[name];
-        [menu removeAllItems];
+        for (NSMenuItem *old in items)
+            if (old.menu == menu)
+                [menu removeItem:old];
+        [items removeAllObjects];
         [shown removeAllObjects];
+        at = (anchor == nil || anchor == [NSNull null]) ? 0 : [menu indexOfItem:anchor] + 1;
         for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+            NSMenuItem *item;
             if (line.length == 0)
                 continue;
             if ([line isEqualToString:@"-"]) {
-                [menu addItem:[NSMenuItem separatorItem]];
+                item = [NSMenuItem separatorItem];
+                [menu insertItem:item atIndex:at++];
+                [items addObject:item];
             } else {
                 BOOL ticked = [line hasPrefix:@"> "];
                 NSString *label = line.length >= 2 ? [line substringFromIndex:2] : line;
-                NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:label
-                                                              action:@selector(pickDynamic:)
-                                                       keyEquivalent:@""];
+                item = [[NSMenuItem alloc] initWithTitle:label
+                                                  action:@selector(pickDynamic:)
+                                           keyEquivalent:@""];
                 item.target = menu_target;
                 item.tag = n;
                 item.representedObject = group;
                 item.state = ticked ? NSControlStateValueOn : NSControlStateValueOff;
-                [menu addItem:item];
+                [menu insertItem:item atIndex:at++];
+                [items addObject:item];
             }
             [shown addObject:line];
             n++;
@@ -563,12 +592,13 @@ void clamacs_host_menu_dynamic(const char *which, const char *lines)
     }
 }
 
-/* The dynamic group whose entry is at the table index WHICH, or nil. */
-static NSMenu *menu_dynamic_at(int which)
+/* The items of the dynamic group whose entry is at the table index
+ * WHICH, in the order of its lines, or nil. */
+static NSArray<NSMenuItem *> *menu_dynamic_at(int which)
 {
     for (NSString *name in menu_target.dynamicOrder)
         if ([menu_target.dynamicIndex[name] intValue] == which)
-            return menu_target.dynamic[name];
+            return menu_target.dynamicItems[name];
     return nil;
 }
 
@@ -581,14 +611,14 @@ int clamacs_host_menu_click(int which, int n)
 {
     @autoreleasepool {
         NSMenuItem *item = nil;
-        NSMenu *group;
+        NSArray<NSMenuItem *> *group;
         if (menu_target == nil)
             return 0;
         if (which == 0) {
             item = menu_target.items[@(n)];
         } else if ((group = menu_dynamic_at(which)) != nil
-                   && n >= 0 && n < (int)group.numberOfItems) {
-            item = [group itemAtIndex:n];
+                   && n >= 0 && n < (int)group.count) {
+            item = group[n];
             if (item.isSeparatorItem)
                 item = nil;
         }

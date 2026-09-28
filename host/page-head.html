@@ -53,11 +53,19 @@
   #sources { flex: 1; display: flex; flex-direction: column; min-height: 60px; }
   #views { flex: 1; position: relative; overflow: hidden; }
   .view { position: absolute; inset: 0; display: none; }
-  .view.active { display: block; }
+  .view.active { display: flex; }
   /* The editor's monospace font is the theme's (--font-family, --font-size);
      the panels, the status line and the echo row take its family at their
      own size; the chrome keeps the system font. */
-  .cm-editor { height: 100%; font-size: var(--font-size); }
+  .cm-editor { flex: 1; min-width: 0; height: 100%; font-size: var(--font-size); }
+  /* The minimap (phase H9): the whole text in miniature at the right
+     edge of a source view, the part on screen boxed; a canvas the page
+     paints.  Hidden by View > Minimap (CK.setMinimap sets data-minimap).
+     The line is a shadow, not a border, so the canvas's bitmap is
+     exactly its box. */
+  .minimap { flex: none; width: 80px; height: 100%; background: var(--gutter-bg);
+             box-shadow: -1px 0 0 var(--line); cursor: default; }
+  html[data-minimap="off"] .minimap { display: none; }
   .cm-scroller { font-family: var(--font-family); line-height: 1.35; }
   .cm-content { caret-color: var(--cursor); }
   /* CodeMirror's own light and dark themes set the gutter, the active
@@ -142,6 +150,10 @@
   .menu-item.disabled:hover { background: transparent; }
   .menu-item .keys { color: var(--dim); font-family: "SF Mono", Menlo, monospace; font-size: 11px; }
   .menu-item .tick { display: inline-block; width: 12px; }
+  /* A dynamic group without a title (the Buffers menu, View's minimap
+     item): its items in a block of their own, remade without touching
+     the rest of the menu. */
+  .menu-group { display: block; }
   /* A submenu (View > Themes): an item whose popup opens beside it while
      the mouse is on it. */
   .menu-item.submenu { position: relative; }

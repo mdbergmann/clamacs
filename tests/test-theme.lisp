@@ -534,6 +534,37 @@ THUNK's value."
     (is-equal (rewrite (lines "(clamacs:load-theme :light)" "")) (lines "(load-theme :dark)" ""))
     (is-equal (rewrite (lines "(LOAD-THEME :LIGHT)" "")) (lines "(load-theme :dark)" ""))))
 
+(deftest the-minimap-form-is-kept-the-themes-way
+  ;; INIT-FORM-PERSIST-TEXT over another head: the minimap's form is
+  ;; replaced in place or appended under its own comment, and the theme's
+  ;; form is not the one it touches.
+  (flet ((rewrite (text flag)
+           (init-form-persist-text text "show-minimap" (minimap-form-text flag) *minimap-persist-comment*)))
+    (is-equal (rewrite (lines "(load-theme :dark)" "(show-minimap t)" "") nil)
+              (lines "(load-theme :dark)" "(show-minimap nil)" ""))
+    (is-equal (rewrite (lines "(clamacs::show-minimap nil) ; hidden" "") t)
+              (lines "(show-minimap t) ; hidden" ""))
+    (is-equal (rewrite (lines "(load-theme :dark)" "") nil)
+              (format nil "(load-theme :dark)~%~%~A~%(show-minimap nil)~%" *minimap-persist-comment*))
+    (is-equal (rewrite "" t) (format nil "~A~%(show-minimap t)~%" *minimap-persist-comment*)))
+  ;; SHOW-MINIMAP: the flag, the file; a session-only change, and the
+  ;; init file's own form, leave the file alone
+  (with-theme-state ()
+    (let ((*minimap* t))
+      (is (null (show-minimap nil)))
+      (is (null *minimap*))
+      (is-equal (read-file-text *init-file*)
+                (format nil "~A~%(show-minimap nil)~%" *minimap-persist-comment*))
+      (is (eq (show-minimap :yes :save nil) t))
+      (is (search "(show-minimap nil)" (read-file-text *init-file*)))
+      (show-minimap t)
+      (is (search "(show-minimap t)" (read-file-text *init-file*)))
+      (write-file-text *init-file* (lines "(show-minimap nil)" "(load-theme :dark)"))
+      (is-equal (load-init-file *init-file*) t)
+      (is (null *minimap*))
+      (is (eq *theme* (find-theme :dark)))
+      (is-equal (read-file-text *init-file*) (lines "(show-minimap nil)" "(load-theme :dark)")))))
+
 (deftest theme-persist-text-appends-when-there-is-no-form
   (flet ((rewrite (text) (theme-persist-text text :dark))
          (appended (&rest before)

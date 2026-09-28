@@ -218,6 +218,16 @@ A frontend that shows no colours of its own does nothing.")
     (declare (ignore theme))
     nil))
 
+(defgeneric editor-apply-minimap (editor flag)
+  (:documentation "Show the minimap -- the whole text in miniature beside
+it, the part on screen marked -- when FLAG, hide it otherwise
+(SHOW-MINIMAP, theme.lisp).  Called whenever the setting changes, and by
+a frontend itself when it comes up.  A frontend without a minimap does
+nothing: the MUI editor.")
+  (:method ((editor editor) flag)
+    (declare (ignore flag))
+    nil))
+
 (defgeneric doc-lisp-mode-changed (doc)
   (:documentation "DOC's Lisp mode was switched on or off (SET-LISP-MODE):
 a frontend whose text colours are Lisp mode's -- the MUI one paints the

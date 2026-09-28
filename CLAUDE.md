@@ -253,6 +253,16 @@ now, the history's when nothing is on offer.  A bundle or an `IMAGE=1`
 start remakes the heap image when it is older than the binary OR than
 any `lisp/*.lisp` (`host/image-stale.sh`): the binary alone was the
 test once and an app built after a lisp/ change shipped the old editor.
+**The minimap** (phase H9, 2026-09-28): a source view on the host has
+the whole text in miniature at its right edge with the lines on screen
+boxed, painted by the page (`makeMinimap`, `CK.setMinimap`); the setting
+is `*minimap*` / `show-minimap` in `theme.lisp`, kept the theme's way
+(View > Minimap as a third dynamic group the host editor alone lists,
+`M-x clamacs-toggle-minimap`, the init file's `(show-minimap nil)`
+through `init-form-persist`, the `MINIMAP` verb), and reached through
+the generic `editor-apply-minimap`.  A titleless dynamic group no longer
+fills its menu: the page and the Cocoa shim replace the group's own
+items in place, so View keeps its Themes submenu beside the item.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 
