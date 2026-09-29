@@ -39,7 +39,8 @@
   (attaching nil)           ; a REPL-ATTACH is on the wire
   (origin nil)              ; the document whose buffer eval is running
   (pending nil)             ; a buffer eval waiting for the attach: its text
-  (pending-origin nil))     ; ... and its document
+  (pending-origin nil)      ; ... and its document
+  (pending-package nil))    ; ... and its package, when not the document's
 
 ;;; The listener state of the REPL window itself.
 (defstruct (repl-window (:constructor make-repl-window ()))
@@ -182,11 +183,13 @@ the port in between."
 
 (defun repl-clear-pending (session)
   (setf (repl-session-pending session) nil
-        (repl-session-pending-origin session) nil))
+        (repl-session-pending-origin session) nil
+        (repl-session-pending-package session) nil))
 
-(defun repl-set-pending (session from text)
+(defun repl-set-pending (session from text &optional package)
   (setf (repl-session-pending session) text
-        (repl-session-pending-origin session) from))
+        (repl-session-pending-origin session) from
+        (repl-session-pending-package session) package))
 
 ;;; ------------------------------------------------------------------
 ;;; Attaching
@@ -249,10 +252,11 @@ about to show came from FROM, so that is where the user stays."
           (doc-activate from))
         repl)))
 
-(defun repl-eval-from (from text)
+(defun repl-eval-from (from text &optional package)
   "A buffer eval on the REPL thread.  Before the REPL is attached the form
 waits for the REPL-ATTACH reply; the REPL window opens for that, but the
-user stays in the buffer."
+user stays in the buffer.  The form is read in PACKAGE, in the buffer's
+own without one.  True when the form was sent or waits for the attach."
   (let* ((editor (doc-editor from))
          (session (repl-session editor))
          (repl (repl-doc editor))
@@ -264,18 +268,21 @@ user stays in the buffer."
            (setq repl (repl-open-behind editor from))
            (when (null repl)
              (return-from repl-eval-from nil)))
-         (repl-set-pending session from text)
+         (repl-set-pending session from text package)
          (repl-attach repl)
-         (unless (repl-session-attaching session)
-           (repl-clear-pending session)))   ; the attach never left
+         (cond ((repl-session-attaching session) t)
+               (t (repl-clear-pending session)   ; the attach never left
+                  nil)))
         ((or (repl-session-origin session)
              (and repl (null (repl-window-input-start (doc-repl repl)))))
-         (repl-busy-message from))
+         (repl-busy-message from)
+         nil)
         (t
          ;; The buffer's package, not the prompt's.
-         (wire-ensure-package wire from)
+         (wire-ensure-package wire from package)
          (when (wire-request wire from :repl-eval (concatenate 'string "REPL-EVAL " text))
-           (setf (repl-session-origin session) from)))))))
+           (setf (repl-session-origin session) from)
+           t))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The commands
@@ -677,10 +684,11 @@ document it was about (NIL once closed)."
           (repl-prompt doc)
           ;; Now the buffer eval that asked for the attach.
           (let ((form (repl-session-pending session))
-                (from (live-doc (repl-session-pending-origin session))))
+                (from (live-doc (repl-session-pending-origin session)))
+                (package (repl-session-pending-package session)))
             (repl-clear-pending session)
             (when (and form from)
-              (repl-eval-from from form))))))
+              (repl-eval-from from form package))))))
       (:repl-eval
        (when (and (/= rc +rc-ok+) doc)
          ;; Refused: the REPL thread is gone (clamiga restarted) or still busy.

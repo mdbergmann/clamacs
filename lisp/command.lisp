@@ -114,6 +114,9 @@ Emacs's names has not learnt yet."
  clamacs-eval-defun clamacs-eval-last-sexp clamacs-eval-region
  clamacs-eval-expression clamacs-connect clamacs-show-errors
  clamacs-next-error clamacs-previous-error run-lisp
+ ;; Lisp mode: systems.  The .asd the buffer belongs to, loaded and
+ ;; tested by ASDF in clamiga (wire.lisp).
+ clamacs-load-system clamacs-load-system-from clamacs-test-system
  ;; Lisp mode: introspection.  `complete-symbol' keeps its Emacs name
  ;; because it is the same key doing the same thing; the rest carry the
  ;; editor's prefix, as the other clamiga commands do.

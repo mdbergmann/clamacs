@@ -68,14 +68,25 @@
     :self                   ; the wire talks to the editor's own Lisp
     :not-self))
 
+;;; The ASDF menu -- systems, loaded and tested by their .asd
+;;; (wire.lisp) -- is for a machine that can carry ASDF, which a 68k Amiga
+;;; mostly cannot: there the menu is left out, and the commands stay for
+;;; whoever has the memory (`M-x clamacs-load-system').  Asked of the
+;;; running Lisp, not of the reader: the release's FASLs are compiled on
+;;; the host for every target.
+(defun system-menu-wanted-p ()
+  (not (member :m68k *features*)))
+
 ;;; The order is the order on screen.  Project first, as on any Amiga; the
 ;;; key in the shortcut column is the one a user would learn next.
-(defparameter *menu-table*
+(defun make-menu-table (&key (systems (system-menu-wanted-p)))
+  "The menu strip; with the ASDF menu when SYSTEMS is true."
   (flet ((title (name) (make-menu-entry :title :always nil name nil nil))
          (bar () (make-menu-entry :bar :always nil nil nil nil))
          (item (command rule label keys map &optional pick)
            (make-menu-entry :item rule command label keys map pick)))
-    (list
+    (append
+     (list
      (title "Project")
      (item 'clamacs-new-buffer          :always        "New"                    nil       :global)
      (item 'find-file                   :always        "Open..."                "C-x C-f" :global
@@ -126,8 +137,18 @@
      (item 'clamacs-pop-definition      :can-pop       "Back from Definition"   "M-,"     :lisp)
      (bar)
      (item 'clamacs-macroexpand-1       :connected     "Macroexpand Once"       "C-c RET" :lisp)
-     (item 'clamacs-macroexpand         :connected     "Macroexpand All"        "C-c M-m" :lisp)
+     (item 'clamacs-macroexpand         :connected     "Macroexpand All"        "C-c M-m" :lisp))
 
+     (and systems
+          (list
+           (title "ASDF")
+           (item 'clamacs-load-system      :connected  "Load System"            nil       :lisp)
+           (item 'clamacs-load-system-from :connected  "Load System From..."    nil       :lisp
+                 'clamacs-load-system-from-requester)
+           (bar)
+           (item 'clamacs-test-system      :connected  "Test System"            nil       :lisp)))
+
+     (list
      (title "Clamiga")
      (item 'clamacs-connect             :always        "Connect"                nil       :global)
      (item 'run-lisp                    :not-connected "Start clamiga"          nil       :global)
@@ -181,7 +202,9 @@
 
      (title "Help")
      (item 'clamacs-list-commands       :always        "List Commands"          nil       :global)
-     (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global))))
+     (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global)))))
+
+(defparameter *menu-table* (make-menu-table))
 
 (defun menu-entries ()
   *menu-table*)

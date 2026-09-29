@@ -220,6 +220,19 @@ whatever the file printed while loading lands in the `*clamacs-repl*`
 transcript afterwards, under a `; loading ...` line (the window opens
 behind the buffer if it was not open yet).
 
+The **ASDF** menu loads whole systems.  **Load System**
+(`M-x clamacs-load-system`) takes the `.asd` in the window, or the
+nearest one in the directories above the window's file -- a project's
+root is where its `.asd` sits -- and has clamiga load ASDF (the first
+time), the definition and the system named after the file, with what it
+depends on.  **Test System** runs `asdf:test-system` on it, and **Load
+System From...** asks for the `.asd`.  A window with no system above it
+(the REPL's) takes the last one loaded.  This runs on the REPL thread,
+like an evaluation: the compiler's output streams into the transcript,
+`C-c C-b` interrupts and an error opens the debugger.  On a 68k Amiga the
+menu is left out, since ASDF is more than most of them can carry; the
+commands are there all the same, for a machine with the memory.
+
 Those keys all run the form on the *other* clamiga, the one the editor
 drives.  The editor is a clamiga too, and **Clamiga > Talk to the Editor
 Itself** (`M-x clamacs-connect-self`) points all of it at the editor's

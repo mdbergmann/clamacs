@@ -412,14 +412,15 @@ already), unless it was told already."
       (when (wire-request wire doc :in-package (format nil "IN-PACKAGE ~A" package))
         (setf (wire-package wire) package)))))
 
-(defun wire-eval (doc text)
-  "Send TEXT, one or more forms, for evaluation in DOC's package -- on
-clamiga's REPL thread (repl.lisp), so output streams into the transcript
-and an error opens the debugger; the first line of the values lands in
-DOC's echo area.  The handler thread's EVAL is for macros and the port,
-not for keys."
+(defun wire-eval (doc text &optional package)
+  "Send TEXT, one or more forms, for evaluation in DOC's package (in
+PACKAGE when given) -- on clamiga's REPL thread (repl.lisp), so output
+streams into the transcript and an error opens the debugger; the first
+line of the values lands in DOC's echo area.  The handler thread's EVAL
+is for macros and the port, not for keys.  True when the text was sent
+or waits for the REPL to attach."
   (when (require-wire doc)
-    (repl-eval-from doc text)))
+    (repl-eval-from doc text package)))
 
 (defun wire-load (doc path)
   (let ((wire (require-wire doc)))
@@ -467,6 +468,127 @@ not for keys."
              (when (wire-request wire doc :compile-file
                                  (format nil "COMPILE-FILE ~A" (doc-path doc)))
                (message doc "Compiling ~A ..." (doc-name doc))))))))
+
+;;; ------------------------------------------------------------------
+;;; Systems
+;;; ------------------------------------------------------------------
+
+;;; A system is loaded by its definition file, the .asd: the one in the
+;;; window, or the nearest one above the window's file -- a project's root
+;;; is where its .asd sits.  clamiga does the rest (EXT.DEV:LOAD-ASD-SYSTEM
+;;; loads ASDF on first use, the file, and the system named after it), on
+;;; the REPL thread: a system is minutes of compiling on an Amiga, which
+;;; wants its output as it happens, the interrupt and the debugger.
+;;;
+;;; The ASDF menu is left out on a 68k machine (menu.lisp), where ASDF
+;;; is more than most can carry; the commands are there all the same.
+
+(defvar *last-system-file* nil
+  "The .asd the last Load System or Test System named: what a window
+with no system above it (the REPL's, a scratch buffer) falls back to.")
+
+(defparameter *system-search-depth* 12
+  "How many directories above a file FIND-SYSTEM-FILES looks in.")
+
+(defun system-path-p (path)
+  (let ((dot (position #\. path :from-end t)))
+    (and dot (string-equal (subseq path dot) ".asd"))))
+
+(defun path-parent-directory (dir)
+  "The directory above DIR, a path ending in `/'; NIL when DIR is a root
+(`/', an AmigaDOS volume or assign) or has nothing above it."
+  (let ((n (length dir)))
+    (and (> n 1)
+         (char= (char dir (1- n)) #\/)
+         (let ((up (path-directory (subseq dir 0 (1- n)))))
+           (and (string/= up "") up)))))
+
+(defun directory-system-files (dir)
+  "The .asd files in DIR, sorted."
+  (sort (remove-if-not #'system-path-p
+                       (ignore-errors
+                        (mapcar #'namestring
+                                (directory (concatenate 'string dir "*.asd")))))
+        #'string<))
+
+(defun find-system-files (path)
+  "The system definitions PATH belongs to: PATH itself when it is one,
+else the .asd files of the nearest directory above it that has any."
+  (cond ((null path) '())
+        ((system-path-p path) (list path))
+        (t
+         (loop for dir = (path-directory path) then (path-parent-directory dir)
+               repeat *system-search-depth*
+               while (and dir (string/= dir ""))
+               do (let ((found (directory-system-files dir)))
+                    (when found (return found)))))))
+
+(defun system-name (path)
+  "The system PATH defines, as ASDF names it after the file."
+  (let ((base (path-basename path)))
+    (string-downcase (subseq base 0 (position #\. base :from-end t)))))
+
+(defun system-eval (doc function verb path)
+  "Have clamiga call EXT.DEV's FUNCTION on the system definition PATH."
+  (cond ((not (system-path-p path))
+         (message doc "Not a system definition (.asd): ~A" path)
+         (doc-beep doc))
+        (t
+         (setq *last-system-file* path)
+         ;; In CL-USER: the buffer's package may be one the system makes.
+         (when (wire-eval doc (format nil "(ext.dev:~A ~S)" function path) "CL-USER")
+           (message doc "~A system ~A ..." verb (system-name path))))))
+
+(defun load-system-file (doc path)
+  (system-eval doc "load-asd-system" "Loading" path))
+
+(defun test-system-file (doc path)
+  (system-eval doc "test-asd-system" "Testing" path))
+
+(defun with-system-file (doc label continuation)
+  "Call CONTINUATION with DOC and the system definition DOC belongs to.
+Several in one directory, or none and no system loaded before, are asked
+for in the minibuffer."
+  (when (require-wire doc)
+    (when (and (doc-path doc) (doc-modified-p doc))
+      ;; ASDF reads the files, not the windows.
+      (unless (save-file doc (doc-path doc))
+        (doc-beep doc)
+        (return-from with-system-file nil)))
+    (let ((found (find-system-files (doc-path doc))))
+      (cond ((and found (null (rest found)))
+             (funcall continuation doc (first found)))
+            (found
+             (prompt-for-file doc label continuation
+                              :initial (path-directory (first found))))
+            (*last-system-file*
+             (funcall continuation doc *last-system-file*))
+            (t
+             (prompt-for-file doc label continuation
+                              :initial (doc-directory doc)))))))
+
+(define-command clamacs-load-system (doc arg)
+  "Load the ASDF system the buffer belongs to (the nearest .asd) in clamiga."
+  (declare (ignore arg))
+  (with-system-file doc "Load system (.asd): " #'load-system-file))
+
+(define-command clamacs-test-system (doc arg)
+  "Run the tests of the ASDF system the buffer belongs to in clamiga."
+  (declare (ignore arg))
+  (with-system-file doc "Test system (.asd): " #'test-system-file))
+
+(define-command clamacs-load-system-from (doc arg)
+  "Load an ASDF system in clamiga, its .asd asked for in the minibuffer."
+  (declare (ignore arg))
+  (when (require-wire doc)
+    (prompt-for-file doc "Load system (.asd): " #'load-system-file
+                     :title "Load System")))
+
+(define-command clamacs-load-system-from-requester (doc arg)
+  "Load an ASDF system chosen in the requester: the menu's Load System From..."
+  (declare (ignore arg))
+  (when (require-wire doc)
+    (ask-file-then doc "Load System" nil (doc-directory doc) #'load-system-file)))
 
 (define-command clamacs-eval-defun (doc arg)
   "Evaluate the top-level form at the cursor in clamiga."

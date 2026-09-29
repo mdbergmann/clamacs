@@ -68,7 +68,7 @@
                 (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
     (is-equal (count :dynamic entries :key #'menu-entry-kind) 3)
     (is-equal (menu-count) (length entries))
-    (is-equal titles 8)
+    (is-equal titles 9)
     (is (> items 30))
     ;; View sits between Windows and Buffers.
     (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
@@ -83,6 +83,35 @@
     (is (null (menu-entry-title (menu-entry (menu-find-dynamic :buffers)))))
     (is (null (menu-entry-title (menu-entry (menu-find-dynamic :minimap)))))
     (is-equal (menu-find-dynamic :minimap) (1+ (menu-find-dynamic :themes)))))
+
+;;; The ASDF menu is for a machine that can carry ASDF: a 68k Amiga's
+;;; strip is made without it, and the commands are there all the same.
+(deftest the-system-menu-is-left-out-on-a-68k
+  (flet ((titles (table)
+           (mapcar #'menu-entry-title
+                   (remove :title table :key #'menu-entry-kind :test-not #'eq)))
+         (commands (table)
+           (mapcar #'menu-entry-command
+                   (remove :item table :key #'menu-entry-kind :test-not #'eq))))
+    (let ((with (make-menu-table :systems t))
+          (without (make-menu-table :systems nil)))
+      (is-equal (titles with)
+                '("Project" "Edit" "Lisp" "ASDF" "Clamiga" "Windows" "View"
+                  "Buffers" "Help"))
+      (is-equal (titles without) (remove "ASDF" (titles with) :test #'equal))
+      (is-equal (set-difference (commands with) (commands without))
+                '(clamacs-load-system clamacs-load-system-from clamacs-test-system))
+      (is-equal (length without) (- (length with) 5))
+      ;; This host is no 68k, so its strip has the menu.
+      (is (eq (system-menu-wanted-p) (not (member :m68k *features*))))
+      (is (menu-find 'clamacs-load-system))
+      (is-equal (menu-entry-picks (menu-entry (menu-find 'clamacs-load-system-from)))
+                'clamacs-load-system-from-requester)
+      (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-test-system)))
+                :connected)
+      (dolist (name '("clamacs-load-system" "clamacs-load-system-from"
+                      "clamacs-test-system"))
+        (is (find-command name))))))
 
 (deftest a-title-with-nothing-drawn-under-it-is-hidden
   ;; The model draws the two groups every frontend has: everything but

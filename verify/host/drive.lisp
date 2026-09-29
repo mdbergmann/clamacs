@@ -1088,7 +1088,7 @@ off a variable."
     (cmd "KEY C-M-i")
     (if (string/= (wait-echo "Complete:" 40) "")
         (ok "C-M-i handed the candidates to the minibuffer")
-        (fail "C-M-i on twic did not prompt"))
+        (fail "C-M-i on twice did not prompt"))
     (cmd "KEY TAB")
     (cmd "STATUS")
     ;; The host's echo row counts them; the page's list names them.
@@ -1113,6 +1113,11 @@ off a variable."
         (ok "C-g took the list down")
         (fail "after C-g the page reports ~A" *result*))
     (cmd "KEY C-M-i")
+    ;; The candidates come from clamiga: the prompt opens with its reply.
+    (if (string/= (wait-echo "Complete:" 40) "")
+        (ok "C-M-i prompted again")
+        (progn (cmd "STATUS")
+               (fail "the second C-M-i on twice did not prompt: ~A" *result*)))
     (cmd "KEY TAB")
     (cmd "KEY - a TAB")
     (cmd "STATUS")
@@ -1629,6 +1634,59 @@ requester asked.  Then wait for the port to go."
       (ok "clamacs is gone: its port files are removed and the port refuses")
       (fail "clamacs did not quit within 30 s")))
 
+;;; The ASDF menu: a project written here (an .asd and two files below
+;;; it), the source opened, and Load System picked as the mouse would --
+;;; clamiga finds ASDF, loads the definition above the file and the system,
+;;; on the REPL thread, and the editor stays answering meanwhile.
+(defun leg-systems ()
+  (let* ((root (scratch "drivesys/"))
+         (asd (concatenate 'string root "drivesys.asd"))
+         (source (concatenate 'string root "src/two.lisp")))
+    (ensure-directories-exist source)
+    (write-file asd (format nil "(asdf:defsystem \"drivesys\"~%  :pathname \"src/\"~%  :components ((:file \"one\") (:file \"two\" :depends-on (\"one\"))))~%"))
+    (write-file (concatenate 'string root "src/one.lisp")
+                (format nil "(defpackage :drivesys (:use :cl) (:export #:two))~%(in-package :drivesys)~%(defun one () 20)~%"))
+    (write-file source
+                (format nil "(in-package :drivesys)~%(defun two () (+ 1 (* 2 (one))))~%(two)~%"))
+    (cmd (format nil "OPEN FILE ~A" source))
+    (pause 25)
+    (cmd "MENU clamacs-load-system STATE")
+    (if (string= *result* "enabled")
+        (ok "Load System is in the menu and live with the port")
+        (fail "Load System with a port is ~A" *result*))
+    (cmd "MENU clamacs-load-system")
+    (cmd "GETFILE")
+    (if (result-has "two.lisp")
+        (ok "the editor answered while a system was loading")
+        (fail "editor did not answer during a system load: ~A" *result*))
+    ;; The first system of a session loads ASDF too: minutes, not seconds,
+    ;; with a cold cache.
+    (let ((echo (wait-echo "\"drivesys\"" 600)))
+      (if (string/= echo "")
+          (ok "Load System loaded the system above the file: ~A" echo)
+          (progn (cmd "STATUS")
+                 (fail "Load System ended with ~A" *result*))))
+    (cmd "EVAL (let ((repl (clamacs::repl-doc clamacs::*editor*))) (and repl (clamacs::doc-text repl 0 (clamacs::doc-end repl))))")
+    (if (result-has "; loading system drivesys from")
+        (ok "the system's load streamed into the REPL transcript")
+        (fail "the REPL transcript after Load System is ~A" *result*))
+    ;; The buffer's package exists now: an eval in it works.
+    (cmd "GOTOLINE 3")
+    (cmd "TE POSITION EOL")
+    (cmd "EVAL clamacs-eval-last-sexp")
+    (let ((echo (wait-echo "41" 120)))
+      (if (string= echo "41")
+          (ok "a form in the system's package evaluates: ~A" echo)
+          (progn (cmd "STATUS")
+                 (fail "(two) in DRIVESYS echoed ~A" *result*))))
+    ;; Back to the REPL window, where the inspector's leg left the user
+    ;; and the next one starts.
+    (cmd "EVAL clamacs-repl")
+    (cmd "GETNAME")
+    (if (result-has "*clamacs-repl*")
+        (ok "C-c C-z went back to the REPL: ~A" *result*)
+        (fail "after clamacs-repl the active window is ~A" *result*))))
+
 (defun main ()
   (setq *port* (connect 60))
   (cond ((null *port*)
@@ -1649,6 +1707,7 @@ requester asked.  Then wait for the port to go."
   (leg-repl)
   (leg-debugger)
   (leg-inspector)
+  (leg-systems)
   (leg-own-lisp)
   (leg-detach)
   ;; Leave the errors file active, as the Amiga run does.

@@ -488,3 +488,107 @@
                        clamacs-show-errors clamacs-next-error))
       (run-command doc command)
       (is-equal (fake-last-message doc) "No connection to clamiga in this editor"))))
+
+;;; --- systems ---------------------------------------------------------------
+
+(deftest a-system-is-named-by-its-asd
+  (is (system-path-p "Work:src/foo/foo.asd"))
+  (is (system-path-p "/home/me/foo/FOO.ASD"))
+  (is (not (system-path-p "Work:src/foo/foo.lisp")))
+  (is (not (system-path-p "Work:src/foo/asd")))
+  (is-equal (system-name "Work:src/foo/foo.asd") "foo")
+  (is-equal (system-name "/home/me/Foo-Bar.asd") "foo-bar")
+  (is-equal (system-name "cl.ppcre.asd") "cl.ppcre"))
+
+(deftest the-directory-above
+  (is-equal (path-parent-directory "/a/b/") "/a/")
+  (is-equal (path-parent-directory "/a/") "/")
+  (is (null (path-parent-directory "/")))
+  (is-equal (path-parent-directory "Work:src/foo/") "Work:src/")
+  (is-equal (path-parent-directory "Work:src/") "Work:")
+  (is (null (path-parent-directory "Work:")))       ; a volume is a root
+  (is (null (path-parent-directory "a/")))          ; nothing known above
+  (is (null (path-parent-directory ""))))
+
+(defun system-fixture ()
+  "A project on disk: root/foo.asd and root/src/deep/a.lisp.  Three
+values: the .asd, the source file, and everything to delete."
+  (let* ((root (concatenate 'string (temp-path "system") "/"))
+         (asd (concatenate 'string root "foo.asd"))
+         (source (concatenate 'string root "src/deep/a.lisp")))
+    (ensure-directories-exist source)
+    (is (write-file-text asd "(asdf:defsystem \"foo\")"))
+    (is (write-file-text source "(in-package :foo)"))
+    (values asd source (list asd source))))
+
+(deftest the-system-of-a-file-is-the-nearest-asd-above-it
+  (multiple-value-bind (asd source files) (system-fixture)
+    (unwind-protect
+         (let ((second (concatenate 'string (path-directory asd) "bar.asd")))
+           ;; The .asd itself, asked of no disk at all.
+           (is-equal (find-system-files "Nowhere:x/y.asd") '("Nowhere:x/y.asd"))
+           (is (null (find-system-files nil)))
+           (let ((found (find-system-files source)))
+             (is-equal (length found) 1)
+             (is-equal (path-basename (first found)) "foo.asd"))
+           ;; Too far below: the search gives up.
+           (let ((*system-search-depth* 2))
+             (is (null (find-system-files source))))
+           ;; Two in one directory are both answered, sorted.
+           (is (write-file-text second "(asdf:defsystem \"bar\")"))
+           (push second files)
+           (is-equal (mapcar #'path-basename (find-system-files source))
+                     '("bar.asd" "foo.asd")))
+      (mapc #'delete-quietly files))))
+
+(deftest load-system-loads-the-asd-above-the-buffer
+  (multiple-value-bind (asd source files) (system-fixture)
+    (unwind-protect
+         (multiple-value-bind (doc tr wire)
+             (make-wired-fake (lines "(in-package :foo)" "(bar)|"))
+           (declare (ignore wire))
+           (let ((*last-system-file* nil))
+             (setf (doc-path doc) source
+                   (doc-name doc) "a.lisp")
+             (run-command doc 'clamacs-load-system)
+             (fake-answer-attach tr)
+             ;; On the REPL thread, and in CL-USER: the buffer's package
+             ;; is one the system has yet to make.
+             (let ((sent (fake-last-sent tr)))
+               (is (eql (search "REPL-EVAL (ext.dev:load-asd-system \"" sent) 0))
+               (is (search "foo.asd\")" sent)))
+             (is (notany (lambda (line) (search "IN-PACKAGE" line))
+                         (fake-sent-commands tr)))
+             (is-equal (path-basename *last-system-file*) "foo.asd")
+             (fake-deliver tr 0 "")
+             (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "\"foo\""))
+             (is-equal (fake-last-message doc) "\"foo\"")
+             ;; Test System, of the same file.
+             (run-command doc 'clamacs-test-system)
+             (is (eql (search "REPL-EVAL (ext.dev:test-asd-system \"" (fake-last-sent tr)) 0))
+             (is-equal (fake-last-message doc) "Testing system foo ...")))
+      (mapc #'delete-quietly files)
+      (ignore-errors (delete-quietly asd)))))
+
+(deftest a-window-without-a-system-uses-the-last-one-or-asks
+  (multiple-value-bind (doc tr wire) (make-wired-fake "(+ 1 2)|")
+    (declare (ignore wire))
+    (let ((*last-system-file* nil))
+      ;; Nothing above the buffer and nothing loaded before: a prompt.
+      (run-command doc 'clamacs-load-system)
+      (is (minibuffer-open-p doc))
+      (is (null (fake-transport-sent tr)))
+      (minibuffer-abort doc)
+      ;; A file that is no .asd is refused, and nothing is sent.
+      (load-system-file doc "Work:src/foo.lisp")
+      (is-equal (fake-last-message doc) "Not a system definition (.asd): Work:src/foo.lisp")
+      (is (null (fake-transport-sent tr)))
+      (is (null *last-system-file*))
+      ;; The last system is what such a window loads.
+      (setq *last-system-file* "Work:src/foo/foo.asd")
+      (run-command doc 'clamacs-load-system)
+      (is (not (minibuffer-open-p doc)))
+      (fake-answer-attach tr)
+      (is-equal (fake-last-sent tr)
+                "REPL-EVAL (ext.dev:load-asd-system \"Work:src/foo/foo.asd\")")
+      (is-equal (fake-last-message doc) "Loading system foo ..."))))
