@@ -1088,7 +1088,7 @@ off a variable."
     (cmd "KEY C-M-i")
     (if (string/= (wait-echo "Complete:" 40) "")
         (ok "C-M-i handed the candidates to the minibuffer")
-        (fail "C-M-i on twice did not prompt"))
+        (fail "C-M-i on twic did not prompt"))   ; twic: the prefix as typed
     (cmd "KEY TAB")
     (cmd "STATUS")
     ;; The host's echo row counts them; the page's list names them.
@@ -1117,7 +1117,7 @@ off a variable."
     (if (string/= (wait-echo "Complete:" 40) "")
         (ok "C-M-i prompted again")
         (progn (cmd "STATUS")
-               (fail "the second C-M-i on twice did not prompt: ~A" *result*)))
+               (fail "the second C-M-i on twic did not prompt: ~A" *result*)))   ; the prefix as typed
     (cmd "KEY TAB")
     (cmd "KEY - a TAB")
     (cmd "STATUS")
