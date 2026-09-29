@@ -1656,9 +1656,13 @@ loading it here would also replace the wire starter the other tests use."
   ;; page is there (the app bundle, an installed layout); else the
   ;; checkout's build directory an image may hold from another machine.
   ;; Every answer carries a trailing slash, so a name can be appended.
-  (let* ((page (temp-file "page.html" "<html></html>"))
-         (with-page (directory-namestring page))
+  ;; A directory of the test's own holding a page.html: TEMP-FILE's names
+  ;; carry a prefix, and TMPDIR itself has a page only by accident.
+  (let* ((with-page (concatenate 'string (temp-path "frontend-dir") "/"))
+         (page (concatenate 'string with-page "page.html"))
          (without (concatenate 'string with-page "nowhere-such/")))
+    (ensure-directories-exist page)
+    (is (write-file-text page "<html></html>"))
     (is-equal (choose-host-frontend-dir "/env/dir" with-page "/build/") "/env/dir/")
     (is-equal (choose-host-frontend-dir "/env/dir/" nil "/build/") "/env/dir/")
     (is-equal (choose-host-frontend-dir "" with-page "/build/") with-page)
