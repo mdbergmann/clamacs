@@ -224,6 +224,9 @@ thread posts a WIRE-FIND-PORT), and the next find answers with the name."
 (defmethod transport-launch-problem ((tr tcp-transport))
   (tcp-transport-problem tr))
 
+(defmethod transport-log ((tr tcp-transport))
+  (and (tcp-transport-launched tr) (tcp-transport-log tr)))
+
 (defun tcp-background-connect (tr)
   "The connect a find asked for (TCP-REQUEST-CONNECT), on the client thread.
 A clamiga found is announced: the wire looks for it again on the editor's
@@ -348,6 +351,22 @@ nobody else may write it in the moments before -- or replace what is there."
                        (end (or (position #\Newline text :start at) (length text))))
                   (subseq text (1+ start) end)))))))
 
+(defun launch-heap ()
+  "The started clamiga's heap: CLAMACS_CLAMIGA_HEAP in the environment,
+else what the init file's *CLAMIGA-HEAP* says."
+  (let ((env (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
+    (if (and env (string/= env ""))
+        env
+        (clamiga-heap))))
+
+(defun launch-command (bin preamble log)
+  "The shell command that starts BIN on PREAMBLE in the background, its
+output in LOG."
+  (format nil "~A~{ ~A~} --non-interactive --load ~A </dev/null >~A 2>&1 &"
+          (shell-quote bin)
+          (mapcar #'shell-quote (clamiga-launch-options (launch-heap)))
+          (shell-quote preamble) (shell-quote log)))
+
 (defmethod transport-launch ((tr tcp-transport))
   (let ((bin (clamiga-binary))
         (dir (tcp-transport-dir tr))
@@ -375,9 +394,7 @@ nobody else may write it in the moments before -- or replace what is there."
       ;; The token travels in the child's environment.
       (setenv "CLAMIGA_TCP_TOKEN" token)
       (unwind-protect
-           (ext:system-command
-            (format nil "~A --non-interactive --load ~A </dev/null >~A 2>&1 &"
-                    (shell-quote bin) (shell-quote preamble) (shell-quote log)))
+           (ext:system-command (launch-command bin preamble log))
         (unsetenv "CLAMIGA_TCP_TOKEN"))
       ;; The port file appears once the preamble has run.  This is the one
       ;; place the editor waits, and it waits before there is anything to

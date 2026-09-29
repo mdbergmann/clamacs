@@ -176,6 +176,23 @@ already there (`C-c d x` after `C-c d`, or `C-x` on its own): a key is a
 command or a prefix, not both.  Binding the same keys again replaces the
 earlier binding.
 
+**The clamiga the editor starts** (Clamiga > Start clamiga) takes its heap
+and any further command line options from the init file:
+
+```lisp
+(setq *clamiga-heap* "512M")               ; as clamiga's --heap takes it
+(setq *clamiga-options* '("--no-userinit"))
+```
+
+The heap is what a loaded system and everything it depends on has to fit
+in.  Without a setting it is 256M on macOS, Linux and Windows, and
+clamiga's own default on an Amiga or MorphOS, where a size is yours to
+choose for the machine; `(setq *clamiga-heap* nil)` asks for clamiga's
+default everywhere.  On the host `CLAMACS_CLAMIGA_HEAP` in the editor's
+environment goes before the init file.  When a form runs out of heap all
+the same, clamiga's REPL thread ends with it: `C-c C-c` then says so and
+names the log of the started clamiga, and `C-c C-z` attaches a new REPL.
+
 The heap image keeps only the Amiga OS names the editor uses itself (it is
 saved with `EXT:SAVE-IMAGE :SHAKE-BINDINGS`).  An init file that calls the
 OS directly (`amiga.raw.intuition:...`) can name one that is not in it,

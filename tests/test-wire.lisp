@@ -592,3 +592,34 @@ values: the .asd, the source file, and everything to delete."
       (is-equal (fake-last-sent tr)
                 "REPL-EVAL (ext.dev:load-asd-system \"Work:src/foo/foo.asd\")")
       (is-equal (fake-last-message doc) "Loading system foo ..."))))
+
+;;; --- how clamiga is started ----------------------------------------------------
+
+(deftest the-started-clamiga-s-heap-and-options-are-the-init-file-s
+  (let ((*clamiga-options* '()))
+    ;; The default is the platform's: the tests run on a host.
+    (let ((*clamiga-heap* :default)
+          (*features* (remove :morphos (remove :amigaos *features*))))
+      (is-equal (clamiga-launch-options) '("--heap" "256M")))
+    ;; An Amiga keeps clamiga's own default: the memory is the machine's.
+    (let ((*clamiga-heap* :default)
+          (*features* (cons :amigaos *features*)))
+      (is-equal (clamiga-heap) nil)
+      (is-equal (clamiga-launch-options) '()))
+    (let ((*clamiga-heap* :default)
+          (*features* (cons :morphos *features*)))
+      (is-equal (clamiga-launch-options) '()))
+    ;; What the init file says goes on every platform.
+    (let ((*clamiga-heap* "24M")
+          (*features* (cons :amigaos *features*)))
+      (is-equal (clamiga-launch-options) '("--heap" "24M")))
+    (let ((*clamiga-heap* 8388608))
+      (is-equal (clamiga-launch-options) '("--heap" "8388608")))
+    ;; NIL, and anything that is no size, is clamiga's own default.
+    (dolist (none '(nil "" 0 -1 :big))
+      (let ((*clamiga-heap* none))
+        (is-equal (clamiga-launch-options) '())))
+    ;; The options follow the heap; what is no string is left out.
+    (let ((*clamiga-heap* "64M")
+          (*clamiga-options* '("--no-userinit" 42 "--no-jit")))
+      (is-equal (clamiga-launch-options) '("--heap" "64M" "--no-userinit" "--no-jit")))))

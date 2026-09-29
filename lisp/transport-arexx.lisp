@@ -150,7 +150,9 @@ two rapid launches) never share a file."
                     (format nil "(require \"amiga/arexx\")~%(unless (amiga.arexx:running-p) (amiga.arexx:start))~%"))
                    (write-file-text
                     script
-                    (format nil "Stack ~D~%\"~A\" --load ~A~%" +launch-stack-size+ command preamble)))
+                    ;; The init file's heap and options (wire.lisp) first.
+                    (format nil "Stack ~D~%\"~A\"~{ ~A~} --load ~A~%" +launch-stack-size+ command
+                            (clamiga-launch-options) preamble)))
         (delete-quietly preamble)
         (delete-quietly script)
         (return-from transport-launch nil))

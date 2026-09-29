@@ -708,9 +708,43 @@ document it was about (NIL once closed)."
          (doc-message doc (if (string/= line "") line "REPL-INPUT failed"))
          (doc-beep doc)))
       (:repl-interrupt
-       (when (and doc (string/= line ""))
-         (doc-message doc line)))
+       (cond ((and (/= rc +rc-ok+) (search "no REPL attached" text))
+              ;; The thread the editor took for busy is gone: an error no
+              ;; handler sees (the heap exhausted) ended it, RESULT unsent.
+              (repl-thread-gone editor doc))
+             ((and doc (string/= line ""))
+              (doc-message doc line))))
       (t nil))))
+
+(defun repl-thread-gone (editor doc)
+  "clamiga answers, but its REPL thread is no more: what it was running is
+over.  The transcript says so and where to look, the prompt comes back,
+and C-c C-z or the next buffer eval attaches a new thread.  DOC is where the
+interrupt was asked, NIL once closed."
+  (let* ((session (repl-session editor))
+         (repl (repl-doc editor))
+         (origin (live-doc (repl-session-origin session)))
+         (log (transport-log (wire-transport (editor-wire editor))))
+         (news "The REPL thread is gone, and what it ran with it"))
+    (setf (repl-session-attached session) nil
+          (repl-session-attaching session) nil
+          (repl-session-origin session) nil)
+    (repl-clear-pending session)
+    (debug-left editor)
+    (when repl
+      (let ((state (doc-repl repl)))
+        (setf (repl-window-busy state) nil
+              (repl-window-reading state) nil)
+        (cond ((repl-window-input-start state)
+               ;; A buffer eval: the prompt stayed up, the news goes above it.
+               (repl-insert-above-prompt
+                repl (format nil "; ~A~@[ (see ~A)~]~%" news log)))
+              (t
+               (repl-note repl "~A~@[ (see ~A)~]" news log)
+               (repl-prompt repl)))))
+    (dolist (d (remove-duplicates (remove nil (list doc origin repl))))
+      (message d "~A~@[ (see ~A)~] -- C-c C-z attaches a new one" news log)
+      (doc-beep d))))
 
 ;;; ------------------------------------------------------------------
 ;;; Housekeeping

@@ -419,6 +419,53 @@
     (is (not (repl-session-attached (repl-session (doc-editor repl)))))
     (is (search (format nil "CL-USER> |") (transcript repl)))))
 
+(deftest an-interrupt-that-finds-the-thread-gone-brings-the-prompt-back
+  ;; The heap exhausted under a form ends clamiga's REPL thread with no
+  ;; RESULT sent: the editor learns it from the interrupt's refusal.
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore doc wire))
+    (send-input repl tr "(load-everything)")
+    (type-keys repl "RET")
+    (is-equal (fake-last-message repl) "The REPL is busy (C-c C-c interrupts)")
+    (type-keys repl "C-c C-c")
+    (is-equal (fake-last-sent tr) "REPL-INTERRUPT")
+    (fake-deliver tr 10 "")
+    (is-equal (fake-last-sent tr) "LASTRESULT")
+    (fake-deliver tr 0 "ERROR: no REPL attached")
+    (is-equal (fake-last-message repl)
+              "The REPL thread is gone, and what it ran with it -- C-c C-z attaches a new one")
+    (is (not (repl-session-attached (repl-session (doc-editor repl)))))
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA" "CL-USER> (load-everything)"
+                     "; The REPL thread is gone, and what it ran with it" "CL-USER> |"))
+    ;; The prompt is one again: RET says what is missing, C-c C-z gets it.
+    (type-text repl "1")
+    (type-keys repl "RET")
+    (is-equal (fake-last-message repl) "No REPL attached -- C-c C-z attaches one")
+    (type-keys repl "C-c C-z")
+    (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")))
+
+(deftest an-interrupt-that-finds-the-thread-gone-ends-a-buffer-eval
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (run-command doc 'clamacs-eval-last-sexp)
+    (fake-deliver tr 0 "Package is now CL-USER")
+    (is-equal (fake-last-sent tr) "REPL-EVAL (twice 21)")
+    (fake-deliver tr 0 "")
+    (type-keys doc "C-c C-b")
+    (is-equal (fake-last-sent tr) "REPL-INTERRUPT")
+    (fake-deliver tr 10 "")
+    (fake-deliver tr 0 "ERROR: no REPL attached")
+    (is-equal (fake-last-message doc)
+              "The REPL thread is gone, and what it ran with it -- C-c C-z attaches a new one")
+    (is (null (repl-session-origin (repl-session (doc-editor repl)))))
+    ;; The prompt stayed up; the news is above it.
+    (is (search (lines "; The REPL thread is gone, and what it ran with it" "CL-USER> |")
+                (transcript repl)))
+    ;; The next buffer eval attaches a new thread and runs on it.
+    (run-command doc 'clamacs-eval-last-sexp)
+    (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")))
+
 ;;; --- the port going and coming -----------------------------------------------
 
 (deftest losing-the-port-prompts-again-and-the-return-attaches-anew

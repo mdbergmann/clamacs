@@ -338,6 +338,31 @@ while a reply is being delivered."
     (is-equal (read-file-text path) (launch-preamble "/tmp/port-file"))
     (delete-file path)))
 
+(deftest tcp-launch-command-gives-the-clamiga-a-heap
+  ;; clamiga's own default (4M) is exhausted by the first system loaded.
+  (let ((saved (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
+    (unwind-protect
+         (progn
+           (unsetenv "CLAMACS_CLAMIGA_HEAP")
+           (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/it's.log")
+                     "'/bin/clamiga' '--heap' '256M' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/it'\\''s.log' 2>&1 &")
+           (let ((*clamiga-heap* nil))
+             (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/log")
+                       "'/bin/clamiga' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
+           ;; The init file's settings.
+           (let ((*clamiga-heap* "512M")
+                 (*clamiga-options* '("--no-userinit")))
+             (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/log")
+                       "'/bin/clamiga' '--heap' '512M' '--no-userinit' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
+           ;; The environment wins, and an empty value says nothing.
+           (setenv "CLAMACS_CLAMIGA_HEAP" "64M")
+           (is-equal (launch-heap) "64M")
+           (setenv "CLAMACS_CLAMIGA_HEAP" "")
+           (is-equal (launch-heap) "256M"))
+      (if saved
+          (setenv "CLAMACS_CLAMIGA_HEAP" saved)
+          (unsetenv "CLAMACS_CLAMIGA_HEAP")))))
+
 (deftest tcp-launch-starts-a-clamiga-on-this-binary-and-exit-stops-it
   (cond ((equal (ext:getenv "CLAMIGA_GC_STRESS") "1")
          (format t "  note  the launch of a second clamiga is not run under GC stress (the child would inherit it)~%"))
@@ -374,6 +399,8 @@ while a reply is being delivered."
                     (is (tcp-wait (lambda () (search "CL-Amiga" (fake-last-message doc)))))
                     (on-editor editor (lambda () (wire-request wire doc :eval "EVAL (ext:executable-path)")))
                     (is (tcp-wait (lambda () (search "clamiga" (fake-last-message doc)))))
+                    ;; Where its output goes is known to the REPL's messages.
+                    (is-equal (transport-log tr) log)
                     ;; Its token is not in the editor's environment any more.
                     (is (null (ext:getenv "CLAMIGA_TCP_TOKEN")))
                     ;; The editor's exit stops the clamiga it started.

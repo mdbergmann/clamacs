@@ -54,6 +54,45 @@ thread is told to send to (REPL-ATTACH) -- or NIL while there is none."))
 echo area, or NIL when it has nothing to add to `Cannot start clamiga'.")
   (:method (transport) (declare (ignore transport)) nil))
 
+(defgeneric transport-log (transport)
+  (:documentation "The file the clamiga this transport started writes its
+output to -- where an error that took a thread of it with it is found --
+or NIL when there is none.")
+  (:method (transport) (declare (ignore transport)) nil))
+
+;;; How a clamiga the editor starts is started: the init file's to set.
+
+(defvar *clamiga-heap* :default
+  "The heap of a clamiga the editor starts, as its `--heap' takes it
+(\"256M\", \"8M\"): what a loaded system and everything it depends on has
+to fit in.  :DEFAULT is 256M on macOS, Linux and Windows and clamiga's own
+default on an Amiga, where the memory is the machine's; NIL is clamiga's
+own default everywhere.")
+
+(defvar *clamiga-options* '()
+  "More command line options for a clamiga the editor starts, a list of
+strings: (\"--no-userinit\"), (\"--no-jit\").")
+
+(defparameter *host-clamiga-heap* "256M")
+
+(defun clamiga-heap ()
+  "The heap to ask for, a string, or NIL for clamiga's own default."
+  (let ((heap *clamiga-heap*))
+    (cond ((eq heap :default)
+           ;; Asked at run time: the FASLs are compiled on the host.
+           (if (or (member :amigaos *features*) (member :morphos *features*))
+               nil
+               *host-clamiga-heap*))
+          ((and (stringp heap) (string/= heap "")) heap)
+          ((and (integerp heap) (> heap 0)) (format nil "~D" heap))
+          (t nil))))
+
+(defun clamiga-launch-options (&optional (heap (clamiga-heap)))
+  "The options a started clamiga gets before the editor's own, a list of
+strings: the heap, then *CLAMIGA-OPTIONS*."
+  (append (and heap (list "--heap" heap))
+          (remove-if-not #'stringp *clamiga-options*)))
+
 (defun launch-failure-text (wire)
   (format nil "Cannot start clamiga~@[: ~A~]"
           (transport-launch-problem (wire-transport wire))))
