@@ -29,7 +29,7 @@
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
-         lineNumbers, drawSelection, highlightActiveLine} = window.CM;
+         lineNumbers, drawSelection} = window.CM;
 
   const $ = (id) => document.getElementById(id);
   const wrap = $("wrap"), menubar = $("menubar");
@@ -266,12 +266,23 @@
     lisp("clamacsKey", doc.id, ev.key, ev.code, ev.ctrlKey, ev.altKey, ev.metaKey, ev.shiftKey, target);
   }
 
+  // The cursor's line is marked while nothing is selected.  CodeMirror's
+  // own highlightActiveLine marks it with a selection too, and the line's
+  // opaque background lies over the selection layer: the head's line of
+  // a selection -- the first line, selecting upwards -- looked unselected.
+  const activeLineMark = Decoration.line({class: "cm-activeLine"});
+  const activeLine = EditorView.decorations.of((view) => {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return Decoration.none;
+    return Decoration.set([activeLineMark.range(view.state.doc.lineAt(sel.head).from)]);
+  });
+
   function makeView(doc) {
     const view = new EditorView({
       state: EditorState.create({
         doc: "",
         extensions: [
-          lineNumbers(), drawSelection(), highlightActiveLine(), colourField,
+          lineNumbers(), drawSelection(), activeLine, colourField,
           EditorView.domEventHandlers({
             keydown: (ev) => { keyToLisp(doc, ev, "text"); return false; },
             focus: () => { if (activeId !== doc.id) lisp("clamacsActivate", doc.id); return false; }
@@ -791,8 +802,10 @@
     const shown = docs.get(activeId);
     const sel = shown ? shown.view.state.selection.main : null;
     return {
-      // What the active document shows selected: the region Lisp asked for
-      selection: sel ? {head: sel.head, anchor: sel.anchor} : null,
+      // What the active document shows selected: the region Lisp asked for,
+      // and whether the cursor's line is marked (never with a selection)
+      selection: sel ? {head: sel.head, anchor: sel.anchor,
+                        activeLine: shown.view.contentDOM.querySelectorAll(".cm-activeLine").length} : null,
       menu: menuState(),
       theme: themeState(),
       dock: {open: dockShown !== null, shown: dockShown, height: dockEl.offsetHeight || parseInt(dockEl.style.height) || 0},

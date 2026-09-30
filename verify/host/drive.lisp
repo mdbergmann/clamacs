@@ -858,7 +858,10 @@ off a variable."
                           (escape-quotes text) ticks)))
 
 (defun page-selection (head anchor)
-  (string/= "" (page-panels (format nil "\"selection\":{\"head\":~D,\"anchor\":~D}" head anchor))))
+  "True once the page shows the selection HEAD..ANCHOR -- with the
+cursor's line marked only when nothing is selected."
+  (string/= "" (page-panels (format nil "\"selection\":{\"head\":~D,\"anchor\":~D,\"activeLine\":~D}"
+                                    head anchor (if (= head anchor) 1 0)))))
 
 (defun wait-line-is (want ticks)
   "True once the cursor's line is WANT."
