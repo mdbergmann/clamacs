@@ -809,7 +809,11 @@
       // Which documents this page holds, and whether it is a detached
       // window's: what a script checks after a move (phase H7)
       tabs: {source, dock, active: activeId},
-      detached
+      detached,
+      // Whether the page is on screen: a covered window gets no animation
+      // frames, so its minimap stays unpainted -- a check that fails with
+      // "hidden" here failed the display, not the editor
+      visible: document.visibilityState
     };
   }
   function reportPanels() {
