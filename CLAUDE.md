@@ -496,6 +496,20 @@ list under "Answered during phase 1".
 
 - MUI 3.8 is `muimaster.library` **19**.  The vendored `libraries/mui.h`
   says `MUIMASTER_VMIN` is 20, which would refuse to run on the target.
+- **A timer input handler's `ihn_Millis` is plain milliseconds on MUI
+  3.8**; the header's `MUIIHNF_TIMER_SCALE10/100` flags are newer and
+  ignored there, so "3 units of 100 ms" was a 3 ms timer: the arglist
+  tick fired 38 times a second and took the CPU while nobody typed
+  (95 % on a 68040, 2026-09-30, in both editors since phase 2).  Also:
+  with any timer handler up MUI wakes the application loop about 60
+  times a second whether the handler is due or not, so what the loop
+  does per wake (`housekeeping`) must be a comparison, not work -- the
+  dynamic menus are brought in step only after a wake that ran editor
+  code (`mui-editor-activity`).  `verify/realamiga/run-cpu-idle.sh`
+  measures both (a priority -5 meter task beside the editor, the loop's
+  own account through `loopstats.rexx` -> `loop-stats-report`) and fails
+  when the tick is off its 3.3/s; run it after touching the event loop,
+  the input handlers or anything that runs per tick.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
   the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.

@@ -246,10 +246,14 @@ SDISPATCHER(ck_text_dispatcher)
          * every 3/10 s; ck_intro_idle() returns at once unless the cursor
          * has come to rest in this (active) window, so a background document
          * costs a comparison per tick.  Its own handler node, like the
-         * RAWKEY one, so its lifetime is exactly the object's. */
+         * RAWKEY one, so its lifetime is exactly the object's.  Plain
+         * milliseconds, never MUIIHNF_TIMER_SCALE100: MUI 3.8 predates
+         * the scale flags and read "3 units of 100 ms" as a 3 ms timer
+         * (38 ticks a second on a 68040, the CPU gone while nobody
+         * typed; 2026-09-30, the Lisp editor had inherited it). */
         memset(&data->ihtimer, 0, sizeof data->ihtimer);
-        data->ihtimer.ihn_Flags  = MUIIHNF_TIMER | MUIIHNF_TIMER_SCALE100;
-        data->ihtimer.ihn_Millis  = 3;
+        data->ihtimer.ihn_Flags  = MUIIHNF_TIMER;
+        data->ihtimer.ihn_Millis  = 300;
         data->ihtimer.ihn_Object  = obj;
         data->ihtimer.ihn_Method  = CKM_IdleTick;
         DoMethod(_app(obj), MUIM_Application_AddInputHandler, (IPTR)&data->ihtimer);

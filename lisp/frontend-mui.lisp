@@ -130,8 +130,14 @@
 (defconstant +ihn-millis-offset+ 12)
 (defconstant +ihn-flags-offset+ 16)
 (defconstant +ihn-method-offset+ 20)
-;;; MUIIHNF_TIMER | MUIIHNF_TIMER_SCALE100, 3 units: 300 ms.
-(defconstant +idle-tick-units+ 3)
+;;; MUIIHNF_TIMER alone, ihn_Millis in milliseconds: 300 ms.  Never the
+;;; SCALE10 / SCALE100 flags of the newer header: MUI 3.8 (muimaster 19)
+;;; predates them and reads the field as milliseconds regardless, so "3
+;;; units of 100 ms" was a 3 ms timer there -- 38 ticks a second on the
+;;; 68040 (2026-09-30, measured by run-cpu-idle.sh), each running the
+;;; arglist check and a menu update, and the editor took the CPU while
+;;; nobody typed.  Plain milliseconds mean the same on every MUI.
+(defconstant +idle-tick-millis+ 300)
 
 ;; struct MUIP_HandleEvent { ULONG MethodID; struct IntuiMessage *imsg; LONG muikey; }
 (defconstant +hev-imsg-offset+ 4)
@@ -373,6 +379,11 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
   (theme-dirty nil)
+  ;; Counted up by everything that ran editor code -- a command, a hook,
+  ;; a port verb -- and compared by the loop (HOUSEKEEPING): the dynamic
+  ;; menus are brought in step only after such a wake, not on the ~60
+  ;; a second MUI's own timer causes with a timer input handler up.
+  (activity 0 :type fixnum) (synced-activity -1 :type fixnum)
   ;; The text size (theme.lisp's FONT-SIZE): MUI's fixed font as the first
   ;; text object's Setup found it -- its name and its height, what the
   ;; setting sizes and what NIL goes back to -- the TextFont this frontend
@@ -482,7 +493,9 @@ init file may open what it likes.")
                           ;; A reply from clamiga or a port verb moved the
                           ;; state the menu shows (a port found, an error
                           ;; list filled, a DEBUGGER message).
-                          :after-drain (lambda () (menu-update editor)))))))
+                          :after-drain (lambda ()
+                                         (incf (mui-editor-activity editor))
+                                         (menu-update editor)))))))
 
 (defun free-mailbox (editor)
   (when (>= (mui-editor-signal-bit editor) 0)
@@ -561,8 +574,8 @@ exactly the object's."
   (dotimes (i +ihn-size+)
     (ffi:poke-u8 ihn 0 i))
   (ffi:poke-u32 ihn (object-address object) +ihn-object-offset+)
-  (ffi:poke-u16 ihn +idle-tick-units+ +ihn-millis-offset+)
-  (ffi:poke-u32 ihn (logior m:+muiihnf-timer+ m:+muiihnf-timer-scale100+) +ihn-flags-offset+)
+  (ffi:poke-u16 ihn +idle-tick-millis+ +ihn-millis-offset+)
+  (ffi:poke-u32 ihn m:+muiihnf-timer+ +ihn-flags-offset+)
   (ffi:poke-u32 ihn +ckm-idle-tick+ +ihn-method-offset+)
   (mui:do-method (mui-editor-app editor) m:+muim-application-add-input-handler+ ihn))
 
@@ -966,6 +979,7 @@ method or hook that asked."
 (defun after-command (editor)
   "A command ran inside a method or a hook: the menu follows the state it
 left, and a quit it asked for is the loop's to carry out."
+  (incf (mui-editor-activity editor))
   (menu-update editor)
   (when (editor-quitting editor)
     (wake-loop editor)))
@@ -1025,12 +1039,16 @@ MUI's next handler -- the class's node -- edits."
 (defun make-text-dispatcher (editor)
   (lambda (class object message)
     (let ((id (mui:method-id message)))
+      (count-method id)
       (cond ((= id m:+muim-handle-event+)
              (text-handle-event editor object message))
             ((= id +ckm-idle-tick+)
+             ;; The menu follows only a tick that looked something up
+             ;; (a port found, the wire's state moved); a tick that
+             ;; found the cursor resting on a settled arglist -- most
+             ;; of them -- costs the comparison and nothing else.
              (let ((doc (object-document editor object)))
-               (when (and doc (not (doc-closing doc)))
-                 (arglist-idle doc)
+               (when (and doc (not (doc-closing doc)) (arglist-idle doc))
                  (after-command editor)))
              0)
             ((= id m:+muim-setup+)
@@ -1150,6 +1168,7 @@ editor's hook reports Alt-x."
 (defun make-mini-dispatcher (editor)
   (lambda (class object message)
     (let ((id (mui:method-id message)))
+      (count-method id)
       (cond ((= id m:+muim-handle-event+)
              (mini-handle-event editor class object message))
             ((= id +ckm-mini-key+)
@@ -2714,6 +2733,62 @@ running inside them."
 ;;; The event loop
 ;;; ------------------------------------------------------------------
 
+;;; What wakes the loop, counted: the account to read when the editor
+;;; takes CPU while nobody types (2026-09-30: 95 % on a 68040).  AmigaOS
+;;; has no per-task CPU accounting, so the wakeups and the methods MUI
+;;; calls on the two classes are the account there is.  Read it from a
+;;; running editor over the port -- `EVAL (clamacs::loop-stats-report)',
+;;; which verify/realamiga/loopstats.rexx does, and run-cpu-idle.sh per
+;;; phase of its run, beside the CPU share its meter task measures.
+
+(defstruct (loop-stats (:constructor %make-loop-stats))
+  (started (get-internal-real-time))
+  (iterations 0 :type fixnum)     ; NewInput calls
+  (ids 0 :type fixnum)            ; ... that returned an id
+  (spins 0 :type fixnum)          ; ... zero mask, no id: the Delay(1) path
+  (waits 0 :type fixnum)          ; Wait calls
+  (mailbox-wakes 0 :type fixnum)  ; ... that the mailbox signal ended
+  (menu-syncs 0 :type fixnum)     ; dynamic menus compared (HOUSEKEEPING)
+  (methods (make-hash-table)))    ; method id -> calls, both classes
+
+(defvar *loop-stats* (%make-loop-stats))
+
+(defvar *count-methods* nil
+  "True once LOOP-STATS-RESET ran: the per-method account costs a hash
+increment per MUI call, so the shipped editor does not keep it until a
+diagnostic run asks.")
+
+(defun count-method (id)
+  "One more call of the method ID (the dispatchers, ahead of their COND),
+when the account was asked for."
+  (when *count-methods*
+    (incf (gethash id (loop-stats-methods *loop-stats*) 0))))
+
+(defun loop-stats-reset ()
+  (setf *loop-stats* (%make-loop-stats)
+        *count-methods* t))
+
+(defun loop-stats-report (&optional (stream *standard-output*))
+  "The loop's account since the last reset, one line per counter and one
+per method id MUI called on the classes, with their rates per second."
+  (let* ((s *loop-stats*)
+         (seconds (max 1/1000 (/ (- (get-internal-real-time) (loop-stats-started s))
+                                 internal-time-units-per-second))))
+    (format stream "loop-stats over ~,1F s~%" seconds)
+    (flet ((row (name n)
+             (format stream "  ~24A ~8D  ~8,1F/s~%" name n (/ n seconds))))
+      (row "iterations" (loop-stats-iterations s))
+      (row "  with an id" (loop-stats-ids s))
+      (row "  spins (Delay 1)" (loop-stats-spins s))
+      (row "waits" (loop-stats-waits s))
+      (row "  mailbox wakes" (loop-stats-mailbox-wakes s))
+      (row "dynamic menu syncs" (loop-stats-menu-syncs s))
+      (let ((rows '()))
+        (maphash (lambda (id n) (push (cons id n) rows)) (loop-stats-methods s))
+        (dolist (row (sort rows #'> :key #'cdr))
+          (row (format nil "method #x~8,'0X" (car row)) (cdr row)))))
+    (values)))
+
 (defun report-error (editor condition)
   "An error in a command or a method, re-signaled at the loop: shown in the
 active document's echo area, and on the console when there is none."
@@ -2732,7 +2807,15 @@ quit.  True when the last window is gone and the loop must leave."
   (when (editor-quitting editor)
     (quit-requested editor))
   (theme-repaint editor)
-  (dynamic-menus-sync editor)
+  ;; The dynamic menus follow a wake that ran editor code -- a return id,
+  ;; a mailbox drain, a key or a hook (AFTER-COMMAND counts them) -- and
+  ;; never the wake of MUI's own timer alone (some 60 a second while a
+  ;; timer input handler is up), which would rebuild the Buffers and
+  ;; Themes lists to compare them, on a 68040, for nothing.
+  (when (or id (/= (mui-editor-activity editor) (mui-editor-synced-activity editor)))
+    (setf (mui-editor-synced-activity editor) (mui-editor-activity editor))
+    (incf (loop-stats-menu-syncs *loop-stats*))
+    (dynamic-menus-sync editor))
   (null (live-documents editor)))
 
 (defun run-loop (editor)
@@ -2747,19 +2830,26 @@ the next keystroke."
       (handler-case
           (loop
             (multiple-value-bind (id sigs) (mui:application-input app)
+              ;; *LOOP-STATS* read each time: a reset replaces it.
+              (incf (loop-stats-iterations *loop-stats*))
+              (when id (incf (loop-stats-ids *loop-stats*)))
               (when (eq id :quit)
                 (return-from run-loop))
               (when (housekeeping editor id)
                 (return-from run-loop))
               (cond ((zerop sigs)
                      ;; MUI: more input pending -- but never spin on nothing.
-                     (unless id (dos:delay 1)))
+                     (unless id
+                       (incf (loop-stats-spins *loop-stats*))
+                       (dos:delay 1)))
                     (t
+                     (incf (loop-stats-waits *loop-stats*))
                      (let ((got (amiga:wait-signals
                                  (logior sigs mailbox dos:+sigbreakf-ctrl-c+))))
                        (when (logtest got dos:+sigbreakf-ctrl-c+)
                          (return-from run-loop))
                        (when (logtest got mailbox)
+                         (incf (loop-stats-mailbox-wakes *loop-stats*))
                          (mailbox-drain (editor-mailbox editor))
                          (when (housekeeping editor nil)
                            (return-from run-loop))))))))

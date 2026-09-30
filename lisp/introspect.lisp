@@ -236,7 +236,10 @@ tick should try again."
 (defun arglist-idle (doc)
   "One tick of the idle timer.  Once the cursor has rested for a tick in
 the active Lisp window, and somewhere it has not been looked at since the
-last edit, the arglist is looked up quietly."
+last edit, the arglist is looked up quietly.  True when the tick looked
+something up (the state a frontend shows may have moved); NIL for the
+tick that found nothing to do, which is most of them -- a frontend runs
+nothing else on those."
   (let ((editor (doc-editor doc))
         (state (doc-intro doc)))
     (when (and (not (doc-closing doc))
@@ -247,7 +250,8 @@ last edit, the arglist is looked up quietly."
             (wire (editor-wire editor)))
         (cond ((not (eql idx (intro-idle-index state)))
                ;; Still moving: look again next tick.
-               (setf (intro-idle-index state) idx))
+               (setf (intro-idle-index state) idx)
+               nil)
               ((not (and wire (wire-connected wire)))
                ;; A reply that never came is not on the wire any more.
                (setf (intro-arglist-inflight state) 0)
@@ -255,9 +259,11 @@ last edit, the arglist is looked up quietly."
                ;; couple of seconds is plenty.
                (when (and (not (arglist-settled-p doc state idx))
                           (zerop (mod (incf (intro-idle-ticks state)) 8)))
-                 (arglist-idle-lookup doc state idx)))
+                 (arglist-idle-lookup doc state idx)
+                 t))
               ((not (arglist-settled-p doc state idx))
-               (arglist-idle-lookup doc state idx)))))))
+               (arglist-idle-lookup doc state idx)
+               t))))))
 
 (defun arglist-settled-p (doc state idx)
   "Whether the arglist was looked up at IDX since the last edit."

@@ -146,23 +146,27 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
 (deftest the-idle-timer-asks-once-the-cursor-has-rested
   (multiple-value-bind (doc tr wire) (intro-doc)
     (doc-set-point doc (inside-twice-call doc))
-    ;; First tick: the cursor has just arrived -- still moving.
-    (arglist-idle doc)
+    ;; First tick: the cursor has just arrived -- still moving.  A tick
+    ;; that looks nothing up says so with NIL: the MUI frontend runs its
+    ;; menu update only on a tick that answers T (3.3 ticks a second,
+    ;; nearly all of them resting).
+    (is (null (arglist-idle doc)))
     (is (null (fake-transport-sent tr)))
     ;; Second tick at the same place: asked, quietly.
-    (arglist-idle doc)
+    (is (eq (arglist-idle doc) t))
     (deliver-package tr)
     (is-equal (fake-last-sent tr) "ARGLIST twice")
     (is (null (fake-messages doc)))
-    ;; One question at a time: further ticks send nothing.
-    (arglist-idle doc)
+    ;; One question at a time: further ticks send nothing, and the place
+    ;; counts as looked at while the answer is on its way.
+    (is (null (arglist-idle doc)))
     (arglist-idle doc)
     (is-equal (length (fake-sent-commands tr)) 2)
     (fake-deliver tr 0 "(n)")
     (is-equal (fake-arglist doc) "(twice n)")
-    ;; Settled: no tick asks again at this place.
-    (arglist-idle doc)
-    (arglist-idle doc)
+    ;; Settled: no tick asks again at this place, and none does anything.
+    (is (null (arglist-idle doc)))
+    (is (null (arglist-idle doc)))
     (is-equal (length (fake-sent-commands tr)) 2)
     ;; Moved within the same call: the operator is the one shown, so the
     ;; lookup ends before the cache.
