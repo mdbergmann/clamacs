@@ -482,7 +482,10 @@ list under "Answered during phase 1".
   says `MUIMASTER_VMIN` is 20, which would refuse to run on the target.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
-  the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
+  the Lisp editor's is `CLAMACS` -- its base name is set too, for MUI's
+  per-application prefs (Settings > MUI..., `ENV:MUI/CLAMACS.cfg`), with
+  `MUIA_Application_UseRexx` FALSE so MUI opens no port of its own.
+  Clients scan, as they do for `CLAMIGA`.
 - Export with `MUIV_TextEditor_ExportHook_NoStyle`.  The `Plain` hook writes
   colour escapes into the text, which breaks saved files and desynchronises
   every offset from `MUIA_TextEditor_CursorIndex`.

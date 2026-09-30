@@ -68,7 +68,7 @@
                 (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
     (is-equal (count :dynamic entries :key #'menu-entry-kind) 3)
     (is-equal (menu-count) (length entries))
-    (is-equal titles 9)
+    (is-equal titles 10)
     (is (> items 30))
     ;; View sits between Windows and Buffers.
     (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
@@ -97,7 +97,7 @@
           (without (make-menu-table :systems nil)))
       (is-equal (titles with)
                 '("Project" "Edit" "Lisp" "ASDF" "Clamiga" "Windows" "View"
-                  "Buffers" "Help"))
+                  "Buffers" "Settings" "Help"))
       (is-equal (titles without) (remove "ASDF" (titles with) :test #'equal))
       (is-equal (set-difference (commands with) (commands without))
                 '(clamacs-load-system clamacs-load-system-from clamacs-test-system))
@@ -115,13 +115,19 @@
 
 (deftest a-title-with-nothing-drawn-under-it-is-hidden
   ;; The model draws the two groups every frontend has: everything but
-  ;; the minimap's item (the host page's alone) is drawn, and View is
-  ;; drawn for its themes.
-  (let ((editor (make-fake-editor))
-        (minimap (menu-find-dynamic :minimap)))
+  ;; the minimap's item (the host page's alone) and the Settings menu
+  ;; (the MUI frontend's alone: its one item and so its title) is
+  ;; drawn, and View is drawn for its themes.
+  (let* ((editor (make-fake-editor))
+         (minimap (menu-find-dynamic :minimap))
+         (mui-settings (menu-find 'clamacs-mui-settings))
+         (settings (1- mui-settings)))
     (is-equal (editor-dynamic-groups editor) '(:buffers :themes))
+    (is (not (editor-mui-settings-p editor)))
+    (is-equal (menu-entry-title (menu-entry settings)) "Settings")
+    (is-equal (menu-entry-kind (menu-entry settings)) :title)
     (dotimes (i (menu-count))
-      (cond ((= i minimap)
+      (cond ((member i (list minimap settings mui-settings))
              (is (not (menu-entry-drawn-p editor i)))
              (is (eq (menu-wire-kind editor i) :hidden)))
             (t
@@ -132,6 +138,51 @@
     (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)
     (is (menu-entry-drawn-p editor (1- (menu-find-dynamic :themes))))))
+
+;;; --- Settings > MUI... -----------------------------------------------------
+
+;;; A frontend on MUI: it draws the Settings menu and opens the window.
+(defstruct (mui-ish-editor (:include fake-editor)
+                           (:constructor make-mui-ish-editor ()))
+  (opened 0))
+
+(defmethod editor-mui-settings-p ((editor mui-ish-editor)) t)
+
+(defmethod editor-open-mui-settings ((editor mui-ish-editor))
+  (incf (mui-ish-editor-opened editor)))
+
+(deftest the-mui-settings-item-is-the-mui-frontends
+  (let* ((editor (make-mui-ish-editor))
+         (mui-settings (menu-find 'clamacs-mui-settings))
+         (settings (1- mui-settings)))
+    ;; Drawn, with its title, on a MUI frontend.
+    (is (menu-entry-drawn-p editor settings))
+    (is (menu-entry-drawn-p editor mui-settings))
+    (is-equal (menu-wire-kind editor settings) :title)
+    (is-equal (menu-wire-kind editor mui-settings) :item)
+    ;; It is the last item before Help, always enabled, no key.
+    (is-equal (menu-entry-title (menu-entry mui-settings)) "MUI...")
+    (is-equal (menu-entry-rule (menu-entry mui-settings)) :always)
+    (is (null (menu-entry-keys (menu-entry mui-settings))))
+    (is-equal (menu-entry-title (menu-entry (1+ mui-settings))) "Help")
+    ;; A pick opens the window; the menu verb picks it too.
+    (let ((doc (make-fake "|" :editor editor)))
+      (doc-activate doc)
+      (run-command doc 'clamacs-mui-settings)
+      (is-equal (mui-ish-editor-opened editor) 1)
+      (is-equal (fake-beeps doc) 0)
+      (is-equal (port editor "MENU clamacs-mui-settings STATE") '(0 "enabled"))
+      (is-equal (port editor "MENU clamacs-mui-settings") '(0 ""))
+      (is-equal (mui-ish-editor-opened editor) 2))))
+
+(deftest the-mui-settings-command-says-so-off-mui
+  ;; The command exists on every frontend (`M-x clamacs-mui-settings'
+  ;; is the same name everywhere); without MUI it says why it did nothing.
+  (let ((doc (make-fake "|")))
+    (is (find-command "clamacs-mui-settings"))
+    (run-command doc 'clamacs-mui-settings)
+    (is-equal (fake-last-message doc) "This frontend does not run on MUI: no MUI settings")
+    (is-equal (fake-beeps doc) 1)))
 
 (deftest the-minimap-item-is-a-setting-every-frontend-keeps
   ;; The View menu's other group: one line, ticked while the minimap is

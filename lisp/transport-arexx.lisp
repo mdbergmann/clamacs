@@ -14,8 +14,9 @@
 ;;;;   - The PORT thread is AMIGA.AREXX:START's: every verb of port.lisp is
 ;;;;     an EXT.DEV:DEFINE-COMMAND that posts to the mailbox and waits for
 ;;;;     the MUI task's answer.  The first instance's port is CLAMACS: the
-;;;;     application object has no MUIA_Application_Base, so MUI opens no
-;;;;     port of its own and the C editor's CLAMACS.1 quirk is gone.
+;;;;     application object's MUIA_Application_Base names MUI's prefs
+;;;;     file only, its MUIA_Application_UseRexx is FALSE, so MUI opens
+;;;;     no port of its own and the C editor's CLAMACS.1 quirk is gone.
 ;;;;   - Starting clamiga when no port is found is the C editor's recipe:
 ;;;;     the binary this editor runs on (PROGDIR:clamiga), through an
 ;;;;     Execute script that sets the 128K stack, in a console of its own,

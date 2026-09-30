@@ -425,6 +425,20 @@ session), and the choice is remembered the way a theme is: one
 `(show-minimap nil)` form in your init file, nothing else touched.  A
 macro reads the item with `MINIMAP` and toggles it with `MINIMAP
 Minimap`.  The Amiga editor has no minimap and does not show the item.
+
+## MUI settings (Amiga and MorphOS)
+
+**Settings > MUI...** (`M-x clamacs-mui-settings`) opens MUI's
+preferences window for Clamacs alone, as every MUI program offers it:
+the fonts, the colours, frames, scrollbars and the rest, and the pages
+of the installed custom classes -- TextEditor.mcc's among them, where
+the text area's font is set.  A bigger font for the text area is the
+TextEditor page's; the status line, the echo area and the panels take
+the fonts of the Fonts page.  MUI keeps what you set there under the
+name `CLAMACS` (`ENV:MUI/CLAMACS.cfg`, and `ENVARC:` when you save),
+apart from the settings of your other MUI programs.  The host editor
+does not show the menu; its font is the theme's `:font-family` /
+`:font-size`.
 See `tests/test-host.lisp` (the View menu) and the MINIMAP leg of
 `verify/host/drive.lisp`.
 

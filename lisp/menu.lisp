@@ -200,6 +200,13 @@
      (title "Buffers")
      (make-menu-entry :dynamic :always :buffers nil nil nil)
 
+     ;; The toolkit's own preferences for this application -- fonts,
+     ;; colours, frames, scrollbars -- the item every MUI program has and
+     ;; the MUI autodocs ask for.  Drawn by the MUI frontend alone
+     ;; (EDITOR-MUI-SETTINGS-P), so the title is hidden elsewhere.
+     (title "Settings")
+     (item 'clamacs-mui-settings        :always        "MUI..."                 nil       :global)
+
      (title "Help")
      (item 'clamacs-list-commands       :always        "List Commands"          nil       :global)
      (item 'clamacs-hyperspec           :always        "Common Lisp HyperSpec..." nil     :global)))))
@@ -448,13 +455,22 @@ is left out of its bar (MENU-ENTRY-DRAWN-P), so a frontend that has not
 caught up with a group shows no empty menu.")
   (:method ((editor editor)) '(:buffers :themes)))
 
+(defgeneric editor-mui-settings-p (editor)
+  (:documentation "Whether the frontend runs on MUI and can open MUI's
+preferences window for this application: the Settings menu's MUI item
+is drawn for it alone.")
+  (:method ((editor editor)) nil))
+
 (defun menu-entry-drawn-p (editor index)
   "Whether the frontend draws the entry at INDEX: a dynamic group when
-the frontend makes its items, a title when something under it is drawn,
-everything else always."
+the frontend makes its items, the MUI settings item on a MUI frontend, a
+title when something under it is drawn, everything else always."
   (let ((e (menu-entry index)))
     (case (menu-entry-kind e)
       (:dynamic (and (member (menu-entry-dynamic e) (editor-dynamic-groups editor)) t))
+      (:item (if (eq (menu-entry-command e) 'clamacs-mui-settings)
+                 (and (editor-mui-settings-p editor) t)
+                 t))
       (:title (loop for i from (1+ index) below (menu-count)
                     for next = (menu-entry i)
                     until (eq (menu-entry-kind next) :title)
@@ -536,6 +552,29 @@ About requester: the MUI and TextEditor.mcc versions.")
   "Show the About requester: versions, the toolkit, the connection."
   (declare (ignore arg))
   (doc-ask doc (about-text (doc-editor doc)) '(:ok)))
+
+;;; ------------------------------------------------------------------
+;;; MUI's preferences for the application
+;;; ------------------------------------------------------------------
+
+(defgeneric editor-open-mui-settings (editor)
+  (:documentation "Open MUI's preferences window for this application
+(MUIM_Application_OpenConfigWindow): fonts, colours, frames, and the
+prefs of TextEditor.mcc, kept by MUI under the application's base name.
+Only on a frontend that answers EDITOR-MUI-SETTINGS-P."))
+
+(define-command clamacs-mui-settings (doc arg)
+  "Open MUI's preferences window for Clamacs (Settings > MUI...): the
+fonts and colours of this application alone, kept by MUI."
+  (declare (ignore arg))
+  (let ((editor (doc-editor doc)))
+    (cond ((editor-mui-settings-p editor)
+           (editor-open-mui-settings editor)
+           t)
+          (t
+           (message doc "This frontend does not run on MUI: no MUI settings")
+           (doc-beep doc)
+           nil))))
 
 ;;; ------------------------------------------------------------------
 ;;; The HyperSpec

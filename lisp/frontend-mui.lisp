@@ -588,6 +588,28 @@ first window exists.  8 when the screen cannot be locked."
         (unwind-protect (screen-bitmap-depth screen)
           (intui:unlock-pub-screen nil screen)))))
 
+(defun screen-windows ()
+  "The titles of the windows on the default public screen, front to
+back (an untitled one as \"\"), for a run that checks what is on the
+screen beside the editor's own account -- MUI's preferences window
+opened by Settings > MUI..., say.  NIL when the screen cannot be locked.
+Not under Forbid, which Intuition's list would want: the strings made
+here may run a collection, and a collection waits for the other threads,
+which Forbid holds -- a diagnostic that a window closing under it could
+misread is the lesser evil, so the walk is bounded."
+  (let ((screen (intui:lock-pub-screen nil)))
+    (if (or (null screen) (ffi:null-pointer-p screen))
+        nil
+        (unwind-protect
+             ;; An :fptr slot reads NIL for NULL.
+             (loop for w = (intui:screen-first-window screen)
+                     then (intui:window-next-window w)
+                   repeat 64
+                   while w
+                   collect (let ((title (intui:window-title w)))
+                             (if title (ffi:foreign-to-string title) "")))
+          (intui:unlock-pub-screen nil screen)))))
+
 (defconstant +bg-buffer-size+ 32)   ; "2:rrrrrrrr,gggggggg,bbbbbbbb" is 29
 (defconstant +pen-spec-size+ 32)    ; struct MUI_PenSpec; "rrrrrrrrr,..." is 28
 
@@ -1684,6 +1706,18 @@ window; NIL when it is NIL or not open."
 (defmethod editor-dynamic-groups ((editor mui-editor))
   '(:buffers :themes))
 
+(defmethod editor-mui-settings-p ((editor mui-editor))
+  t)
+
+(defmethod editor-open-mui-settings ((editor mui-editor))
+  "MUI's preferences window for this application, beside the editor's
+windows -- the method returns at once and MUI runs the window from the
+event loop.  What is set there goes to ENV:MUI/CLAMACS.cfg, the file the
+application's base name decides, and is applied when the user saves or
+uses it.  Two longwords: MUI 3.8's message is the flags alone (0), MUI 4's
+also names a class (NULL: the application's own prefs)."
+  (mui:do-method (mui-editor-app editor) m:+muim-application-open-config-window+ 0 0))
+
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --
 when MUI would not build it: the editor still runs, keys and port intact."
@@ -2658,12 +2692,17 @@ function: an image is saved before it runs and restores into it."
            (install-hooks editor)
            ;; The menu strip goes in at creation (MUIA_Application_Menustrip
            ;; is an init-time attribute); without one the editor still
-           ;; runs.  No MUIA_Application_Base: MUI would open an ARexx port
-           ;; of its own; the editor's port is AMIGA.AREXX's (phase 2).
+           ;; runs.  The base name is what MUI keeps this application's
+           ;; own prefs under (ENV:MUI/CLAMACS.cfg, Settings > MUI...);
+           ;; MUI would also open an ARexx port of that name, which
+           ;; MUIA_Application_UseRexx forbids: the editor's port is
+           ;; AMIGA.AREXX's (phase 2), CLAMACS on the first instance.
            (let ((strip (build-menustrip editor)))
              (setf (mui-editor-app editor)
                    (apply #'mui:new-object :application
                           m:+muia-application-title+ "Clamacs"
+                          m:+muia-application-base+ "CLAMACS"
+                          m:+muia-application-use-rexx+ nil
                           m:+muia-application-version+ (format nil "$VER: Clamacs ~A" *clamacs-version*)
                           m:+muia-application-description+ "Emacs-flavoured Common Lisp IDE"
                           (and strip (list m:+muia-application-menustrip+ strip)))))
