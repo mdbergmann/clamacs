@@ -632,6 +632,21 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (host-text doc) (format nil "one~%three"))
     (is-equal (doc-mark-active doc) nil)))
 
+(deftest host-shift-up-reaches-the-first-line
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor (format nil "(defun fac (n)~%  (if (< n 2)~%      1~%    (* n (fac (1- n)))))~%"))))
+    (host-type editor "M->")
+    (host-take-evals editor)
+    (dotimes (i 4) (host-type editor "S-<up>"))
+    (is-equal (doc-point doc) 0)
+    (is (search "CK.setPoint(\"doc1\",0,62);" (host-take-evals editor)))
+    ;; The copy takes the whole text, the first line included
+    (host-command-type editor "c")
+    (is-equal (host-editor-clipboard editor) (host-text doc))
+    (host-type editor "M->")
+    (host-command-type editor "v")
+    (is-equal (doc-line-count doc) 9)))
+
 (deftest host-the-mouse-s-selection-is-the-region
   (let* ((editor (host-test-editor))
          (doc (host-test-document editor "hello world")))
