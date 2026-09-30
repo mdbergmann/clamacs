@@ -28,15 +28,6 @@
 # helper photographs the editor's window: build/amiga/shots-<leg>/*.png
 # (ffmpeg converts; without it the .ppm stays).
 #
-# MUI_SETTINGS=1 picks Settings > MUI... through the editor's port once
-# the file is saved (RexxMast is started for it): MUI's preferences
-# window for the application must open -- the photographer shoots it as
-# a second window, and the run reads the port's answer and the windows
-# on the screen (SCREEN-WINDOWS) into the log -- and the editor then
-# quits through the port with that window still open (it holds the
-# focus, so the C-x k below would go to it): the exit log is checked
-# as ever, so a dispose that the open settings window upsets fails here.
-#
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
@@ -50,7 +41,6 @@ SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
 THEME="${THEME:-}"
 SWITCH="${SWITCH:-}"
-MUI_SETTINGS="${MUI_SETTINGS:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
 SHOTS="$OUT/shots-$LEG"
@@ -129,42 +119,6 @@ $THEME_FORM
   (write-line "done" s))
 PRE
 
-# MUI_SETTINGS=1: the item picked over the port, the windows on the
-# screen counted before and after (the editor's one, then two), the
-# settings window photographed, and 6 s for MUI to bring it up.
-if [ -n "$MUI_SETTINGS" ]; then
-	cat > "$OUT/mui-settings.rexx" <<'REXX'
-/* Settings > MUI... through the editor's port, the windows on the
-   screen around it, then the editor's exit with that window still
-   open -- the settings window is the active one now, so the C-x k
-   the run sends afterwards would go to it. */
-OPTIONS RESULTS
-ADDRESS 'CLAMACS'
-'EVAL (clamacs::screen-windows)'
-IF RC ~= 0 THEN DO; 'LASTRESULT'; SAY 'windows before: rc' RC RESULT; END
-ELSE SAY 'windows before:' RESULT
-'MENU clamacs-mui-settings STATE'
-SAY 'MENU clamacs-mui-settings STATE:' RESULT
-'MENU clamacs-mui-settings'
-SAY 'MENU clamacs-mui-settings rc' RC 'result:' RESULT
-ADDRESS COMMAND 'C:Wait 6'
-ADDRESS 'CLAMACS'
-'EVAL (clamacs::screen-windows)'
-IF RC ~= 0 THEN DO; 'LASTRESULT'; SAY 'windows after: rc' RC RESULT; END
-ELSE SAY 'windows after:' RESULT
-'EVAL save-buffers-kill-emacs'
-SAY 'quit rc' RC
-REXX
-	MUI_SETTINGS_LEG="echo \"=== mui settings ===\" >>build/amiga/lisp-editor-run.log
-run >NIL: SYS:System/RexxMast
-SYS:Rexxc/WaitForPort REXX
-SYS:Rexxc/WaitForPort CLAMACS
-SYS:Rexxc/RX Clamacs:build/amiga/mui-settings.rexx >>build/amiga/lisp-editor-run.log
-C:Wait 3"
-else
-	MUI_SETTINGS_LEG=""
-fi
-
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
 ; lisp-editor boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
 failat 21
@@ -206,7 +160,6 @@ $TYPING
 date >>build/amiga/lisp-editor-run.log
 build/amiga/sendkey C-x C-s DELAY 1
 C:Wait 3
-$MUI_SETTINGS_LEG
 ; The photographer has had its one shot (it photographs a window once,
 ; when it appears): let it leave before the editor does.
 echo done >T:examples-done
@@ -318,22 +271,6 @@ last=$(echo "$exitlog" | tail -1)
 if [ "$last" != "clamacs: exit application disposed" ]; then
 	echo "=== FAIL: the exit log ends with '$last', not with the application disposed ==="
 	exit 1
-fi
-if [ -n "$MUI_SETTINGS" ]; then
-	# MUI's window is on the screen after the pick and was not before:
-	# SCREEN-WINDOWS lists the titles, MUI 3.8's being "User Interface
-	# Settings for Clamacs" (MUIA_Application_Title).
-	before=$(grep '^windows before:' "$RUNLOG")
-	after=$(grep '^windows after:' "$RUNLOG")
-	case "$before" in
-	*"rc 0 ERROR"*|"") echo "=== FAIL: SCREEN-WINDOWS did not answer before the pick: $before ==="; exit 1 ;;
-	*"Settings for Clamacs"*) echo "=== FAIL: a settings window was on the screen before the pick: $before ==="; exit 1 ;;
-	esac
-	case "$after" in
-	*"Settings for Clamacs"*) ;;
-	*) echo "=== FAIL: no settings window for Clamacs on the screen after the pick: $after ==="; exit 1 ;;
-	esac
-	echo "=== PASS: Settings > MUI... opened MUI's settings window for Clamacs, and the editor quit with it open ==="
 fi
 echo "=== PASS: the saved file equals the host frontend's text; the teardown disposed the application and nothing signalled ==="
 exit 0

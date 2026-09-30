@@ -122,12 +122,9 @@ MUI task touches MUI.**
   bodies run on the port thread, so each one *posts* to the mailbox and
   either replies at once or waits on a per-request condition for the
   MUI task's answer (`GETFILE` needs the text; `OUTPUT` needs nothing).
-  The MUI application object's `MUIA_Application_Base` (`CLAMACS`, the
-  name MUI keeps the application's own prefs under -- Settings > MUI...
-  opens them with `MUIM_Application_OpenConfigWindow`) comes with
-  `MUIA_Application_UseRexx` FALSE, so MUI creates no second port; the
-  C editor's `CLAMACS.1` quirk goes away and the first instance is
-  `CLAMACS`.  `ck_rexx_own_port()`'s task scan is
+  The MUI application object gets **no** `MUIA_Application_Base`, so MUI
+  creates no second port; the C editor's `CLAMACS.1` quirk goes away and
+  the first instance is `CLAMACS`.  `ck_rexx_own_port()`'s task scan is
   replaced by `AMIGA.AREXX:PORT-NAME`.
 
 Foreign state follows cl-amiga's MUI conventions: the whole GUI lives

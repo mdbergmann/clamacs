@@ -1499,13 +1499,6 @@ one: true then.  Picks come back through NATIVE-MENU-CALLBACK."
               (shim editor "clamacs_host_menu_set" :int32 '(:pointer :pointer :pointer :pointer)
                     (host-window-win (host-editor-main editor)) table cb (ffi:make-foreign-pointer 0)))))))
 
-(defun menu-item-drawn-p (editor index)
-  "An item of the table this bar draws: what gets an enable state and
-counts as an item of the bar.  The MUI settings item is drawn by the
-MUI frontend alone."
-  (and (eq (menu-entry-kind (menu-entry index)) :item)
-       (menu-entry-drawn-p editor index)))
-
 (defun menu-table-for-page (editor)
   "The table as the page takes it: [kind, title, keys] per entry -- or
 empty, which hides the page's bar, when the menu is the host's own."
@@ -1540,7 +1533,7 @@ nothing, and an empty table hides the page's."
       (unless (host-editor-native-menu editor)
         (loop for flag in (host-editor-menu-enabled editor)
               for index from 0
-              when (menu-item-drawn-p editor index)
+              when (eq (menu-entry-kind (menu-entry index)) :item)
                 do (ck window "menuEnable" index flag))
         (dolist (which (editor-dynamic-groups editor))
           (let ((shown (dynamic-menu-shown editor which)))
@@ -1577,11 +1570,12 @@ menu bar shows."
         (shown (host-editor-menu-enabled editor)))
     (loop for flag in want
           for index from 0
-          do (when (and (menu-item-drawn-p editor index)
-                        (or (null shown) (not (eq flag (nth index shown)))))
-               (if (host-editor-native-menu editor)
-                   (native-menu-enable editor index flag)
-                   (ck-all editor "menuEnable" index flag))))
+          do (let ((entry (menu-entry index)))
+               (when (and (eq (menu-entry-kind entry) :item)
+                          (or (null shown) (not (eq flag (nth index shown)))))
+                 (if (host-editor-native-menu editor)
+                     (native-menu-enable editor index flag)
+                     (ck-all editor "menuEnable" index flag)))))
     (setf (host-editor-menu-enabled editor) want)))
 
 (defun dynamic-menu-shown (editor which)
@@ -2011,11 +2005,10 @@ a window of its own says `window N' at the end."
                  (if active (hdoc-id active) "none"))))
       (:menu
        (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~})"
-               (loop for index from 0 below (menu-count)
-                     count (menu-item-drawn-p editor index))
+               (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
-                     when (and (not flag) (menu-item-drawn-p editor index))
+                     when (and (not flag) (eq (menu-entry-kind (menu-entry index)) :item))
                        collect index)
                (editor-dynamic-menu-lines editor :buffers)
                (editor-dynamic-menu-lines editor :themes)

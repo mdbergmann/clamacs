@@ -1314,11 +1314,6 @@ batch of both taken."
 (defun menu-enable-call (command flag)
   (format nil "CK.menuEnable(~D,~A);" (menu-find command) (if flag "true" "false")))
 
-(defun drawn-item-count (editor)
-  "How many items of the table the host's bar draws."
-  (loop for index from 0 below (menu-count)
-        count (menu-item-drawn-p editor index)))
-
 (defun menu-disabled-indices (editor)
   "The indices HOST-PANEL-STATE :MENU lists as disabled."
   (let* ((state (host-panel-state :menu editor))
@@ -1339,9 +1334,7 @@ batch of both taken."
     (is (search "[\"bar\",\"\",\"\"]" js))
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
-    ;; -- and the Settings menu, the MUI frontend's, keeps its two lines
-    ;; as hidden ones, so the indices stay the table's
-    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"hidden\",\"Settings\",\"\"],[\"hidden\",\"MUI...\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1351,12 +1344,9 @@ batch of both taken."
     (is (search (menu-enable-call 'complete-symbol nil) js))
     (is (search (menu-enable-call 'clamacs-repl nil) js))
     (is (search (menu-enable-call 'clamacs-repl-clear nil) js))
-    ;; -- every item the bar draws: the hidden MUI settings item gets none
-    (is-equal (count-calls "CK.menuEnable(" js) (drawn-item-count editor))
-    (is-equal (drawn-item-count editor)
-              (1- (count :item (menu-entries) :key #'menu-entry-kind)))
-    (is (not (search (format nil "CK.menuEnable(~D," (menu-find 'clamacs-mui-settings)) js)))
-    (is (search (format nil "items ~D disabled (" (drawn-item-count editor))
+    (is-equal (count-calls "CK.menuEnable(" js)
+              (count :item (menu-entries) :key #'menu-entry-kind))
+    (is (search (format nil "items ~D disabled (" (count :item (menu-entries) :key #'menu-entry-kind))
                 (host-panel-state :menu editor)))
     (is (member (menu-find 'save-buffer) (menu-disabled-indices editor)))
     ;; Nothing changed: nothing said
@@ -1647,8 +1637,6 @@ batch of both taken."
       (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "Themes" "")
                          (tabbed "minimap" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
-                         ;; The MUI frontend's Settings menu: hidden lines
-                         (tabbed "hidden" "Settings" "") (tabbed "hidden" "MUI..." "")
                          (tabbed "title" "Help" ""))
                   text))
       (is-equal (count #\Newline text) (1- (menu-count)))))
@@ -1669,7 +1657,8 @@ batch of both taken."
       (is (search "CK.setMenus([]);" js))
       (is (not (search "menuEnable" js)))
       (is (not (search "setDynamic" js)))
-      (is-equal (count :enable calls :key #'first) (drawn-item-count editor))
+      (is-equal (count :enable calls :key #'first)
+                (count :item (menu-entries) :key #'menu-entry-kind))
       (is (member (list :enable (menu-find 'find-file) t) calls :test #'equal))
       (is (member (list :enable (menu-find 'save-buffer) nil) calls :test #'equal))
       (is (member (list :enable (menu-find 'clamacs-repl) nil) calls :test #'equal))
@@ -2266,7 +2255,8 @@ settled and the tab moved.  The message HOST-DETACH answered."
         ;; The table, every item's state and both groups as the bar shows
         ;; them now, then the theme, before the tab
         (is (search "CK.setMenus([[\"title\",\"Project\",\"\"]" js))
-        (is-equal (count-calls "CK.menuEnable(" js) (drawn-item-count editor))
+        (is-equal (count-calls "CK.menuEnable(" js)
+                  (count :item (menu-entries) :key #'menu-entry-kind))
         (is (search (menu-enable-call 'save-buffer nil) js))
         (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",false],[\"(unnamed)<2>\",true]]);" js))
         (is (search "CK.setDynamic(\"themes\",[[\"Light\",true],[\"Dark\",false]" js))
