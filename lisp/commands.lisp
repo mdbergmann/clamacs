@@ -164,11 +164,13 @@ command was a kill too, at the front for a backward kill."
     (let ((ring (doc-kill-ring doc)))
       (cond ((not (last-was-kill-p doc)) (kill-push ring text))
             (backwards (kill-prepend ring text))
-            (t (kill-append ring text))))))
+            (t (kill-append ring text)))
+      (doc-clipboard-set doc (first (killring-entries ring))))))
 
 (defun region-bounds (doc)
-  "START and STOP of the region, or NIL (and a message) without a mark."
-  (let ((mark (doc-mark doc))
+  "START and STOP of the region, or NIL (and a message) without a mark.
+What the widget shows selected on its own stands in for a mark."
+  (let ((mark (or (doc-mark doc) (doc-selection-anchor doc)))
         (point (doc-point doc)))
     (cond (mark (values (min mark point) (max mark point)))
           (t (doc-message doc "No mark set in this buffer")
@@ -262,7 +264,8 @@ command was a kill too, at the front for a backward kill."
 (define-command keyboard-quit (doc arg)
   "Quit: drop the mark and the selection, abandon a prompt or a prefix key."
   (declare (ignore arg))
-  (setf (doc-mark doc) nil)
+  (setf (doc-mark doc) nil
+        (doc-mark-active doc) nil)
   (doc-edit doc :select-none)
   (doc-message doc "Quit"))
 
@@ -319,7 +322,8 @@ command was a kill too, at the front for a backward kill."
           ;; applications see the last kill.
           (doc-clipboard-copy doc start stop erase)
           (kill-push (doc-kill-ring doc) text)))
-      (setf (doc-mark doc) nil))))
+      (setf (doc-mark doc) nil
+            (doc-mark-active doc) nil))))
 
 (define-command kill-region (doc arg)
   "Kill the region between mark and cursor onto the kill ring (cut)."
@@ -336,10 +340,21 @@ command was a kill too, at the front for a backward kill."
         (t (doc-message doc "Kill ring is empty")
            (doc-beep doc))))
 
+(defun take-clipboard (doc)
+  "What another application put on the clipboard becomes the newest kill.
+The editor's own kills are there too (DOC-CLIPBOARD-SET): a text equal
+to the newest kill is the editor's and not pushed a second time."
+  (let ((ring (doc-kill-ring doc))
+        (text (doc-clipboard-text doc)))
+    (when (and text (string/= text "")
+               (not (equal text (first (killring-entries ring)))))
+      (kill-push ring text))))
+
 (define-command yank (doc arg)
-  "Insert the last killed text (paste)."
+  "Insert the last killed text, or what is on the clipboard (paste)."
   (declare (ignore arg))
   (let ((ring (doc-kill-ring doc)))
+    (take-clipboard doc)
     (kill-reset-yank ring)
     (yank-text doc (kill-current ring))))
 
@@ -364,7 +379,8 @@ command was a kill too, at the front for a backward kill."
 (define-command set-mark-command (doc arg)
   "Set the mark at the cursor."
   (declare (ignore arg))
-  (setf (doc-mark doc) (doc-point doc))
+  (setf (doc-mark doc) (doc-point doc)
+        (doc-mark-active doc) t)
   (doc-message doc "Mark set"))
 
 (define-command exchange-point-and-mark (doc arg)
@@ -374,7 +390,8 @@ command was a kill too, at the front for a backward kill."
         (point (doc-point doc)))
     (cond (mark
            (doc-set-point doc mark)
-           (setf (doc-mark doc) point))
+           (setf (doc-mark doc) point
+                 (doc-mark-active doc) t))
           (t
            (doc-message doc "No mark set in this buffer")
            (doc-beep doc)))))

@@ -249,11 +249,18 @@
   // stay with the widget (the composed character comes back through
   // clamacsUpdate) -- except under Alt, where macOS reports Option-N/E/I/U/`
   // as "Dead" and the decoder reads the letter from `code' (M-n); a key with
-  // the Command key is the OS's and the widget's (Cmd-C/V/X/A/Z are native).
+  // the Command key is the OS's -- but the platform's editing keys, Cmd-C,
+  // X, V, A and Z, which Lisp runs as the commands the Emacs keys run (a
+  // webview without an Edit menu of Cocoa's own does nothing for them).
   // Everything else goes to Lisp.
   const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
+  const COMMAND_KEYS = ["c", "x", "v", "a", "z"];
+  function commandKey(ev) {
+    return ev.metaKey && !ev.ctrlKey && !ev.altKey
+      && typeof ev.key === "string" && COMMAND_KEYS.includes(ev.key.toLowerCase());
+  }
   function keyToLisp(doc, ev, target) {
-    if (ev.isComposing || ev.metaKey || (ev.key === "Dead" && !ev.altKey)) return;
+    if (ev.isComposing || (ev.metaKey && !commandKey(ev)) || (ev.key === "Dead" && !ev.altKey)) return;
     if (MODIFIERS.includes(ev.key)) return;
     ev.preventDefault();
     lisp("clamacsKey", doc.id, ev.key, ev.code, ev.ctrlKey, ev.altKey, ev.metaKey, ev.shiftKey, target);
@@ -781,7 +788,11 @@
   function panelState() {
     const source = [], dock = [];
     for (const d of docs.values()) (d.dock ? dock : source).push(d.id);
+    const shown = docs.get(activeId);
+    const sel = shown ? shown.view.state.selection.main : null;
     return {
+      // What the active document shows selected: the region Lisp asked for
+      selection: sel ? {head: sel.head, anchor: sel.anchor} : null,
       menu: menuState(),
       theme: themeState(),
       dock: {open: dockShown !== null, shown: dockShown, height: dockEl.offsetHeight || parseInt(dockEl.style.height) || 0},
@@ -903,10 +914,14 @@
     setPoint(id, head, anchor) {
       const doc = docs.get(id);
       if (!doc) return;
+      const was = doc.view.state.selection.main.empty;
       applying(doc, () => doc.view.dispatch({
         selection: {anchor: anchor === undefined || anchor === null ? head : anchor, head},
         scrollIntoView: true
       }));
+      // A region shown or taken down is in the report; a cursor that
+      // only moved is not worth one.
+      if (!was || !doc.view.state.selection.main.empty) reportPanels();
     },
     colour(id, records) {
       const doc = docs.get(id);
@@ -1128,6 +1143,12 @@
   mini.addEventListener("keydown", (ev) => {
     const doc = docs.get(activeId);
     if (!doc) return;
+    // Of the Command keys only the paste is Lisp's here: the rest stay
+    // the input line's own.
+    if (ev.metaKey) {
+      if (commandKey(ev) && ev.key.toLowerCase() === "v") keyToLisp(doc, ev, "mini");
+      return;
+    }
     if (!ev.isTrusted || ev.ctrlKey || ev.altKey || MINI_KEYS.includes(ev.key)) keyToLisp(doc, ev, "mini");
   });
   mini.addEventListener("input", () => lisp("clamacsMiniInput", mini.value));

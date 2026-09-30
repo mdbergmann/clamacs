@@ -175,8 +175,11 @@ editor does not emulate them.  Several documents, several windows.
   the pattern in the input and only the state (`I-search: `, `Failing
   I-search: `) in the label, so typing does not relayout.
 - **Kill ring** in the application (`C-k`, `C-w`, `M-w`, `C-y`, `M-y`),
-  distinct from the clipboard; `C-w`/`M-w` also copy to the clipboard so
-  other applications see the last kill.
+  distinct from the clipboard; every kill also goes to the clipboard so
+  other applications see it, and `C-y` takes what another application
+  put there as the newest kill (the Lisp editor; the clipboard's text
+  differs from the newest kill exactly then).  Right Amiga-C, -X and -V
+  run `M-w`, `C-w` and `C-y`.
 - **Mark and region**: `C-SPC` sets the mark; the region is shown through
   the class's block marking so mouse selection and keyboard selection are
   the same thing.

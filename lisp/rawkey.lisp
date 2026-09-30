@@ -56,6 +56,29 @@
               +mod-shift+
               0)))
 
+(defparameter *rawkey-commands*
+  '((#\c . kill-ring-save) (#\x . kill-region) (#\v . yank))
+  "What a letter held with the right Amiga key runs: the platform's keys
+for copy, cut and paste, as the commands the Emacs keys run -- so they
+work on the region and know the kill ring.  Every other Amiga key stays
+the class's and the system's.")
+
+(defun rawkey-command (code qualifier mapper)
+  "The command of a raw key event, or NIL: a key press with the right
+Amiga key and no other of Control, Alt and the left Amiga key, whose
+character (MAPPER, as for RAWKEY-DECODE) is in *RAWKEY-COMMANDS*."
+  (declare (fixnum code qualifier))
+  (and mapper
+       (= 0 (logand code +raw-up-prefix+))
+       (/= 0 (logand qualifier +qual-rcommand+))
+       (= 0 (logand qualifier (logior +qual-control+ +qual-lalt+ +qual-ralt+
+                                      +qual-lcommand+)))
+       (let ((char-code (funcall mapper code (logand qualifier +qual-capslock+))))
+         (and char-code
+              (< 0 char-code #x100)
+              (cdr (assoc (char-downcase (code-char char-code))
+                          *rawkey-commands*))))))
+
 (defun rawkey-decode (code qualifier mapper)
   "Decode one raw key event.  Returns NIL for anything the Emacs layer must
 not act on -- a key release, a key held with an Amiga (Command) key, a key

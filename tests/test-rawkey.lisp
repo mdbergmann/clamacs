@@ -36,6 +36,27 @@
                    (second row))))
         (if (characterp c) (char-code c) c)))))
 
+(deftest rawkey-right-amiga-letters-are-copy-cut-and-paste
+  (flet ((command (code qualifier)
+           (rawkey-command code qualifier #'fake-map)))
+    (is-equal (command #x33 +qual-rcommand+) 'kill-region)
+    ;; Caps lock does not change the key, a release is no key
+    (is-equal (command #x33 (logior +qual-rcommand+ +qual-capslock+)) 'kill-region)
+    (is-equal (command (logior #x33 +raw-up-prefix+) +qual-rcommand+) nil)
+    ;; The left Amiga key is the system's, a second modifier another key
+    (is-equal (command #x33 +qual-lcommand+) nil)
+    (is-equal (command #x33 (logior +qual-rcommand+ +qual-control+)) nil)
+    (is-equal (command #x33 (logior +qual-rcommand+ +qual-lalt+)) nil)
+    (is-equal (command #x33 0) nil)
+    ;; A letter that is none of the three, a key without a character
+    (is-equal (command #x10 +qual-rcommand+) nil)
+    (is-equal (command 0 +qual-rcommand+) nil)
+    (is-equal (rawkey-command #x33 +qual-rcommand+ nil) nil)
+    ;; Every entry names a command, and the decoder still refuses the key
+    (dolist (entry *rawkey-commands*)
+      (is (command-function (cdr entry))))
+    (is-equal (rawkey-decode #x33 +qual-rcommand+ #'fake-map) nil)))
+
 (defun decode (code qualifier)
   (setq *mapper-calls* 0
         *seen-qualifier* nil)

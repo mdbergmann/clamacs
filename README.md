@@ -47,7 +47,8 @@ make host-app                    # macOS: build/host-frontend/Clamacs.app, the e
 ```
 
 Everything Emacs about it is the same code as on the Amiga: the keys
-(Option is Meta on the Mac, Alt on Linux, ESC everywhere; Command keys
+(Option is Meta on the Mac, Alt on Linux, ESC everywhere; of the Command
+keys the editor takes copy, cut, paste, select all and undo, the rest
 stay the system's), Lisp mode, the
 prompts, the requesters, the menus.  The document window has files,
 editing, colouring, search, the minibuffer and the status line with the
@@ -199,6 +200,18 @@ OS directly (`amiga.raw.intuition:...`) can name one that is not in it,
 and gets a reader error saying the package's binding table was shed.
 Loading that module's FASL again, from the release's `lib/amiga/raw/`,
 brings the whole module back; a `--no-image` start has all of them.
+
+## Selection and the clipboard
+
+The region -- from the mark (`C-SPC`) to the cursor -- is shown selected,
+and so is what the mouse or Shift with a cursor key selects; `C-g` takes
+it down.  `C-w` and `M-w` cut and copy it, and so do the platform's own
+keys: Command-X, -C and -V on the Mac, right Amiga-X, -C and -V on
+AmigaOS and MorphOS.  Every kill goes to the system clipboard, and `C-y`
+(or the paste key) inserts what another application copied; `M-y` then
+reaches the kills before it.  On the host, typing replaces what the mouse
+or Shift selected, and Option or Control with the left and right arrows
+moves by the word.
 
 ## Files and evaluation
 

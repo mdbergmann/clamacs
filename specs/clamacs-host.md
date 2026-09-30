@@ -195,7 +195,8 @@ frameworks; no other toolchain).  Its C API, called through
 | `char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)` | `doc-ask-file`: `NSOpenPanel` / `NSSavePanel`, a malloc'd path or NULL |
 | `void clamacs_host_free(void *p)` | frees it |
 | `void clamacs_host_beep(void)` | `NSBeep` |
-| `int clamacs_host_clipboard_set(const char *text)` | `doc-clipboard-copy` |
+| `int clamacs_host_clipboard_set(const char *text)` | `doc-clipboard-set`, `doc-clipboard-copy` |
+| `char *clamacs_host_clipboard_get(void)` | `doc-clipboard-text`: the clipboard's text as Latin-1, malloc'd, NULL for none |
 | `int clamacs_host_open_url(const char *url)` | `doc-open-url`: `NSWorkspace` |
 | `void clamacs_host_get_frame(void *win, int32_t out[4])` / `set_frame(win, l, t, w, h)` | `doc-geometry`, `layout-place` (top-left origin, flipped from Cocoa's) |
 | `void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)` | the window's close button asks the editor (`save-buffers-kill-emacs`) instead of ending the loop; a delegate that forwards everything else to webview's |

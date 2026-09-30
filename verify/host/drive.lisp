@@ -842,6 +842,84 @@ off a variable."
       (fail "TAB put the cursor at column ~A" *result*))
   (info "the raw-key leg (sendkey, Alt as Meta under MUI) has no host twin here: verify/host/host-keys.sh types through the page"))
 
+(defun page-keys (keys)
+  "KEYS, spelled as the key table spells them, typed through the page."
+  (cmd (format nil "EVAL (progn (clamacs::host-inject-keys clamacs::*editor* (clamacs::split-key-sequence ~S)) t)"
+               keys)))
+
+(defun page-command-key (letter)
+  "LETTER held with the Command key, as the page's keydown handler gets it."
+  (cmd (format nil "EVAL (progn (clamacs::batch-js clamacs::*editor* \"simulateKey(\\\"~A\\\",{code:\\\"Key~A\\\",metaKey:true})\") t)"
+               letter (string-upcase letter))))
+
+(defun clipboard-is (text ticks)
+  "True once the system clipboard, read through the shim, holds TEXT."
+  (string/= "" (wait-eval "(clamacs::doc-clipboard-text (clamacs::editor-active-document clamacs::*editor*))"
+                          (escape-quotes text) ticks)))
+
+(defun page-selection (head anchor)
+  (string/= "" (page-panels (format nil "\"selection\":{\"head\":~D,\"anchor\":~D}" head anchor))))
+
+(defun wait-line-is (want ticks)
+  "True once the cursor's line is WANT."
+  (dotimes (i ticks nil)
+    (when (string= (string-right-trim '(#\Newline) (cmd "TE GETLINE")) want)
+      (return t))
+    (pause 25)))
+
+(defun leg-selection ()
+  ;; The region shown, Shift with a motion key, and the clipboard both
+  ;; ways -- through the page's key handler and the shim's pasteboard.
+  (cmd (format nil "OPEN FILE ~A" (fixture "sample.lisp")))
+  (cmd "EVAL beginning-of-buffer")
+  (let* ((line (string-right-trim '(#\Newline) (cmd "TE GETLINE")))
+         (n (length line)))
+    (page-keys "S-<end>")
+    (if (page-selection n 0)
+        (ok "Shift-End selected the line: the page shows ~D to 0" n)
+        (fail "Shift-End: the page reports ~A" (cmd "EVAL (clamacs::host-page-panels)")))
+    (page-command-key "c")
+    (if (clipboard-is line 20)
+        (ok "Cmd-C put the selection on the clipboard")
+        (fail "Cmd-C: the clipboard holds ~A" *result*))
+    (if (page-selection n n)
+        (ok "the copy took the selection down")
+        (fail "after Cmd-C the page reports ~A" (cmd "EVAL (clamacs::host-page-panels)")))
+    (page-keys "S-<left> S-<left>")
+    (if (page-selection (- n 2) n)
+        (ok "Shift-Left selected backwards")
+        (fail "Shift-Left: the page reports ~A" (cmd "EVAL (clamacs::host-page-panels)")))
+    (page-keys "<right>")
+    (if (page-selection (- n 1) (- n 1))
+        (ok "a plain motion took the selection down")
+        (fail "after <right> the page reports ~A" (cmd "EVAL (clamacs::host-page-panels)")))
+    ;; What another application copied: on the clipboard, not in the ring
+    (cmd "EVAL beginning-of-buffer")
+    (cmd "EVAL (progn (clamacs::doc-clipboard-set (clamacs::editor-active-document clamacs::*editor*) \"pasted \") (setf (clamacs::killring-entries (clamacs::doc-kill-ring (clamacs::editor-active-document clamacs::*editor*))) nil) t)")
+    (page-command-key "v")
+    (if (wait-line-is (concatenate 'string "pasted " line) 20)
+        (ok "Cmd-V pasted the clipboard's text")
+        (fail "Cmd-V gave ~A" *result*))
+    (cmd "EVAL beginning-of-buffer")
+    (page-keys "C-SPC M-f")
+    (if (page-selection 6 0)
+        (ok "C-SPC and a motion show the region")
+        (fail "the region: the page reports ~A" (cmd "EVAL (clamacs::host-page-panels)")))
+    (page-command-key "x")
+    (if (and (wait-line-is (concatenate 'string " " line) 20)
+             (clipboard-is "pasted" 20))
+        (ok "Cmd-X cut the region to the clipboard")
+        (fail "Cmd-X gave ~A" *result*))
+    (cmd "EVAL (clamacs::doc-clipboard-set (clamacs::editor-active-document clamacs::*editor*) \"(again)\")")
+    (page-keys "C-y")
+    (if (wait-line-is (concatenate 'string "(again) " line) 20)
+        (ok "C-y yanked what the clipboard held")
+        (fail "C-y gave ~A" *result*))
+    (page-keys "S-<home> BS DEL")
+    (if (wait-line-is line 20)
+        (ok "Backspace deleted the selection")
+        (fail "Backspace on the selection gave ~A" *result*))))
+
 (defvar *want* "doc1 100 120 640 400"
   "Where the second editor's first window must come up.")
 
@@ -1700,6 +1778,7 @@ requester asked.  Then wait for the port to go."
   (leg-themes)
   (leg-minimap)
   (leg-keys)
+  (leg-selection)
   (leg-snapshot)
   (leg-start-clamiga)
   (leg-integration)

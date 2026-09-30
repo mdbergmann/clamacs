@@ -544,12 +544,16 @@ the end in OLD, and the text that goes in between."
           do (incf suffix))
     (values prefix (- len-old suffix) (subseq new prefix (- len-new suffix)))))
 
-(defun shown-selection (m)
+(defun shown-selection (doc)
   "Head and anchor as the page should show them: the point, with the
-mirror's selection when the point is at one of its ends."
-  (let ((point (mirror-point m))
-        (sel (mirror-selection m)))
-    (cond ((null sel) (values point point))
+mark while the region is shown (DOC-MARK-ACTIVE), else with the mirror's
+selection when the point is at one of its ends."
+  (let* ((m (hdoc-mirror doc))
+         (point (mirror-point m))
+         (sel (mirror-selection m)))
+    (cond ((and (doc-mark-active doc) (doc-mark doc))
+           (values point (max 0 (min (doc-mark doc) (mirror-end m)))))
+          ((null sel) (values point point))
           ((= point (car sel)) (values point (cdr sel)))
           ((= point (cdr sel)) (values point (car sel)))
           (t (values point point)))))
@@ -569,7 +573,7 @@ nothing changed: the text is compared by identity first."
       (setf (hdoc-shown-text doc) text
             (hdoc-shown-head doc) (mirror-point m)
             (hdoc-shown-anchor doc) (mirror-point m)))
-    (multiple-value-bind (head anchor) (shown-selection m)
+    (multiple-value-bind (head anchor) (shown-selection doc)
       (unless (and (= head (hdoc-shown-head doc)) (= anchor (hdoc-shown-anchor doc)))
         (ck doc "setPoint" id head anchor)
         (setf (hdoc-shown-head doc) head
@@ -616,21 +620,58 @@ nothing changed: the text is compared by identity first."
 (defmethod doc-edit ((doc host-document) operation)
   (let ((m (hdoc-mirror doc)))
     (prog1 (mirror-edit m operation)
-      ;; Selected whole: the cursor at the start, as Emacs's
-      ;; mark-whole-buffer leaves it, so the page shows the selection.
+      ;; Selected whole: the cursor at the start and the mark at the
+      ;; end, as Emacs's mark-whole-buffer leaves them, so the page shows
+      ;; the selection and the region commands work on it.
       (when (eq operation :select-all)
-        (mirror-set-point m 0)))))
+        (mirror-set-point m 0)
+        (setf (doc-mark doc) (mirror-end m)
+              (doc-mark-active doc) t)))))
+
+(defmethod doc-clipboard-set ((doc host-document) text)
+  (let ((editor (doc-editor doc)))
+    (setf (host-editor-clipboard editor) text)
+    (when (host-editor-shim editor)
+      (ffi:with-foreign-string (p text)
+        (shim editor "clamacs_host_clipboard_set" :int32 '(:pointer) p)))))
 
 (defmethod doc-clipboard-copy ((doc host-document) start end cut)
   (when (> end start)
-    (let ((editor (doc-editor doc))
-          (text (doc-text doc start end)))
-      (setf (host-editor-clipboard editor) text)
-      (when (host-editor-shim editor)
-        (ffi:with-foreign-string (p text)
-          (shim editor "clamacs_host_clipboard_set" :int32 '(:pointer) p)))
-      (when cut
-        (doc-delete doc start end)))))
+    (doc-clipboard-set doc (doc-text doc start end))
+    (when cut
+      (doc-delete doc start end))))
+
+(defun clipboard-lines (text)
+  "TEXT with its lines separated by #\\Newline alone: another application's
+CR LF loses the CR, a lone CR becomes the newline."
+  (declare (simple-string text))
+  (if (not (find #\Return text))
+      text
+      (let ((out (make-string (length text)))
+            (n 0)
+            (len (length text)))
+        (declare (fixnum n len))
+        (dotimes (i len)
+          (let ((c (schar text i)))
+            (cond ((char/= c #\Return)
+                   (setf (schar out n) c)
+                   (incf n))
+                  ((and (< (1+ i) len) (char= (schar text (1+ i)) #\Newline)))
+                  (t (setf (schar out n) #\Newline)
+                     (incf n)))))
+        (subseq out 0 n))))
+
+(defmethod doc-clipboard-text ((doc host-document))
+  "The system clipboard's text through the shim; without one (the page
+stubbed) what the editor holds as the clipboard, which a test sets."
+  (let* ((editor (doc-editor doc))
+         (text (if (host-editor-shim editor)
+                   (let ((p (shim editor "clamacs_host_clipboard_get" :pointer '())))
+                     (unless (ffi:null-pointer-p p)
+                       (unwind-protect (ffi:foreign-to-string p)
+                         (shim editor "clamacs_host_free" :void '(:pointer) p))))
+                   (host-editor-clipboard editor))))
+    (and text (clipboard-lines (coerce text 'simple-string)))))
 
 (defmethod doc-search ((doc host-document) pattern backwards again)
   (mirror-search (hdoc-mirror doc) pattern backwards again))
@@ -903,8 +944,9 @@ spelled the US way."
 (defun widget-default-key (doc key)
   "What the widget does with a key the Emacs layer left alone: a
 printable key inserts, RET and TAB insert their character, Backspace and
-Delete delete, the arrows and Home, End, PageUp, PageDown move.  True
-when the key did something."
+Delete delete, the arrows and Home, End, PageUp, PageDown move, the
+left and right arrows by the word with Alt or Control.  True when the key
+did something."
   (flet ((edit (op) (doc-edit doc op))
          (move (motion) (doc-move doc motion) t))
     (cond ((printable-key-p key)
@@ -922,6 +964,13 @@ when the key did something."
           ((eql key +key-end+) (move :line-end))
           ((eql key +key-pageup+) (move :previous-page))
           ((eql key +key-pagedown+) (move :next-page))
+          ;; By the word with Alt or Control, as the platforms have it
+          ((or (eql key (make-key +key-left+ +mod-meta+))
+               (eql key (make-key +key-left+ +mod-ctrl+)))
+           (move :previous-word))
+          ((or (eql key (make-key +key-right+ +mod-meta+))
+               (eql key (make-key +key-right+ +mod-ctrl+)))
+           (move :next-word))
           (t nil))))
 
 (defun host-mini-key (doc key)
@@ -936,20 +985,111 @@ the MUI frontend's hook reports it."
         (message doc "~A is undefined" (key-to-string key))
         t)))
 
+(defparameter *host-command-keys*
+  '(("c" . kill-ring-save) ("x" . kill-region) ("v" . yank)
+    ("a" . mark-whole-buffer) ("z" . undo) ("Z" . redo))
+  "What a letter held with the Command key runs: the platform's own keys
+for copy, cut, paste, select all, undo and (with Shift) redo, as the
+commands the Emacs keys run.")
+
+(defun host-command-key (name shift)
+  "The command of the Command key with the key NAME, or NIL."
+  (and (= (length name) 1)
+       (let ((c (char name 0)))
+         (cdr (assoc (string (if (and shift (char-equal c #\z))
+                                 #\Z
+                                 (char-downcase c)))
+                     *host-command-keys* :test #'string=)))))
+
+(defun host-platform-key (doc command)
+  "COMMAND, what a Command key asked for.  At a prompt only the paste is
+the editor's: the clipboard's first line goes to the end of the input."
+  (cond ((not (minibuffer-open-p doc))
+         (keystate-reset (doc-keys doc))
+         (run-command doc command))
+        ((eq command 'yank)
+         (let ((text (doc-clipboard-text doc)))
+           (when (and text (string/= text ""))
+             (doc-set-minibuffer-text
+              doc (concatenate 'string (doc-minibuffer-text doc)
+                               (subseq text 0 (position #\Newline text))))
+             (minibuffer-changed doc))))))
+
+(defparameter *host-motion-keys*
+  (list +key-left+ +key-right+ +key-up+ +key-down+ +key-home+ +key-end+
+        +key-pageup+ +key-pagedown+)
+  "The keys that select when held with Shift.")
+
+(defun shift-motion-key (key)
+  "KEY without its Shift when it is a motion key held with Shift -- with
+Control or Alt as well, which move by more -- else NIL."
+  (and (/= 0 (logand (key-mods key) +mod-shift+))
+       (member (key-code key) *host-motion-keys*)
+       (make-key (key-code key) (logand (key-mods key) (lognot +mod-shift+)))))
+
+(defun selection-shown-p (doc)
+  "True while a selection -- Shift with a motion key, the mouse -- is shown
+and holds text."
+  (and (eq (doc-mark-active doc) :selection)
+       (doc-mark doc)
+       (/= (doc-mark doc) (doc-point doc))))
+
+(defun delete-selection (doc)
+  "The selection deleted, as typing over it and Backspace do in every
+other application; the kill ring and the clipboard are left alone."
+  (let ((mark (min (doc-mark doc) (doc-end doc)))
+        (point (doc-point doc)))
+    (setf (doc-mark-active doc) nil)
+    (doc-delete doc (min mark point) (max mark point))
+    t))
+
+(defun host-text-key (doc key)
+  "A key in the text: the Emacs layer first, then the widget's default.
+Shift with a motion key is that motion with the mark left where the
+selection began; a selection is replaced by what is typed and deleted by
+Backspace and Delete, and the next key that is no such motion drops it."
+  (let ((motion (shift-motion-key key))
+        (before (mirror-text (hdoc-mirror doc))))
+    (when motion
+      (unless (doc-mark-active doc)
+        (setf (doc-mark doc) (doc-point doc)
+              (doc-mark-active doc) :selection))
+      (setq key motion))
+    (cond ((and (selection-shown-p doc)
+                (not (keystate-in-prefix (doc-keys doc)))
+                (or (printable-key-p key)
+                    (eql key +key-backspace+)
+                    (eql key +key-delete+)))
+           (delete-selection doc)
+           (when (printable-key-p key)
+             (setf (doc-last-command doc) nil)
+             (widget-default-key doc key)))
+          ((handle-key doc key))
+          (t (widget-default-key doc key)))
+    (cond ((not (eq before (mirror-text (hdoc-mirror doc))))
+           ;; An edit ends what is shown; the mark stays for `C-w'.
+           (setf (doc-mark-active doc) nil))
+          ((and (not motion) (eq (doc-mark-active doc) :selection))
+           (setf (doc-mark-active doc) nil)))))
+
 (defun host-key (editor doc-id name code ctrl alt meta shift target)
   "The clamacsKey binding: a key in DOC-ID's view (TARGET \"text\") or in
 the input line (\"mini\")."
   (let ((doc (host-document-by-id editor doc-id))
-        (key (host-decode-key name code ctrl alt meta shift)))
-    (when (and doc key)
+        (key (host-decode-key name code ctrl alt meta shift))
+        (command (and meta (not ctrl) (not alt) (host-command-key name shift))))
+    (when (and doc (or key command))
       (let ((before (mirror-text (hdoc-mirror doc))))
-        (cond ((minibuffer-open-p doc)
+        (cond (command
+               (host-platform-key doc command)
+               (unless (eq before (mirror-text (hdoc-mirror doc)))
+                 (setf (doc-mark-active doc) nil)))
+              ((minibuffer-open-p doc)
                (host-mini-key doc key))
               ((equal target "mini")
                ;; The input line is closed: the key is nobody's.
                nil)
-              ((handle-key doc key))
-              (t (widget-default-key doc key)))
+              (t (host-text-key doc key)))
         ;; Whatever edited -- a command or the widget's default -- the
         ;; text changed: what the MUI widget's ContentsChanged hook says.
         (note-text-if-changed doc before)
@@ -978,6 +1118,7 @@ page holds the result already."
             (mirror-replace m (+ from delta) (+ to delta) inserted)
             (incf delta (- (length inserted) (- to from)))))
         (mirror-set-point m head)
+        (setf (doc-mark-active doc) nil)
         (setf (hdoc-shown-text doc) (mirror-text m)
               (hdoc-shown-head doc) (mirror-point m)
               (hdoc-shown-anchor doc) (mirror-point m))
@@ -985,11 +1126,17 @@ page holds the result already."
         (note-cursor-moved doc)))))
 
 (defun host-cursor (editor doc-id head anchor)
-  "The clamacsCursor binding: the selection moved on its own."
+  "The clamacsCursor binding: the selection moved on its own.  What the
+mouse selected is the region -- the mark at its anchor -- and a click
+that selects nothing takes the shown region down."
   (let ((doc (host-document-by-id editor doc-id)))
     (when doc
       (let ((m (hdoc-mirror doc)))
         (mirror-set-point m head)
+        (cond ((/= head anchor)
+               (setf (doc-mark doc) (max 0 (min anchor (mirror-end m)))
+                     (doc-mark-active doc) :selection))
+              (t (setf (doc-mark-active doc) nil)))
         (setf (mirror-selection m) (and (/= head anchor)
                                         (cons (min head anchor) (max head anchor))))
         (setf (hdoc-shown-head doc) (mirror-point m)

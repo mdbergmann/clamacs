@@ -50,6 +50,7 @@
   (require "amiga/raw/keymap")
   (require "amiga/raw/asl")
   (require "amiga/raw/muimaster")
+  (require "amiga/iff")
   (dolist (nick '(("MUI" "AMIGA.MUI") ("M" "AMIGA.RAW.MUIMASTER")
                   ("EXEC" "AMIGA.RAW.EXEC") ("DOS" "AMIGA.RAW.DOS")
                   ("INTUI" "AMIGA.RAW.INTUITION") ("GFX" "AMIGA.RAW.GRAPHICS")
@@ -86,6 +87,7 @@
 (defconstant +tem-search+            (+ +te-base+ #x2b))
 (defconstant +tem-mark-text+         (+ +te-base+ #x2c))
 (defconstant +tem-set-block+         (+ +te-base+ #x2e))
+(defconstant +tem-block-info+        (+ +te-base+ #x30))
 (defconstant +tem-export-block+      (+ +te-base+ #x37))
 (defconstant +tem-cursor-xy-to-index+ (+ +te-base+ #x43))
 (defconstant +tem-index-to-cursor-xy+ (+ +te-base+ #x44))
@@ -418,7 +420,9 @@ init file may open what it likes.")
    ;; The package the status line shows; the wire (phase 2) tracks it
    (package :initform "CL-USER" :accessor mdoc-package)
    ;; The arglist of the operator at point, at the end of the status line
-   (arglist :initform "" :accessor mdoc-arglist)))
+   (arglist :initform "" :accessor mdoc-arglist)
+   ;; The class's marked block is the region, put there by SHOW-REGION
+   (region-shown :initform nil :accessor mdoc-region-shown)))
 
 (defun object-document (editor object)
   (gethash (object-address object) (mui-editor-objects editor)))
@@ -776,6 +780,38 @@ left, and a quit it asked for is the loop's to carry out."
   (when (editor-quitting editor)
     (wake-loop editor)))
 
+(defun command-imsg (editor imsg)
+  "The command an IntuiMessage's key asks for with the right Amiga key
+(RAWKEY-COMMAND), or NIL."
+  (rawkey-command (ffi:peek-u16 imsg +imsg-code-offset+)
+                  (ffi:peek-u16 imsg +imsg-qualifier-offset+)
+                  (lambda (code qualifier)
+                    (map-raw-key editor code qualifier 0))))
+
+(defun show-region (doc)
+  "The class's marked block in step with the region: from the mark to the
+cursor while the region is shown (DOC-MARK-ACTIVE), taken down when it no
+longer is.  A block the class marked itself -- the mouse, Shift with the
+arrows -- is never touched."
+  (unless (doc-closing doc)
+    (let ((mark (and (doc-mark-active doc) (doc-mark doc)))
+          (point (doc-point doc)))
+      (cond ((and mark (/= mark point))
+             (mark-range doc mark point)
+             (setf (mdoc-region-shown doc) t))
+            ((mdoc-region-shown doc)
+             (te-command doc "SELECTNONE")
+             (setf (mdoc-region-shown doc) nil))))))
+
+(defun hide-region (doc)
+  "The region's block taken down before a key the class edits or moves
+with: typing must not replace what `C-SPC' and a motion marked.  The mark
+stays."
+  (when (mdoc-region-shown doc)
+    (te-command doc "SELECTNONE")
+    (setf (mdoc-region-shown doc) nil))
+  (setf (doc-mark-active doc) nil))
+
 (defun text-handle-event (editor object message)
   "Invoked only through the class's own node, so it does not chain to the
 superclass: when the Emacs layer does not take the key it returns 0 and
@@ -783,8 +819,15 @@ MUI's next handler -- the class's node -- edits."
   (let ((imsg (handle-event-imsg message))
         (doc (object-document editor object)))
     (if (and imsg doc (active-object-p object))
-        (let* ((key (decode-imsg editor imsg))
-               (taken (and key (handle-key doc key))))
+        (let* ((command (command-imsg editor imsg))
+               (key (and (not command) (decode-imsg editor imsg)))
+               (taken (cond (command
+                             (keystate-reset (doc-keys doc))
+                             (run-command doc command)
+                             t)
+                            (key (handle-key doc key)))))
+          (cond (taken (show-region doc))
+                (key (hide-region doc)))
           (after-command editor)
           (if taken m:+mui-event-handler-rc-eat+ 0))
         0)))
@@ -1174,6 +1217,66 @@ counts pixels and the font is fixed-width."
   (when (> end start)
     (mark-range doc start end)
     (te-command doc (if cut "CUT" "COPY"))))
+
+(defun block-bounds (doc)
+  "START and END, as indices, of the block the class shows marked; NIL
+without one."
+  (let ((out (ffi:alloc-foreign 16)))
+    (unwind-protect
+         (progn
+           (dotimes (i 4)
+             (ffi:poke-u32 out 0 (* 4 i)))
+           (when (/= 0 (mui:do-method (mdoc-text doc) +tem-block-info+
+                                      out (ffi:pointer+ out 4)
+                                      (ffi:pointer+ out 8) (ffi:pointer+ out 12)))
+             (let ((a (xy-to-index doc (ffi:peek-i32 out 0) (ffi:peek-i32 out 4)))
+                   (b (xy-to-index doc (ffi:peek-i32 out 8) (ffi:peek-i32 out 12))))
+               (values (min a b) (max a b)))))
+      (ffi:free-foreign out))))
+
+(defmethod doc-selection-anchor ((doc mui-document))
+  (multiple-value-bind (start end) (block-bounds doc)
+    (and start
+         (/= start end)
+         (if (= (doc-point doc) end) start end))))
+
+;;; The clipboard's text is an IFF FORM FTXT with the characters in its
+;;; CHRS chunks (clipboard unit 0), read and written through iffparse.
+;;; A clipboard that holds no text, or none at all, reads as NIL; a
+;;; failed write is the clipboard's loss and nothing else.
+
+(defmethod doc-clipboard-text ((doc mui-document))
+  (handler-case
+      (let ((chrs (amiga.iff:string-id "CHRS"))
+            (parts '()))
+        (amiga.iff:with-iff (in :clipboard :direction :read)
+          (loop
+            (let ((step (amiga.iff:parse-step in)))
+              (when (eq step :eof)
+                (return))
+              (when (eq step :chunk)
+                (multiple-value-bind (id type size) (amiga.iff:current-chunk in)
+                  (declare (ignore type))
+                  (when (and (= id chrs) (> size 0))
+                    (let ((data (make-array size :element-type '(unsigned-byte 8))))
+                      (amiga.iff:read-chunk-bytes in data)
+                      (push (map 'string #'code-char data) parts))))))))
+        (and parts
+             (coerce (apply #'concatenate 'string (nreverse parts))
+                     'simple-string)))
+    (error () nil)))
+
+(defmethod doc-clipboard-set ((doc mui-document) text)
+  (when (string/= text "")
+    (handler-case
+        (amiga.iff:with-iff (out :clipboard :direction :write)
+          (amiga.iff:push-chunk out "FTXT" "FORM")
+          (amiga.iff:push-chunk out nil "CHRS")
+          (amiga.iff:write-chunk-bytes out text)
+          (amiga.iff:pop-chunk out)
+          (amiga.iff:pop-chunk out)
+          t)
+      (error () nil))))
 
 ;;; ------------------------------------------------------------------
 ;;; Presentation
@@ -1608,6 +1711,9 @@ when MUI would not build it: the editor still runs, keys and port intact."
                                    (if (>= id +dynamic-item-id-base+)
                                        (dynamic-item-picked editor id)
                                        (menu-pick editor (menu-item-index id))))
+                                 (let ((doc (editor-active-document editor)))
+                                   (when (typep doc 'mui-document)
+                                     (show-region doc)))
                                  (after-command editor)
                                  0))
                 :trigger-value)
@@ -2179,6 +2285,9 @@ on MUI 3.8)."
                                 (note-cursor-moved doc)
                                 (hscroll-into-view doc)))
                 :changed (hook (lambda (doc)
+                                 ;; An edit ends what is shown of the
+                                 ;; region; the mark stays for `C-w'.
+                                 (setf (doc-mark-active doc) nil)
                                  (note-text-changed doc)
                                  (update-status doc)
                                  ;; The class notifies ContentsChanged only

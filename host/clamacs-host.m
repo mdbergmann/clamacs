@@ -201,6 +201,26 @@ int clamacs_host_clipboard_set(const char *text)
     }
 }
 
+/* The clipboard's text as the editor's 8-bit text: Latin-1, a character
+ * outside it as Cocoa's lossy conversion spells it.  malloc'd
+ * (clamacs_host_free), or NULL when the clipboard holds no text. */
+char *clamacs_host_clipboard_get(void)
+{
+    @autoreleasepool {
+        NSString *s = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+        NSData *d = s ? [s dataUsingEncoding:NSISOLatin1StringEncoding allowLossyConversion:YES] : nil;
+        char *out;
+        if (d == nil)
+            return NULL;
+        out = (char *)malloc(d.length + 1);
+        if (out == NULL)
+            return NULL;
+        memcpy(out, d.bytes, d.length);
+        out[d.length] = 0;
+        return out;
+    }
+}
+
 int clamacs_host_open_url(const char *url)
 {
     @autoreleasepool {
@@ -859,6 +879,24 @@ int clamacs_host_clipboard_set(const char *text)
     return 1;
 }
 
+/* The clipboard's text, UTF-8 there, as the editor's Latin-1 with `?' for
+ * a character outside it; malloc'd (clamacs_host_free), NULL for none. */
+char *clamacs_host_clipboard_get(void)
+{
+    gchar *s = gtk_clipboard_wait_for_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
+    gchar *latin;
+    char *out;
+    if (s == NULL)
+        return NULL;
+    latin = g_convert_with_fallback(s, -1, "ISO-8859-1", "UTF-8", "?", NULL, NULL, NULL);
+    g_free(s);
+    if (latin == NULL)
+        return NULL;
+    out = strdup(latin);
+    g_free(latin);
+    return out;
+}
+
 int clamacs_host_open_url(const char *url)
 {
     char *s = text_arg(url);
@@ -1208,6 +1246,31 @@ int clamacs_host_clipboard_set(const char *text)
     return 1;
 }
 
+/* The clipboard's text as the editor's Latin-1, `?' for a character
+ * outside it; malloc'd (clamacs_host_free), NULL for none. */
+char *clamacs_host_clipboard_get(void)
+{
+    HANDLE mem;
+    const wchar_t *w;
+    char *out = NULL;
+    if (!OpenClipboard(NULL))
+        return NULL;
+    mem = GetClipboardData(CF_UNICODETEXT);
+    w = mem ? (const wchar_t *)GlobalLock(mem) : NULL;
+    if (w != NULL) {
+        size_t n = wcslen(w), i;
+        out = (char *)malloc(n + 1);
+        if (out != NULL) {
+            for (i = 0; i < n; i++)
+                out[i] = w[i] < 256 ? (char)w[i] : '?';
+            out[n] = 0;
+        }
+        GlobalUnlock(mem);
+    }
+    CloseClipboard();
+    return out;
+}
+
 int clamacs_host_open_url(const char *url)
 {
     wchar_t *w = text_arg(url ? url : "");
@@ -1333,6 +1396,7 @@ char *clamacs_host_ask_file(void *win, const char *title, int save, const char *
 void clamacs_host_free(void *p) { free(p); }
 void clamacs_host_beep(void) {}
 int clamacs_host_clipboard_set(const char *text) { (void)text; return 0; }
+char *clamacs_host_clipboard_get(void) { return NULL; }
 int clamacs_host_open_url(const char *url) { (void)url; return 0; }
 void clamacs_host_get_frame(void *win, int32_t out[4])
 { (void)win; out[0] = out[1] = out[2] = out[3] = 0; }

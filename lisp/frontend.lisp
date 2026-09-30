@@ -75,6 +75,12 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    (lisp-mode :initarg :lisp-mode :initform t :accessor doc-lisp-mode)
    (keys :accessor doc-keys)
    (mark :initform nil :accessor doc-mark)
+   ;; Whether the region from the mark to the cursor is SHOWN, for a
+   ;; frontend that draws it: T after a command set the mark, :SELECTION
+   ;; when Shift with a motion key or the mouse made it (the next plain
+   ;; motion drops that one, and typing replaces it), NIL otherwise.  The
+   ;; mark itself outlives it: `C-w' works on a region nobody sees.
+   (mark-active :initform nil :accessor doc-mark-active)
    ;; The open prompt or search (minibuffer.lisp), or NIL.
    (minibuffer :initform nil :accessor doc-minibuffer)
    ;; The command that ran before this one: consecutive kills join, and
@@ -165,7 +171,31 @@ widget accepted it."))
 (defgeneric doc-clipboard-copy (doc start end cut)
   (:documentation "Put the text from START to END on the system clipboard,
 deleting it when CUT.  `C-w' and `M-w' mirror their kill there so other
-applications see it; the kill ring itself never reads the clipboard."))
+applications see it."))
+
+(defgeneric doc-selection-anchor (doc)
+  (:documentation "The end away from the cursor of what the widget shows
+selected on its own -- the mouse's block, Shift with the arrows -- as an
+index, or NIL with nothing selected.  The region commands take it for the
+mark when none is set, so `M-w' copies what the mouse selected.")
+  (:method ((doc document))
+    nil))
+
+(defgeneric doc-clipboard-set (doc text)
+  (:documentation "Put TEXT on the system clipboard.  Every kill goes
+there on a frontend that can also READ the clipboard (DOC-CLIPBOARD-TEXT),
+which is how `C-y' tells another application's text from the editor's own
+newest kill; a frontend that cannot does nothing.")
+  (:method ((doc document) text)
+    (declare (ignore text))
+    nil))
+
+(defgeneric doc-clipboard-text (doc)
+  (:documentation "The text on the system clipboard, lines separated by
+#\\Newline, or NIL when it holds none or the frontend cannot read it.
+`C-y' takes it as the newest kill when another application put it there.")
+  (:method ((doc document))
+    nil))
 
 ;;; ------------------------------------------------------------------
 ;;; Presentation

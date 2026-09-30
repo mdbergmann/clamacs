@@ -5,6 +5,8 @@
  *     sendkey M-< RET <down>     spells them (see src/emacs/keymap.c)
  *     sendkey TEXT "(foo Bar)"   type a string
  *     sendkey WAIT 25            sleep 25 ticks (1/2 s) and nothing else
+ *     sendkey c AMIGA            the keys with the right Amiga key held
+ *                                (Amiga-C: the platform's copy)
  *
  * The unattended test drives clamacs through its ARexx port, and the port's
  * KEY command stops one step short of a real keyboard: it feeds ck_keys to
@@ -59,11 +61,16 @@ static LONG             delay_ticks = 2;
 /* WAIT n: sleep n ticks (1/50 s) through dos.library's Delay() and do
  * nothing else -- the pause the ARexx drive scripts use between a key and
  * the check that follows it, so they need no rexxsupport.library. */
-static const char template[] = "KEYS/M,TEXT/K,DELAY/K/N,WAIT/K/N,DIAG/S";
+static const char template[] = "KEYS/M,TEXT/K,DELAY/K/N,WAIT/K/N,DIAG/S,AMIGA/S";
 
-enum { ARG_KEYS, ARG_TEXT, ARG_DELAY, ARG_WAIT, ARG_DIAG, ARG_COUNT };
+enum { ARG_KEYS, ARG_TEXT, ARG_DELAY, ARG_WAIT, ARG_DIAG, ARG_AMIGA, ARG_COUNT };
 
 static LONG diag = 0;
+
+/* AMIGA: the right Amiga key is held around every key sent, as the other
+ * qualifier keys are (see press()). */
+#define RAW_RAMIGA  0x67
+static LONG amiga = 0;
 
 static int32_t send_event(UWORD code, UWORD qualifier)
 {
@@ -121,6 +128,12 @@ static int32_t press(UWORD code, UWORD qualifier)
     UWORD held = 0;
     int   i;
 
+    if (amiga) {
+        held |= IEQUALIFIER_RCOMMAND;
+        if (!send_event(RAW_RAMIGA, held))
+            return 0;
+    }
+
     for (i = 0; i < CK_NUM_QUAL_KEYS; i++) {
         if ((qualifier & ck_qual_keys[i].bit) != 0) {
             held |= ck_qual_keys[i].bit;
@@ -140,6 +153,12 @@ static int32_t press(UWORD code, UWORD qualifier)
             if (!send_event((UWORD)(ck_qual_keys[i].code | IECODE_UP_PREFIX), held))
                 return 0;
         }
+    }
+
+    if (amiga) {
+        held &= ~IEQUALIFIER_RCOMMAND;
+        if (!send_event((UWORD)(RAW_RAMIGA | IECODE_UP_PREFIX), held))
+            return 0;
     }
 
     if (delay_ticks > 0)
@@ -217,7 +236,7 @@ static void report_active_window(void)
 int main(void)
 {
     struct RDArgs *rdargs;
-    LONG           args[ARG_COUNT] = { 0, 0, 0, 0, 0 };
+    LONG           args[ARG_COUNT] = { 0, 0, 0, 0, 0, 0 };
     int            rc = RETURN_FAIL;
 
     KeymapBase    = OpenLibrary((STRPTR)"keymap.library", 37);
@@ -236,6 +255,7 @@ int main(void)
     if (args[ARG_DELAY] != 0)
         delay_ticks = *(LONG *)args[ARG_DELAY];
     diag = args[ARG_DIAG];
+    amiga = args[ARG_AMIGA];
 
     /* WAIT alone is a pause and nothing else: no input.device, no report,
      * so a script can call it a few dozen times without a line of output. */

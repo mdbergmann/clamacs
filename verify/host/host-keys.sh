@@ -61,6 +61,12 @@ cat > "$out/keys-driver.lisp" <<EOF
           (dolist (line *smoke-lines*)
             (push line keys)
             (push (key-from-string "RET") keys))
+          ;; The edits: an Amiga key as the Emacs key of its command
+          (dolist (edit *smoke-edits*)
+            (dolist (key (split-key-sequence (ecase (first edit)
+                                               (:keys (second edit))
+                                               (:amiga (third edit)))))
+              (push key keys)))
           (host-inject-keys editor (nreverse keys))
           (host-inject-keys editor (list (key-from-string "C-x") (key-from-string "C-s")
                                          (key-from-string "C-x") (key-from-string "k")))))

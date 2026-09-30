@@ -259,6 +259,28 @@
     (is-equal (fake-state two) "text|")
     (is-equal (length (editor-documents editor)) 2)))
 
+(deftest the-mark-says-whether-its-region-is-shown
+  (let ((doc (make-fake "ab|cd")))
+    (is-equal (doc-mark-active doc) nil)
+    (type-keys doc "C-SPC C-f")
+    (is-equal (doc-mark-active doc) t)
+    (type-keys doc "M-w")
+    (is-equal (doc-mark-active doc) nil)
+    (type-keys doc "C-SPC C-b C-g")
+    (is-equal (doc-mark-active doc) nil)
+    (type-keys doc "C-SPC C-f")
+    (setf (doc-mark-active doc) nil)
+    (type-keys doc "C-x C-x")
+    (is-equal (doc-mark-active doc) t)))
+
+(deftest yank-without-a-clipboard-to-read-yanks-the-ring
+  ;; The default DOC-CLIPBOARD-TEXT: a frontend that cannot read it
+  (let ((doc (make-fake "ab|cd")))
+    (is-equal (doc-clipboard-text doc) nil)
+    (type-keys doc "C-k C-y C-y")
+    (is-equal (fake-state doc) "abcdcd|")
+    (is-equal (kill-count (doc-kill-ring doc)) 1)))
+
 (deftest keyboard-quit-drops-mark-and-selection
   (let ((doc (make-fake "ab|")))
     (type-keys doc "C-SPC C-x h")
