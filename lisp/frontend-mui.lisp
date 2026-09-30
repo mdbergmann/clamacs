@@ -1712,8 +1712,10 @@ when MUI would not build it: the editor still runs, keys and port intact."
                       ;; The group's items go into the menu, or into a
                       ;; submenu of the entry's title (View > Themes): a
                       ;; Menuitem with children is a submenu, and a
-                      ;; Family method adds to either.
-                      (when menu
+                      ;; Family method adds to either.  A group this
+                      ;; frontend does not draw (the minimap's, the
+                      ;; host's alone) gets no items and no DYN-GROUP.
+                      (when (and menu (menu-entry-drawn-p editor i))
                         (let ((group (make-dyn-group (menu-entry-dynamic e)
                                                      (1+ (length (mui-editor-dyn-groups editor))))))
                           (setf (dyn-group-menu group)
