@@ -2737,9 +2737,11 @@ running inside them."
 ;;; takes CPU while nobody types (2026-09-30: 95 % on a 68040).  AmigaOS
 ;;; has no per-task CPU accounting, so the wakeups and the methods MUI
 ;;; calls on the two classes are the account there is.  Read it from a
-;;; running editor over the port -- `EVAL (clamacs::loop-stats-report)',
-;;; which verify/realamiga/loopstats.rexx does, and run-cpu-idle.sh per
-;;; phase of its run, beside the CPU share its meter task measures.
+;;; running editor over the port -- `EVAL (clamacs::loop-stats-reset)'
+;;; first (the loop's counters run always, the per-method ones from the
+;;; reset on), then `EVAL (clamacs::loop-stats-report)' -- which
+;;; verify/realamiga/loopstats.rexx does, and run-cpu-idle.sh per phase
+;;; of its run, beside the CPU share its meter task measures.
 
 (defstruct (loop-stats (:constructor %make-loop-stats))
   (started (get-internal-real-time))
