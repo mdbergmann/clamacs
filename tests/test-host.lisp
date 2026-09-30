@@ -758,7 +758,9 @@ each, with the KeyboardEvent fields a real key would carry."
     (with-entry (editor)
       (host-update editor "doc1" (list (list 0 0 (format nil "#\\a~%")) (list 18 18 " 1")) 2))
     (let ((js (host-take-evals editor)))
-      (is (search "[0,[[1,3,\"char\"]]]" js))
+      ;; The whole char token: the `(' lit before the change sat at 0:0
+      ;; and its take-down used to clear the token's first column.
+      (is (search "[0,[[0,3,\"char\"]]]" js))
       (is (search "[1,[[1,6,\"defining\"]]]" js))
       (is (search "[2,[[2,5,\"string\"],[7,8,\"number\"]]]" js)))))
 

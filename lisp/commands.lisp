@@ -635,5 +635,14 @@ cursor sits after typing a `)' -- Emacs's rule."
   "The text changed on lines Y0 to Y1 -- the cursor's line when not said:
 what the text widget's own notification knows.  They are recoloured."
   (incf (doc-edit-serial doc))
-  (let ((y0 (or y0 (doc-index-line doc (doc-point doc)))))
-    (colour-lines doc y0 (or y1 y0))))
+  (let* ((y0 (or y0 (doc-index-line doc (doc-point doc))))
+         (y1 (or y1 y0)))
+    (colour-lines doc y0 y1)
+    ;; The recolour paints the lines whole, over the paren highlight when
+    ;; its line is among them: lit again.  The widget reports a typed
+    ;; key's cursor move BEFORE the change (TextEditor.mcc), so the
+    ;; highlight of a `)' just typed was up, and gone with the repaint.
+    (let ((shown (doc-paren-shown doc)))
+      (when (and shown (<= y0 (car shown) y1))
+        (setf (doc-paren-shown doc) nil)
+        (show-paren doc)))))

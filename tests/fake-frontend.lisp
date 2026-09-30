@@ -370,15 +370,21 @@ layer did NOT take is returned."
   (let ((passed '()))
     (dolist (key (split-key-sequence keys) (nreverse passed))
       (cond ((minibuffer-open-p doc)
-             (type-minibuffer-key doc key))
+             (type-minibuffer-key doc key)
+             (note-cursor-moved doc))
             ((not (handle-key doc key))
              (push (key-to-string key) passed)
              (cond ((printable-key-p key)
                     (doc-insert doc (string (code-char (key-code key)))))
                    ((eql key +key-backspace+)
                     (doc-edit doc :backspace)))
-             (note-text-changed doc)))
-      (note-cursor-moved doc))))
+             ;; In the class's order: a key it edits reports the cursor's
+             ;; move inside MUIM_HandleEvent and the change after the
+             ;; method (TextEditor.mcc's Dispatcher.c) -- the order that
+             ;; wiped the highlight of a `)' just typed once.
+             (note-cursor-moved doc)
+             (note-text-changed doc))
+            (t (note-cursor-moved doc))))))
 
 (defun type-text (doc text)
   "Type the characters of TEXT, spaces included."

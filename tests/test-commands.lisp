@@ -504,6 +504,24 @@
     (is-equal (doc-paren-shown doc) nil)
     (is-equal (fake-line-colours doc 0) '())))
 
+(deftest a-typed-close-paren-lights-its-partner
+  ;; The widget inserts the `)' itself and reports the cursor's move
+  ;; before the change; the change's recolour paints the line whole, so
+  ;; the highlight just lit is painted again -- on MUI it was gone until
+  ;; the next cursor key.
+  (let ((doc (make-fake "(defun f (a b|")))
+    (colour-all doc)
+    (type-keys doc ")")
+    (is-equal (fake-text doc) "(defun f (a b)")
+    (is-equal (doc-paren-shown doc) '(0 . 9))
+    (is-equal (fake-line-colours doc 0) '((1 6 :defining) (9 10 :paren-match))))
+  ;; A partner on a line the recolour did not touch stays lit as it was.
+  (let ((doc (make-fake (lines "(let ((x 1))" "  x|"))))
+    (colour-all doc)
+    (type-keys doc ")")
+    (is-equal (doc-paren-shown doc) '(0 . 0))
+    (is-equal (fake-line-colours doc 0) '((0 1 :paren-match) (9 10 :number)))))
+
 (deftest paren-in-a-string-or-unbalanced-is-not-matched
   (let ((doc (make-fake "(a \")|\" b)")))
     (note-cursor-moved doc)
