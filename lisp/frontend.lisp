@@ -248,6 +248,21 @@ A frontend that shows no colours of its own does nothing.")
     (declare (ignore theme))
     nil))
 
+(defgeneric editor-apply-font-size (editor size)
+  (:documentation "Show the text area of every document window in the
+font SIZE, pixels, or in the frontend's own size for NIL (FONT-SIZE,
+theme.lisp): the same monospace font, sized.  Called whenever the setting
+changes, and by a frontend itself when it comes up.")
+  (:method ((editor editor) size)
+    (declare (ignore size))
+    nil))
+
+(defgeneric editor-default-font-size (editor)
+  (:documentation "The text area's font size, pixels, when *FONT-SIZE* is
+NIL: what the frontend shows on its own.  The Bigger and Smaller steps
+start from it.")
+  (:method ((editor editor)) 14))
+
 (defgeneric editor-apply-minimap (editor flag)
   (:documentation "Show the minimap -- the whole text in miniature beside
 it, the part on screen marked -- when FLAG, hide it otherwise

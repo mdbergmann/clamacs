@@ -577,6 +577,96 @@ THUNK's value."
       (is (eq *theme* (find-theme :dark)))
       (is-equal (read-file-text *init-file*) (lines "(show-minimap nil)" "(load-theme :dark)")))))
 
+(deftest the-font-size-is-kept-the-themes-way
+  ;; The form: replaced in place or appended under its own comment, NIL
+  ;; spelled out.
+  (flet ((rewrite (text size)
+           (init-form-persist-text text "font-size" (font-size-form-text size) *font-size-persist-comment*)))
+    (is-equal (rewrite (lines "(load-theme :dark)" "(font-size 16)" "") 20)
+              (lines "(load-theme :dark)" "(font-size 20)" ""))
+    (is-equal (rewrite (lines "(font-size 20)" "") nil)
+              (lines "(font-size nil)" ""))
+    (is-equal (rewrite "" 18) (format nil "~A~%(font-size 18)~%" *font-size-persist-comment*)))
+  ;; FONT-SIZE: the setting, the frontend told, the file; a session-only
+  ;; change and the init file's own form leave the file alone; a size out
+  ;; of range changes nothing.
+  ;; An init file of its own: LOAD's cache is keyed by the file's mtime,
+  ;; and the minimap test loads the shared one within the same second.
+  (with-theme-state ()
+    (let ((*font-size* nil)
+          (*init-file* (temp-file "theme-font-rc"))
+          (editor (make-fake-editor)))
+      (setq *editor* editor)
+      (delete-quietly *init-file*)
+      (is-equal (font-size 20) 20)
+      (is-equal *font-size* 20)
+      (is-equal (fake-editor-font-size editor) 20)
+      (is-equal (fake-editor-font-size-applied editor) 1)
+      (is-equal (read-file-text *init-file*)
+                (format nil "~A~%(font-size 20)~%" *font-size-persist-comment*))
+      (is-equal (font-size 24 :save nil) 24)
+      (is (search "(font-size 20)" (read-file-text *init-file*)))
+      (is (null (font-size 200)))
+      (is-equal *font-size* 24)
+      (is (null (font-size 3)))
+      (is (null (font-size 12.5)))
+      (is-equal (fake-editor-font-size-applied editor) 2)
+      (is (null (font-size nil)))
+      (is (null *font-size*))
+      (is (search "(font-size nil)" (read-file-text *init-file*)))
+      (is-equal (fake-editor-font-size-applied editor) 3)
+      ;; The init file's own form: read, applied, not written back
+      (write-file-text *init-file* (lines "(font-size 18)" "(load-theme :dark)"))
+      (is-equal (load-init-file *init-file*) t)
+      (is-equal *font-size* 18)
+      (is-equal (fake-editor-font-size editor) 18)
+      (is-equal (read-file-text *init-file*) (lines "(font-size 18)" "(load-theme :dark)"))
+      ;; The size in effect: the setting, else the frontend's own
+      (is-equal (effective-font-size editor) 18)
+      (setq *font-size* nil)
+      (is-equal (effective-font-size editor) 14)
+      (delete-quietly *init-file*))))
+
+(deftest the-font-size-steps-move-from-the-size-in-effect
+  (with-theme-state ()
+    (let* ((*font-size* nil)
+           (doc (make-fake "|"))
+           (editor (doc-editor doc)))
+      (setq *editor* editor)
+      ;; Bigger from the frontend's own 14: 16, written
+      (run-command doc 'clamacs-increase-font-size)
+      (is-equal *font-size* 16)
+      (is-equal (fake-last-message doc) "Font size 16")
+      (is (search "(font-size 16)" (read-file-text *init-file*)))
+      ;; Smaller twice: 14, 12; C-u keeps the second to the session
+      (run-command doc 'clamacs-decrease-font-size)
+      (is-equal *font-size* 14)
+      (run-command doc 'clamacs-decrease-font-size 4)
+      (is-equal *font-size* 12)
+      (is-equal (fake-last-message doc) "Font size 12 (this session)")
+      (is (search "(font-size 14)" (read-file-text *init-file*)))
+      ;; The range: the smallest stays the smallest, with a beep
+      (setq *font-size* *font-size-min*)
+      (run-command doc 'clamacs-decrease-font-size)
+      (is-equal *font-size* *font-size-min*)
+      (is-equal (fake-last-message doc) (format nil "Font size stays at ~D (the smallest)" *font-size-min*))
+      (is-equal (fake-beeps doc) 1)
+      (setq *font-size* (1- *font-size-max*))
+      (run-command doc 'clamacs-increase-font-size)
+      (is-equal *font-size* *font-size-max*)
+      (run-command doc 'clamacs-increase-font-size)
+      (is-equal *font-size* *font-size-max*)
+      (is-equal (fake-beeps doc) 2)
+      ;; Back to the default
+      (run-command doc 'clamacs-reset-font-size)
+      (is (null *font-size*))
+      (is-equal (fake-last-message doc) "Font size: the default (14)")
+      (is (search "(font-size nil)" (read-file-text *init-file*)))
+      ;; The menu items are the same commands (the keys: test-bindings)
+      (is (menu-find 'clamacs-increase-font-size))
+      (is (menu-find 'clamacs-decrease-font-size))
+      (is (menu-find 'clamacs-reset-font-size)))))
+
 (deftest theme-persist-text-appends-when-there-is-no-form
   (flet ((rewrite (text) (theme-persist-text text :dark))
          (appended (&rest before)

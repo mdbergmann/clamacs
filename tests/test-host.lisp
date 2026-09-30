@@ -1334,7 +1334,8 @@ batch of both taken."
     (is (search "[\"bar\",\"\",\"\"]" js))
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
-    (is (search "[\"title\",\"View\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    ;; -- the View menu's text-size items first, then its groups
+    (is (search "[\"title\",\"View\",\"\"],[\"item\",\"Bigger Text\",\"C-x C-+\"],[\"item\",\"Smaller Text\",\"C-x C--\"],[\"item\",\"Normal Text Size\",\"C-x C-0\"],[\"bar\",\"\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1458,6 +1459,43 @@ batch of both taken."
       (reap editor)
       (is (search "CK.setDynamic(\"buffers\",[[\"(unnamed)\",true],\"-\",[\"*clamacs-scratch*\",false]]);"
                   (host-take-evals editor))))))
+
+(deftest host-text-size-is-the-themes-font-size-variable
+  ;; The View menu's text-size items: a step re-sends the theme with
+  ;; `--font-size' the setting's, the init file gets the form, and Normal
+  ;; puts the theme's own size back.  The size in effect starts from the
+  ;; theme's :font-size (14px).
+  (with-host-theme-state
+    (let ((*font-size* nil))
+      (multiple-value-bind (editor doc js) (host-menu-editor "one")
+        (declare (ignore js))
+        (with-host-editor (editor)
+          (is-equal (editor-default-font-size editor) 14)
+          (is-equal (effective-font-size editor) 14)
+          (with-entry (editor) (run-command doc 'clamacs-increase-font-size))
+          (is-equal *font-size* 16)
+          (let ((js (host-take-evals editor)))
+            (is (search "CK.theme(" js))
+            (is (search "[\"--font-size\",\"16px\"]],false);" js))
+            (is (not (search "14px" js))))
+          (is (search "(font-size 16)" (read-file-text *init-file*)))
+          (with-entry (editor) (run-command doc 'clamacs-increase-font-size))
+          (is (search "[\"--font-size\",\"18px\"]],false);" (host-take-evals editor)))
+          ;; The menu items are the same commands; a pick through the
+          ;; table index steps down
+          (with-entry (editor) (menu-pick editor (menu-find 'clamacs-decrease-font-size)))
+          (is-equal *font-size* 16)
+          (is (search "16px" (host-take-evals editor)))
+          ;; Normal: the theme's own size again, the form says NIL
+          (with-entry (editor) (run-command doc 'clamacs-reset-font-size))
+          (is (null *font-size*))
+          (is (search "[\"--font-size\",\"14px\"]],false);" (host-take-evals editor)))
+          (is (search "(font-size nil)" (read-file-text *init-file*)))
+          ;; A theme pick keeps the size setting over the new theme's
+          (setq *font-size* 20)
+          (with-entry (editor) (host-dynamic-pick editor :themes 3))
+          (is (search "[\"--font-size\",\"20px\"]],true);" (host-take-evals editor)))
+          (setq *font-size* nil))))))
 
 (deftest host-view-menu-lists-the-themes-and-a-pick-loads-one
   (with-host-theme-state
@@ -1634,7 +1672,10 @@ batch of both taken."
                          (tabbed "item" "Open..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
-      (is (search (lines (tabbed "title" "View" "") (tabbed "themes" "Themes" "")
+      (is (search (lines (tabbed "title" "View" "")
+                         (tabbed "item" "Bigger Text" "C-x C-+") (tabbed "item" "Smaller Text" "C-x C--")
+                         (tabbed "item" "Normal Text Size" "C-x C-0") (tabbed "bar" "" "")
+                         (tabbed "themes" "Themes" "")
                          (tabbed "minimap" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))

@@ -154,6 +154,14 @@
                            "C-x C-q")
             '(:undefined)))
 
+(deftest the-text-size-is-on-emacs-text-scale-keys
+  ;; `C-x C-=' beside `C-x C-+': the unshifted key of a US keyboard.
+  (check-table '(("C-x C-+" "clamacs-increase-font-size") ("C-x C-=" "clamacs-increase-font-size")
+                 ("C-x C--" "clamacs-decrease-font-size") ("C-x C-0" "clamacs-reset-font-size"))
+               (lisp-keymap))
+  (check-table '(("C-x C-+" "clamacs-increase-font-size") ("C-x C--" "clamacs-decrease-font-size"))
+               nil))
+
 (deftest unbound-keys-reach-the-superclass
   ;; The keys TextEditor.mcc handles itself must NOT be claimed here, or the
   ;; class's own navigation, selection and self-insert stop working.

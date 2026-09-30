@@ -28,6 +28,12 @@
 # helper photographs the editor's window: build/amiga/shots-<leg>/*.png
 # (ffmpeg converts; without it the .ppm stays).
 #
+# FONT_SIZE=<pixels> starts the editor with the text size setting
+# (theme.lisp's FONT-SIZE) at that height, for the session: the windows
+# come up in MUI's fixed font sized so, the ready marker carries the
+# height of the font the text area draws with (TEXT-FONT-SIZE-SHOWN),
+# which must be the size asked for, and the screenshot shows it.
+#
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
@@ -41,6 +47,7 @@ SUPER=$(cd "$ROOT/.." && pwd)
 LEG="${1:-040}"
 THEME="${THEME:-}"
 SWITCH="${SWITCH:-}"
+FONT_SIZE="${FONT_SIZE:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
 SHOTS="$OUT/shots-$LEG"
@@ -99,19 +106,32 @@ if [ -n "$SWITCH" ]; then
 else
 	SWITCH_FORM=""
 fi
+# FONT_SIZE=<n>: the setting made before the first window (as an init
+# file's form would), and the repaint that applies it -- START runs it
+# right after the hooks anyway -- run before the marker reads the font.
+if [ -n "$FONT_SIZE" ]; then
+	FONT_FORM="(clamacs::font-size $FONT_SIZE :save nil)"
+else
+	FONT_FORM=""
+fi
 cat > "$OUT/lisp-editor-driver.lisp" <<PRE
 (load "Clamacs:lisp/load.lisp")
 (setf clamacs::*exit-trace* t)
 $THEME_FORM
+$FONT_FORM
 (push (lambda (editor)
         $SWITCH_FORM
+        (clamacs::theme-repaint editor)
         (with-open-file (s "Clamacs:build/amiga/lisp-editor-ready"
                            :direction :output :if-exists :supersede)
-          (format s "ready theme ~A depth ~A text-pen ~A bg ~A~%"
+          (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A~%"
                   (clamacs::theme-name (clamacs::mui-theme editor))
                   (clamacs::mui-editor-screen-depth editor)
                   (clamacs::mui-editor-text-pen-p editor)
-                  (clamacs::mui-editor-bg-spec editor))))
+                  (clamacs::mui-editor-bg-spec editor)
+                  (clamacs::mui-editor-font-name editor)
+                  (clamacs::mui-editor-font-default-size editor)
+                  (clamacs::text-font-size-shown (first (clamacs::live-documents editor))))))
       clamacs::*after-start-hooks*)
 (clamacs::start :files ext:*command-line-args*)
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
@@ -271,6 +291,13 @@ last=$(echo "$exitlog" | tail -1)
 if [ "$last" != "clamacs: exit application disposed" ]; then
 	echo "=== FAIL: the exit log ends with '$last', not with the application disposed ==="
 	exit 1
+fi
+if [ -n "$FONT_SIZE" ]; then
+	ready=$(grep '^ready ' "$RUNLOG" | head -1)
+	case "$ready" in
+	*" shown $FONT_SIZE"*) echo "=== PASS: the text area draws in MUI's fixed font at $FONT_SIZE pixels ($ready) ===" ;;
+	*) echo "=== FAIL: FONT_SIZE=$FONT_SIZE, but the marker says: $ready ==="; exit 1 ;;
+	esac
 fi
 echo "=== PASS: the saved file equals the host frontend's text; the teardown disposed the application and nothing signalled ==="
 exit 0

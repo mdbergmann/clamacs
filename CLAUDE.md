@@ -272,6 +272,22 @@ through `init-form-persist`, the `MINIMAP` verb), and reached through
 the generic `editor-apply-minimap`.  A titleless dynamic group no longer
 fills its menu: the page and the Cocoa shim replace the group's own
 items in place, so View keeps its Themes submenu beside the item.
+**The text size** (2026-09-30): `*font-size*` / `font-size` in
+`theme.lisp`, kept the minimap's way (View > Bigger / Smaller / Normal
+Text Size before the groups, `C-x C-+` `C-x C--` `C-x C-0`, the init
+file's `(font-size 20)`), reaching the frontends through
+`editor-apply-font-size` / `editor-default-font-size`.  The host
+overrides the theme's `--font-size`; the MUI frontend creates every text
+object with `MUIA_Font MUIV_Font_Fixed` (the class takes a font as its
+own only when the tag is among the CREATION tags), learns MUI's fixed
+font's name and height at the first Setup, opens it at the wanted height
+with diskfont and sets it on the closed objects inside `theme-repaint`
+-- the one reopen path -- closing the previous font after.  MUI's own
+per-application settings window (`MUIM_Application_OpenConfigWindow`)
+was tried the same day and taken out again: the TextEditor page's font
+did not reach the text area for the user, and the window offers far more
+than the editor honours.  `FONT_SIZE=24 verify/realamiga/run-lisp-editor.sh`
+is the Amiga run (the marker's `shown` must be the size).
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

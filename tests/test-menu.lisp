@@ -35,7 +35,7 @@
                 (is (null (menu-entry-title e)))
                 ;; A bar never opens or closes a menu.
                 (is (and (> i 0) (not (eq (menu-entry-kind (nth (1- i) entries)) :title))))
-                (is (and next (eq (menu-entry-kind next) :item))))
+                (is (and next (member (menu-entry-kind next) '(:item :dynamic)))))
                (:item
                 (is (and (stringp (menu-entry-title e)) (string/= (menu-entry-title e) "")))
                 (let ((command (menu-entry-command e))
@@ -55,10 +55,11 @@
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
                 (incf items))
                (:dynamic
-                ;; The place of a group made at run time: a menu holding
-                ;; nothing but groups, the first right after its title
-                ;; (the Buffers menu; View's themes, then its minimap item).
-                (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic))))
+                ;; The place of a group made at run time: the tail of its
+                ;; menu, right after its title or after a bar closing the
+                ;; menu's own items (the Buffers menu; View's text sizes,
+                ;; then its themes, then its minimap item).
+                (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic :bar))))
                 (is-equal (menu-entry-title
                            (find :title (reverse (subseq entries 0 i)) :key #'menu-entry-kind))
                           (ecase (menu-entry-dynamic e)
@@ -70,8 +71,12 @@
     (is-equal (menu-count) (length entries))
     (is-equal titles 9)
     (is (> items 30))
-    ;; View sits between Windows and Buffers.
+    ;; View sits between Windows and Buffers; its text-size items come
+    ;; before its groups.
     (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
+           (menu-find 'clamacs-increase-font-size)
+           (menu-find 'clamacs-decrease-font-size)
+           (menu-find 'clamacs-reset-font-size)
            (menu-find-dynamic :themes)
            (menu-find-dynamic :buffers)))
     (is-equal (menu-entry-dynamic (menu-entry (menu-find-dynamic :themes))) :themes)

@@ -1714,8 +1714,26 @@ menu bar (the table not sent), what it should be."
 ;;; follows, so an editor without a pick looks exactly as before.
 
 (defun theme-page-args (theme)
-  (list (mapcar (lambda (pair) (list (car pair) (cdr pair))) (theme-css-vars theme))
+  "THEME's variables for the page, the text size setting (FONT-SIZE)
+over the theme's `--font-size' when there is one."
+  (list (mapcar (lambda (pair)
+                  (list (car pair)
+                        (if (and *font-size* (string= (car pair) "--font-size"))
+                            (format nil "~Dpx" *font-size*)
+                            (cdr pair))))
+                (theme-css-vars theme))
         (and (theme-dark theme) t)))
+
+(defmethod editor-apply-font-size ((editor host-editor) size)
+  "The theme sent again, its `--font-size' the setting's."
+  (declare (ignore size))
+  (editor-apply-theme editor (active-theme)))
+
+(defmethod editor-default-font-size ((editor host-editor))
+  "The theme's `:font-size' in pixels, 14 when it is not a pixel size."
+  (let* ((value (theme-resolve (active-theme) :font-size))
+         (n (and (stringp value) (parse-integer value :junk-allowed t))))
+    (if (and n (plusp n)) n 14)))
 
 (defmethod editor-apply-theme ((editor host-editor) theme)
   (apply #'ck-all editor "theme" (theme-page-args theme)))

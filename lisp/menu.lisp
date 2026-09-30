@@ -192,6 +192,12 @@
      ;; minimap lists (EDITOR-DYNAMIC-GROUPS: the host's page does, the
      ;; MUI editor does not and never shows the entry).
      (title "View")
+     ;; The text size first (theme.lisp's FONT-SIZE), then the groups:
+     ;; a dynamic group's items are remade at the tail of their menu.
+     (item 'clamacs-increase-font-size :always        "Bigger Text"            "C-x C-+" :global)
+     (item 'clamacs-decrease-font-size :always        "Smaller Text"           "C-x C--" :global)
+     (item 'clamacs-reset-font-size    :always        "Normal Text Size"       "C-x C-0" :global)
+     (bar)
      (make-menu-entry :dynamic :always :themes "Themes" nil nil)
      (make-menu-entry :dynamic :always :minimap nil nil nil)
 

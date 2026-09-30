@@ -630,3 +630,103 @@ has no minimap; there the command only records the choice."
   (let* ((save (eql arg 1))
          (flag (show-minimap (not *minimap*) :save save)))
     (message doc "Minimap ~A~A" (if flag "on" "off") (if save "" " (this session)"))))
+
+;;; ------------------------------------------------------------------
+;;; The text size: the View menu's third setting, kept the theme's way
+;;; ------------------------------------------------------------------
+
+;;; The size of the text area's font, in pixels, on every document
+;;; window -- the one setting an aging pair of eyes needs, and one MUI's
+;;; own preferences do not reach reliably.  The FONT stays the frontend's
+;;; monospace default (MUI's fixed font on the Amiga, the theme's
+;;; :font-family on the host); only its SIZE is the setting: *FONT-SIZE*,
+;;; NIL for the frontend's own size.  Three entrances -- View > Bigger /
+;;; Smaller / Normal Text Size, `M-x clamacs-increase-font-size' and its
+;;; two siblings on `C-x C-+' `C-x C--' `C-x C-0' (Emacs's text-scale
+;;; keys), and the init file's `(font-size 20)' -- all end in FONT-SIZE,
+;;; which tells the frontend (EDITOR-APPLY-FONT-SIZE) and writes the form
+;;; into the init file as LOAD-THEME writes its own.
+
+(defvar *font-size* nil
+  "The text area's font size in pixels, or NIL for the frontend's own.")
+
+(defparameter *font-size-step* 2
+  "What one Bigger or Smaller step adds or takes.")
+(defparameter *font-size-min* 6)
+(defparameter *font-size-max* 96)
+
+(defparameter *font-size-persist-comment*
+  ";; Written by M-x clamacs-increase-font-size and the View menu")
+
+(defun font-size-form-text (size)
+  (format nil "(font-size ~A)" (if size size "nil")))
+
+(defun font-size-persist (size &optional (path *init-file*))
+  "The choice SIZE into the init file PATH: `(font-size N)' -- or
+`(font-size nil)' for the frontend's own -- as its form, the theme's way
+\(INIT-FORM-PERSIST)."
+  (init-form-persist "font-size" (font-size-form-text size) *font-size-persist-comment* path))
+
+(defun valid-font-size-p (size)
+  (and (integerp size) (<= *font-size-min* size *font-size-max*)))
+
+(defun font-size (size &key (save t))
+  "The text area's font SIZE in pixels, or NIL for the frontend's own:
+*FONT-SIZE*, the frontend told, and -- unless SAVE is NIL, or the init
+file is loading its own form -- the choice written into the init file.
+Answers the size in effect, or NIL for a size out of range, which changes
+nothing and is said so.  Callable from any thread, as LOAD-THEME is."
+  (cond ((and size (not (valid-font-size-p size)))
+         (theme-note "Font size ~A is not a whole number between ~D and ~D"
+                     size *font-size-min* *font-size-max*)
+         nil)
+        (t
+         (setq *font-size* size)
+         (let ((editor *editor*))
+           (when editor
+             (theme-on-editor-task (lambda () (editor-apply-font-size editor size)))))
+         (when (and save *theme-persist*)
+           (unless (font-size-persist size)
+             (theme-note "Cannot write ~A; the font size holds for this session" *init-file*)))
+         size)))
+
+(defun effective-font-size (editor)
+  "The size the text area shows now: the setting, else the frontend's own."
+  (or *font-size* (editor-default-font-size editor)))
+
+(defun font-size-step (doc arg delta)
+  "The command body of the Bigger and Smaller steps: the size in effect
+moved by DELTA, clamped to the range, said in the echo area.  ARG is the
+prefix: `C-u' keeps the change to this session."
+  (let* ((editor (doc-editor doc))
+         (save (eql arg 1))
+         (now (effective-font-size editor))
+         (want (max *font-size-min* (min *font-size-max* (+ now delta)))))
+    (cond ((= want now)
+           (message doc "Font size stays at ~D (the ~A)" now
+                    (if (< delta 0) "smallest" "largest"))
+           (doc-beep doc))
+          (t
+           (font-size want :save save)
+           (message doc "Font size ~D~A" want (if save "" " (this session)"))))))
+
+(define-command clamacs-increase-font-size (doc arg)
+  "Make the text area's font bigger, by two pixels, on every document
+window; the choice is remembered in the init file.  With `C-u' the change
+holds for this session only."
+  (font-size-step doc arg *font-size-step*))
+
+(define-command clamacs-decrease-font-size (doc arg)
+  "Make the text area's font smaller, by two pixels, on every document
+window; the choice is remembered in the init file.  With `C-u' the change
+holds for this session only."
+  (font-size-step doc arg (- *font-size-step*)))
+
+(define-command clamacs-reset-font-size (doc arg)
+  "Back to the frontend's own font size -- MUI's fixed font as set in its
+preferences on the Amiga, the theme's size on the host.  With `C-u' the
+change holds for this session only."
+  (let ((save (eql arg 1)))
+    (font-size nil :save save)
+    (message doc "Font size: the default (~D)~A" (effective-font-size (doc-editor doc))
+             (if save "" " (this session)"))))

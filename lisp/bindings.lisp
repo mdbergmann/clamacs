@@ -43,6 +43,10 @@
     ("C-x b" switch-to-buffer) ("C-x k" kill-buffer)
     ("C-x C-c" save-buffers-kill-emacs) ("C-x o" other-window)
     ("C-x 2" find-file-other-window)
+    ;; the text size, on Emacs's text-scale keys (`C-x C-=' is the
+    ;; unshifted `C-x C-+' of a US keyboard)
+    ("C-x C-+" clamacs-increase-font-size) ("C-x C-=" clamacs-increase-font-size)
+    ("C-x C--" clamacs-decrease-font-size) ("C-x C-0" clamacs-reset-font-size)
     ;; the command loop itself
     ("M-x" execute-extended-command) ("C-g" keyboard-quit)
     ;; the REPL window, reachable from any document as in SLIME

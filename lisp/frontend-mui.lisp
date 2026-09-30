@@ -49,12 +49,14 @@
   (require "amiga/raw/graphics")
   (require "amiga/raw/keymap")
   (require "amiga/raw/asl")
+  (require "amiga/raw/diskfont")
   (require "amiga/raw/muimaster")
   (require "amiga/iff")
   (dolist (nick '(("MUI" "AMIGA.MUI") ("M" "AMIGA.RAW.MUIMASTER")
                   ("EXEC" "AMIGA.RAW.EXEC") ("DOS" "AMIGA.RAW.DOS")
                   ("INTUI" "AMIGA.RAW.INTUITION") ("GFX" "AMIGA.RAW.GRAPHICS")
-                  ("KEYMAP" "AMIGA.RAW.KEYMAP") ("ASL" "AMIGA.RAW.ASL")))
+                  ("KEYMAP" "AMIGA.RAW.KEYMAP") ("ASL" "AMIGA.RAW.ASL")
+                  ("DISKFONT" "AMIGA.RAW.DISKFONT")))
     (clamiga::add-package-local-nickname (first nick) (second nick) :clamacs)))
 
 (in-package :clamacs)
@@ -160,8 +162,14 @@
 (defconstant +mri-screen-offset+ 4)
 ;; struct Screen.ViewPort (44) .ColorMap (4)
 (defconstant +screen-colormap-offset+ 48)
-;; struct TextFont.tf_XSize
+;; struct TextFont.tf_XSize, .tf_YSize, and the font's name
+;; (tf_Message.mn_Node.ln_Name)
 (defconstant +tf-xsize-offset+ 24)
+(defconstant +tf-ysize-offset+ 20)
+(defconstant +tf-name-offset+ 10)
+;; struct TextAttr (graphics/text.h): ta_Name, ta_YSize, ta_Style, ta_Flags
+(defconstant +text-attr-size+ 8)
+(defconstant +font-name-size+ 64)
 ;; struct FileRequester (libraries/asl.h)
 (defconstant +fr-file-offset+ 4)
 (defconstant +fr-drawer-offset+ 8)
@@ -364,7 +372,15 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   (theme-note nil) (shallow-noted nil)
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
-  (theme-dirty nil))
+  (theme-dirty nil)
+  ;; The text size (theme.lisp's FONT-SIZE): MUI's fixed font as the first
+  ;; text object's Setup found it -- its name and its height, what the
+  ;; setting sizes and what NIL goes back to -- the TextFont this frontend
+  ;; opened at the setting's size (NIL: MUI's own), the size it is, the
+  ;; TextAttr and name buffers it was opened with, and whether the
+  ;; windows must be reopened for a changed size (THEME-REPAINT)
+  (font-name nil) (font-default-size nil) font (font-size nil)
+  font-attr font-name-buf (font-dirty nil))
 
 ;;; One dynamic group of the menu strip: the Menu object under its title,
 ;;; the Menuitem of each entry shown with the foreign title it points to
@@ -694,9 +710,118 @@ was, so that a plan the first Setup corrects can take it away again."
   "The theme's background as a creation tag of a text object -- the way
 the class takes it for sure (an Area sets its background up at Setup from
 what it was given before) -- for a Lisp-mode document with a theme that
-paints one."
-  (and (text-creation-background-p editor lisp-mode)
-       (list m:+muia-background+ (mui-editor-bg-buf editor))))
+paints one; and the font, always: MUIA_Font among the creation tags is
+what makes the class take the font as ours (FLG_OwnFont, set at OM_NEW
+alone), so a later set of the attribute on the closed object is honoured
+at its next Setup.  MUI's fixed font until the text size setting opened
+one of its own (TEXT-FONT-WANTED)."
+  (append (and (text-creation-background-p editor lisp-mode)
+               (list m:+muia-background+ (mui-editor-bg-buf editor)))
+          (list m:+muia-font+ (text-font-wanted editor))))
+
+;;; The text size (theme.lisp's FONT-SIZE).  The class draws with the
+;;; font MUIA_Font names -- MUI's fixed font by default -- and reads the
+;;; attribute again at every Setup, so a size is applied the way a theme
+;;; is: the windows closed, the attribute set, the windows opened
+;;; (THEME-REPAINT).  The font is MUI's fixed font's, by name, at the
+;;; wanted height, opened with diskfont.library and closed once no object
+;;; draws with it any more.
+
+(defun text-font-wanted (editor)
+  "What MUIA_Font is set to: the font this frontend opened for the text
+size setting, else MUI's own fixed font."
+  (or (mui-editor-font editor) m:+muiv-font-fixed+))
+
+(defun learn-text-font (editor object)
+  "MUI's fixed font, as OBJECT's Setup resolved it, when it is not known
+yet: its name and height.  A text size in force before the first window
+is applied now that the font to size is known."
+  (unless (mui-editor-font-name editor)
+    (let ((font (mui:area-font object)))
+      (when (and font (not (ffi:null-pointer-p font)))
+        (let ((name (ffi:peek-pointer font +tf-name-offset+)))
+          (unless (ffi:null-pointer-p name)
+            (setf (mui-editor-font-name editor) (ffi:foreign-to-string name)
+                  (mui-editor-font-default-size editor) (ffi:peek-u16 font +tf-ysize-offset+))
+            (when (and *font-size* (/= *font-size* (mui-editor-font-default-size editor)))
+              (setf (mui-editor-font-dirty editor) t
+                    (mui-editor-theme-dirty editor) t))))))))
+
+(defun open-text-font (editor size)
+  "MUI's fixed font at SIZE pixels, opened, or NIL when diskfont cannot.
+The TextAttr and the name stay allocated for the font's lifetime."
+  (let ((name (mui-editor-font-name editor)))
+    (when name
+      (unless (mui-editor-font-attr editor)
+        (setf (mui-editor-font-attr editor) (ffi:alloc-foreign +text-attr-size+)
+              (mui-editor-font-name-buf editor) (ffi:alloc-foreign +font-name-size+)))
+      (let ((attr (mui-editor-font-attr editor)))
+        (store-text (mui-editor-font-name-buf editor) +font-name-size+ name)
+        (ffi:poke-u32 attr (ffi:foreign-pointer-address (mui-editor-font-name-buf editor)) 0)
+        (ffi:poke-u16 attr size 4)
+        (ffi:poke-u8 attr 0 6)
+        (ffi:poke-u8 attr 0 7)
+        (let ((font (diskfont:open-disk-font attr)))
+          (and font (not (ffi:null-pointer-p font)) font))))))
+
+(defun close-text-font (editor)
+  "The font this frontend opened given back, once nothing draws with it."
+  (let ((font (mui-editor-font editor)))
+    (when font
+      (gfx:close-font font)
+      (setf (mui-editor-font editor) nil
+            (mui-editor-font-size editor) nil))))
+
+(defun free-text-font-buffers (editor)
+  (when (mui-editor-font-attr editor)
+    (ffi:free-foreign (mui-editor-font-attr editor))
+    (ffi:free-foreign (mui-editor-font-name-buf editor))
+    (setf (mui-editor-font-attr editor) nil
+          (mui-editor-font-name-buf editor) nil)))
+
+(defun text-font-size-shown (doc)
+  "The height of the font DOC's text area draws with, from Setup on, or
+NIL before: what a run reads back."
+  (let* ((object (mdoc-text doc))
+         (ri (and object (mui:area-render-info object))))
+    (and ri (not (ffi:null-pointer-p ri))
+         (ffi:peek-u16 (mui:area-font object) +tf-ysize-offset+))))
+
+(defmethod editor-apply-font-size ((editor mui-editor) size)
+  "Applied at the next repaint from the event loop (THEME-REPAINT): the
+font opened there, the windows reopened with it."
+  (declare (ignore size))
+  (when (mui-editor-app editor)
+    (setf (mui-editor-font-dirty editor) t
+          (mui-editor-theme-dirty editor) t)))
+
+(defmethod editor-default-font-size ((editor mui-editor))
+  (or (mui-editor-font-default-size editor) 16))
+
+(defun text-font-change (editor)
+  "The font the windows are reopened with when the size setting changed:
+(values CHANGED-P NEW-FONT OLD-FONT) -- NEW-FONT the freshly opened font,
+or NIL for MUI's own; OLD-FONT the one to close once the windows are up
+again.  Nothing changes when the wanted font cannot be opened, which the
+echo area says."
+  (setf (mui-editor-font-dirty editor) nil)
+  (let ((want (and *font-size*
+                   (mui-editor-font-name editor)
+                   (/= *font-size* (or (mui-editor-font-default-size editor) 0))
+                   *font-size*)))
+    (cond ((eql want (mui-editor-font-size editor))
+           (values nil nil nil))
+          ((null want)
+           (values t nil (mui-editor-font editor)))
+          (t
+           (let ((font (open-text-font editor want)))
+             (cond (font
+                    (values t font (mui-editor-font editor)))
+                   (t
+                    (setf (mui-editor-theme-note editor)
+                          (format nil "Cannot open ~A at ~D pixels; the text size stays"
+                                  (mui-editor-font-name editor) want))
+                    (values nil nil nil))))))))
 
 (defun text-setup (editor class object message)
   (let ((ok (mui:do-super-method class object message)))
@@ -710,6 +835,7 @@ paints one."
             (setf (mui-editor-screen-depth editor) depth)
             (theme-plan editor)))
         (obtain-text-pens editor data object)
+        (learn-text-font editor object)
         (mui:set-attrs object +tea-color-map+ (ffi:pointer+ data +text-cmap-offset+))
         ;; The background is the repaint's to change, the object not being
         ;; set up there (MUI 3.8 repaints nothing set during Setup): an
@@ -793,6 +919,13 @@ still be inside the window that asked."
     (setf (mui-editor-theme-dirty editor) nil)
     (when (mui-editor-screen-depth editor)
       (theme-plan editor))
+    (multiple-value-bind (font-changed new-font old-font)
+        (if (mui-editor-font-dirty editor)
+            (text-font-change editor)
+            (values nil nil nil))
+      (when font-changed
+        (setf (mui-editor-font editor) new-font
+              (mui-editor-font-size editor) (and new-font *font-size*)))
     (let ((active (active-document editor)))
       (dolist (doc (live-documents editor))
         (let* ((window (mdoc-window doc))
@@ -807,6 +940,9 @@ still be inside the window that asked."
             (multiple-value-bind (left top width height) (window-geometry window)
               (mui:set-attrs window m:+muia-window-open+ nil)
               (apply-text-background editor data object doc)
+              ;; The font, taken by the class at the Setup the open runs
+              (when font-changed
+                (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))
               (mui:set-attrs window
                              m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
                              m:+muia-window-width+ width m:+muia-window-height+ height)
@@ -815,6 +951,10 @@ still be inside the window that asked."
                   (painted (clear-text-colours doc))))))
       (when (and active (not (doc-closing active)))
         (doc-activate active)))
+      ;; The font the windows drew with before: no object is set up on it
+      ;; now, so it can go.
+      (when (and font-changed old-font)
+        (gfx:close-font old-font)))
     (show-theme-note editor (active-document editor))))
 
 (defun wake-loop (editor)
@@ -2714,6 +2854,9 @@ function: an image is saved before it runs and restores into it."
              (exit-note "application disposed")
              (setf (mui-editor-app editor) nil
                    (mui-editor-menustrip editor) nil)
+             ;; The text size's font, now that no object draws with it
+             (close-text-font editor)
+             (free-text-font-buffers editor)
              ;; The dynamic groups' items went with it; their titles are ours.
              (dolist (group (mui-editor-dyn-groups editor))
                (dolist (entry (dyn-group-items group))

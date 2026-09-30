@@ -428,6 +428,22 @@ Minimap`.  The Amiga editor has no minimap and does not show the item.
 See `tests/test-host.lisp` (the View menu) and the MINIMAP leg of
 `verify/host/drive.lisp`.
 
+## Text size
+
+**View > Bigger Text** and **Smaller Text** (`C-x C-+` and `C-x C--`,
+Emacs's text-scale keys; `C-x C-=` works for `C-x C-+` too) change the
+size of the text area's font in every document window, two pixels a
+step; **Normal Text Size** (`C-x C-0`) goes back to the default.  The
+font stays your monospace default -- MUI's fixed font on the Amiga, as
+set in the MUI preferences, the theme's `:font-family` on the host --
+only its height changes.  The choice is remembered the way a theme is:
+one `(font-size 20)` form in your init file, nothing else touched;
+`C-u` before the key keeps a change to this session.  The status line,
+the echo area and the panels keep their own fonts.  See
+`tests/test-theme.lisp` (the setting and the steps) and
+`tests/test-host.lisp`; `FONT_SIZE=24 verify/realamiga/run-lisp-editor.sh`
+is the Amiga run.
+
 ## Window positions
 
 Arrange the windows, then pick **Windows > Snapshot Windows** (or `M-x
