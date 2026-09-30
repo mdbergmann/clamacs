@@ -336,7 +336,14 @@ What the widget shows selected on its own stands in for a mark."
   (region-command doc nil))
 
 (defun yank-text (doc text)
-  (cond (text (doc-insert doc text))
+  "TEXT inserted; the lines it spans coloured, since the widget's own
+notification names the cursor's line alone."
+  (cond (text
+         (let ((start (doc-point doc)))
+           (doc-insert doc text)
+           (when (find #\Newline text)
+             (colour-lines doc (doc-index-line doc start)
+                           (doc-index-line doc (doc-point doc))))))
         (t (doc-message doc "Kill ring is empty")
            (doc-beep doc))))
 
@@ -575,20 +582,34 @@ its newline); a trailing newline does not open another line."
           (colour-one-line doc y line state)
           (incf y))))))
 
-(defun colour-line (doc line-number)
-  "Recolour one line.  The context starts at a defun, where the tokenizer
-state is known to be plain code -- so the state carried down to the line is
-correct without rescanning the whole file."
+(defun colour-lines (doc y0 y1)
+  "Recolour lines Y0 to Y1.  The context starts at a defun, where the
+tokenizer state is known to be plain code -- so the state carried down to
+the lines is correct without rescanning the whole file.  Several lines
+are painted with the display held back; one line, the keystroke's case,
+is not worth the repaint that ends the hold."
   (when (doc-lisp-mode doc)
-    (multiple-value-bind (text base) (doc-context doc)
+    (multiple-value-bind (text base) (doc-context-range doc (- y0 +context-lines+) y1)
+      (unless text
+        ;; No `(' in column 0 in the window.
+        (multiple-value-setq (text base) (doc-context-full doc)))
       (let ((state (make-tok-state))
             (y (doc-index-line doc base)))
-        (do-text-lines (line text)
-          (when (= y line-number)
-            (colour-one-line doc y line state)
-            (return))
-          (tokenize-line line state)
-          (incf y))))))
+        (flet ((paint ()
+                 (do-text-lines (line text)
+                   (when (> y y1)
+                     (return))
+                   (if (>= y y0)
+                       (colour-one-line doc y line state)
+                       (tokenize-line line state))
+                   (incf y))))
+          (if (> y1 y0)
+              (with-quiet-display (doc) (paint))
+              (paint)))))))
+
+(defun colour-line (doc line-number)
+  "Recolour one line."
+  (colour-lines doc line-number line-number))
 
 (defun show-paren (doc)
   "Highlight the partner of the paren BEFORE point, which is where the
@@ -610,6 +631,9 @@ cursor sits after typing a `)' -- Emacs's rule."
 (defun note-cursor-moved (doc)
   (show-paren doc))
 
-(defun note-text-changed (doc)
+(defun note-text-changed (doc &optional y0 y1)
+  "The text changed on lines Y0 to Y1 -- the cursor's line when not said:
+what the text widget's own notification knows.  They are recoloured."
   (incf (doc-edit-serial doc))
-  (colour-line doc (doc-index-line doc (doc-point doc))))
+  (let ((y0 (or y0 (doc-index-line doc (doc-point doc)))))
+    (colour-lines doc y0 (or y1 y0))))

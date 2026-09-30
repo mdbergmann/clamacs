@@ -472,6 +472,23 @@
     (is-equal (fake-line-colours doc 1) '())
     (is-equal (fake-line-colours doc 3) '())))
 
+(deftest a-yank-of-several-lines-colours-them-all
+  (let ((doc (make-fake (lines "(defun f ()" "  \"s\")" "|"))))
+    (colour-all doc)
+    (setf (fake-colours doc) '())
+    ;; The kill: the first two lines, killed to the ring and yanked back
+    ;; at the end, colour on every line the yank spans
+    (type-keys doc "M-< C-k C-k C-k C-k M-> C-y")
+    (is-equal (fake-text doc) (lines "(defun f ()" "  \"s\")" ""))
+    (is-equal (fake-line-colours doc 0) '((1 6 :defining)))
+    (is-equal (fake-line-colours doc 1) '((2 5 :string))))
+  ;; A yank within one line leaves the colouring to the widget's own
+  ;; notification, which the fake does not send for a command
+  (let ((doc (make-fake "(defun |g")))
+    (type-keys doc "C-k C-y")
+    (is-equal (fake-text doc) "(defun g")
+    (is-equal (fake-colours doc) '())))
+
 (deftest paren-highlight-follows-the-cursor
   (let ((doc (make-fake (lines "(a" " (b c)|)"))))
     (note-cursor-moved doc)

@@ -258,9 +258,11 @@ each, with the KeyboardEvent fields a real key would carry."
     (let ((js (host-take-evals editor)))
       ;; The newline and the indentation as one applyEdit ...
       (is (search "CK.applyEdit(\"doc1\",11,11,\"\\n  \",14);" js))
-      ;; ... then the colours: the old paren highlight taken down (a run
-      ;; record) and the new line's, none (a line record); then the status
-      (is (search "CK.colour(\"doc1\",[[0,9,10,false],[1,[]]]);" js))
+      ;; ... then the colours: the edit spans both lines, so the line the
+      ;; newline split is painted whole (a line record, which takes the
+      ;; paren highlight down with it) and the new line, none; then the
+      ;; status
+      (is (search "CK.colour(\"doc1\",[[0,[[1,6,\"defining\"]]],[1,[]]]);" js))
       (is (search "CK.setStatus(\"*(unnamed)  CL-USER  2:3\");" js))
       (is (< (search "applyEdit" js) (search "CK.colour" js))))))
 
@@ -717,6 +719,33 @@ each, with the KeyboardEvent fields a real key would carry."
     (host-command-type editor "c" :target "mini")
     (is-equal (host-editor-clipboard editor) (format nil "goto~%line"))
     (host-type editor "C-g")))
+
+(deftest host-a-paste-and-its-undo-colour-every-line-they-span
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "")))
+    (host-take-evals editor)
+    ;; Two lines pasted with the Command key: both coloured
+    (setf (host-editor-clipboard editor) (format nil "(defun f ()~%  \"s\")"))
+    (host-command-type editor "v")
+    (let ((js (host-take-evals editor)))
+      ;; (the paren highlight of the `)' before the cursor rides on line 0)
+      (is (search "[1,6,\"defining\"]" js))
+      (is (search "[1,[[2,5,\"string\"]]]" js)))
+    ;; The undo takes the text and the colour away, the redo brings both
+    (host-command-type editor "z")
+    (is-equal (host-text doc) "")
+    (host-take-evals editor)
+    (host-command-type editor "Z" :shift t)
+    (let ((js (host-take-evals editor)))
+      (is (search "[1,6,\"defining\"]" js))
+      (is (search "[1,[[2,5,\"string\"]]]" js)))
+    ;; A change the page made itself (a drop) over two lines, the same
+    (with-entry (editor)
+      (host-update editor "doc1" (list (list 0 0 (format nil "#\\a~%")) (list 18 18 " 1")) 2))
+    (let ((js (host-take-evals editor)))
+      (is (search "[0,[[1,3,\"char\"]]]" js))
+      (is (search "[1,[[1,6,\"defining\"]]]" js))
+      (is (search "[2,[[2,5,\"string\"],[7,8,\"number\"]]]" js)))))
 
 (deftest host-activation-restores-the-echo-and-status
   (let* ((editor (host-test-editor))

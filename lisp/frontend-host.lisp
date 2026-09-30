@@ -1096,10 +1096,16 @@ the input line (\"mini\")."
         (note-cursor-moved doc)))))
 
 (defun note-text-if-changed (doc before)
-  "NOTE-TEXT-CHANGED when the mirror's text is no longer BEFORE.  Every
-edit makes a fresh string, so identity is the test."
-  (unless (eq before (mirror-text (hdoc-mirror doc)))
-    (note-text-changed doc)))
+  "NOTE-TEXT-CHANGED for the lines the edit spans when the mirror's text
+is no longer BEFORE -- every edit makes a fresh string, so identity is
+the test -- so a paste or an undo of many lines is coloured whole."
+  (let ((now (mirror-text (hdoc-mirror doc))))
+    (unless (eq before now)
+      (multiple-value-bind (from to insert) (text-diff before now)
+        (declare (ignore to))
+        (note-text-changed doc
+                           (doc-index-line doc from)
+                           (doc-index-line doc (+ from (length insert))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; What the page changed on its own
@@ -1113,16 +1119,23 @@ page holds the result already."
     (when doc
       (let ((m (hdoc-mirror doc))
             (delta 0))
-        (dolist (change changes)
-          (destructuring-bind (from to inserted) change
-            (mirror-replace m (+ from delta) (+ to delta) inserted)
-            (incf delta (- (length inserted) (- to from)))))
-        (mirror-set-point m head)
-        (setf (doc-mark-active doc) nil)
-        (setf (hdoc-shown-text doc) (mirror-text m)
-              (hdoc-shown-head doc) (mirror-point m)
-              (hdoc-shown-anchor doc) (mirror-point m))
-        (note-text-changed doc)
+        (let ((lo nil)
+              (hi 0))
+          (dolist (change changes)
+            (destructuring-bind (from to inserted) change
+              (mirror-replace m (+ from delta) (+ to delta) inserted)
+              (setq lo (if lo (min lo (+ from delta)) (+ from delta))
+                    hi (max hi (+ from delta (length inserted))))
+              (incf delta (- (length inserted) (- to from)))))
+          (mirror-set-point m head)
+          (setf (doc-mark-active doc) nil)
+          (setf (hdoc-shown-text doc) (mirror-text m)
+                (hdoc-shown-head doc) (mirror-point m)
+                (hdoc-shown-anchor doc) (mirror-point m))
+          ;; Every line the changes span is coloured
+          (if lo
+              (note-text-changed doc (doc-index-line doc lo) (doc-index-line doc hi))
+              (note-text-changed doc)))
         (note-cursor-moved doc)))))
 
 (defun host-cursor (editor doc-id head anchor)
