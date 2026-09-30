@@ -88,6 +88,18 @@
     (define-theme :inherit-bg (:inherits :gruvbox-dark) :keyword "#ffffff")
     (is-equal (theme-background-spec (find-theme :inherit-bg)) "2:28282828,28282828,28282828")))
 
+(deftest theme-pen-spec-is-muis-rgb-pen-spec
+  ;; MUI_PenSpec's `r' form for the cursor and the selection: the class's
+  ;; default cursor is the shine pen, which on Light's white is white.
+  (is-equal (theme-pen-spec (find-theme :light) :cursor) "r1f1f1f1f,1f1f1f1f,1f1f1f1f")
+  (is-equal (theme-pen-spec (find-theme :light) :selection) "rb8b8b8b8,d4d4d4d4,ffffffff")
+  (is-equal (theme-pen-spec (find-theme :one-dark) :cursor) "r52525252,8b8b8b8b,ffffffff")
+  (with-theme-state ()
+    ;; A theme without a :cursor of its own takes the parent's, then the default's.
+    (define-theme :inherit-cursor (:inherits :gruvbox-dark) :keyword "#ffffff")
+    (is-equal (theme-pen-spec (find-theme :inherit-cursor) :cursor) "rebebebeb,dbdbdbdb,b2b2b2b2")
+    (is-equal (theme-pen-spec (find-theme :inherit-cursor) :selection) "r50505050,49494949,45454545")))
+
 (deftest the-shallow-screen-rule-is-a-function-of-depth-and-theme
   (let ((light (find-theme :light)) (dark (find-theme :dark)))
     ;; A light theme paints its text and background on any screen.

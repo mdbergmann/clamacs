@@ -234,15 +234,28 @@ map's order.  The free slot is white."
               (if r (list r g b) (list 255 255 255))))
           *theme-pen-keys*))
 
-(defun theme-background-spec (theme)
-  "THEME's :BG as a MUI image spec, `2:rrrrrrrr,gggggggg,bbbbbbbb' -- an
-RGB colour, each component a 32-bit value with the byte repeated, the
-form MUIA_Background takes.  NIL when the theme has no :BG."
-  (multiple-value-bind (r g b) (theme-rgb (theme-resolve theme :bg))
+(defun theme-rgb-spec (theme key)
+  "THEME's KEY as MUI spells an RGB colour: `rrrrrrrr,gggggggg,bbbbbbbb',
+each component a 32-bit value with the byte repeated.  NIL when the theme
+has no KEY."
+  (multiple-value-bind (r g b) (theme-rgb (theme-resolve theme key))
     (and r
          (flet ((wide (c) (* c #x01010101)))
            (string-downcase
-            (format nil "2:~8,'0x,~8,'0x,~8,'0x" (wide r) (wide g) (wide b)))))))
+            (format nil "~8,'0x,~8,'0x,~8,'0x" (wide r) (wide g) (wide b)))))))
+
+(defun theme-background-spec (theme)
+  "THEME's :BG as a MUI image spec, `2:rrrrrrrr,gggggggg,bbbbbbbb' -- the
+form MUIA_Background takes.  NIL when the theme has no :BG."
+  (let ((rgb (theme-rgb-spec theme :bg)))
+    (and rgb (concatenate 'string "2:" rgb))))
+
+(defun theme-pen-spec (theme key)
+  "THEME's KEY (:CURSOR, :SELECTION) as a MUI pen spec,
+`rrrrrrrrr,gggggggg,bbbbbbbb' -- what a MUI_PenSpec holds for an RGB
+colour, the form MUI_ObtainPen takes.  NIL when the theme has no KEY."
+  (let ((rgb (theme-rgb-spec theme key)))
+    (and rgb (concatenate 'string "r" rgb))))
 
 ;;; The Amiga's shallow-screen rule: on a Workbench with 16 colours or
 ;;; fewer ObtainBestPen answers nearest matches, and a dark theme's text on

@@ -100,6 +100,14 @@
 (defconstant +tef-export-block-full-lines+ 1)
 (defconstant +tef-export-block-take-block+ 2)
 (defconstant +tef-set-block-color+ 1)
+;;; The class's prefs items (mcp/TextEditor_mcp.h) it asks its object for
+;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec and the
+;;; marked block's, which the theme answers (TEXT-GET-CONFIG-ITEM).
+(defconstant +tecfg-cursor-color+ #xad000054)
+(defconstant +tecfg-marked-color+ #xad00005a)
+;; struct MUIP_GetConfigItem { ULONG MethodID; ULONG id; IPTR *storage; }
+(defconstant +gci-id-offset+ 4)
+(defconstant +gci-storage-offset+ 8)
 
 ;;; The oldest TextEditor.mcc the editor works with: SetBlock arrived in
 ;;; 15.29 (vendor/texteditor/ChangeLog); the horizontal slider in 15.48.
@@ -347,9 +355,12 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; the screen the first text object was set up on (NIL before that),
   ;; and what the two decide (THEME-PLAN): the eight pens, whether plain
   ;; text is painted with the theme's text pen, the background spec in a
-  ;; foreign buffer MUI reads (NIL when the class keeps its own), and the
-  ;; message the shallow-screen rule owes the user, shown once.
+  ;; foreign buffer MUI reads (NIL when the class keeps its own), the
+  ;; cursor's and the selection's pen specs the same way (NIL: the user's
+  ;; prefs), and the message the shallow-screen rule owes the user, shown
+  ;; once.
   theme screen-depth (theme-rgb '()) (text-pen-p nil) bg-buf (bg-spec nil)
+  cursor-buf (cursor-spec nil) marked-buf (marked-spec nil)
   (theme-note nil) (shallow-noted nil)
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
@@ -549,7 +560,9 @@ exactly the object's."
 ;;; which it keeps (FLG_OwnBackground) instead of its configured one; the
 ;;; text colour has no attribute, so plain text is painted with the
 ;;; theme's text pen by the clear every recolour makes (COLOUR-VALUE).  The
-;;; cursor, the selection and the chrome stay the user's MUI prefs.  What
+;;; cursor and the selection are prefs items the class asks its object for
+;;; (TEXT-GET-CONFIG-ITEM answers the theme's where the background is the
+;;; theme's); the chrome stays the user's MUI prefs.  What
 ;;; the theme and the screen's depth decide is settled once, at the first
 ;;; Setup (THEME-PLAN), and again at every EDITOR-APPLY-THEME.
 
@@ -576,6 +589,7 @@ first window exists.  8 when the screen cannot be locked."
           (intui:unlock-pub-screen nil screen)))))
 
 (defconstant +bg-buffer-size+ 32)   ; "2:rrrrrrrr,gggggggg,bbbbbbbb" is 29
+(defconstant +pen-spec-size+ 32)    ; struct MUI_PenSpec; "rrrrrrrrr,..." is 28
 
 (defun mui-theme (editor)
   (or (mui-editor-theme editor) (active-theme)))
@@ -590,14 +604,23 @@ once."
          (text-pens (theme-text-pens-p theme depth)))
     (setf (mui-editor-theme-rgb editor) (theme-pens theme)
           (mui-editor-text-pen-p editor) text-pens
-          (mui-editor-bg-spec editor) (and text-pens (theme-background-spec theme)))
+          (mui-editor-bg-spec editor) (and text-pens (theme-background-spec theme))
+          ;; The cursor and the selection go with the background: a
+          ;; theme's cursor over the class's own background would be a
+          ;; colour the user never chose on one they did.
+          (mui-editor-cursor-spec editor) (and text-pens (theme-pen-spec theme :cursor))
+          (mui-editor-marked-spec editor) (and text-pens (theme-pen-spec theme :selection)))
     (when (and (not text-pens) (not (mui-editor-shallow-noted editor)))
       (setf (mui-editor-shallow-noted editor) t
             (mui-editor-theme-note editor)
             (format nil "~A: a dark theme keeps the screen's text and background on a ~D-colour screen"
                     (theme-label theme) (ash 1 depth))))
     (when (mui-editor-bg-spec editor)
-      (store-text (mui-editor-bg-buf editor) +bg-buffer-size+ (mui-editor-bg-spec editor)))))
+      (store-text (mui-editor-bg-buf editor) +bg-buffer-size+ (mui-editor-bg-spec editor)))
+    (when (mui-editor-cursor-spec editor)
+      (store-text (mui-editor-cursor-buf editor) +pen-spec-size+ (mui-editor-cursor-spec editor)))
+    (when (mui-editor-marked-spec editor)
+      (store-text (mui-editor-marked-buf editor) +pen-spec-size+ (mui-editor-marked-spec editor)))))
 
 (defun show-theme-note (editor doc)
   "The message THEME-PLAN left, in DOC's echo area, once."
@@ -716,6 +739,25 @@ paints one."
       (release-text-pens data object)))
   (mui:do-super-method class object message))
 
+(defun text-get-config-item (editor class object message)
+  "MUIM_GetConfigItem, which the class asks its object for each of its
+prefs at Setup (InitConfig, inside the superclass's MUIM_Setup): the
+cursor's and the marked block's pen specs are the theme's on an object
+that holds the theme's background -- the class's default cursor is MUI's
+shine pen, white on a light theme's white -- and whatever the user's
+prefs say on any other, as for every other item."
+  (let* ((id (ffi:peek-u32 message +gci-id-offset+))
+         (buf (cond ((= id +tecfg-cursor-color+)
+                     (and (mui-editor-cursor-spec editor) (mui-editor-cursor-buf editor)))
+                    ((= id +tecfg-marked-color+)
+                     (and (mui-editor-marked-spec editor) (mui-editor-marked-buf editor))))))
+    (if (and buf (text-background-owned-p (mui:inst-data class object)))
+        (let ((storage (ffi:peek-u32 message +gci-storage-offset+)))
+          (when (/= storage 0)
+            (ffi:poke-u32 (ffi:make-foreign-pointer storage) (object-address buf) 0))
+          1)
+        (mui:do-super-method class object message))))
+
 (defmethod editor-apply-theme ((editor mui-editor) theme)
   "THEME remembered, and the windows marked for THEME-REPAINT.  Before the
 first window that window's Setup paints it."
@@ -758,9 +800,17 @@ still be inside the window that asked."
                (data (and object (text-instance-data editor object)))
                (painted (and data (text-background-owned-p data))))
           (when (and object (window-open-p window))
-            (mui:set-attrs window m:+muia-window-open+ nil)
-            (apply-text-background editor data object doc)
-            (mui:set-attrs window m:+muia-window-open+ t)
+            ;; Where the window is and how big the user made it, read
+            ;; while it is open, and given back to the closed window
+            ;; before it opens: a reopen alone brings the window up at
+            ;; its creation size (MUI 4 on MorphOS), the resize lost.
+            (multiple-value-bind (left top width height) (window-geometry window)
+              (mui:set-attrs window m:+muia-window-open+ nil)
+              (apply-text-background editor data object doc)
+              (mui:set-attrs window
+                             m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
+                             m:+muia-window-width+ width m:+muia-window-height+ height)
+              (mui:set-attrs window m:+muia-window-open+ t))
             (cond ((doc-lisp-mode doc) (colour-all doc))
                   (painted (clear-text-colours doc))))))
       (when (and active (not (doc-closing active)))
@@ -847,6 +897,8 @@ MUI's next handler -- the class's node -- edits."
              (text-setup editor class object message))
             ((= id m:+muim-cleanup+)
              (text-cleanup editor class object message))
+            ((= id m:+muim-get-config-item+)
+             (text-get-config-item editor class object message))
             ((= id m:+muim-go-active+)
              (let ((result (mui:do-super-method class object message)))
                (set-window-keys object *text-window-keys*)
@@ -2595,8 +2647,11 @@ function: an image is saved before it runs and restores into it."
          (mui:with-foreign-pool ()
            (setf (mui-editor-ie editor) (mui:pool-alloc +ie-size+)
                  (mui-editor-mapbuf editor) (mui:pool-alloc 8)
-                 ;; The theme's background spec, which MUI reads
-                 (mui-editor-bg-buf editor) (mui:pool-alloc +bg-buffer-size+))
+                 ;; The theme's background spec and its two pen specs,
+                 ;; which MUI reads
+                 (mui-editor-bg-buf editor) (mui:pool-alloc +bg-buffer-size+)
+                 (mui-editor-cursor-buf editor) (mui:pool-alloc +pen-spec-size+)
+                 (mui-editor-marked-buf editor) (mui:pool-alloc +pen-spec-size+))
            (create-classes editor)
            (install-hooks editor)
            ;; The menu strip goes in at creation (MUIA_Application_Menustrip

@@ -198,10 +198,23 @@ TextEditor.mcc (read in `vendor/texteditor/mcc/InitConfig.c`,
   pens, obtains the theme's, sets the background, and runs `colour-all`
   on every document -- the function exists for the file-load case.
 
-What it does not honour, on purpose: the cursor, selection and
-highlight colours (the class's settings, no attribute), and the chrome
--- window, status line, minibuffer, the panels -- which follows the
-user's MUI prefs as every MUI application does.  And the **shallow
+- **The cursor and the selection** (since 2026-09-30): the class's
+  settings, no attribute -- but it reads them by asking its own object
+  `MUIM_GetConfigItem` at Setup (`InitConfig`), and the subclass answers
+  `MUICFG_TextEditor_CursorColor` and `_MarkedColor` with the theme's
+  `:cursor` and `:selection` as `r`-form pen specs
+  (`theme-pen-spec`) on an object that holds the theme's background,
+  the user's prefs on every other object and item.  The class's default
+  cursor is the shine pen, white on Light's white: invisible until
+  this.
+- **A switch keeps the window's size**: the reopen alone brings a
+  window up at its creation size on MUI 4, so `theme-repaint` reads
+  `LeftEdge/TopEdge/Width/Height` while the window is open and sets
+  them on the closed window before opening it.
+
+What it does not honour, on purpose: the highlight colour, and the
+chrome -- window, status line, minibuffer, the panels -- which follows
+the user's MUI prefs as every MUI application does.  And the **shallow
 screen rule**: on a Workbench with 16 colours or fewer the pens come
 back as nearest matches and a dark background makes the text
 unreadable, so when the screen's depth (`struct BitMap.Depth` off the

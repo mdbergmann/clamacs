@@ -397,6 +397,24 @@
       (type-text repl "(+ 1 1)")
       (is (search "CL-USER> (+ 1 1)|" (transcript repl))))))
 
+(deftest a-note-above-the-prompt-is-coloured
+  ;; The widget's own change notification colours the cursor's line only
+  ;; -- the prompt's, after an insert above it -- so the transcript
+  ;; colours the lines it inserted itself: a note is a comment, painted in
+  ;; the comment colour and not left in the class's own text pen (black
+  ;; on a dark theme on MUI).
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (fake-deliver tr 0 "Package is now CL-USER")
+    (run-command doc 'clamacs-eval-last-sexp)
+    (fake-deliver tr 0 "")
+    (setf (fake-colours repl) '())
+    (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "1" "2"))
+    (is-equal (transcript repl)
+              (lines "; REPL attached to CLAMIGA" "; Evaluated: 1" ";   2" "CL-USER> |"))
+    (is-equal (fake-line-colours repl 1) '((0 14 :comment)))
+    (is-equal (fake-line-colours repl 2) '((0 5 :comment)))))
+
 (deftest the-eval-note-text
   (is-equal (repl-eval-note-text 0 "FOO") (lines "; Evaluated: FOO" ""))
   (is-equal (repl-eval-note-text 0 (lines "1" "2" "3")) (lines "; Evaluated: 1" ";   2" ";   3" ""))

@@ -202,13 +202,22 @@ screen's depth and checked at every Setup (`theme-plan`,
 its token colours only (`theme-text-pens-p`, pure, host-tested) and says
 so once in the echo area; the background and text pen go on Lisp-mode
 documents only (`doc-lisp-mode-changed` follows a `C-x C-w` across the
-line), the rest -- cursor, selection, chrome, plain buffers -- staying
-the user's MUI prefs; and **a switch closes and reopens the document
-windows** (`theme-repaint`, from the loop's housekeeping, never from a
-hook), because on MUI 3.8 a `MUIA_Background` set on a set-up object
-does not repaint it and a changed colour map repaints nothing -- measured
-in FS-UAE, the screenshot of `SWITCH=... run-lisp-editor.sh` is the
-proof.  The Buffers plumbing became `dyn-group`s (one per dynamic group,
+line), and with them the cursor and the selection since 2026-09-30 (the
+class asks its object `MUIM_GetConfigItem` for its prefs at Setup;
+`text-get-config-item` answers the theme's `:cursor` / `:selection` pen
+specs on an object holding the theme's background -- the class's default
+cursor is MUI's shine pen, white on Light's white), the rest -- chrome,
+plain buffers -- staying the user's MUI prefs; and **a switch closes and
+reopens the document windows** (`theme-repaint`, from the loop's
+housekeeping, never from a hook), because on MUI 3.8 a
+`MUIA_Background` set on a set-up object does not repaint it and a
+changed colour map repaints nothing -- measured in FS-UAE, the screenshot
+of `SWITCH=... run-lisp-editor.sh` is the proof.  The reopen carries the
+window's geometry across (read open, set on the closed window): MUI 4
+brings a reopened window up at its creation size otherwise.  A REPL
+transcript insert colours its own lines (`repl-insert`): the widget's
+change notification colours the cursor's line only, and a note above
+the prompt stayed in the class's black text pen on a dark theme.  The Buffers plumbing became `dyn-group`s (one per dynamic group,
 item ids `+dynamic-item-id-base+` times the group's number), so the
 View menu is in the strip and `THEMES` works over the port;
 `drive.rexx` has the THEMES leg (the pick writes `*init-file*`, which

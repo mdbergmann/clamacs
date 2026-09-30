@@ -77,6 +77,11 @@ along with the text when they sit at or after it."
     (when (> len 0)
       (doc-set-point doc index)
       (doc-insert doc text)
+      ;; The lines the text landed on are coloured here: the widget's own
+      ;; change notification colours the cursor's line, which is the line
+      ;; after a text that ends in a newline -- so a note above the prompt
+      ;; stayed in the class's own text pen, black on a dark theme.
+      (colour-lines doc (doc-index-line doc index) (doc-index-line doc (+ index len -1)))
       (when (>= cursor index) (incf cursor len))
       (when (and (repl-window-prompt-start state) (>= (repl-window-prompt-start state) index))
         (incf (repl-window-prompt-start state) len))
