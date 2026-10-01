@@ -74,7 +74,7 @@
 (defun symbol-at-point (doc)
   "The symbol under or before the cursor: its text, and its start and end
 as document indices, three values; or NIL."
-  (multiple-value-bind (text base point) (doc-context doc)
+  (multiple-value-bind (text base point) (doc-context doc 0)
     (when text
       (multiple-value-bind (s e) (sexp-symbol-at-point text point)
         (when s
@@ -82,7 +82,7 @@ as document indices, three values; or NIL."
 
 (defun operator-at-point (doc)
   "The head of the innermost code list around the cursor, or NIL."
-  (multiple-value-bind (text base point) (doc-context doc)
+  (multiple-value-bind (text base point) (doc-context doc 0)
     (declare (ignore base))
     (when text
       (multiple-value-bind (s e) (sexp-operator-at-point text point)
@@ -274,6 +274,20 @@ nothing else on those."
   (when (arglist-lookup doc nil)
     (setf (intro-arglist-index state) idx
           (intro-arglist-serial state) (doc-edit-serial doc))))
+
+(defun arglist-idle-pending-p (doc)
+  "Whether another tick of the idle timer could still do something for
+DOC: the cursor is not where the last tick saw it, or the arglist where it
+rests was not looked up since the last edit.  A frontend that keeps its
+timer up only while there is work takes it down on NIL."
+  (let ((state (doc-intro doc)))
+    (and (not (doc-closing doc))
+         (doc-lisp-mode doc)
+         (eq (editor-active-document (doc-editor doc)) doc)
+         (not (minibuffer-open-p doc))
+         (let ((idx (doc-point doc)))
+           (or (not (eql idx (intro-idle-index state)))
+               (not (arglist-settled-p doc state idx)))))))
 
 (define-command clamacs-arglist (doc arg)
   "Show the argument list of the function at the cursor in the echo area."

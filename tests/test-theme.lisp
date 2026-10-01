@@ -577,6 +577,38 @@ THUNK's value."
       (is (eq *theme* (find-theme :dark)))
       (is-equal (read-file-text *init-file*) (lines "(show-minimap nil)" "(load-theme :dark)")))))
 
+(deftest the-display-settings-are-kept-the-themes-way
+  ;; SYNTAX-COLOURING and PAREN-MATCHING: the flag, the form in the init
+  ;; file; a session-only change and the init file's own form leave the
+  ;; file alone; the commands toggle.
+  (with-theme-state ()
+    (let ((*syntax-colouring* t) (*paren-matching* t))
+      (is (null (syntax-colouring nil)))
+      (is (null *syntax-colouring*))
+      (is-equal (read-file-text *init-file*)
+                (format nil "~A~%(syntax-colouring nil)~%" *display-persist-comment*))
+      (is (null (paren-matching nil)))
+      (is (null *paren-matching*))
+      (is (search "(paren-matching nil)" (read-file-text *init-file*)))
+      (is (search "(syntax-colouring nil)" (read-file-text *init-file*)))
+      (is (eq (syntax-colouring :yes :save nil) t))
+      (is (search "(syntax-colouring nil)" (read-file-text *init-file*)))
+      (syntax-colouring t)
+      (is (search "(syntax-colouring t)" (read-file-text *init-file*)))
+      ;; A file of its own name: LOAD's FASL cache goes by the path and
+      ;; the second it was written in, and the other tests' init files
+      ;; share `theme-rc'.
+      (let ((rc (temp-file "display-rc" (lines "(syntax-colouring nil)" "(paren-matching t)"))))
+        (unwind-protect
+             (let ((*init-file* rc))
+               (is-equal (load-init-file rc) t)
+               (is (null *syntax-colouring*))
+               (is (eq *paren-matching* t))
+               (is-equal (read-file-text rc) (lines "(syntax-colouring nil)" "(paren-matching t)")))
+          (delete-quietly rc)))
+      (is (find-command "clamacs-toggle-syntax-colouring"))
+      (is (find-command "clamacs-toggle-paren-matching")))))
+
 (deftest the-font-size-is-kept-the-themes-way
   ;; The form: replaced in place or appended under its own comment, NIL
   ;; spelled out.

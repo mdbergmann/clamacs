@@ -433,6 +433,46 @@
       (is-equal base 0)
       (is-equal (length text) (doc-end doc)))))
 
+(deftest context-starts-at-the-nearest-defun
+  ;; What a keystroke scans is the defun being edited, not the window
+  ;; above it: the text starts at the cursor's own defun, and with no
+  ;; lines asked for below it ends with the cursor's line.
+  (let* ((doc (make-fake (numbered-defuns 300)))
+         (index (search "(defun f250 " (fake-text doc))))
+    (doc-set-point doc (+ index 3))
+    (multiple-value-bind (text base point) (doc-context doc 0)
+      (is-equal base index)
+      ;; (A line's newline comes with it unless it is the buffer's last.)
+      (is-equal text (lines "(defun f250 ()" ""))
+      (is-equal point 3))
+    ;; On the defun's second line the start is still its first.
+    (doc-set-point doc (+ index (length "(defun f250 ()") 3))
+    (multiple-value-bind (text base point) (doc-context doc 0)
+      (is-equal base index)
+      (is-equal text (lines "(defun f250 ()" "  250)" ""))
+      (is-equal (+ base point) (doc-point doc)))
+    ;; Lines below when asked for: a paren's partner may be there.
+    (multiple-value-bind (text base) (doc-context doc 2)
+      (is-equal base index)
+      (is-equal text (lines "(defun f250 ()" "  250)" "(defun f251 ()" "  251)" "")))))
+
+(deftest a-defun-start-far-above-is-found
+  ;; Further up than the first look reaches: the search widens.
+  (let* ((body (format nil "~{~A~%~}" (loop for i below 100
+                                            collect (format nil "  (x ~D)" i))))
+         (doc (make-fake (concatenate 'string
+                                      (lines "(defun a ()" "  1)" "(defun b ()" "")
+                                      body "  2)"))))
+    (doc-set-point doc (doc-end doc))
+    (multiple-value-bind (text base point) (doc-context doc 0)
+      (is-equal base (search "(defun b" (fake-text doc)))
+      (is-equal (subseq text 0 8) "(defun b")
+      (is-equal (+ base point) (doc-end doc))))
+  (is-equal (defun-start-offset (lines "(a" " (b" "(c" " d")) 7)
+  (is-equal (defun-start-offset "(a") 0)
+  (is-equal (defun-start-offset (lines " (a" " (b")) nil)
+  (is-equal (defun-start-offset "") nil))
+
 ;;; --- colouring and the paren highlight -----------------------------------
 
 (deftest colour-all-colours-every-line
@@ -521,6 +561,59 @@
     (type-keys doc ")")
     (is-equal (doc-paren-shown doc) '(0 . 0))
     (is-equal (fake-line-colours doc 0) '((0 1 :paren-match) (9 10 :number)))))
+
+(deftest an-open-paren-lights-its-partner-below
+  (let ((doc (make-fake (lines "(defun f ()" "  (|a" "   b))"))))
+    (note-cursor-moved doc)
+    (is-equal (doc-paren-shown doc) '(2 . 4))
+    (is-equal (paren-before-point doc) #\()
+    (doc-set-point doc (1+ (doc-point doc)))
+    (is-equal (paren-before-point doc) nil)
+    (note-cursor-moved doc)
+    (is-equal (doc-paren-shown doc) nil)
+    (doc-set-point doc 0)
+    (is-equal (paren-before-point doc) nil)))
+
+(deftest colouring-switched-off-paints-plain
+  ;; *SYNTAX-COLOURING* NIL: no token is coloured, by a full repaint or by
+  ;; a typed key, and what was coloured before is cleared.
+  (let ((doc (make-fake (lines "(defun f () ; note" "  \"s\" :k 42|"))))
+    (colour-all doc)
+    (is (fake-line-colours doc 1))
+    (let ((*syntax-colouring* nil))
+      (colour-all doc)
+      (is-equal (fake-line-colours doc 0) '())
+      (is-equal (fake-line-colours doc 1) '())
+      (type-keys doc "SPC 7")
+      (is-equal (fake-line-colours doc 1) '())
+      (colour-lines doc 0 1)
+      (is-equal (fake-line-colours doc 0) '())
+      (is-equal (fake-line-colours doc 1) '()))
+    (note-text-changed doc)
+    (is-equal (fake-line-colours doc 1) '((2 5 :string) (6 8 :keyword) (9 11 :number) (12 13 :number)))))
+
+(deftest paren-matching-switched-off-lights-nothing
+  (let ((doc (make-fake (lines "(a" " (b c)|)"))))
+    (note-cursor-moved doc)
+    (is-equal (doc-paren-shown doc) '(1 . 1))
+    (let ((*paren-matching* nil))
+      ;; The one that was lit is taken down, no other goes up.
+      (note-cursor-moved doc)
+      (is-equal (doc-paren-shown doc) nil)
+      (is-equal (fake-line-colours doc 1) '())
+      (type-keys doc "C-f")
+      (is-equal (doc-paren-shown doc) nil))
+    (note-cursor-moved doc)
+    (is-equal (doc-paren-shown doc) '(0 . 0))))
+
+(deftest a-paren-finds-its-partner-above-a-column-0-paren
+  ;; Code that is not indented yet: the nearest `(' in column 0 is not the
+  ;; defun's start, and the match looks again from further up.
+  (let ((doc (make-fake (lines "(a" "(b c)|)"))))
+    (note-cursor-moved doc)
+    (is-equal (doc-paren-shown doc) '(1 . 0))
+    (type-keys doc "C-f")
+    (is-equal (doc-paren-shown doc) '(0 . 0))))
 
 (deftest paren-in-a-string-or-unbalanced-is-not-matched
   (let ((doc (make-fake "(a \")|\" b)")))

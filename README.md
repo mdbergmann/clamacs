@@ -428,6 +428,20 @@ Minimap`.  The Amiga editor has no minimap and does not show the item.
 See `tests/test-host.lisp` (the View menu) and the MINIMAP leg of
 `verify/host/drive.lisp`.
 
+## Syntax colouring and paren matching
+
+Lisp text is coloured by its tokens and the partner of the paren before
+the cursor is lit.  Both follow the typing rather than each key: the
+characters appear first, the colours, the highlight and the status line
+catch up once the keys rest for a moment.  On a slow machine either can
+be switched off: `M-x clamacs-toggle-syntax-colouring` and `M-x
+clamacs-toggle-paren-matching` (`C-u` keeps the change to this session),
+remembered as `(syntax-colouring nil)` and `(paren-matching nil)` forms
+in your init file.  The scanners start at the cursor's defun -- the
+nearest `(` in column 0 above it -- so, as in Emacs, a `(` in column 0
+inside a string or a comment is best indented or escaped.  See
+`tests/test-commands.lisp` and `tests/test-theme.lisp`.
+
 ## Text size
 
 **View > Bigger Text** and **Smaller Text** (`C-x C-+` and `C-x C--`,

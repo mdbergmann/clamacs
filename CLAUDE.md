@@ -505,11 +505,30 @@ list under "Answered during phase 1".
   times a second whether the handler is due or not, so what the loop
   does per wake (`housekeeping`) must be a comparison, not work -- the
   dynamic menus are brought in step only after a wake that ran editor
-  code (`mui-editor-activity`).  `verify/realamiga/run-cpu-idle.sh`
-  measures both (a priority -5 meter task beside the editor, the loop's
-  own account through `loopstats.rexx` -> `loop-stats-report`) and fails
-  when the tick is off its 3.3/s; run it after touching the event loop,
-  the input handlers or anything that runs per tick.
+  code (`mui-editor-activity`).  Since 2026-10-01 (20 % of a real
+  68040 gone in a resting editor) **the timer is up only while there is
+  work**: the loop puts it up after a wake that ran editor code
+  (`arm-idle-timer`), a tick marks it idle once the display is in step
+  and no arglist is pending (`arglist-idle-pending-p`), and the loop --
+  never the tick -- takes it down.  And **what follows a key but is not
+  the edit is held back until the keys rest** (`redisplay`, from the
+  first tick that saw no activity, 150 ms): the notification hooks only
+  note the changed lines and the moved cursor, `after-command` only
+  counts; the colours, the paren highlight, the status line and the
+  menus are brought in step once for however many keys came between.
+  `verify/realamiga/run-cpu-idle.sh` measures it (a priority -5 meter
+  task beside the editor, the loop's own account through
+  `loopstats.rexx` -> `loop-stats-report`) and fails when a resting
+  editor's idle tick still fires (or its loop wakes more than the 13
+  times a second Intuition's ticks cause); run it after touching
+  the event loop, the input handlers or anything that runs per tick.
+  The pure layer's part: what a keystroke scans starts at the cursor's
+  defun (`doc-context-from-defun`, the NEAREST `(` in column 0; the old
+  200-line window is `doc-context-window`, kept for indentation and as
+  the paren match's second look), `show-paren` reads one character
+  before it reads any context, and `*syntax-colouring*` /
+  `*paren-matching*` (`theme.lisp`'s `syntax-colouring` /
+  `paren-matching`, kept the minimap's way) switch the two off.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
   the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.

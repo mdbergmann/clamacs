@@ -72,8 +72,8 @@ class's own arrows, selection and self-insert keep working."
 ;;; The context: text the sexp scanner can trust
 ;;; ------------------------------------------------------------------
 
-;;; Lines either side of the cursor for the things that run on every
-;;; keystroke.
+;;; Lines below the cursor for the things that run on a keystroke and
+;;; look ahead (a paren's partner, `C-k' with a count).
 (defconstant +context-lines+ 200)
 
 (defun context-skip (text first-line-p)
@@ -117,10 +117,63 @@ these: a defun whose closing paren falls outside it reads as unbalanced.
 They are single user actions, not per-keystroke work."
   (doc-context-range doc 0 (1- (doc-line-count doc))))
 
-(defun doc-context (doc)
-  "The window around the cursor, for what runs on every keystroke:
-colouring, paren matching, indentation.  It reaches forward as well as back,
-since a paren typed at point can have its partner below."
+;;; How far above a line the search for its defun's start looks at first,
+;;; in lines; fourfold further each time it finds none, up to the top.
+(defconstant +defun-search-lines+ 32)
+
+(defun defun-start-offset (text)
+  "The offset of the LAST `(' in column 0 of TEXT, whose offset 0 is a
+line's start; NIL when it holds none."
+  (declare (simple-string text))
+  (let ((i (1- (length text))))
+    (declare (fixnum i))
+    (loop
+      (when (< i 0)
+        (return nil))
+      (when (and (char= (schar text i) #\()
+                 (or (= i 0) (char= (schar text (1- i)) #\Newline)))
+        (return i))
+      (decf i))))
+
+(defun doc-context-from-defun (doc y0 y1)
+  "Lines Y0..Y1 with what is above them back to the NEAREST `(' in column
+0 -- the start of the defun line Y0 is in, where the scanners' state is
+known to be plain code (Emacs's convention: a `(' in column 0 inside a
+string or a comment must be escaped or indented).  Two values: the text
+and the index of its first character in the document.  The top of the
+buffer stands in when there is no such paren above.
+
+What runs on a keystroke scans from here, so it scans the defun being
+edited and not the 200 lines above it: on a 68040 that was most of what
+a typed character cost."
+  (let* ((last (1- (doc-line-count doc)))
+         (y0 (max 0 (min y0 last)))
+         (y1 (max y0 (min y1 last)))
+         (span +defun-search-lines+))
+    (declare (fixnum span))
+    (loop
+      (let* ((top (max 0 (- y0 span)))
+             (above (doc-lines-text doc top y0))
+             (offset (or (defun-start-offset above)
+                         (and (= top 0) 0))))
+        (when offset
+          (let ((base (+ (doc-line-index doc top) offset)))
+            (return
+              (values (cond ((> y1 y0)
+                             (doc-lines-text doc (doc-index-line doc base) y1))
+                            ((= offset 0) above)
+                            (t (subseq above offset)))
+                      base))))
+        (setq span (* span 4))))))
+
+(defun doc-context-window (doc)
+  "The window around the cursor, +CONTEXT-LINES+ either side, from the
+FIRST `(' in column 0 in it (the whole buffer when it holds none): for
+indentation, and for a paren whose partner the cursor's defun did not
+hold -- code that is not indented yet has a `(' in column 0 on lines
+that start no defun, and the first one of 200 lines is far more likely
+to be a real start than the nearest.  Not for every keystroke: it scans
+the 200 lines."
   (let* ((y (doc-index-line doc (doc-point doc)))
          (last (1- (doc-line-count doc)))
          (y1 (min last (+ y +context-lines+))))
@@ -128,8 +181,19 @@ since a paren typed at point can have its partner below."
         (doc-context-range doc (- y +context-lines+) y1)
       (if text
           (values text base point)
-          ;; No `(' in column 0 in the window.
           (doc-context-full doc)))))
+
+(defun doc-context (doc &optional (ahead +context-lines+))
+  "The text around the cursor for what runs on a keystroke -- paren
+matching, indentation, the operator at point: from the start of the
+cursor's defun (DOC-CONTEXT-FROM-DEFUN) to AHEAD lines below the cursor's,
+since a paren at point can have its partner below; a caller that only
+looks back says 0.  Three values: the text, the index of its first
+character in the document, and the cursor as an offset into it."
+  (let* ((point (doc-point doc))
+         (y (doc-index-line doc point)))
+    (multiple-value-bind (text base) (doc-context-from-defun doc y (+ y ahead))
+      (values text base (max 0 (min (- point base) (length text)))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Helpers
@@ -503,7 +567,7 @@ in the text keeps its position relative to it."
                                     (+ (- cx old) column))))))
 
 (defun indent-current-line (doc)
-  (multiple-value-bind (text base point) (doc-context doc)
+  (multiple-value-bind (text base point) (doc-context-window doc)
     (declare (ignore base))
     (let ((column (indent-for-line text (indent-line-start text point))))
       ;; NIL inside a multi-line string: reindenting would edit the string.
@@ -543,13 +607,24 @@ in the text keeps its position relative to it."
 ;;; and NOTE-TEXT-CHANGED from the widget's notifications.
 ;;; ------------------------------------------------------------------
 
+(defvar *syntax-colouring* t
+  "Whether Lisp text is coloured by its tokens.  NIL paints it plain: no
+line is tokenized, which is what a keystroke costs most on a slow machine.
+SYNTAX-COLOURING (theme.lisp) is the setting's one entrance.")
+
+(defvar *paren-matching* t
+  "Whether the partner of the paren before the cursor is lit.
+PAREN-MATCHING (theme.lisp) is the setting's one entrance.")
+
 (defun colour-kind-p (kind)
   (member kind '(:comment :string :char :keyword :number :defining)))
 
 (defun colour-one-line (doc y line state)
-  (let ((tokens (tokenize-line line state)))
+  (let ((tokens (and *syntax-colouring* (tokenize-line line state))))
     ;; Clear first: a token that shrank must not leave its old colour behind
-    ;; on the characters it no longer covers.
+    ;; on the characters it no longer covers.  (And the clear is what
+    ;; paints plain text in a theme's text colour: it stays when the
+    ;; colouring is off.)
     (when (> (length line) 0)
       (doc-colour doc y 0 (length line) nil))
     (dolist (token tokens)
@@ -583,16 +658,18 @@ its newline); a trailing newline does not open another line."
           (incf y))))))
 
 (defun colour-lines (doc y0 y1)
-  "Recolour lines Y0 to Y1.  The context starts at a defun, where the
-tokenizer state is known to be plain code -- so the state carried down to
-the lines is correct without rescanning the whole file.  Several lines
+  "Recolour lines Y0 to Y1.  The context starts at the lines' defun, where
+the tokenizer state is known to be plain code -- so the state carried down
+to the lines is correct without rescanning the whole file.  Several lines
 are painted with the display held back; one line, the keystroke's case,
-is not worth the repaint that ends the hold."
+is not worth the repaint that ends the hold.  With the colouring off the
+lines are painted plain, and nothing above them is read."
   (when (doc-lisp-mode doc)
-    (multiple-value-bind (text base) (doc-context-range doc (- y0 +context-lines+) y1)
-      (unless text
-        ;; No `(' in column 0 in the window.
-        (multiple-value-setq (text base) (doc-context-full doc)))
+    (multiple-value-bind (text base)
+        (if *syntax-colouring*
+            (doc-context-from-defun doc y0 y1)
+            (let ((y0 (max 0 y0)))
+              (values (doc-lines-text doc y0 y1) (doc-line-index doc y0))))
       (let ((state (make-tok-state))
             (y (doc-index-line doc base)))
         (flet ((paint ()
@@ -611,6 +688,17 @@ is not worth the repaint that ends the hold."
   "Recolour one line."
   (colour-lines doc line-number line-number))
 
+(defun paren-before-point (doc)
+  "The paren just before the cursor, or NIL: one character read, so that
+a cursor that is not behind a paren -- nearly every keystroke -- costs
+the paren highlight no more than that."
+  (let ((point (doc-point doc)))
+    (and (> point 0)
+         (let ((before (doc-text doc (1- point) point)))
+           (and (= (length before) 1)
+                (sx-paren-p (char before 0))
+                (char before 0))))))
+
 (defun show-paren (doc)
   "Highlight the partner of the paren BEFORE point, which is where the
 cursor sits after typing a `)' -- Emacs's rule."
@@ -620,13 +708,24 @@ cursor sits after typing a `)' -- Emacs's rule."
       (when shown
         (doc-colour doc (car shown) (cdr shown) (1+ (cdr shown)) nil)
         (setf (doc-paren-shown doc) nil)))
-    (multiple-value-bind (text base point) (doc-context doc)
-      (let ((partner (and (> point 0)
-                          (sexp-match-paren text (1- point)))))
-        (when partner
-          (multiple-value-bind (y x) (doc-index-line doc (+ base partner))
-            (doc-colour doc y x (1+ x) :paren-match)
-            (setf (doc-paren-shown doc) (cons y x))))))))
+    (let ((paren (and *paren-matching* (paren-before-point doc))))
+      (when paren
+        ;; A closing paren's partner is above, in the cursor's defun; only
+        ;; an opening one has it below.
+        (flet ((partner (text base point)
+                 (let ((partner (and (> point 0)
+                                     (sexp-match-paren text (1- point)))))
+                   (and partner (+ base partner)))))
+          (let ((index (or (multiple-value-call #'partner
+                             (doc-context doc (if (member paren '(#\) #\])) 0 +context-lines+)))
+                           ;; None in the cursor's defun: unbalanced, or
+                           ;; the defun starts further up than its nearest
+                           ;; `(' in column 0.
+                           (multiple-value-call #'partner (doc-context-window doc)))))
+            (when index
+              (multiple-value-bind (y x) (doc-index-line doc index)
+                (doc-colour doc y x (1+ x) :paren-match)
+                (setf (doc-paren-shown doc) (cons y x))))))))))
 
 (defun note-cursor-moved (doc)
   (show-paren doc))

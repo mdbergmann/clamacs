@@ -13,9 +13,11 @@
 # the CPU 95 % busy while Clamacs is up, and typing lags.  It was the
 # arglist idle timer at 38 ticks a second (MUI 3.8 reads ihn_Millis as
 # plain milliseconds), and the dynamic menus rebuilt on every wake of
-# MUI's own timer (some 60 a second).  The verdict is the tick rate in
-# the editor's own account (LOOP-STATS-REPORT, read through
-# loopstats.rexx): 3.3 a second.  The CPU shares are for the eye: the
+# MUI's own timer (some 60 a second) -- and, on the user's 68040 a day
+# later, a timer handler kept up for good: 20 % of a 68040 for MUI's 60
+# wakes a second and the ticks.  The verdict is the editor's own account
+# (LOOP-STATS-REPORT, read through loopstats.rexx): a resting editor's
+# loop is not woken.  The CPU shares are for the eye: the
 # 040 leg runs under the JIT, whose speed follows the host, so a bare
 # window varies by a fifth.  No FS-UAE config runs a 68040 at its real
 # speed (verify-slow040.fs-uae up in the superproject is not cycle
@@ -23,7 +25,10 @@
 # real hardware is what the tick rate says.
 #
 # Result: build/amiga/cpu-idle-run.log (the phases, the meter's lines,
-# the editor's log) and the summary printed at the end.
+# the editor's log), build/amiga/cpu-idle-after-typing.png (the editor a
+# quarter of a minute after the last key: the colours and the status line
+# trail the keys, and must have arrived) and the summary printed at the
+# end.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -155,6 +160,13 @@ echo "after-typing" >T:cpumeter-note
 C:Wait 15
 echo "=== loop-stats after-typing ===" >>build/amiga/cpu-idle-run.log
 rx Clamacs:verify/realamiga/loopstats.rexx >>build/amiga/cpu-idle-run.log
+; The display is held back while the keys come: photographed now, the
+; typed defun must show its colours and the status line its place.
+delete >NIL: RAM:screenshot.ppm
+cd CLAmiga:
+build/cross/clamiga --no-userinit --heap 16M --non-interactive --load CLAmiga:examples/amiga/gfx/screenshot.lisp >>Clamacs:build/amiga/cpu-idle-run.log
+cd Clamacs:
+copy >NIL: RAM:screenshot.ppm build/amiga/cpu-idle-after-typing.ppm
 echo "=== phase quit ===" >>build/amiga/cpu-idle-run.log
 build/amiga/sendkey C-x C-s DELAY 1
 C:Wait 3
@@ -229,19 +241,41 @@ END {
   for (p in n) printf "%-22s %8d %7.1f%%\n", p, c[p], 100 * (1 - (n[p] / c[p]) / best)
 }' "$OUT/cpumeter.log"
 
-# The verdict is the idle timer's rate in the editor-idle account: 300 ms
-# is 3.3 ticks a second; MUI 3.8 reading the scale flags as nothing gave
-# 38 (the bug this run was written for).  The CPU shares above vary with
-# the host under the JIT and are printed for the eye.
-rate=$(sed -n '/=== loop-stats editor-idle ===/,/=== phase/p' "$RUNLOG" | grep 'method #x8C1A0002' | awk '{sub(/\/s$/, "", $4); print $4}')
-case "$rate" in
+# The photograph of the editor after the typing: PNG when ffmpeg is there.
+if [ -f "$OUT/cpu-idle-after-typing.ppm" ]; then
+	if command -v ffmpeg >/dev/null 2>&1; then
+		ffmpeg -loglevel error -y -i "$OUT/cpu-idle-after-typing.ppm" "$OUT/cpu-idle-after-typing.png" \
+			&& rm -f "$OUT/cpu-idle-after-typing.ppm"
+	fi
+	echo "=== the editor after the typing: $OUT/cpu-idle-after-typing.p[np][gm] ==="
+fi
+
+# The verdict is the editor-idle account (LOOP-STATS-REPORT): a resting
+# editor must not be woken.  The idle timer is up only while the display
+# or the arglist has something to do (ARM-IDLE-TIMER), so in forty idle
+# seconds the tick fires a few times and the loop turns some 13 times a
+# second (Intuition's ticks to the active window, which MUI passes on) --
+# against 60 wakes and 3.3 (once 38) ticks a second with a timer up for
+# good, which on a real 68040 was a fifth of the CPU (2026-10-01).  The
+# CPU shares above vary with the host under the JIT and are printed for
+# the eye.
+idle=$(sed -n '/=== loop-stats editor-idle ===/,/=== phase/p' "$RUNLOG")
+rate_of() { echo "$idle" | grep "$1" | head -1 | awk '{sub(/\/s$/, "", $NF); print $NF}'; }
+wakes=$(rate_of '^  iterations')
+ticks=$(rate_of 'method #x8C1A0002')
+[ -n "$ticks" ] || ticks=0
+case "$wakes" in
 	''|*[!0-9.]*|*.*.*)
-		echo "=== FAIL: no usable idle-tick rate in the editor-idle loop-stats (got '$rate'; was the port answering?) ==="
+		echo "=== FAIL: no usable loop account in the editor-idle loop-stats (got '$wakes'; was the port answering?) ==="
 		exit 1 ;;
 esac
-if awk -v r="$rate" 'BEGIN { exit !(r + 0 > 5) }'; then
-	echo "=== FAIL: the idle timer fires $rate times a second; 300 ms is 3.3 ==="
+if awk -v r="$wakes" 'BEGIN { exit !(r + 0 > 25) }'; then
+	echo "=== FAIL: the resting editor's loop wakes $wakes times a second (a timer handler left up?) ==="
 	exit 1
 fi
-echo "=== PASS: the idle timer fires $rate times a second (300 ms) ==="
+if awk -v r="$ticks" 'BEGIN { exit !(r + 0 > 1) }'; then
+	echo "=== FAIL: the idle timer fires $ticks times a second in a resting editor ==="
+	exit 1
+fi
+echo "=== PASS: the resting editor's loop wakes $wakes times a second, the idle timer fires $ticks ==="
 exit 0

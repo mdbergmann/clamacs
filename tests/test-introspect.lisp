@@ -148,12 +148,15 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (doc-set-point doc (inside-twice-call doc))
     ;; First tick: the cursor has just arrived -- still moving.  A tick
     ;; that looks nothing up says so with NIL: the MUI frontend runs its
-    ;; menu update only on a tick that answers T (3.3 ticks a second,
-    ;; nearly all of them resting).
+    ;; menu update only on a tick that answers T, and keeps its timer up
+    ;; only while ARGLIST-IDLE-PENDING-P says a tick could still look.
+    (is (arglist-idle-pending-p doc))
     (is (null (arglist-idle doc)))
     (is (null (fake-transport-sent tr)))
+    (is (arglist-idle-pending-p doc))
     ;; Second tick at the same place: asked, quietly.
     (is (eq (arglist-idle doc) t))
+    (is (null (arglist-idle-pending-p doc)))
     (deliver-package tr)
     (is-equal (fake-last-sent tr) "ARGLIST twice")
     (is (null (fake-messages doc)))
@@ -168,6 +171,15 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is (null (arglist-idle doc)))
     (is (null (arglist-idle doc)))
     (is-equal (length (fake-sent-commands tr)) 2)
+    (is (null (arglist-idle-pending-p doc)))
+    ;; An edit, or a cursor somewhere else, is work for a tick again.
+    (note-text-changed doc)
+    (is (arglist-idle-pending-p doc))
+    (arglist-idle doc)
+    (is (null (arglist-idle-pending-p doc)))
+    (doc-set-point doc (1+ (doc-point doc)))
+    (is (arglist-idle-pending-p doc))
+    (doc-set-point doc (1- (doc-point doc)))
     ;; Moved within the same call: the operator is the one shown, so the
     ;; lookup ends before the cache.
     (doc-set-point doc (1+ (inside-twice-call doc)))

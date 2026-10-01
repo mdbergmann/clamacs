@@ -632,6 +632,73 @@ has no minimap; there the command only records the choice."
     (message doc "Minimap ~A~A" (if flag "on" "off") (if save "" " (this session)"))))
 
 ;;; ------------------------------------------------------------------
+;;; What the display may leave out: the colouring and the paren highlight
+;;; ------------------------------------------------------------------
+
+;;; Both are work per keystroke -- a line tokenized from its defun's start
+;;; and painted token by token, a paren's partner searched -- and on a
+;;; slow machine a user may rather have the keys.  Two flags
+;;; (commands.lisp's *SYNTAX-COLOURING* and *PAREN-MATCHING*, where the
+;;; painting reads them), each with two entrances -- `M-x
+;;; clamacs-toggle-syntax-colouring' / `clamacs-toggle-paren-matching' and
+;;; the init file's `(syntax-colouring nil)' / `(paren-matching nil)' --
+;;; ending in the function of the form's name, which repaints the open
+;;; Lisp buffers and writes the form into the init file as LOAD-THEME
+;;; writes its own.  Both on by default.
+
+(defparameter *display-persist-comment*
+  ";; Written by M-x clamacs-toggle-syntax-colouring and clamacs-toggle-paren-matching")
+
+(defun display-form-text (head flag)
+  (format nil "(~A ~A)" head (if flag "t" "nil")))
+
+(defun repaint-lisp-documents (editor)
+  "Every open Lisp buffer painted as the two flags say now."
+  (dolist (doc (live-documents editor))
+    (when (doc-lisp-mode doc)
+      (colour-all doc)
+      (show-paren doc))))
+
+(defun display-setting (variable head flag save)
+  "The body of SYNTAX-COLOURING and PAREN-MATCHING: VARIABLE set to FLAG,
+the open buffers repainted, and -- unless SAVE is NIL, or the init file is
+loading its own form -- `(HEAD T-or-NIL)' written into the init file.
+Answers the flag in effect.  Callable from any thread, as LOAD-THEME is."
+  (let ((flag (and flag t)))
+    (set variable flag)
+    (let ((editor *editor*))
+      (when editor
+        (theme-on-editor-task (lambda () (repaint-lisp-documents editor)))))
+    (when (and save *theme-persist*)
+      (unless (init-form-persist head (display-form-text head flag) *display-persist-comment*)
+        (theme-note "Cannot write ~A; the setting holds for this session" *init-file*)))
+    flag))
+
+(defun syntax-colouring (flag &key (save t))
+  "Colour Lisp text by its tokens when FLAG; paint it plain otherwise, and
+tokenize nothing on a keystroke."
+  (display-setting '*syntax-colouring* "syntax-colouring" flag save))
+
+(defun paren-matching (flag &key (save t))
+  "Light the partner of the paren before the cursor when FLAG."
+  (display-setting '*paren-matching* "paren-matching" flag save))
+
+(define-command clamacs-toggle-syntax-colouring (doc arg)
+  "Colour Lisp text by its tokens, or stop: plain text costs a keystroke
+much less on a slow machine.  The choice is remembered in the init file;
+with `C-u' it holds for this session only."
+  (let* ((save (eql arg 1))
+         (flag (syntax-colouring (not *syntax-colouring*) :save save)))
+    (message doc "Syntax colouring ~A~A" (if flag "on" "off") (if save "" " (this session)"))))
+
+(define-command clamacs-toggle-paren-matching (doc arg)
+  "Light the partner of the paren before the cursor, or stop.  The choice
+is remembered in the init file; with `C-u' it holds for this session only."
+  (let* ((save (eql arg 1))
+         (flag (paren-matching (not *paren-matching*) :save save)))
+    (message doc "Paren matching ~A~A" (if flag "on" "off") (if save "" " (this session)"))))
+
+;;; ------------------------------------------------------------------
 ;;; The text size: the View menu's third setting, kept the theme's way
 ;;; ------------------------------------------------------------------
 
