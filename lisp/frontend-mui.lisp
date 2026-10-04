@@ -1146,6 +1146,21 @@ timer is marked for the loop to take down."
                         (not (arglist-idle-pending-p doc)))
                     (setf (mui-editor-timer-idle editor) t))))))))
 
+;;; MUI sends a text object some thirty methods for every typed character
+;;; -- OM_SET, OM_GET, MUIM_Draw, MUIM_DrawBackground, the class's own --
+;;; and each one that reaches a Lisp dispatcher is a callback into the VM
+;;; whose only work is to hand it on (the user's 68040, 2026-10-04: typing
+;;; still trailed the keys).  So each class names the methods its
+;;; dispatcher handles and the runtime passes every other one to the
+;;; superclass natively (MUI:CREATE-CUSTOM-CLASS :METHODS).  **A method
+;;; added to a dispatcher's COND must be added to its list**: one that is
+;;; not listed never arrives.
+
+(defun text-dispatcher-methods ()
+  "The methods MAKE-TEXT-DISPATCHER handles, one per COND clause."
+  (list m:+muim-handle-event+ +ckm-idle-tick+ m:+muim-setup+ m:+muim-cleanup+
+        m:+muim-get-config-item+ m:+muim-go-active+ m:+muim-show+))
+
 (defun make-text-dispatcher (editor)
   (lambda (class object message)
     (let ((id (mui:method-id message)))
@@ -1269,6 +1284,12 @@ editor's hook reports Alt-x."
     ;; Not consumed: the string gadget's own handler edits.
     0))
 
+(defun mini-dispatcher-methods ()
+  "The methods MAKE-MINI-DISPATCHER handles, one per COND clause."
+  (list m:+muim-handle-event+ +ckm-mini-key+ intui:+om-new+ intui:+om-dispose+
+        m:+muim-setup+ m:+muim-cleanup+ m:+muim-go-active+ m:+muim-show+
+        m:+muim-go-inactive+))
+
 (defun make-mini-dispatcher (editor)
   (lambda (class object message)
     (let ((id (mui:method-id message)))
@@ -1375,10 +1396,12 @@ or NIL."
              +te-min-version+ +te-min-revision+ version revision))
     (setf (mui-editor-textclass editor)
           (mui:create-custom-class "TextEditor.mcc" (make-text-dispatcher editor)
-                                   :data-size +text-data-size+)
+                                   :data-size +text-data-size+
+                                   :methods (text-dispatcher-methods))
           (mui-editor-miniclass editor)
           (mui:create-custom-class :string (make-mini-dispatcher editor)
-                                   :data-size +mini-data-size+))))
+                                   :data-size +mini-data-size+
+                                   :methods (mini-dispatcher-methods)))))
 
 ;;; ------------------------------------------------------------------
 ;;; The text widget: the protocol's text access and editing
@@ -2870,7 +2893,10 @@ running inside them."
   (mailbox-wakes 0 :type fixnum)  ; ... that the mailbox signal ended
   (menu-syncs 0 :type fixnum)     ; display brought in step (REDISPLAY)
   (timer-arms 0 :type fixnum)     ; idle timer put up (ARM-IDLE-TIMER)
-  (methods (make-hash-table)))    ; method id -> calls, both classes
+  (methods (make-hash-table))     ; method id -> calls, both classes
+  ;; What the two classes' dispatchers had been sent, and had passed to
+  ;; the superclass natively, when the account was reset (CLASS-ACCOUNT).
+  (class-base '()))
 
 (defvar *loop-stats* (%make-loop-stats))
 
@@ -2888,8 +2914,21 @@ when the account was asked for."
 (defun count-timer-arm ()
   (incf (loop-stats-timer-arms *loop-stats*)))
 
+(defun class-account ()
+  "What MUI sent the two classes' dispatchers so far and how much of it
+went to the superclass without entering Lisp: (text-sent text-native
+mini-sent mini-native), or NIL when no editor is up."
+  (let ((editor *editor*))
+    (when (and (typep editor 'mui-editor) (mui-editor-textclass editor))
+      (multiple-value-bind (text-sent text-native)
+          (mui:custom-class-stats (mui-editor-textclass editor))
+        (multiple-value-bind (mini-sent mini-native)
+            (mui:custom-class-stats (mui-editor-miniclass editor))
+          (list (or text-sent 0) (or text-native 0)
+                (or mini-sent 0) (or mini-native 0)))))))
+
 (defun loop-stats-reset ()
-  (setf *loop-stats* (%make-loop-stats)
+  (setf *loop-stats* (%make-loop-stats :class-base (class-account))
         *count-methods* t))
 
 (defun loop-stats-report (&optional (stream *standard-output*))
@@ -2908,6 +2947,16 @@ per method id MUI called on the classes, with their rates per second."
       (row "  mailbox wakes" (loop-stats-mailbox-wakes s))
       (row "redisplays" (loop-stats-menu-syncs s))
       (row "idle timer arms" (loop-stats-timer-arms s))
+      ;; The methods below are the ones that entered Lisp; these rows are
+      ;; everything MUI sent, and the part that never did.
+      (let ((now (class-account))
+            (base (or (loop-stats-class-base s) '(0 0 0 0))))
+        (when now
+          (loop for name in '("text class sent" "  passed natively"
+                              "mini class sent" "  passed natively")
+                for n in now
+                for b in base
+                do (row name (- n b)))))
       (let ((rows '()))
         (maphash (lambda (id n) (push (cons id n) rows)) (loop-stats-methods s))
         (dolist (row (sort rows #'> :key #'cdr))

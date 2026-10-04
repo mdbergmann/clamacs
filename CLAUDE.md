@@ -529,6 +529,15 @@ list under "Answered during phase 1".
   before it reads any context, and `*syntax-colouring*` /
   `*paren-matching*` (`theme.lisp`'s `syntax-colouring` /
   `paren-matching`, kept the minimap's way) switch the two off.
+- **The two Lisp class dispatchers see only the methods they list**
+  (`text-dispatcher-methods`, `mini-dispatcher-methods`, handed to
+  `mui:create-custom-class :methods`; 2026-10-04).  MUI sends a text
+  object some thirty methods per typed character and all but the key
+  event were Lisp callbacks that only passed them on; the runtime now
+  hands an unlisted method to the superclass natively.  A method added
+  to a dispatcher's `cond` must be added to its list, or it never
+  arrives.  `loop-stats-report` shows what each class was sent and how
+  much of it never entered Lisp.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
   the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
