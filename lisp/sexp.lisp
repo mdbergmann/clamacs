@@ -507,7 +507,7 @@ two values, or NIL."
 (defun sexp-current-package (buf pos)
   "The package named by the nearest (in-package ...) at or before POS, as a
 string in the spelling of the buffer, or NIL.  The status line shows it and
-every eval carries it."
+every eval carries it.  The second value is where the name starts in BUF."
   (declare (fixnum pos))
   (let* ((buf (sx-simple buf))
          (len (length buf))
@@ -564,8 +564,22 @@ every eval carries it."
         ((and (eq state :in-package) (not (eq kind :quote)))
          (setq state :idle))))
     (if (> found-end found-start)
-        (subseq buf found-start found-end)
+        (values (subseq buf found-start found-end) found-start)
         nil)))
+
+(defun sexp-mentions-in-package-p (buf)
+  "Whether BUF holds the letters of IN-PACKAGE anywhere, in either case:
+what a changed line is asked before the package scanned for the buffer
+(SEXP-CURRENT-PACKAGE) is believed again.  Deliberately loose -- a comment
+that mentions it answers true -- since a true only costs a scan."
+  (let* ((buf (sx-simple buf))
+         (last (- (length buf) 10)))
+    (declare (simple-string buf) (fixnum last))
+    (do ((i 0 (1+ i)))
+        ((> i last) nil)
+      (declare (fixnum i))
+      (when (sx-in-package-p buf i (+ i 10))
+        (return t)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Phase 2: what to ask clamiga about

@@ -697,3 +697,150 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     ;; The idle tick without a wire is silent.
     (dotimes (i 3) (arglist-idle doc))
     (is (null (fake-asked doc)))))
+
+;;; --- the package, kept with where it came from -------------------------------
+
+(defparameter *package-text*
+  (lines "(in-package :alpha)"
+         ""
+         "(defun one ()"
+         "  1)"
+         ""
+         "(in-package :beta)"
+         ""
+         "(defun two ()"
+         "  2)"
+         ""
+         "(defun three ()"
+         "  3)"
+         ""))
+
+(defun package-doc (&optional (y 8))
+  "A fake showing *PACKAGE-TEXT*, the cursor at the start of line Y."
+  (let ((doc (make-fake *package-text*)))
+    (doc-set-point doc (doc-line-index doc y))
+    doc))
+
+(defun package-scans (doc)
+  (intro-package-scans (doc-intro doc)))
+
+(defun package-agrees-p (doc)
+  "The cache's answer is the scanner's, wherever the cursor is."
+  (string= (doc-package-cached doc) (doc-current-package doc)))
+
+(defun type-at (doc y text)
+  "TEXT inserted at the start of line Y and reported as the widget does."
+  (doc-set-point doc (doc-line-index doc y))
+  (doc-insert doc text)
+  (note-text-changed doc))
+
+(deftest package-is-scanned-once-while-nothing-changes-it
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 1)
+    ;; asked again, here and elsewhere below the form that names it
+    (is-equal (doc-package-cached doc) "beta")
+    (doc-set-point doc (doc-line-index doc 7))
+    (is-equal (doc-package-cached doc) "beta")
+    ;; further down than it was scanned from: those lines are read, the
+    ;; buffer is not
+    (doc-set-point doc (doc-line-index doc 11))
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 1)))
+
+(deftest package-follows-the-cursor-across-in-package-forms
+  ;; The answer was once kept per edit alone: a cursor moved above the
+  ;; form that named it went on answering that form's package.
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    (doc-set-point doc (doc-line-index doc 3))
+    (is-equal (doc-package-cached doc) "alpha")
+    (doc-set-point doc (doc-line-index doc 11))
+    (is-equal (doc-package-cached doc) "beta")
+    (doc-set-point doc 0)
+    (is-equal (doc-package-cached doc) "CL-USER")
+    ;; on the form's own line the scanner decides
+    (doc-set-point doc (doc-line-index doc 5))
+    (is (package-agrees-p doc))
+    (doc-set-point doc (1- (doc-line-index doc 6)))
+    (is-equal (doc-package-cached doc) "beta")))
+
+(deftest package-survives-typing-that-does-not-touch-it
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    (type-at doc 8 "  (print 2)")
+    (is-equal (doc-package-cached doc) "beta")
+    ;; a new line: the buffer grew by one
+    (doc-insert doc (string #\Newline))
+    (note-text-changed doc)
+    (type-at doc 9 "  (print 3)")
+    (is-equal (doc-package-cached doc) "beta")
+    ;; and a line above the cursor, below the form
+    (type-at doc 7 ";; two")
+    (doc-set-point doc (doc-line-index doc 9))
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 1)
+    (is (package-agrees-p doc))))
+
+(deftest package-sees-a-form-typed-between
+  (let ((doc (package-doc 11)))
+    (is-equal (doc-package-cached doc) "beta")
+    (type-at doc 9 "(in-package :gamma)")
+    (doc-set-point doc (doc-line-index doc 11))
+    (is-equal (doc-package-cached doc) "gamma")
+    (is-equal (package-scans doc) 2)))
+
+(deftest package-sees-its-own-form-renamed-and-removed
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    ;; `:beta' becomes `:xbeta'
+    (doc-set-point doc (+ (doc-line-index doc 5) 13))
+    (doc-insert doc "x")
+    (note-text-changed doc)
+    (doc-set-point doc (doc-line-index doc 8))
+    (is-equal (doc-package-cached doc) "xbeta")
+    ;; the line killed whole, the report coming from the line that is
+    ;; there now, which never mentioned it
+    (doc-delete doc (doc-line-index doc 5) (doc-line-index doc 6))
+    (doc-set-point doc (doc-line-index doc 5))
+    (note-text-changed doc)
+    (doc-set-point doc (doc-line-index doc 7))
+    (is-equal (doc-package-cached doc) "alpha")))
+
+(deftest package-sees-a-form-in-a-block-brought-in-above-the-cursor
+  ;; A yank ends below what it brought in, and the report names the
+  ;; cursor's line alone: the lines the buffer grew by are read too.
+  (let ((doc (package-doc 11)))
+    (is-equal (doc-package-cached doc) "beta")
+    (doc-set-point doc (doc-line-index doc 9))
+    (doc-insert doc (lines "(in-package :delta)" "" "(defun four ()" "  4)" ""))
+    (note-text-changed doc)
+    (is-equal (doc-package-cached doc) "delta")))
+
+(deftest package-is-scanned-when-an-edit-above-moved-its-form
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    (type-at doc 2 (lines ";; one" ""))
+    (doc-set-point doc (doc-line-index doc 10))
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 2)
+    (is (package-agrees-p doc))))
+
+(deftest package-is-scanned-when-an-edit-was-counted-and-not-reported
+  ;; The MUI frontend counts an edit in its hook and reports the lines
+  ;; when the keys rest: a lookup in between must not believe the cache.
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-package-cached doc) "beta")
+    (incf (doc-edit-serial doc))
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 2)
+    (package-note-edit doc 8 8)
+    (is-equal (doc-package-cached doc) "beta")
+    (is-equal (package-scans doc) 2)))
+
+(deftest sexp-mentions-in-package
+  (is (sexp-mentions-in-package-p "  (IN-Package :x)"))
+  (is (sexp-mentions-in-package-p ";; see in-package"))
+  (is (null (sexp-mentions-in-package-p "(in-packag")))
+  (is (null (sexp-mentions-in-package-p "")))
+  (is (null (sexp-mentions-in-package-p "(defun in-pack age ())"))))

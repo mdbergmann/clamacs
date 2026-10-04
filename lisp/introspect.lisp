@@ -40,10 +40,20 @@
   (arglist-inflight 0)        ; quiet ARGLIST requests on the wire
   (idle-index nil)            ; the cursor a tick ago
   (idle-ticks 0)
-  ;; The package the buffer is in, as of an edit serial: a lookup on
-  ;; every cursor rest must not scan the whole buffer each time.
+  ;; The package the cursor's form is in (DOC-PACKAGE-CACHED): the name,
+  ;; the line its (in-package ...) names it on with that line's text (NIL
+  ;; when there is none above), the last line down to which no other one
+  ;; was seen (whole lines), the buffer's line count and edit serial when the cache was last
+  ;; in step, whether an edit came since the name's line was read, and how
+  ;; often the buffer was scanned (the tests' account).
   (package nil)
   (package-serial -1)
+  (package-line nil)
+  (package-line-text nil)
+  (package-top 0)
+  (package-lines 0)
+  (package-verify nil)
+  (package-scans 0)
   ;; Completion: the candidates clamiga sent, the prefix they were asked
   ;; for and whether the list was cut at clamiga's cap; the range of the
   ;; buffer a completion replaces; the minibuffer completer over them.
@@ -58,13 +68,98 @@
   (or (%doc-intro doc)
       (setf (%doc-intro doc) (make-intro))))
 
+;;; The package is asked for at every rest of the cursor (the arglist),
+;;; and the honest answer reads the buffer from its top down to the cursor
+;;; -- an export of all of it and a scan, a visible part of a second on a
+;;; 68040 in a file of some size, and it was paid after every edit.  So
+;;; the answer is kept with WHERE it came from, and believed while
+;;;   - the cursor is between that line and the line it was scanned from
+;;;     (lines further down are read once, and only for a mention);
+;;;   - every line an edit touched since holds no mention of IN-PACKAGE
+;;;     (PACKAGE-NOTE-EDIT, told by whoever counts the edit);
+;;;   - and the line the name is on still reads as it did.
+;;; Anything else scans again.  What this does not see: a second line of
+;;; an (in-package ...) written over several, and a command that makes one
+;;; out of text far from the cursor without changing the line count
+;;; (uncommenting a region); the next scan corrects both.
+
+(defconstant +package-check-lines+ 64
+  "The most lines read for a mention of IN-PACKAGE before the buffer is
+simply scanned again.")
+
+(defun package-forget (state)
+  (setf (intro-package state) nil))
+
+(defun package-note-edit (doc y0 y1)
+  "Lines Y0 to Y1 of DOC changed, as far as its frontend knows: the cached
+package stays only when they, and as many lines either side as the buffer
+grew or shrank by -- a yank ends below what it brought in, and the widget
+reports the cursor's line alone -- do not mention IN-PACKAGE.  Called
+with every count of an edit (NOTE-TEXT-CHANGED, the MUI frontend's
+redisplay); a lookup that finds the edit serial ahead of the last call
+scans."
+  (let ((state (%doc-intro doc)))
+    (when (and state (intro-package state))
+      (let* ((lines (doc-line-count doc))
+             (slack (abs (- lines (intro-package-lines state))))
+             (a (max 0 (- (min y0 y1) slack)))
+             (b (max a (min (1- lines) (+ (max y0 y1) slack)))))
+        (cond ((or (> (- b a) +package-check-lines+)
+                   (sexp-mentions-in-package-p (doc-lines-text doc a b)))
+               (package-forget state))
+              (t
+               (when (< lines (intro-package-lines state))
+                 ;; Lines from below the scanned part moved up into it.
+                 (setf (intro-package-top state)
+                       (max 0 (- (intro-package-top state) slack))))
+               (setf (intro-package-lines state) lines
+                     (intro-package-serial state) (doc-edit-serial doc)
+                     (intro-package-verify state) t)))))))
+
+(defun package-cache-holds-p (doc state y)
+  "Whether the cached package is the one of a cursor on line Y."
+  (let ((line (intro-package-line state)))
+    (and (intro-package state)
+         (= (doc-edit-serial doc) (intro-package-serial state))
+         ;; On the name's own line the cursor may be before the form.
+         (or (null line) (> y line))
+         (or (not (intro-package-verify state))
+             (null line)
+             (and (string= (doc-lines-text doc line line)
+                           (intro-package-line-text state))
+                  (progn (setf (intro-package-verify state) nil) t)))
+         (let ((top (intro-package-top state)))
+           (or (<= y top)
+               (and (<= (- y top) +package-check-lines+)
+                    (not (sexp-mentions-in-package-p
+                          (doc-lines-text doc (1+ top) y)))
+                    (progn (setf (intro-package-top state) y) t)))))))
+
+(defun package-scan (doc state y)
+  "The package of a cursor on line Y, read off the buffer down to that
+line, and kept with the line that names it."
+  (incf (intro-package-scans state))
+  (multiple-value-bind (text base point) (doc-context-range doc 0 y)
+    (multiple-value-bind (name start)
+        (and text (sexp-current-package text point))
+      (let ((line (and name (doc-index-line doc (+ base start)))))
+        (setf (intro-package state) (or name "CL-USER")
+              (intro-package-line state) line
+              (intro-package-line-text state) (and line (doc-lines-text doc line line))
+              ;; The cursor's own line was read up to the cursor only.
+              (intro-package-top state) (1- y)
+              (intro-package-lines state) (doc-line-count doc)
+              (intro-package-serial state) (doc-edit-serial doc)
+              (intro-package-verify state) nil)))))
+
 (defun doc-package-cached (doc)
-  "The package the cursor's form is in, scanned once per edit."
+  "The package the cursor's form is in -- DOC-CURRENT-PACKAGE's answer,
+without reading the buffer again while nothing that could change it
+happened (see above)."
   (let ((state (doc-intro doc))
-        (serial (doc-edit-serial doc)))
-    (unless (and (intro-package state) (= serial (intro-package-serial state)))
-      (setf (intro-package state) (doc-current-package doc)
-            (intro-package-serial state) serial))
+        (y (doc-index-line doc (doc-point doc))))
+    (unless (package-cache-holds-p doc state y)
+      (package-scan doc state y))
     (intro-package state)))
 
 ;;; ------------------------------------------------------------------

@@ -545,6 +545,21 @@ list under "Answered during phase 1".
   activity.  The mini's handler asks the window for its active object
   only for a press while a prompt is open.  `loop-stats-report`'s `keys
   handled` row beside the `MUIM_HandleEvent` one is the account.
+- **The rest tick is staged, and the package is not scanned per edit**
+  (2026-10-04).  The first tick after the keys rest repaints the
+  documents (`redisplay-documents`), the second brings the menus in step
+  (`redisplay-menus`, `mui-editor-menu-activity`) and looks the arglist
+  up; the once-a-second repaint under continuous typing leaves the menus
+  alone.  `redisplay` (a return id, no timer) still does both at once.
+  `doc-package-cached` keeps the package with the line that names it and
+  believes it while the cursor is between that line and the one it was
+  scanned from, the name's line reads as it did, and no line an edit
+  touched mentions `in-package` -- so **whoever counts an edit
+  (`doc-edit-serial`) must report its lines to `package-note-edit`**
+  (`note-text-changed` does; the MUI hook counts and
+  `redisplay-document` reports); a lookup that finds the serial ahead
+  of the last report scans.  A scan reads the buffer down to the
+  cursor's line, no further.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
   the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.

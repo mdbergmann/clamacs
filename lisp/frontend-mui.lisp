@@ -405,6 +405,7 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; nothing left, for the loop to take it down (never the tick itself:
   ;; MUI is walking its handlers then).
   (activity 0 :type fixnum) (shown-activity -1 :type fixnum)
+  (menu-activity -1 :type fixnum)
   (tick-activity -1 :type fixnum) (rest-ticks 0 :type fixnum)
   (busy-ticks 0 :type fixnum)
   (timer-doc nil) (timer-idle nil)
@@ -1117,12 +1118,16 @@ activity, which held the display back for a key nobody typed."
 
 (defun idle-tick (editor)
   "One tick of the idle timer.  A tick that finds editor code ran since
-the last one -- the user is typing -- only notes it (and repaints about
-once a second of that).  A tick after a rest
-brings the display in step (REDISPLAY) and lets the arglist look (two rest
-ticks: ARGLIST-IDLE wants the cursor where it saw it last).  A lookup
-moves the editor's state, so the ticks go on; when nothing is left the
-timer is marked for the loop to take down."
+the last one -- the user is typing -- only notes it (and repaints the
+documents about once a second of that).  The first tick after a rest
+brings the documents in step (REDISPLAY-DOCUMENTS), the second the menus
+(REDISPLAY-MENUS) and lets the arglist look (ARGLIST-IDLE wants the cursor
+where it saw it last): what the user is looking at comes first, and a key
+typed in between costs the menus nothing -- their enable states and the
+dynamic groups are worked out from scratch each time, and nobody opens a
+menu within a third of a second of a key.  A lookup moves the editor's
+state, so the ticks go on; when nothing is left the timer is marked for
+the loop to take down."
   (let ((activity (mui-editor-activity editor)))
     (cond ((/= activity (mui-editor-tick-activity editor))
            (setf (mui-editor-tick-activity editor) activity
@@ -1132,16 +1137,19 @@ timer is marked for the loop to take down."
            ;; +BUSY-REDISPLAY-TICKS+.
            (when (>= (incf (mui-editor-busy-ticks editor)) +busy-redisplay-ticks+)
              (setf (mui-editor-busy-ticks editor) 0)
-             (redisplay editor)
+             (redisplay-documents editor)
              (setf (mui-editor-tick-activity editor) (mui-editor-activity editor))))
           (t
            (incf (mui-editor-rest-ticks editor))
            (setf (mui-editor-busy-ticks editor) 0)
-           (redisplay editor)
+           (redisplay-documents editor)
+           (when (>= (mui-editor-rest-ticks editor) 2)
+             (redisplay-menus editor))
            ;; What the repaint itself stirred up is not typing.
            (setf (mui-editor-tick-activity editor) (mui-editor-activity editor))
            (let ((doc (active-document editor)))
              (cond ((>= (mui-editor-rest-ticks editor) +idle-give-up-ticks+)
+                    (redisplay-menus editor)
                     (setf (mui-editor-timer-idle editor) t))
                    ((and doc (not (doc-closing doc)) (arglist-idle doc))
                     ;; The state the menu shows may have moved (a port
@@ -1149,6 +1157,8 @@ timer is marked for the loop to take down."
                     ;; rest tick, the lookup being no key.
                     (after-command editor)
                     (setf (mui-editor-tick-activity editor) (mui-editor-activity editor)))
+                   ;; The menus are the next tick's.
+                   ((menus-owed-p editor))
                    ((or (null doc)
                         (not (arglist-idle-pending-p doc)))
                     (setf (mui-editor-timer-idle editor) t))))))))
@@ -2905,7 +2915,8 @@ running inside them."
   (spins 0 :type fixnum)          ; ... zero mask, no id: the Delay(1) path
   (waits 0 :type fixnum)          ; Wait calls
   (mailbox-wakes 0 :type fixnum)  ; ... that the mailbox signal ended
-  (menu-syncs 0 :type fixnum)     ; display brought in step (REDISPLAY)
+  (menu-syncs 0 :type fixnum)     ; documents brought in step (REDISPLAY-DOCUMENTS)
+  (menu-updates 0 :type fixnum)   ; menus brought in step (REDISPLAY-MENUS)
   (timer-arms 0 :type fixnum)     ; idle timer put up (ARM-IDLE-TIMER)
   (keys 0 :type fixnum)           ; key presses the text's Emacs layer saw
   (methods (make-hash-table))     ; method id -> calls, both classes
@@ -2964,6 +2975,7 @@ per method id MUI called on the classes, with their rates per second."
       (row "waits" (loop-stats-waits s))
       (row "  mailbox wakes" (loop-stats-mailbox-wakes s))
       (row "redisplays" (loop-stats-menu-syncs s))
+      (row "menu updates" (loop-stats-menu-updates s))
       (row "idle timer arms" (loop-stats-timer-arms s))
       ;; Beside MUIM_HandleEvent's row below: what MUI sent as key events
       ;; and how many of them were keys.
@@ -3007,6 +3019,10 @@ line -- once for however many keys came in between."
             (mdoc-dirty-y1 doc) nil
             (mdoc-cursor-dirty doc) nil)
       (when (and (mdoc-text doc) (not (doc-closing doc)))
+        (when y0
+          ;; The hook counted the edits; the package cache hears of their
+          ;; lines here, before anything asks it (the arglist, a tick on).
+          (package-note-edit doc y0 y1))
         (with-changed-flag (doc)
           (when y0
             (colour-lines doc y0 y1)
@@ -3022,20 +3038,36 @@ line -- once for however many keys came in between."
           (hscroll-into-view doc))
         (update-status doc)))))
 
-(defun redisplay (editor &optional force)
-  "The display in step with the editor: every document's changed lines,
-paren highlight and status line, the menu's enable states and the dynamic
-menus.  Run when the keys rest (IDLE-TICK) and after a wake that carries a
-return id; nothing when no editor code ran since the last one, unless
-FORCE."
+(defun redisplay-documents (editor &optional force)
+  "Every document's changed lines, paren highlight and status line in
+step; nothing when no editor code ran since the last time, unless FORCE."
   (when (or force (/= (mui-editor-activity editor) (mui-editor-shown-activity editor)))
     (incf (loop-stats-menu-syncs *loop-stats*))
     (dolist (doc (editor-documents editor))
       (redisplay-document doc))
-    (menu-update editor)
-    (dynamic-menus-sync editor)
     ;; Read after the work: its own notifications are not a new reason.
     (setf (mui-editor-shown-activity editor) (mui-editor-activity editor))))
+
+(defun menus-owed-p (editor)
+  "Whether editor code ran since the menus were last brought in step."
+  (/= (mui-editor-activity editor) (mui-editor-menu-activity editor)))
+
+(defun redisplay-menus (editor &optional force)
+  "The menu's enable states and the dynamic menus in step; nothing when no
+editor code ran since the last time, unless FORCE."
+  (when (or force (menus-owed-p editor))
+    (incf (loop-stats-menu-updates *loop-stats*))
+    (menu-update editor)
+    (dynamic-menus-sync editor)
+    (setf (mui-editor-menu-activity editor) (mui-editor-activity editor))))
+
+(defun redisplay (editor &optional force)
+  "The display in step with the editor, all of it at once: the documents
+(REDISPLAY-DOCUMENTS) and the menus (REDISPLAY-MENUS).  Run after a wake
+that carries a return id, and when there is no timer to wait for a rest
+with; the idle timer does the two a tick apart (IDLE-TICK)."
+  (redisplay-documents editor force)
+  (redisplay-menus editor force))
 
 (defun housekeeping (editor id)
   "After MUI input or a mailbox drain: reap retired windows, carry out a
@@ -3052,7 +3084,8 @@ quit.  True when the last window is gone and the loop must leave."
   ;; timer alone (some 60 a second while a timer handler is up).
   (cond (id
          (redisplay editor t))
-        ((/= (mui-editor-activity editor) (mui-editor-shown-activity editor))
+        ((or (/= (mui-editor-activity editor) (mui-editor-shown-activity editor))
+             (menus-owed-p editor))
          (unless (arm-idle-timer editor)
            (redisplay editor)))
         ((mui-editor-timer-idle editor)
