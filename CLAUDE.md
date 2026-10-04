@@ -538,6 +538,13 @@ list under "Answered during phase 1".
   to a dispatcher's `cond` must be added to its list, or it never
   arrives.  `loop-stats-report` shows what each class was sent and how
   much of it never entered Lisp.
+- **A key release and a qualifier key's press are answered 0 at the top
+  of `text-handle-event`** (`rawkey-press-p`, pure; 2026-10-04): of the
+  768 key events of the typing run 295 were keys, and each of the others
+  was decoded, cost an `OM_GET` on the window and counted as editor
+  activity.  The mini's handler asks the window for its active object
+  only for a press while a prompt is open.  `loop-stats-report`'s `keys
+  handled` row beside the `MUIM_HandleEvent` one is the account.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
   the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.

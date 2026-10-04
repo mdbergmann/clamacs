@@ -1091,21 +1091,28 @@ stays."
 (defun text-handle-event (editor object message)
   "Invoked only through the class's own node, so it does not chain to the
 superclass: when the Emacs layer does not take the key it returns 0 and
-MUI's next handler -- the class's node -- edits."
-  (let ((imsg (handle-event-imsg message))
-        (doc (object-document editor object)))
-    (if (and imsg doc (active-object-p object))
-        (let* ((command (command-imsg editor imsg))
-               (key (and (not command) (decode-imsg editor imsg)))
-               (taken (cond (command
-                             (keystate-reset (doc-keys doc))
-                             (run-command doc command)
-                             t)
-                            (key (handle-key doc key)))))
-          (cond (taken (show-region doc))
-                (key (hide-region doc)))
-          (after-command editor)
-          (if taken m:+mui-event-handler-rc-eat+ 0))
+MUI's next handler -- the class's node -- edits.  A key release and a
+qualifier key's press (RAWKEY-PRESS-P) are answered before anything else
+is looked at: they were half of what a typed character sent here, each
+one decoded, asked for the window's active object and counted as editor
+activity, which held the display back for a key nobody typed."
+  (let ((imsg (handle-event-imsg message)))
+    (if (and imsg (rawkey-press-p (ffi:peek-u16 imsg +imsg-code-offset+)))
+        (let ((doc (object-document editor object)))
+          (if (and doc (active-object-p object))
+              (let* ((command (command-imsg editor imsg))
+                     (key (and (not command) (decode-imsg editor imsg)))
+                     (taken (cond (command
+                                   (keystate-reset (doc-keys doc))
+                                   (run-command doc command)
+                                   t)
+                                  (key (handle-key doc key)))))
+                (count-key)
+                (cond (taken (show-region doc))
+                      (key (hide-region doc)))
+                (after-command editor)
+                (if taken m:+mui-event-handler-rc-eat+ 0))
+              0))
         0)))
 
 (defun idle-tick (editor)
@@ -1268,7 +1275,14 @@ editor's hook reports Alt-x."
                     (ffi:peek-u16 imsg +imsg-code-offset+)
                     (ffi:peek-u16 imsg +imsg-qualifier-offset+)
                     (decode-imsg editor imsg)))
-      (when (and imsg doc (active-object-p object))
+      ;; MUI hands this node every key typed into the window's TEXT as
+      ;; well, and its release: only a press while a prompt is open can be
+      ;; the minibuffer's (MINIBUFFER-BINDS-P), so the window is asked for
+      ;; its active object for those alone.
+      (when (and imsg doc
+                 (rawkey-press-p (ffi:peek-u16 imsg +imsg-code-offset+))
+                 (minibuffer-open-p doc)
+                 (active-object-p object))
         ;; An active MUI 3.8 String edits through the edit hook before the
         ;; handler list is consulted, and a key the hook took reaches it as
         ;; a release of no key: only the keys the hook left alone, and on
@@ -2893,6 +2907,7 @@ running inside them."
   (mailbox-wakes 0 :type fixnum)  ; ... that the mailbox signal ended
   (menu-syncs 0 :type fixnum)     ; display brought in step (REDISPLAY)
   (timer-arms 0 :type fixnum)     ; idle timer put up (ARM-IDLE-TIMER)
+  (keys 0 :type fixnum)           ; key presses the text's Emacs layer saw
   (methods (make-hash-table))     ; method id -> calls, both classes
   ;; What the two classes' dispatchers had been sent, and had passed to
   ;; the superclass natively, when the account was reset (CLASS-ACCOUNT).
@@ -2910,6 +2925,9 @@ diagnostic run asks.")
 when the account was asked for."
   (when *count-methods*
     (incf (gethash id (loop-stats-methods *loop-stats*) 0))))
+
+(defun count-key ()
+  (incf (loop-stats-keys *loop-stats*)))
 
 (defun count-timer-arm ()
   (incf (loop-stats-timer-arms *loop-stats*)))
@@ -2947,6 +2965,9 @@ per method id MUI called on the classes, with their rates per second."
       (row "  mailbox wakes" (loop-stats-mailbox-wakes s))
       (row "redisplays" (loop-stats-menu-syncs s))
       (row "idle timer arms" (loop-stats-timer-arms s))
+      ;; Beside MUIM_HandleEvent's row below: what MUI sent as key events
+      ;; and how many of them were keys.
+      (row "keys handled" (loop-stats-keys s))
       ;; The methods below are the ones that entered Lisp; these rows are
       ;; everything MUI sent, and the part that never did.
       (let ((now (class-account))

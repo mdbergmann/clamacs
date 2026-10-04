@@ -103,6 +103,29 @@
   ;; ... the release of a key recognised by code included.
   (is-equal (decode (logior +raw-up+ +raw-up-prefix+) 0) nil))
 
+(deftest rawkey-press-p-refuses-releases-and-qualifier-keys
+  ;; every release, whatever the key
+  (dotimes (code #x80)
+    (is-equal (rawkey-press-p (logior code +raw-up-prefix+)) nil))
+  ;; the eight qualifier keys, and nothing beside them
+  (dotimes (code #x80)
+    (is-equal (rawkey-press-p code) (not (<= #x60 code #x67))))
+  ;; the keys recognised by code are presses
+  (dolist (code (list +raw-up+ +raw-down+ +raw-left+ +raw-right+ +raw-help+
+                      +raw-f1+ (+ +raw-f1+ 9)))
+    (is-equal (rawkey-press-p code) t)))
+
+(deftest rawkey-press-p-never-hides-a-key-that-decodes
+  ;; What RAWKEY-PRESS-P refuses, RAWKEY-DECODE and RAWKEY-COMMAND answer
+  ;; NIL for under every qualifier the tests' keymap knows: the frontend's
+  ;; early answer loses no key.
+  (dotimes (code #x100)
+    (unless (rawkey-press-p code)
+      (dolist (qualifier (list 0 +qual-lshift+ +qual-control+ +qual-lalt+
+                               +qual-rcommand+))
+        (is-equal (rawkey-decode code qualifier #'fake-map) nil)
+        (is-equal (rawkey-command code qualifier #'fake-map) nil)))))
+
 (deftest rawkey-amiga-keys-are-not-ours
   ;; Amiga+x is MUI's (menu shortcuts) or the OS's; it must not even reach
   ;; the keymaps as an unbound `x'.

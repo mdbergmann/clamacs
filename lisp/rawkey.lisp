@@ -45,6 +45,21 @@
 (defconstant +raw-f1+    #x50)          ; F1..F10 are #x50..#x59
 (defconstant +raw-help+  #x5F)
 
+;;; Raw codes of the qualifier keys themselves: both Shifts, Caps Lock,
+;;; Control, both Alts, both Amiga keys.
+(defconstant +raw-qualifier-first+ #x60)
+(defconstant +raw-qualifier-last+  #x67)
+
+(defun rawkey-press-p (code)
+  "Whether a raw key event can be a keystroke at all: not a key release,
+and not the press of a qualifier key, which the keymap gives no character.
+Intuition reports both for every typed character -- a shifted one is four
+events -- and RAWKEY-DECODE answers NIL for each; a frontend asks this
+first, so that an event that cannot be a key costs it nothing else."
+  (declare (fixnum code))
+  (and (= 0 (logand code +raw-up-prefix+))
+       (not (<= +raw-qualifier-first+ code +raw-qualifier-last+))))
+
 (defun rawkey-mods (qualifier)
   (declare (fixnum qualifier))
   (logior (if (/= 0 (logand qualifier +qual-control+)) +mod-ctrl+ 0)
