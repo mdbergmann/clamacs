@@ -47,9 +47,9 @@ moves a cursor through: INDEX is the entry the cursor is on, -1 for none
 (the common prefix is in the line); NIL hides the list.  Called again
 with the same NAMES when only the cursor moved.  True when a list is
 shown, and then the echo row only counts the candidates; the default
-does nothing and answers NIL, which is the MUI String's lot: its echo
-row names the first few, and TAB, <down> and <up> cycle them in the
-line with or without a list to look at.")
+does nothing and answers NIL, and then the echo row names the first few:
+TAB, <down> and <up> cycle them in the line with or without a list to
+look at.")
   (:method ((doc document) names index)
     (declare (ignore names index))
     nil))

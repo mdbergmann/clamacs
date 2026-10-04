@@ -103,10 +103,11 @@
 (defconstant +tef-export-block-take-block+ 2)
 (defconstant +tef-set-block-color+ 1)
 ;;; The class's prefs items (mcp/TextEditor_mcp.h) it asks its object for
-;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec and the
-;;; marked block's, which the theme answers (TEXT-GET-CONFIG-ITEM).
+;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec, the marked
+;;; block's and the text's, which the theme answers (TEXT-GET-CONFIG-ITEM).
 (defconstant +tecfg-cursor-color+ #xad000054)
 (defconstant +tecfg-marked-color+ #xad00005a)
+(defconstant +tecfg-text-color+ #xad00005f)
 ;; struct MUIP_GetConfigItem { ULONG MethodID; ULONG id; IPTR *storage; }
 (defconstant +gci-id-offset+ 4)
 (defconstant +gci-storage-offset+ 8)
@@ -239,7 +240,9 @@
 
 ;;; The window keys switched off while the text has the focus: RET must
 ;;; not fire a default gadget, TAB not cycle, ESC neither deactivate nor
-;;; close.  The minibuffer keeps TAB for completion, and ESC as well:
+;;; close -- and Alt-TAB not go to the application's next window, MUI's
+;;; default for it: it is M-TAB, `complete-symbol'.  The minibuffer keeps
+;;; TAB for completion, and ESC as well:
 ;;; ESC is both GADGET_OFF and WINDOW_CLOSE to MUI, and with only
 ;;; GADGET_NEXT off (as the C editor had it) one ESC at a prompt first
 ;;; deactivated the String and then, the mini's GoInactive having
@@ -248,7 +251,8 @@
 ;;; that is how the String accepts the input.
 (defparameter *text-window-keys*
   (logior m:+muikeyf-press+ m:+muikeyf-gadget-next+ m:+muikeyf-gadget-prev+
-          m:+muikeyf-gadget-off+ m:+muikeyf-window-close+))
+          m:+muikeyf-gadget-off+ m:+muikeyf-window-close+
+          m:+muikeyf-window-next+ m:+muikeyf-window-prev+))
 (defparameter *mini-window-keys*
   (logior m:+muikeyf-gadget-next+ m:+muikeyf-gadget-off+
           m:+muikeyf-window-close+))
@@ -390,6 +394,7 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; once.
   theme screen-depth (theme-rgb '()) (text-pen-p nil) bg-buf (bg-spec nil)
   cursor-buf (cursor-spec nil) marked-buf (marked-spec nil)
+  fg-buf (fg-spec nil)
   (theme-note nil) (shallow-noted nil)
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
@@ -480,6 +485,13 @@ init file may open what it likes.")
    ;; port's STATUS and to skip a relayout when the label is unchanged
    (message-text :initform "" :accessor mdoc-message-text)
    (label-text :initform "" :accessor mdoc-label-text)
+   ;; What TAB offers at a prompt: the Listview above the status line
+   ;; (hidden while there is nothing on offer), its List, the names it
+   ;; holds, and a flag set while the editor moves its cursor itself
+   (compview :initform nil :accessor mdoc-compview)
+   (complist :initform nil :accessor mdoc-complist)
+   (completions :initform nil :accessor mdoc-completions)
+   (comp-selecting :initform nil :accessor mdoc-comp-selecting)
    ;; The package the status line shows; the wire (phase 2) tracks it
    (package :initform "CL-USER" :accessor mdoc-package)
    ;; The arglist of the operator at point, at the end of the status line
@@ -703,7 +715,11 @@ once."
           ;; theme's cursor over the class's own background would be a
           ;; colour the user never chose on one they did.
           (mui-editor-cursor-spec editor) (and text-pens (theme-pen-spec theme :cursor))
-          (mui-editor-marked-spec editor) (and text-pens (theme-pen-spec theme :selection)))
+          (mui-editor-marked-spec editor) (and text-pens (theme-pen-spec theme :selection))
+          ;; So does the class's own text pen: what a line is drawn in
+          ;; until the colouring reached it -- black on a dark theme's
+          ;; background otherwise.
+          (mui-editor-fg-spec editor) (and text-pens (theme-pen-spec theme :fg)))
     (when (and (not text-pens) (not (mui-editor-shallow-noted editor)))
       (setf (mui-editor-shallow-noted editor) t
             (mui-editor-theme-note editor)
@@ -714,7 +730,9 @@ once."
     (when (mui-editor-cursor-spec editor)
       (store-text (mui-editor-cursor-buf editor) +pen-spec-size+ (mui-editor-cursor-spec editor)))
     (when (mui-editor-marked-spec editor)
-      (store-text (mui-editor-marked-buf editor) +pen-spec-size+ (mui-editor-marked-spec editor)))))
+      (store-text (mui-editor-marked-buf editor) +pen-spec-size+ (mui-editor-marked-spec editor)))
+    (when (mui-editor-fg-spec editor)
+      (store-text (mui-editor-fg-buf editor) +pen-spec-size+ (mui-editor-fg-spec editor)))))
 
 (defun show-theme-note (editor doc)
   "The message THEME-PLAN left, in DOC's echo area, once."
@@ -922,7 +940,7 @@ echo area says."
         ;; otherwise is put right by a repaint from the event loop.
         (unless (eq (text-background-wanted editor (object-document editor object))
                     (text-background-owned-p data))
-          (setf (mui-editor-theme-dirty editor) t))
+          (note-background-dirty editor))
         ;; The Emacs layer's key handler, ahead of the class's own.
         (add-handler (ffi:pointer+ data +text-ehn-offset+) class object)
         (ffi:poke-u32 data 1 +text-eh-added-offset+)
@@ -952,15 +970,19 @@ echo area says."
 (defun text-get-config-item (editor class object message)
   "MUIM_GetConfigItem, which the class asks its object for each of its
 prefs at Setup (InitConfig, inside the superclass's MUIM_Setup): the
-cursor's and the marked block's pen specs are the theme's on an object
-that holds the theme's background -- the class's default cursor is MUI's
-shine pen, white on a light theme's white -- and whatever the user's
+cursor's, the marked block's and the text's pen specs are the theme's on
+an object that holds the theme's background -- the class's default cursor
+is MUI's shine pen, white on a light theme's white, and its text pen
+MUI's, black on a dark theme's background in every line the colouring has
+not painted yet -- and whatever the user's
 prefs say on any other, as for every other item."
   (let* ((id (ffi:peek-u32 message +gci-id-offset+))
          (buf (cond ((= id +tecfg-cursor-color+)
                      (and (mui-editor-cursor-spec editor) (mui-editor-cursor-buf editor)))
                     ((= id +tecfg-marked-color+)
-                     (and (mui-editor-marked-spec editor) (mui-editor-marked-buf editor))))))
+                     (and (mui-editor-marked-spec editor) (mui-editor-marked-buf editor)))
+                    ((= id +tecfg-text-color+)
+                     (and (mui-editor-fg-spec editor) (mui-editor-fg-buf editor))))))
     (if (and buf (text-background-owned-p (mui:inst-data class object)))
         (let ((storage (ffi:peek-u32 message +gci-storage-offset+)))
           (when (/= storage 0)
@@ -977,10 +999,18 @@ first window that window's Setup paints it."
 
 (defmethod doc-lisp-mode-changed ((doc mui-document))
   "The background follows the mode: the theme's on a Lisp-mode document,
-the class's own otherwise -- at the next repaint."
+the class's own otherwise -- at the next repaint, of this window alone."
   (let ((editor (doc-editor doc)))
     (when (mui-editor-app editor)
-      (setf (mui-editor-theme-dirty editor) t))))
+      (note-background-dirty editor))))
+
+(defun note-background-dirty (editor)
+  "A text object's background is not what the plan wants for it (its
+document changed mode; its Setup found another screen): THEME-REPAINT is
+owed, for the windows that is true of and no others.  A repaint of every
+window already owed (T: a theme, a font) stays that."
+  (unless (mui-editor-theme-dirty editor)
+    (setf (mui-editor-theme-dirty editor) :background)))
 
 (defun window-open-p (window)
   (and window (/= 0 (or (mui:get-attr m:+muia-window-open+ window) 0))))
@@ -996,49 +1026,55 @@ open runs Setup (the theme's pens obtained) and redraws.  Then every
 Lisp-mode document is recoloured -- and one that left Lisp mode with the
 theme's background, which the colouring no longer runs on, is cleared of
 the colours it was painted in -- and the active window made active again.
+When all that is owed is a background (NOTE-BACKGROUND-DIRTY: `C-x C-w'
+took a buffer out of Lisp mode) only the windows whose background is not
+the plan's are reopened: the others have nothing to repaint, and a save
+that blinked every window was a finding of 2026-10-04.
 Only from the event loop (HOUSEKEEPING, START), never from a hook: MUI may
 still be inside the window that asked."
   (when (and (mui-editor-theme-dirty editor) (mui-editor-app editor)
              (not (editor-quitting editor)))
-    (setf (mui-editor-theme-dirty editor) nil)
-    (when (mui-editor-screen-depth editor)
-      (theme-plan editor))
-    (multiple-value-bind (font-changed new-font old-font)
-        (if (mui-editor-font-dirty editor)
-            (text-font-change editor)
-            (values nil nil nil))
-      (when font-changed
-        (setf (mui-editor-font editor) new-font
-              (mui-editor-font-size editor) (and new-font *font-size*)))
-    (let ((active (active-document editor)))
-      (dolist (doc (live-documents editor))
-        (let* ((window (mdoc-window doc))
-               (object (mdoc-text doc))
-               (data (and object (text-instance-data editor object)))
-               (painted (and data (text-background-owned-p data))))
-          (when (and object (window-open-p window))
-            ;; Where the window is and how big the user made it, read
-            ;; while it is open, and given back to the closed window
-            ;; before it opens: a reopen alone brings the window up at
-            ;; its creation size (MUI 4 on MorphOS), the resize lost.
-            (multiple-value-bind (left top width height) (window-geometry window)
-              (mui:set-attrs window m:+muia-window-open+ nil)
-              (apply-text-background editor data object doc)
-              ;; The font, taken by the class at the Setup the open runs
-              (when font-changed
-                (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))
-              (mui:set-attrs window
-                             m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
-                             m:+muia-window-width+ width m:+muia-window-height+ height)
-              (mui:set-attrs window m:+muia-window-open+ t))
-            (cond ((doc-lisp-mode doc) (colour-all doc))
-                  (painted (clear-text-colours doc))))))
-      (when (and active (not (doc-closing active)))
-        (doc-activate active)))
-      ;; The font the windows drew with before: no object is set up on it
-      ;; now, so it can go.
-      (when (and font-changed old-font)
-        (gfx:close-font old-font)))
+    (let ((all (eq (mui-editor-theme-dirty editor) t)))
+      (setf (mui-editor-theme-dirty editor) nil)
+      (when (mui-editor-screen-depth editor)
+        (theme-plan editor))
+      (multiple-value-bind (font-changed new-font old-font)
+          (if (mui-editor-font-dirty editor)
+              (text-font-change editor)
+              (values nil nil nil))
+        (when font-changed
+          (setf (mui-editor-font editor) new-font
+                (mui-editor-font-size editor) (and new-font *font-size*)))
+      (let ((active (active-document editor)))
+        (dolist (doc (live-documents editor))
+          (let* ((window (mdoc-window doc))
+                 (object (mdoc-text doc))
+                 (data (and object (text-instance-data editor object)))
+                 (painted (and data (text-background-owned-p data))))
+            (when (and object (window-open-p window)
+                       (or all (not (eq (text-background-wanted editor doc) painted))))
+              ;; Where the window is and how big the user made it, read
+              ;; while it is open, and given back to the closed window
+              ;; before it opens: a reopen alone brings the window up at
+              ;; its creation size (MUI 4 on MorphOS), the resize lost.
+              (multiple-value-bind (left top width height) (window-geometry window)
+                (mui:set-attrs window m:+muia-window-open+ nil)
+                (apply-text-background editor data object doc)
+                ;; The font, taken by the class at the Setup the open runs
+                (when font-changed
+                  (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))
+                (mui:set-attrs window
+                               m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
+                               m:+muia-window-width+ width m:+muia-window-height+ height)
+                (mui:set-attrs window m:+muia-window-open+ t))
+              (cond ((doc-lisp-mode doc) (colour-all doc))
+                    (painted (clear-text-colours doc))))))
+        (when (and active (not (doc-closing active)))
+          (doc-activate active)))
+        ;; The font the windows drew with before: no object is set up on it
+        ;; now, so it can go.
+        (when (and font-changed old-font)
+          (gfx:close-font old-font))))
     (show-theme-note editor (active-document editor))))
 
 (defun wake-loop (editor)
@@ -1790,6 +1826,64 @@ relayout on every keystroke."
 (defmethod doc-set-minibuffer-label ((doc mui-document) label)
   (setf (mdoc-message-text doc) label)
   (set-label doc label))
+
+;;; What TAB offers, as a list above the status line.  The echo row named
+;;; the first few candidates once, as the prompt's label -- a Text sized to
+;;; its contents, so eight command names made the window as wide as the
+;;; row and left the input line a stub at its right edge (a finding of
+;;; 2026-10-04).  Showing and hiding the Listview relays the window, and
+;;; the String comes back inactive from that as it does from SET-LABEL's.
+(defun refocus-minibuffer (doc)
+  (when (minibuffer-open-p doc)
+    (mui:set-attrs (mdoc-window doc) m:+muia-window-active-object+
+                   m:+muiv-window-active-object-none+)
+    (mui:set-attrs (mdoc-window doc) m:+muia-window-active-object+
+                   (mdoc-mini doc))))
+
+(defun set-completion-row (doc index)
+  "The list's cursor on row INDEX, or off for -1, without the pick the
+notification would take it for."
+  (setf (mdoc-comp-selecting doc) t)
+  (unwind-protect
+       (mui:set-attrs (mdoc-complist doc) m:+muia-list-active+
+                      (if (and index (>= index 0)) index m:+muiv-list-active-off+))
+    (setf (mdoc-comp-selecting doc) nil)))
+
+(defmethod doc-show-completions ((doc mui-document) names index)
+  (let ((list (mdoc-complist doc))
+        (view (mdoc-compview doc)))
+    (cond ((or (null list) (doc-closing doc))
+           nil)
+          ((null names)
+           (when (mdoc-completions doc)
+             (setf (mdoc-completions doc) nil)
+             (mui:set-attrs view m:+muia-show-me+ nil)
+             (refocus-minibuffer doc))
+           nil)
+          ((eq names (mdoc-completions doc))
+           ;; The same list: only the cursor moved.
+           (set-completion-row doc index)
+           t)
+          (t
+           (let ((shown (mdoc-completions doc)))
+             (setf (mdoc-completions doc) names)
+             (setf (mdoc-comp-selecting doc) t)
+             (unwind-protect (fill-list list names)
+               (setf (mdoc-comp-selecting doc) nil))
+             (set-completion-row doc index)
+             (unless shown
+               (mui:set-attrs view m:+muia-show-me+ t)
+               (refocus-minibuffer doc)))
+           t))))
+
+(defun completion-picked (doc accept)
+  "A click on a row of the list -- the candidate goes into the line -- or
+with ACCEPT a double click, which takes it."
+  (unless (mdoc-comp-selecting doc)
+    (let ((row (and (mdoc-complist doc) (list-active-row (mdoc-complist doc)))))
+      (when (and row (mdoc-completions doc))
+        (minibuffer-pick doc row accept)
+        (refocus-minibuffer doc)))))
 
 (defmethod doc-minibuffer-edit ((doc mui-document) key)
   ;; The String's contents notification runs when the contents are set,
@@ -2687,6 +2781,8 @@ on MUI 3.8)."
                                                     +activate-pending-ticks+))
                                       (setf (mui-editor-activate-pending editor) nil
                                             (mui-editor-active-doc editor) doc)))))
+                :comp-pick (hook (lambda (doc) (completion-picked doc nil)))
+                :comp-accept (hook (lambda (doc) (completion-picked doc t)))
                 :mini-ack (hook (lambda (doc) (minibuffer-done doc)))
                 :mini-changed (hook (lambda (doc) (minibuffer-changed doc)))))))
 
@@ -2769,7 +2865,12 @@ it from running under the vertical one."
   ;; Register the objects before any method can run on them.
   (setf (gethash (object-address (mdoc-text doc)) (mui-editor-objects editor)) doc
         (gethash (object-address (mdoc-mini doc)) (mui-editor-objects editor)) doc)
-  (setf (mdoc-miniline doc)
+  (setf (mdoc-complist doc) (make-string-list)
+        (mdoc-compview doc) (mui:new-object :listview
+                                            m:+muia-listview-list+ (mdoc-complist doc)
+                                            m:+muia-vert-weight+ 30
+                                            m:+muia-show-me+ nil)
+        (mdoc-miniline doc)
         (mui:new-object :group m:+muia-group-horiz+ t m:+muia-group-spacing+ 0
                         m:+muia-group-child+ (mdoc-prompt doc)
                         m:+muia-group-child+ (mdoc-mini doc))
@@ -2783,6 +2884,7 @@ it from running under the vertical one."
                m:+muia-window-root-object+
                (mui:new-object :group
                                m:+muia-group-child+ (text-group doc)
+                               m:+muia-group-child+ (mdoc-compview doc)
                                m:+muia-group-child+ (mdoc-status doc)
                                m:+muia-group-child+ (mdoc-echo doc))
                ;; Where the layout file puts a window of this role.
@@ -2798,6 +2900,8 @@ it from running under the vertical one."
   (notify-hook editor (mdoc-window doc) m:+muia-window-activate+ t :activate doc)
   (notify-hook editor (mdoc-mini doc) m:+muia-string-acknowledge+ :every-time :mini-ack doc)
   (notify-hook editor (mdoc-mini doc) m:+muia-string-contents+ :every-time :mini-changed doc)
+  (notify-hook editor (mdoc-complist doc) m:+muia-list-active+ :every-time :comp-pick doc)
+  (notify-hook editor (mdoc-compview doc) m:+muia-listview-double-click+ t :comp-accept doc)
   (notify-hook editor (mdoc-text doc) +tea-cursor-y+ :every-time :cursor doc)
   (notify-hook editor (mdoc-text doc) +tea-cursor-x+ :every-time :cursor doc)
   (notify-hook editor (mdoc-text doc) +tea-contents-changed+ t :changed doc)
@@ -2879,7 +2983,8 @@ running inside them."
         ;; error in a dispatcher's OM_DISPOSE), the loop's error handler
         ;; reaps again, and a second dispose of the same window is what
         ;; froze a Vampire.
-        (setf (mdoc-window doc) nil (mdoc-text doc) nil (mdoc-mini doc) nil)
+        (setf (mdoc-window doc) nil (mdoc-text doc) nil (mdoc-mini doc) nil
+              (mdoc-complist doc) nil (mdoc-compview doc) nil (mdoc-completions doc) nil)
         (exit-note "reap: removing the window from the application")
         (mui:do-method (mui-editor-app editor) intui:+om-remmember+ window)
         (exit-note "reap: disposing the window")
@@ -3159,7 +3264,8 @@ function: an image is saved before it runs and restores into it."
                  ;; which MUI reads
                  (mui-editor-bg-buf editor) (mui:pool-alloc +bg-buffer-size+)
                  (mui-editor-cursor-buf editor) (mui:pool-alloc +pen-spec-size+)
-                 (mui-editor-marked-buf editor) (mui:pool-alloc +pen-spec-size+))
+                 (mui-editor-marked-buf editor) (mui:pool-alloc +pen-spec-size+)
+                 (mui-editor-fg-buf editor) (mui:pool-alloc +pen-spec-size+))
            (create-classes editor)
            (install-hooks editor)
            ;; The menu strip goes in at creation (MUIA_Application_Menustrip

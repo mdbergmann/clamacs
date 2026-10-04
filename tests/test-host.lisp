@@ -1330,7 +1330,7 @@ batch of both taken."
 (deftest host-menu-bar-is-the-table-and-its-enable-states-follow-the-editor
   (multiple-value-bind (editor doc js) (host-menu-editor "" nil)
     ;; The table, one entry per index, at the head of the batch
-    (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New\",\"\"],[\"item\",\"Open...\",\"C-x C-f\"]," js))
+    (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New File\",\"\"],[\"item\",\"Open File...\",\"C-x C-f\"]," js))
     (is (search "[\"bar\",\"\",\"\"]" js))
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
@@ -1668,8 +1668,8 @@ batch of both taken."
     ;; The table as the shim takes it: one line per entry, in order, the
     ;; dynamic groups under their names
     (let ((text (menu-table-text (host-test-editor))))
-      (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New" "")
-                         (tabbed "item" "Open..." "C-x C-f"))
+      (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New File" "")
+                         (tabbed "item" "Open File..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
       (is (search (lines (tabbed "title" "View" "")

@@ -215,13 +215,13 @@ moves by the word.
 
 ## Files and evaluation
 
-**Project > New** opens an empty Lisp buffer in a window of its own;
-`C-x C-f` (Open...) with a name no file has yet does the same under that
+**Project > New File** opens an empty Lisp buffer in a window of its own;
+`C-x C-f` (Open File...) with a name no file has yet does the same under that
 name, as in Emacs, and `C-x C-s` writes it.  The keys ask for the name in
 the minibuffer, where TAB completes it against the directory typed so far
 and, on an empty line or a bare directory, opens the file requester there
-instead; the menu's Open..., Open in New Window..., Save As... and Load
-File... open the requester straight away.  Lisp mode -- colouring, paren
+instead; the menu's Open File..., Open File in New Window..., Save File As... and
+Load File... open the requester straight away.  Lisp mode -- colouring, paren
 matching, indentation -- follows the file name (`.lisp`, `.lsp`, `.cl`,
 `.asd`); an unnamed buffer is always in Lisp mode.
 

@@ -189,15 +189,15 @@ editor does not emulate them.  Several documents, several windows.
   prompt in the minibuffer, where TAB completes the name against the
   directory typed so far and, on a line that names no file (empty, or a
   bare directory), opens the ASL file requester there -- RET on an empty
-  line does the same, and the label says so.  The menu's Open..., Open in
-  New Window..., Save As... and Load File... open the requester directly
+  line does the same, and the label says so.  The menu's Open File..., Open File in
+  New Window..., Save File As... and Load File... open the requester directly
   (`find-file-requester` and friends: the item's PICK command, beside the
   key's), as Emacs's File menu does with a mouse; Save on an unnamed
   buffer, from the menu or from the "unsaved changes" requester, asks in
   the requester too.  `C-x C-f`
-  (Open...) shows the file in the current window, asking about unsaved
+  (Open File...) shows the file in the current window, asking about unsaved
   text first, and goes to the file's window when it is open already; `C-x 2`
-  (Open in New Window...) always opens a new window.  The REPL and the
+  (Open File in New Window...) always opens a new window.  The REPL and the
   scratch windows are never reused for a file.  Files are
   8-bit (ISO-8859-1), matching clamiga's narrow strings.
 

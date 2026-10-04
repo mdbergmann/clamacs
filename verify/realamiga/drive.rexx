@@ -1192,6 +1192,15 @@ ELSE
 'STATUS'
 IF POS('3 completions', RESULT) > 0 & POS('twice-again', RESULT) > 0 THEN
     SAY 'OK TAB listed them:' RESULT
+ELSE IF POS('3 completions', RESULT) > 0 THEN DO
+    /* The Lisp editor counts them in the echo row and names them in the
+    ** list above the status line (DOC-SHOW-COMPLETIONS): read off it. */
+    'EVAL (format nil "~{~A~^ ~}" (clamacs::mdoc-completions (clamacs::active-document clamacs::*editor*)))'
+    IF POS('twice-again', RESULT) > 0 THEN
+        SAY 'OK TAB listed them:' RESULT
+    ELSE
+        SAY 'FAIL the completion list held' RESULT
+END
 ELSE
     SAY 'FAIL TAB in the minibuffer gave' RESULT
 'KEY - a TAB'

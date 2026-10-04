@@ -256,8 +256,10 @@ above the status line on the host (`CK.showCompletions`, the page's
 `completions` report), with a cursor `<down>` / `<up>` and TAB move --
 the candidate under it whole in the line -- and a click / double click
 (`clamacsPickCompletion` -> `minibuffer-pick`); the pure layer's one
-generic is `doc-show-completions` (the MUI String keeps its echo row,
-the default method), and the arrows are minibuffer keys at a prompt
+generic is `doc-show-completions` (the MUI frontend has a Listview
+above the status line since 2026-10-04, shown with `MUIA_ShowMe` while
+candidates are on offer -- the names as the prompt's label widened the
+window; the default method keeps the echo row), and the arrows are minibuffer keys at a prompt
 now, the history's when nothing is on offer.  A bundle or an `IMAGE=1`
 start remakes the heap image when it is older than the binary OR than
 any `lisp/*.lisp` (`host/image-stale.sh`): the binary alone was the

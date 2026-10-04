@@ -17,7 +17,7 @@
 ;;;; the real keymaps, and that the rules answer as documented.
 ;;;;
 ;;;; An item whose key opens a prompt in the minibuffer may name a second
-;;;; command for the mouse (PICK): Open... shows `C-x C-f' beside it, but
+;;;; command for the mouse (PICK): Open File... shows `C-x C-f' beside it, but
 ;;;; picking it opens the file requester, as Emacs's File menu does with
 ;;;; a mouse.  The port's MENU verb picks as the mouse does.
 ;;;;
@@ -88,14 +88,14 @@
     (append
      (list
      (title "Project")
-     (item 'clamacs-new-buffer          :always        "New"                    nil       :global)
-     (item 'find-file                   :always        "Open..."                "C-x C-f" :global
+     (item 'clamacs-new-buffer          :always        "New File"               nil       :global)
+     (item 'find-file                   :always        "Open File..."           "C-x C-f" :global
            'find-file-requester)
-     (item 'find-file-other-window      :always        "Open in New Window..."  "C-x 2"   :global
+     (item 'find-file-other-window      :always        "Open File in New Window..." "C-x 2" :global
            'find-file-other-window-requester)
-     (item 'save-buffer                 :doc-changed   "Save"                   "C-x C-s" :global
+     (item 'save-buffer                 :doc-changed   "Save File"              "C-x C-s" :global
            'save-buffer-requester)
-     (item 'write-file                  :always        "Save As..."             "C-x C-w" :global
+     (item 'write-file                  :always        "Save File As..."        "C-x C-w" :global
            'write-file-requester)
      (bar)
      (item 'switch-to-buffer            :always        "Next Buffer"            "C-x b"   :global)
