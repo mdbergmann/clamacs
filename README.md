@@ -639,3 +639,7 @@ src/                       the C editor the Lisp one was ported from (frozen)
 docs/memory.md             what the C editor cost on an 8 MB machine (historical)
 vendor/texteditor/         submodule: TextEditor.mcc (amiga-mui), pinned to release 15.56
 ```
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
