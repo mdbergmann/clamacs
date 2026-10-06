@@ -334,10 +334,13 @@ says.
 Port `CLAMIGA`, else `CLAMIGA.1` .. `CLAMIGA.9` (a second instance), the
 same scan the shipped `clamiga.rexx` macro does.  If none exists and the
 user asked for a Lisp command, the editor offers to launch clamiga in its
-own console window (`SystemTags` with a `CON:` window, the command line
-from the editor's preferences, default `clamiga`) and waits up to a
-configurable time for the port to appear; the user's `S:.clamigarc` is
-expected to `(require "amiga/arexx") (amiga.arexx:start)`.
+own console window (`SystemTags` with a `CON:` window, the binary the
+editor itself runs on, the heap and options from the init file) and waits
+up to a configurable time for the port to appear.  The started clamiga is
+handed a preamble (`--load T:clamacs-port-<task>.lisp`) that REQUIREs
+`amiga/arexx` and opens the port unless the user's `S:.clamigarc` already
+did, so the editor's own helper needs no rc setup; the rc lines matter
+only for a clamiga the user starts and wants the editor to find.
 
 ### Asynchronous requests
 
