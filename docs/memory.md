@@ -1,5 +1,10 @@
 # Memory use on a small machine
 
+**This measures the C editor (`src/`, frozen since the Lisp port).**  The
+Lisp editor is a clamiga instance with an 8 MB heap of its own, so its
+footprint is the runtime's plus that heap, and the "fits on 8 MB"
+conclusion below does not carry over to it.  Kept as the phase-1 record.
+
 specs/clamacs-ide.md asks phase 1 to measure the editor on an 8 MB
 configuration and record the number, so the decision about whether a
 `--lowmem` mode is needed rests on data rather than a guess.
