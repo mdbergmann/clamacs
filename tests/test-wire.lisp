@@ -458,6 +458,37 @@
     (fake-deliver tr 0 "CL-Amiga 0.11")
     (is-equal (fake-last-message doc) "CL-Amiga 0.11")
     (is (null (fake-answers doc))))
+  ;; clamiga quit (QUIT, console closed) while the editor thought it was
+  ;; connected: Connect notices the port is gone and offers to start one
+  ;; at ONCE -- not after a VERSION sent into the void (2026-10-06: the
+  ;; requester came on the second Connect, the first only flipped the
+  ;; menu to "Start clamiga").
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
+    (run-command doc 'clamacs-connect)
+    (fake-deliver tr 0 "CL-Amiga 0.11")
+    (is (wire-connected wire))
+    (setf (fake-transport-port tr) nil
+          (fake-transport-sent tr) '()
+          (fake-transport-launch-port tr) "CLAMIGA")
+    (push :start (fake-answers doc))
+    (run-command doc 'clamacs-connect)
+    (is-equal (first (fake-asked doc))
+              '("No running clamiga was found. Start one?" (:start :cancel)))
+    (is-equal (fake-transport-launched tr) 1)
+    (is (wire-connected wire))
+    (is-equal (fake-sent-commands tr) '("VERSION"))
+    (is (null (fake-answers doc))))
+  ;; A port still there: Connect asks nothing and does not treat it as
+  ;; newly found (no "clamiga found" message, no REPL re-attach).
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
+    (run-command doc 'clamacs-connect)
+    (fake-deliver tr 0 "CL-Amiga 0.11")
+    (setf (fake-messages doc) '())
+    (run-command doc 'clamacs-connect)
+    (is (null (fake-asked doc)))
+    (is (wire-connected wire))
+    (is-equal (fake-last-sent tr) "VERSION")
+    (is (notany (lambda (m) (search "clamiga found" m)) (fake-messages doc))))
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (run-command doc 'run-lisp)
     (is-equal (fake-last-message doc) "Cannot start clamiga")

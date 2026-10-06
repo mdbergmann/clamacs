@@ -673,6 +673,15 @@ for in the minibuffer."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
+      ;; Connect is the user asking whether clamiga is there, so look,
+      ;; rather than trust WIRE-CONNECTED: a clamiga that quit leaves it
+      ;; set until a request fails on the vanished port, and with it set
+      ;; WIRE-CONNECT would skip the scan, send VERSION into the void and
+      ;; only report "port is gone" -- the offer to start one came on the
+      ;; SECOND Connect.  A port still there changes nothing (the find
+      ;; path's "newly found" announcement and REPL re-attach stay off).
+      (unless (transport-find-port (wire-transport wire))
+        (setf (wire-connected wire) nil))
       ;; WIRE-CONNECT finds the port, or asks whether to start clamiga
       ;; and reports a launch that failed; a cancel is answered here.
       (multiple-value-bind (connected why) (wire-connect wire doc)
