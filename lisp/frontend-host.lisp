@@ -1429,7 +1429,7 @@ behind the page."
 ;;; group by its entry's table index).
 
 (defmethod editor-dynamic-groups ((editor host-editor))
-  '(:buffers :themes :minimap))
+  '(:buffers :themes :minimap :cursor))
 
 (defun dynamic-group-named (editor name)
   "The dynamic group this frontend draws under NAME -- a keyword, or its
@@ -1763,6 +1763,23 @@ over the theme's `--font-size' when there is one."
   "The minimap setting to the page of a WINDOW that came up later."
   (ck window "setMinimap" (and *minimap* t)))
 
+;;; The cursor's shape (theme.lisp, BLOCK-CURSOR): CK.setBlockCursor sets
+;;; data-cursor on every page's document element, and the page's one rule
+;;; makes CodeMirror's cursor a block the width of a character in the
+;;; theme's cursor colour, the glyph showing through.  Sent at start
+;;; after the minimap, and to a later window when it settles.
+
+(defmethod editor-apply-cursor-style ((editor host-editor) block)
+  (ck-all editor "setBlockCursor" (and block t)))
+
+(defun send-cursor-style (editor)
+  "The cursor setting to the page: at start, after the minimap."
+  (editor-apply-cursor-style editor *block-cursor*))
+
+(defun send-cursor-style-to (window)
+  "The cursor setting to the page of a WINDOW that came up later."
+  (ck window "setBlockCursor" (and *block-cursor* t)))
+
 (defun host-ready (target user-agent &optional scheme)
   "The clamacsReady binding: the page of TARGET's window (TARGET-WINDOW)
 is up.  From the main window's page, the first, SCHEME -- `dark' or
@@ -2004,8 +2021,8 @@ verbatim."
 
 (defun host-panel-state (panel &optional (editor *editor*))
   "What the editor told the page to show for PANEL -- :MENU, :THEME,
-:MINIMAP, :DOCK (the main window's), :WINDOWS, :DIAGNOSTICS, :DEBUGGER
-or :INSPECTOR -- as one line of words, for a script's `EVAL
+:MINIMAP, :CURSOR, :DOCK (the main window's), :WINDOWS, :DIAGNOSTICS,
+:DEBUGGER or :INSPECTOR -- as one line of words, for a script's `EVAL
 \(clamacs::host-panel-state :debugger)' over the port.  A panel shown in
 a window of its own says `window N' at the end."
   (unless editor
@@ -2022,7 +2039,7 @@ a window of its own says `window N' at the end."
                        append (list (host-window-number w) (window-contents-words w)))
                  (if active (hdoc-id active) "none"))))
       (:menu
-       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~})"
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
@@ -2030,11 +2047,16 @@ a window of its own says `window N' at the end."
                        collect index)
                (editor-dynamic-menu-lines editor :buffers)
                (editor-dynamic-menu-lines editor :themes)
-               (editor-dynamic-menu-lines editor :minimap)))
+               (editor-dynamic-menu-lines editor :minimap)
+               (editor-dynamic-menu-lines editor :cursor)))
       (:minimap
        ;; The setting, as the page was told it; the page's report says
        ;; what it drew (`minimap' in clamacsPanels)
        (if *minimap* "on" "off"))
+      (:cursor
+       ;; The cursor's shape, as the page was told it (`cursor' in
+       ;; clamacsPanels is the page's account)
+       (if *block-cursor* "block" "bar"))
       (:theme
        ;; The theme in effect, and the colours the page's report carries
        ;; -- two variables and the gutter's painted background -- so a
@@ -2168,6 +2190,7 @@ detached mark to it, then what was waiting to move in."
   (send-menus-to window)
   (send-theme-to window)
   (send-minimap-to window)
+  (send-cursor-style-to window)
   (ck window "setDock" (host-window-dock-height window))
   (ck window "setDetached" t)
   (let ((pending (reverse (host-window-pending window))))
@@ -2664,6 +2687,7 @@ last tab closes."
                     (send-menus editor)
                     (send-theme editor)
                     (send-minimap editor)
+                    (send-cursor-style editor)
                     (place-dock editor)
                     (if files
                         (dolist (path files)

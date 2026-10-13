@@ -14,10 +14,11 @@
 ;;;; Pure: no MUI, no OS types.  The init file's rewrite is string work
 ;;;; over the sexp scanner (THEME-PERSIST-TEXT); the file I/O goes through
 ;;;; a temp file and a swap (THEME-WRITE-FILE), since the file is the
-;;;; user's.  The minimap setting at the end of the file -- one flag,
-;;;; the View menu's other item -- is kept the same way, with the same
-;;;; three entrances (the menu, `M-x clamacs-toggle-minimap', the init
-;;;; file's `(show-minimap ...)' form) ending in SHOW-MINIMAP.
+;;;; user's.  The settings after the themes -- the minimap, the cursor's
+;;;; shape, the text size, the colouring and the paren highlight -- are
+;;;; each one flag kept the same way, with the same three entrances (the
+;;;; View menu, an `M-x' command, the init file's form) ending in one
+;;;; function (SHOW-MINIMAP, BLOCK-CURSOR, FONT-SIZE, ...).
 
 (in-package :clamacs)
 
@@ -630,6 +631,60 @@ has no minimap; there the command only records the choice."
   (let* ((save (eql arg 1))
          (flag (show-minimap (not *minimap*) :save save)))
     (message doc "Minimap ~A~A" (if flag "on" "off") (if save "" " (this session)"))))
+
+;;; ------------------------------------------------------------------
+;;; The cursor's shape: a block or a bar, kept the theme's way
+;;; ------------------------------------------------------------------
+
+;;; TextEditor.mcc draws its cursor as a block the width of the character
+;;; under it unless the user's MUI prefs narrow it; CodeMirror draws a
+;;; bar.  One setting makes the two frontends agree: *BLOCK-CURSOR*, T
+;;; for the block (the class's own default, and the Amiga look) on every
+;;; text area of both, NIL for a bar.  Three entrances -- View > Block
+;;; Cursor (menu.lisp's :CURSOR group, ticked while it is a block), `M-x
+;;; clamacs-toggle-block-cursor' and the init file's `(block-cursor
+;;; nil)' -- all ending in BLOCK-CURSOR, which tells the frontend
+;;; (EDITOR-APPLY-CURSOR-STYLE) and writes the form into the init file
+;;; as LOAD-THEME writes its own.  The shape is the editor's, not the
+;;; theme's: it goes on every text object, a plain buffer's and the
+;;; REPL's too, where the theme's colours stay on Lisp-mode documents.
+
+(defvar *block-cursor* t
+  "Whether the cursor is a block the width of a character (T) or a bar.")
+
+(defparameter *block-cursor-persist-comment*
+  ";; Written by M-x clamacs-toggle-block-cursor and the View menu")
+
+(defun block-cursor-form-text (flag)
+  (format nil "(block-cursor ~A)" (if flag "t" "nil")))
+
+(defun block-cursor-persist (flag &optional (path *init-file*))
+  "The choice FLAG into the init file PATH: `(block-cursor T-or-NIL)' as
+its form, the theme's way (INIT-FORM-PERSIST)."
+  (init-form-persist "block-cursor" (block-cursor-form-text flag) *block-cursor-persist-comment* path))
+
+(defun block-cursor (flag &key (save t))
+  "A block cursor when FLAG, a bar otherwise: *BLOCK-CURSOR*, the frontend
+told, and -- unless SAVE is NIL, or the init file is loading its own form
+-- the choice written into the init file.  Answers the flag in effect.
+Callable from any thread, as LOAD-THEME is."
+  (let ((flag (and flag t)))
+    (setq *block-cursor* flag)
+    (let ((editor *editor*))
+      (when editor
+        (theme-on-editor-task (lambda () (editor-apply-cursor-style editor flag)))))
+    (when (and save *theme-persist*)
+      (unless (block-cursor-persist flag)
+        (theme-note "Cannot write ~A; the cursor setting holds for this session" *init-file*)))
+    flag))
+
+(define-command clamacs-toggle-block-cursor (doc arg)
+  "Draw the cursor as a block the width of the character under it, or as
+a bar, in every text area.  With `C-u' the change holds for this session
+only and the init file is left alone."
+  (let* ((save (eql arg 1))
+         (flag (block-cursor (not *block-cursor*) :save save)))
+    (message doc "Cursor: ~A~A" (if flag "block" "bar") (if save "" " (this session)"))))
 
 ;;; ------------------------------------------------------------------
 ;;; What the display may leave out: the colouring and the paren highlight

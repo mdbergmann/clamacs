@@ -432,6 +432,54 @@ IF POS('> Light' || NL, RESULT || NL) > 0 THEN
     SAY 'OK the View menu is back on Light'
 ELSE
     SAY 'FAIL after THEMES Light the menu gave' TRANSLATE(RESULT, '|', NL)
+/* The cursor's shape (theme.lisp's BLOCK-CURSOR): CURSOR is one item,
+** ticked while the cursor is a block -- the class's own default, and
+** the host's too now.  A pick makes it a bar, reopens the windows (the
+** class reads its cursor width at Setup, THEME-REPAINT) and writes the
+** init file beside the theme's form.  The drawn width is read back off
+** the text object: the character's for a block, at most five pixels for
+** a bar (the user's prefs width when it is narrower, else one). */
+'CURSOR'
+IF RESULT = '> Block Cursor' THEN
+    SAY 'OK the View menu lists Block Cursor, ticked'
+ELSE
+    SAY 'FAIL CURSOR gave' TRANSLATE(RESULT, '|', NL)
+'EVAL (clamacs::text-cursor-width (clamacs::active-document clamacs::*editor*))'
+W = RESULT
+IF DATATYPE(W, 'W') THEN
+    IF W > 5 THEN
+        SAY 'OK the cursor is drawn' W 'pixels wide, a character'
+    ELSE
+        SAY 'FAIL the block cursor is drawn' W 'pixels wide'
+ELSE
+    SAY 'FAIL text-cursor-width gave' W
+'CURSOR Block Cursor'
+R = RESULT
+'CURSOR'
+IF R = '' & RESULT = '  Block Cursor' THEN
+    SAY 'OK picking Block Cursor took the tick off'
+ELSE
+    SAY 'FAIL CURSOR Block Cursor gave' R', then' TRANSLATE(RESULT, '|', NL)
+'EVAL (clamacs::text-cursor-width (clamacs::active-document clamacs::*editor*))'
+W = RESULT
+IF DATATYPE(W, 'W') THEN
+    IF W <= 5 THEN
+        SAY 'OK the cursor is a bar now,' W 'pixel(s) wide'
+    ELSE
+        SAY 'FAIL after the pick the cursor is drawn' W 'pixels wide'
+ELSE
+    SAY 'FAIL after the pick text-cursor-width gave' W
+'EVAL (clamacs::read-file-text "T:clamacs-drive-rc")'
+IF POS('(block-cursor nil)', RESULT) > 0 & POS('(load-theme :light)', RESULT) > 0 THEN
+    SAY 'OK the pick wrote (block-cursor nil) beside the theme'
+ELSE
+    SAY 'FAIL after the pick the init file holds' RESULT
+'CURSOR Block Cursor'
+'CURSOR'
+IF RESULT = '> Block Cursor' THEN
+    SAY 'OK the cursor is a block again'
+ELSE
+    SAY 'FAIL after the second pick CURSOR gave' TRANSLATE(RESULT, '|', NL)
 'EVAL (progn (clamacs::refresh-user-paths) (clamacs::delete-quietly "T:clamacs-drive-rc") clamacs::*init-file*)'
 END /* CLAMIGA ~= '' & PHASE >= 5: the Buffers and View menus */
 

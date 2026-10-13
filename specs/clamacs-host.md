@@ -417,6 +417,8 @@ status line, the cursor on row `index` or none for -1),
 variables, set on the document element; `dark` sets `data-theme`),
 `setMinimap(flag)` (the minimap beside every source view shown or
 hidden, H9; `data-minimap` on the document element),
+`setBlockCursor(flag)` (the cursor a block one character wide or a bar,
+H10; `data-cursor` on the document element),
 `showDiagnostics(rows, open)`, `selectDiagnostic(row)`, `dbgOpen(level,
 condition, restarts, hasContinue)`, `dbgClose()`, `dbgRaise()`,
 `dbgFrames(rows)`, `dbgSelectFrame(n)`, `dbgLocals(rows)`, `inspOpen(type,
@@ -1083,6 +1085,44 @@ with the memory note updated.
   verb and the command on the fake), `test-host.lisp` (the calls, the
   tick, the file, the replay to a later window), `test-theme.lisp` (the
   form's rewrite beside the theme's).
+
+### H10 -- the cursor's shape: a block on both frontends
+
+- **Done 2026-10-13.**  TextEditor.mcc draws its cursor as a block the
+  width of the character under it (its `CursorWidth` pref, 6 by
+  default); CodeMirror draws a bar.  One setting makes the two agree:
+  `*block-cursor*` and `block-cursor` in `theme.lisp`, kept the
+  minimap's way (View > Block Cursor as a fourth dynamic group,
+  `:cursor`, one line ticked while it is a block, listed by EVERY
+  frontend -- the default `editor-dynamic-groups` has it, so the page,
+  the Cocoa shim and the MUI strip all draw it; `M-x
+  clamacs-toggle-block-cursor`; the init file's `(block-cursor nil)`; a
+  `CURSOR [Block Cursor]` verb), T by default on both, since the class's
+  own default is the block and the Amiga look is the editor's.  The
+  frontend generic is `editor-apply-cursor-style`.  The host sends
+  `CK.setBlockCursor` to every window (at start after the minimap, to a
+  later window when it settles), the page sets `data-cursor` and one
+  rule in `page-head.html` makes CodeMirror's `.cm-cursor` a block of
+  `1ch` in the theme's cursor colour at 55 % opacity, the glyph showing
+  through; the page's report carries `cursor: {block}` and
+  `host-panel-state :cursor` is the editor's account.  The MUI frontend
+  answers the class's `MUICFG_TextEditor_CursorWidth` item from
+  `text-get-config-item` on every text object (6 for the block; for a
+  bar the user's own width when their prefs keep one narrower than a
+  character, else 1), and a change reopens the windows through
+  `theme-repaint`, since the class reads the item at Setup;
+  `text-cursor-width` reads the drawn width back off
+  `MUIA_TextEditor_CursorPosition` for `drive.rexx`.  One thing the
+  group needed: two titleless dynamic groups in one menu (View's
+  minimap and cursor items) both anchored on the menu's last item when
+  the shim built the table, so their order depended on which was filled
+  last -- a titleless group now anchors on the titleless group before
+  it, by name, and the fill resolves the chain.  Tests:
+  `test-menu.lisp` (the table's shape, the verb and the command on the
+  fake), `test-host.lisp` (the calls, the tick, the file, the replay to
+  a later window), `test-theme.lisp` (the form's rewrite beside the
+  theme's and the minimap's); the drive's CURSOR leg and the View menu
+  leg of `drive.rexx` (the drawn width before and after the pick).
 
 ## Runtime items (commits in cl-amiga, each under every gate)
 

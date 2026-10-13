@@ -81,7 +81,11 @@
   (theme-applied 0)
   ;; The text size EDITOR-APPLY-FONT-SIZE was last handed, and how often
   (font-size nil)
-  (font-size-applied 0))
+  (font-size-applied 0)
+  ;; The cursor's shape EDITOR-APPLY-CURSOR-STYLE was last handed (:BLOCK
+  ;; or :BAR; NIL before), and how often
+  (cursor-style nil)
+  (cursor-style-applied 0))
 
 ;;; --- the theme (theme.lisp)
 
@@ -92,6 +96,10 @@
 (defmethod editor-apply-font-size ((editor fake-editor) size)
   (setf (fake-editor-font-size editor) size)
   (incf (fake-editor-font-size-applied editor)))
+
+(defmethod editor-apply-cursor-style ((editor fake-editor) block)
+  (setf (fake-editor-cursor-style editor) (if block :block :bar))
+  (incf (fake-editor-cursor-style-applied editor)))
 
 ;;; The fake's own size: 14, the default method's.
 

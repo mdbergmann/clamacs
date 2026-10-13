@@ -410,6 +410,22 @@ Minimap`.  The Amiga editor has no minimap and does not show the item.
 See `tests/test-host.lisp` (the View menu) and the MINIMAP leg of
 `verify/host/drive.lisp`.
 
+### Cursor
+
+The cursor is a block the width of the character under it, as
+TextEditor.mcc draws it, on the host as well as on the Amiga.  **View >
+Block Cursor** switches to a bar and back, as does `M-x
+clamacs-toggle-block-cursor` (`C-u` keeps the change to this session),
+and the choice is remembered the way a theme is: one `(block-cursor
+nil)` form in your init file, nothing else touched.  It goes on every
+text area, a plain buffer's and the REPL's too.  On the Amiga a bar keeps
+the width your MUI preferences give TextEditor.mcc's cursor when that is
+narrower than a character, and is one pixel wide otherwise.  A macro
+reads the item with `CURSOR` and toggles it with `CURSOR Block Cursor`.
+See `tests/test-theme.lisp`, `tests/test-host.lisp` (the View menu), the
+CURSOR leg of `verify/host/drive.lisp` and the View menu leg of
+`verify/realamiga/drive.rexx`.
+
 ### Window positions
 
 Arrange the windows, then pick **Windows > Snapshot Windows** (or `M-x
@@ -457,7 +473,8 @@ command or a prefix, not both.  Binding the same keys again replaces the
 earlier binding.
 
 The settings the menus remember -- `load-theme`, `font-size`,
-`show-minimap`, `syntax-colouring`, `paren-matching` -- and the started
+`show-minimap`, `block-cursor`, `syntax-colouring`, `paren-matching` --
+and the started
 clamiga's `*clamiga-heap*` / `*clamiga-options*` live here too, see the
 sections above.
 

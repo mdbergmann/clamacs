@@ -780,6 +780,83 @@ off a variable."
       (ok "the init file says (show-minimap nil)")
       (fail "~A does not say (show-minimap nil)" *rc-file*)))
 
+;;; The View menu's cursor item (theme.lisp's BLOCK-CURSOR): the page
+;;; draws CodeMirror's cursor as a block while the setting says so, Lisp
+;;; keeps the setting.  The editor's account and the page's report; a
+;;; pick through the verb and through the host's own bar; the init file
+;;; written beside the theme's and the minimap's forms -- and left
+;;; saying NIL, for the second editor to come up with a bar.
+
+(defun cursor-lines ()
+  "CURSOR as a list of lines."
+  (cmd "CURSOR")
+  (result-lines))
+
+(defun check-cursor (step block)
+  "The editor's account and the page's report of the shape BLOCK."
+  (if (string/= (panel-state :cursor (if block "block" "bar")) "")
+      (ok "~A: the editor says the cursor is a ~A" step (if block "block" "bar"))
+      (fail "~A: host-panel-state :cursor says ~A" step *result*))
+  (if (string/= (page-panels (format nil "\"cursor\":{\"block\":~A}" (if block "true" "false"))) "")
+      (ok "~A: the page draws a ~A" step (if block "block" "bar"))
+      (fail "~A: the page's cursor report: ~A" step *result*)))
+
+(defun leg-cursor ()
+  (if (equal (cursor-lines) '("> Block Cursor"))
+      (ok "the View menu's Block Cursor item is ticked by default")
+      (fail "CURSOR gave ~{~A~^|~}" (cursor-lines)))
+  (check-cursor "the default" t)
+  ;; A pick through the verb makes it a bar: the tick, the menu bar, the
+  ;; page, the file
+  (cmd "CURSOR Block Cursor")
+  (if (result-is "")
+      (ok "picking View > Block Cursor")
+      (fail "CURSOR Block Cursor gave ~A" *result*))
+  (if (equal (cursor-lines) '("  Block Cursor"))
+      (ok "the tick is off the Block Cursor item")
+      (fail "after the pick CURSOR gave ~{~A~^|~}" (cursor-lines)))
+  (if (string/= (menu-report "\"  Block Cursor\"") "")
+      (ok "the menu bar's View menu shows the item unticked")
+      (fail "the menu bar's View menu: ~A" *result*))
+  (check-cursor "a bar" nil)
+  (if (file-has-line *rc-file* "(block-cursor nil)")
+      (ok "the pick was written to ~A" *rc-file*)
+      (fail "~A does not hold the cursor's form" *rc-file*))
+  (if (and (file-has-line *rc-file* "(load-theme :drive-theme)")
+           (file-has-line *rc-file* "(show-minimap nil)"))
+      (ok "the theme's and the minimap's forms are still there")
+      (fail "the cursor's form displaced another in ~A" *rc-file*))
+  ;; The host's own bar (macOS): the item itself performs its action,
+  ;; and its neighbours -- the Themes submenu, the Minimap item -- are
+  ;; still in the menu
+  (cmd "EVAL (clamacs::host-menu-click :cursor 0)")
+  (cond ((result-is "\"no native menu\"")
+         (ok "the page draws the View menu here; the CURSOR verb is the pick"))
+        ((not (result-is "\"picked\""))
+         (fail "picking Block Cursor on the host's menu bar gave ~A" *result*))
+        (t
+         (if (equal (cursor-lines) '("> Block Cursor"))
+             (ok "the host's View menu pick made the cursor a block again")
+             (fail "the host's View menu pick left ~{~A~^|~}" (cursor-lines)))
+         (check-cursor "the host's pick" t)
+         (if (and (string/= (menu-report "\"> Drive Theme\"") "")
+                  (string/= (menu-report "\"  Minimap\"") ""))
+             (ok "the Themes submenu and the Minimap item survived the item's remake")
+             (fail "the menu bar after the remake: ~A" *result*))))
+  ;; Set through the setting itself: the form is replaced in place; then
+  ;; a bar for the second editor
+  (cmd "EVAL (clamacs::block-cursor t)")
+  (check-cursor "a block again" t)
+  (if (and (file-has-line *rc-file* "(block-cursor t)")
+           (not (file-has-line *rc-file* "(block-cursor nil)")))
+      (ok "the form was replaced in place")
+      (fail "~A after the block cursor came back" *rc-file*))
+  (cmd "CURSOR Block Cursor")
+  (check-cursor "a bar for the second editor" nil)
+  (if (file-has-line *rc-file* "(block-cursor nil)")
+      (ok "the init file says (block-cursor nil)")
+      (fail "~A does not say (block-cursor nil)" *rc-file*)))
+
 (defun leg-keys ()
   (cmd (format nil "OPEN FILE ~A" (fixture "sample.lisp")))
   (cmd "EVAL beginning-of-buffer")
@@ -1780,6 +1857,7 @@ requester asked.  Then wait for the port to go."
   (leg-buffers)
   (leg-themes)
   (leg-minimap)
+  (leg-cursor)
   (leg-keys)
   (leg-selection)
   (leg-snapshot)
@@ -1830,6 +1908,11 @@ wrote: it must come up where the file said, then quit."
       (ok "the second editor came up without the minimap: the init file's form took")
       (fail "the second editor's MINIMAP gave ~{~A~^|~}" (minimap-lines)))
   (check-minimap "the second editor" nil)
+  ;; ... and with a bar, as the init file's (block-cursor nil) says
+  (if (equal (cursor-lines) '("  Block Cursor"))
+      (ok "the second editor came up with a bar: the init file's form took")
+      (fail "the second editor's CURSOR gave ~{~A~^|~}" (cursor-lines)))
+  (check-cursor "the second editor" nil)
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)

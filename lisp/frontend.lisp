@@ -263,6 +263,16 @@ NIL: what the frontend shows on its own.  The Bigger and Smaller steps
 start from it.")
   (:method ((editor editor)) 14))
 
+(defgeneric editor-apply-cursor-style (editor block)
+  (:documentation "Draw the cursor of every text area as a block the
+width of the character under it when BLOCK, as a bar otherwise
+(BLOCK-CURSOR, theme.lisp).  Called whenever the setting changes, and by
+a frontend itself when it comes up.  A frontend without a cursor of its
+own does nothing.")
+  (:method ((editor editor) block)
+    (declare (ignore block))
+    nil))
+
 (defgeneric editor-apply-minimap (editor flag)
   (:documentation "Show the minimap -- the whole text in miniature beside
 it, the part on screen marked -- when FLAG, hide it otherwise

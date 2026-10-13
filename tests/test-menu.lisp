@@ -58,16 +58,17 @@
                 ;; The place of a group made at run time: the tail of its
                 ;; menu, right after its title or after a bar closing the
                 ;; menu's own items (the Buffers menu; View's text sizes,
-                ;; then its themes, then its minimap item).
+                ;; then its themes, its minimap item, its cursor item).
                 (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic :bar))))
                 (is-equal (menu-entry-title
                            (find :title (reverse (subseq entries 0 i)) :key #'menu-entry-kind))
                           (ecase (menu-entry-dynamic e)
                             (:buffers "Buffers")
                             (:themes "View")
-                            (:minimap "View")))
+                            (:minimap "View")
+                            (:cursor "View")))
                 (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
-    (is-equal (count :dynamic entries :key #'menu-entry-kind) 3)
+    (is-equal (count :dynamic entries :key #'menu-entry-kind) 4)
     (is-equal (menu-count) (length entries))
     (is-equal titles 9)
     (is (> items 30))
@@ -83,11 +84,14 @@
     (is (null (menu-entry-dynamic (menu-entry 0))))
     (is (null (menu-find-dynamic :nothing)))
     ;; The themes go into a submenu named after them; the buffers fill
-    ;; their menu; the minimap's item follows the Themes submenu.
+    ;; their menu; the minimap's item follows the Themes submenu, the
+    ;; cursor's the minimap's.
     (is-equal (menu-entry-title (menu-entry (menu-find-dynamic :themes))) "Themes")
     (is (null (menu-entry-title (menu-entry (menu-find-dynamic :buffers)))))
     (is (null (menu-entry-title (menu-entry (menu-find-dynamic :minimap)))))
-    (is-equal (menu-find-dynamic :minimap) (1+ (menu-find-dynamic :themes)))))
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :cursor)))))
+    (is-equal (menu-find-dynamic :minimap) (1+ (menu-find-dynamic :themes)))
+    (is-equal (menu-find-dynamic :cursor) (1+ (menu-find-dynamic :minimap)))))
 
 ;;; The ASDF menu is for a machine that can carry ASDF: a 68k Amiga's
 ;;; strip is made without it, and the commands are there all the same.
@@ -119,12 +123,12 @@
         (is (find-command name))))))
 
 (deftest a-title-with-nothing-drawn-under-it-is-hidden
-  ;; The model draws the two groups every frontend has: everything but
+  ;; The model draws the three groups every frontend has: everything but
   ;; the minimap's item (the host page's alone) is drawn, and View is
-  ;; drawn for its themes.
+  ;; drawn for its themes and its cursor item.
   (let ((editor (make-fake-editor))
         (minimap (menu-find-dynamic :minimap)))
-    (is-equal (editor-dynamic-groups editor) '(:buffers :themes))
+    (is-equal (editor-dynamic-groups editor) '(:buffers :themes :cursor))
     (dotimes (i (menu-count))
       (cond ((= i minimap)
              (is (not (menu-entry-drawn-p editor i)))
@@ -136,6 +140,7 @@
     (is-equal (menu-wire-kind editor (menu-find 'find-file)) :item)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :cursor)) :cursor)
     (is (menu-entry-drawn-p editor (1- (menu-find-dynamic :themes))))))
 
 (deftest the-minimap-item-is-a-setting-every-frontend-keeps
@@ -171,6 +176,43 @@
              (is-equal (fake-last-message doc) "Minimap off (this session)")
              (is (search "(show-minimap t)" (read-file-text *init-file*)))
              (is (not (search "(show-minimap nil)" (read-file-text *init-file*)))))
+        (delete-quietly *init-file*)))))
+
+(deftest the-cursor-item-is-a-setting-every-frontend-keeps
+  ;; The View menu's cursor group: one line, ticked while the cursor is a
+  ;; block (the default); a pick makes it a bar and writes the init file,
+  ;; as the minimap's pick does -- on every frontend, the fake included,
+  ;; whose frontend method records the shape.
+  (multiple-value-bind (doc tr wire) (sample-doc)
+    (declare (ignore tr wire))
+    (let ((editor (doc-editor doc))
+          (*block-cursor* t)
+          (*init-file* (temp-file "menu-cursor-rc")))
+      (unwind-protect
+           (let ((*editor* editor))
+             (is-equal (port editor "CURSOR") '(0 "> Block Cursor"))
+             (is-equal (dynamic-menu editor :cursor) '(("Block Cursor" . :cursor)))
+             (is-equal (nth-value 1 (dynamic-menu editor :cursor)) :cursor)
+             (is-equal (port editor "CURSOR Block Cursor") '(0 ""))
+             (is (null *block-cursor*))
+             (is (eq (fake-editor-cursor-style editor) :bar))
+             (is-equal (port editor "CURSOR") '(0 "  Block Cursor"))
+             (is (null (nth-value 1 (dynamic-menu editor :cursor))))
+             (is (search "(block-cursor nil)" (read-file-text *init-file*)))
+             (is-equal (port editor "CURSOR nobody") '(0 "no such item"))
+             (is (null *block-cursor*))
+             ;; The command is the same toggle; C-u keeps it to the session
+             (is (find-command "clamacs-toggle-block-cursor"))
+             (run-command doc 'clamacs-toggle-block-cursor)
+             (is *block-cursor*)
+             (is (eq (fake-editor-cursor-style editor) :block))
+             (is-equal (fake-last-message doc) "Cursor: block")
+             (is (search "(block-cursor t)" (read-file-text *init-file*)))
+             (run-command doc 'clamacs-toggle-block-cursor 4)
+             (is (null *block-cursor*))
+             (is-equal (fake-last-message doc) "Cursor: bar (this session)")
+             (is (search "(block-cursor t)" (read-file-text *init-file*)))
+             (is (not (search "(block-cursor nil)" (read-file-text *init-file*)))))
         (delete-quietly *init-file*)))))
 
 (deftest menu-find-returns-the-item

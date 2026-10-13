@@ -76,6 +76,14 @@
   .cm-activeLineGutter { background-color: var(--active-line) !important; }
   .cm-activeLine { background-color: var(--active-line) !important; }
   .cm-cursor, .cm-dropCursor { border-left-color: var(--cursor) !important; }
+  /* The cursor's shape (theme.lisp's block-cursor; CK.setBlockCursor
+     sets data-cursor): a block one character wide in the theme's cursor
+     colour, the glyph under it showing through -- what TextEditor.mcc
+     draws on the Amiga.  CodeMirror's bar is the other shape.  The
+     width is a ch of the scroller's monospace font, which the cursor
+     layer inherits. */
+  html[data-cursor="block"] .cm-cursor { border-left: none !important; margin-left: 0 !important;
+                                        width: 1ch; background: var(--cursor); opacity: 0.55; }
   .cm-selectionBackground, ::selection { background: var(--selection) !important; }
   .ck-comment { color: var(--c-comment); }
   .ck-string { color: var(--c-string); }

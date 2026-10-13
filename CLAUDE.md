@@ -290,6 +290,26 @@ was tried the same day and taken out again: the TextEditor page's font
 did not reach the text area for the user, and the window offers far more
 than the editor honours.  `FONT_SIZE=24 verify/realamiga/run-lisp-editor.sh`
 is the Amiga run (the marker's `shown` must be the size).
+**The cursor's shape** (2026-10-13): `*block-cursor*` / `block-cursor`
+in `theme.lisp`, kept the minimap's way (View > Block Cursor as a fourth
+dynamic group that EVERY frontend lists -- the default
+`editor-dynamic-groups` has `:cursor` -- `M-x
+clamacs-toggle-block-cursor`, the init file's `(block-cursor nil)`, the
+`CURSOR` verb), T by default on both frontends since TextEditor.mcc's
+own default is the block, reaching them through
+`editor-apply-cursor-style`.  The host sets `data-cursor` on every page
+(`CK.setBlockCursor`) and one rule in `page-head.html` makes
+CodeMirror's bar a `1ch` block; the MUI frontend answers the class's
+`MUICFG_TextEditor_CursorWidth` config item from `text-get-config-item`
+on every text object (6 = the character's width; a bar keeps the user's
+narrower prefs width, else 1) and a change reopens the windows through
+`theme-repaint`, since the class reads the item at Setup.
+`text-cursor-width` reads the drawn width off
+`MUIA_TextEditor_CursorPosition` for `drive.rexx`.  Two titleless
+dynamic groups in one menu (View's minimap and cursor items) made the
+Cocoa shim anchor a titleless group on the one before it, by name: both
+anchored on the menu's last item at build time and their order depended
+on which was filled last.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

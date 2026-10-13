@@ -471,12 +471,18 @@ int clamacs_host_menu_set(void *win, const char *table,
         main = [[NSMenu alloc] initWithTitle:@"MainMenu"];
         top = [main addItemWithTitle:@"" action:nil keyEquivalent:@""];
         top.submenu = menu_application();
+        /* The titleless dynamic group made last in the menu being built,
+         * if the entry before this one was it: the next titleless group
+         * anchors on it (View: the minimap's item, then the cursor's), so
+         * two such groups keep the table's order however they are filled. */
+        NSString *lastGroup = nil;
         for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
             NSArray<NSString *> *f = [line componentsSeparatedByString:@"\t"];
             NSString *kind = f[0];
             NSString *title = f.count > 1 ? f[1] : @"";
             NSString *keys = f.count > 2 ? f[2] : @"";
             if ([kind isEqualToString:@"title"]) {
+                lastGroup = nil;
                 top = [main addItemWithTitle:title action:nil keyEquivalent:@""];
                 menu = [[NSMenu alloc] initWithTitle:title];
                 menu.autoenablesItems = NO;
@@ -493,10 +499,15 @@ int clamacs_host_menu_set(void *win, const char *table,
                 if (kind.length > 0 && menu_target.dynamic[kind] == nil) {
                     NSMenu *group = menu;
                     /* Without a title the items go after what the menu
-                     * holds so far; a submenu is the group's alone. */
+                     * holds so far -- after the titleless group just
+                     * before it, named, when there is one, since its
+                     * items are not made yet; a submenu is the group's
+                     * alone. */
                     menu_target.dynamicAnchor[kind] =
-                        (title.length == 0 && menu.numberOfItems > 0)
+                        (title.length == 0 && lastGroup != nil) ? (id)lastGroup
+                        : (title.length == 0 && menu.numberOfItems > 0)
                             ? (id)menu.itemArray.lastObject : (id)[NSNull null];
+                    lastGroup = title.length == 0 ? kind : nil;
                     if (title.length > 0) {
                         NSMenuItem *sub = [[NSMenuItem alloc] initWithTitle:title
                                                                      action:nil
@@ -554,6 +565,21 @@ void clamacs_host_menu_enable(int index, int flag)
     }
 }
 
+/* Where a dynamic group's items start: after the anchor item, at the
+ * menu's start for none -- or, for an anchor naming the titleless group
+ * before it, after that group's last item, or where that group itself
+ * would start while it has none. */
+static NSInteger dynamic_anchor_index(NSMenu *menu, id anchor)
+{
+    while ([anchor isKindOfClass:[NSString class]]) {
+        NSArray<NSMenuItem *> *prev = menu_target.dynamicItems[anchor];
+        if (prev.count > 0 && prev.lastObject.menu == menu)
+            return [menu indexOfItem:prev.lastObject] + 1;
+        anchor = menu_target.dynamicAnchor[anchor];
+    }
+    return (anchor == nil || anchor == [NSNull null]) ? 0 : [menu indexOfItem:anchor] + 1;
+}
+
 /* The dynamic group WHICH (its kind in the table: "buffers", "themes")
  * remade from LINES, one per line as the editor's BUFFERS and THEMES
  * verbs spell them: "-" a bar, "> label" the ticked item, "  label"
@@ -561,7 +587,7 @@ void clamacs_host_menu_enable(int index, int flag)
  * position.  A group the table did not have: nothing.  Only the group's
  * own items are replaced, in the place they had: a group without a
  * title may share its menu (View: the Themes submenu, then the
- * minimap's item). */
+ * minimap's item, then the cursor's). */
 void clamacs_host_menu_dynamic(const char *which, const char *lines)
 {
     @autoreleasepool {
@@ -584,7 +610,7 @@ void clamacs_host_menu_dynamic(const char *which, const char *lines)
                 [menu removeItem:old];
         [items removeAllObjects];
         [shown removeAllObjects];
-        at = (anchor == nil || anchor == [NSNull null]) ? 0 : [menu indexOfItem:anchor] + 1;
+        at = dynamic_anchor_index(menu, anchor);
         for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
             NSMenuItem *item;
             if (line.length == 0)

@@ -577,6 +577,50 @@ THUNK's value."
       (is (eq *theme* (find-theme :dark)))
       (is-equal (read-file-text *init-file*) (lines "(show-minimap nil)" "(load-theme :dark)")))))
 
+(deftest the-block-cursor-form-is-kept-the-themes-way
+  ;; INIT-FORM-PERSIST-TEXT over the cursor's head: the form is replaced
+  ;; in place or appended under its own comment, and neither the theme's
+  ;; form nor the minimap's is the one it touches.
+  (flet ((rewrite (text flag)
+           (init-form-persist-text text "block-cursor" (block-cursor-form-text flag) *block-cursor-persist-comment*)))
+    (is-equal (rewrite (lines "(load-theme :dark)" "(block-cursor t)" "") nil)
+              (lines "(load-theme :dark)" "(block-cursor nil)" ""))
+    (is-equal (rewrite (lines "(clamacs::block-cursor nil) ; a bar" "") t)
+              (lines "(block-cursor t) ; a bar" ""))
+    (is-equal (rewrite (lines "(load-theme :dark)" "(show-minimap nil)" "") nil)
+              (format nil "(load-theme :dark)~%(show-minimap nil)~%~%~A~%(block-cursor nil)~%"
+                      *block-cursor-persist-comment*))
+    (is-equal (rewrite "" t) (format nil "~A~%(block-cursor t)~%" *block-cursor-persist-comment*)))
+  ;; BLOCK-CURSOR: the flag, the frontend told, the file; a session-only
+  ;; change and the init file's own form leave the file alone.  An init
+  ;; file of its own, as the font size test has one.
+  (with-theme-state ()
+    (let ((*block-cursor* t)
+          (*init-file* (temp-file "theme-cursor-rc"))
+          (editor (make-fake-editor)))
+      (setq *editor* editor)
+      (delete-quietly *init-file*)
+      (is (null (block-cursor nil)))
+      (is (null *block-cursor*))
+      (is (eq (fake-editor-cursor-style editor) :bar))
+      (is-equal (fake-editor-cursor-style-applied editor) 1)
+      (is-equal (read-file-text *init-file*)
+                (format nil "~A~%(block-cursor nil)~%" *block-cursor-persist-comment*))
+      (is (eq (block-cursor :yes :save nil) t))
+      (is (eq (fake-editor-cursor-style editor) :block))
+      (is-equal (fake-editor-cursor-style-applied editor) 2)
+      (is (search "(block-cursor nil)" (read-file-text *init-file*)))
+      (block-cursor t)
+      (is (search "(block-cursor t)" (read-file-text *init-file*)))
+      (is (not (search "(block-cursor nil)" (read-file-text *init-file*))))
+      (write-file-text *init-file* (lines "(block-cursor nil)" "(load-theme :dark)"))
+      (is-equal (load-init-file *init-file*) t)
+      (is (null *block-cursor*))
+      (is (eq (fake-editor-cursor-style editor) :bar))
+      (is (eq *theme* (find-theme :dark)))
+      (is-equal (read-file-text *init-file*) (lines "(block-cursor nil)" "(load-theme :dark)"))
+      (delete-quietly *init-file*))))
+
 (deftest the-display-settings-are-kept-the-themes-way
   ;; SYNTAX-COLOURING and PAREN-MATCHING: the flag, the form in the init
   ;; file; a session-only change and the init file's own form leave the

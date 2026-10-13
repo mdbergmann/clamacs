@@ -70,6 +70,7 @@
 (defconstant +tea-contents+          (+ +te-base+ #x02))
 (defconstant +tea-cursor-x+          (+ +te-base+ #x04))
 (defconstant +tea-cursor-y+          (+ +te-base+ #x05))
+(defconstant +tea-cursor-position+   (+ +te-base+ #x35)) ; struct Rectangle *, the cursor's box
 (defconstant +tea-export-hook+       (+ +te-base+ #x08))
 (defconstant +tea-fixed-font+        (+ +te-base+ #x0a))
 (defconstant +tea-has-changed+       (+ +te-base+ #x0c))
@@ -104,10 +105,16 @@
 (defconstant +tef-set-block-color+ 1)
 ;;; The class's prefs items (mcp/TextEditor_mcp.h) it asks its object for
 ;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec, the marked
-;;; block's and the text's, which the theme answers (TEXT-GET-CONFIG-ITEM).
+;;; block's and the text's, which the theme answers, and the cursor's
+;;; width -- a LONG, 1 to 5 pixels or 6 for the width of the character
+;;; under it, the class's default -- which the BLOCK-CURSOR setting
+;;; answers (TEXT-GET-CONFIG-ITEM).
 (defconstant +tecfg-cursor-color+ #xad000054)
+(defconstant +tecfg-cursor-width+ #xad000056)
 (defconstant +tecfg-marked-color+ #xad00005a)
 (defconstant +tecfg-text-color+ #xad00005f)
+(defconstant +cursor-width-block+ 6)
+(defconstant +cursor-width-bar+ 1)
 ;; struct MUIP_GetConfigItem { ULONG MethodID; ULONG id; IPTR *storage; }
 (defconstant +gci-id-offset+ 4)
 (defconstant +gci-storage-offset+ 8)
@@ -395,6 +402,9 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   theme screen-depth (theme-rgb '()) (text-pen-p nil) bg-buf (bg-spec nil)
   cursor-buf (cursor-spec nil) marked-buf (marked-spec nil)
   fg-buf (fg-spec nil)
+  ;; The cursor's width as a LONG in a foreign buffer MUI reads
+  ;; (TEXT-GET-CONFIG-ITEM, theme.lisp's BLOCK-CURSOR)
+  cursor-width-buf
   (theme-note nil) (shallow-noted nil)
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
@@ -894,6 +904,14 @@ font opened there, the windows reopened with it."
 (defmethod editor-default-font-size ((editor mui-editor))
   (or (mui-editor-font-default-size editor) 16))
 
+(defmethod editor-apply-cursor-style ((editor mui-editor) block)
+  "Applied at the next repaint from the event loop (THEME-REPAINT): the
+class reads its cursor width at Setup, so the windows are reopened, and
+every text object asks again (TEXT-CURSOR-WIDTH-ITEM)."
+  (declare (ignore block))
+  (when (mui-editor-app editor)
+    (setf (mui-editor-theme-dirty editor) t)))
+
 (defun text-font-change (editor)
   "The font the windows are reopened with when the size setting changed:
 (values CHANGED-P NEW-FONT OLD-FONT) -- NEW-FONT the freshly opened font,
@@ -975,20 +993,60 @@ an object that holds the theme's background -- the class's default cursor
 is MUI's shine pen, white on a light theme's white, and its text pen
 MUI's, black on a dark theme's background in every line the colouring has
 not painted yet -- and whatever the user's
-prefs say on any other, as for every other item."
-  (let* ((id (ffi:peek-u32 message +gci-id-offset+))
-         (buf (cond ((= id +tecfg-cursor-color+)
-                     (and (mui-editor-cursor-spec editor) (mui-editor-cursor-buf editor)))
-                    ((= id +tecfg-marked-color+)
-                     (and (mui-editor-marked-spec editor) (mui-editor-marked-buf editor)))
-                    ((= id +tecfg-text-color+)
-                     (and (mui-editor-fg-spec editor) (mui-editor-fg-buf editor))))))
-    (if (and buf (text-background-owned-p (mui:inst-data class object)))
-        (let ((storage (ffi:peek-u32 message +gci-storage-offset+)))
-          (when (/= storage 0)
-            (ffi:poke-u32 (ffi:make-foreign-pointer storage) (object-address buf) 0))
-          1)
-        (mui:do-super-method class object message))))
+prefs say on any other, as for every other item.  The cursor's width is
+the one item answered on EVERY text object: it is the editor's setting
+\(TEXT-CURSOR-WIDTH-ITEM), not the theme's."
+  (let ((id (ffi:peek-u32 message +gci-id-offset+)))
+    (if (= id +tecfg-cursor-width+)
+        (text-cursor-width-item editor class object message)
+        (let ((buf (cond ((= id +tecfg-cursor-color+)
+                          (and (mui-editor-cursor-spec editor) (mui-editor-cursor-buf editor)))
+                         ((= id +tecfg-marked-color+)
+                          (and (mui-editor-marked-spec editor) (mui-editor-marked-buf editor)))
+                         ((= id +tecfg-text-color+)
+                          (and (mui-editor-fg-spec editor) (mui-editor-fg-buf editor))))))
+          (if (and buf (text-background-owned-p (mui:inst-data class object)))
+              (let ((storage (ffi:peek-u32 message +gci-storage-offset+)))
+                (when (/= storage 0)
+                  (ffi:poke-u32 (ffi:make-foreign-pointer storage) (object-address buf) 0))
+                1)
+              (mui:do-super-method class object message))))))
+
+(defun text-cursor-width-item (editor class object message)
+  "MUICFG_TextEditor_CursorWidth for a text object at Setup: 6 -- the
+width of the character under the cursor, a block -- while *BLOCK-CURSOR*,
+as on the host; for a bar the user's own width when their MUI prefs keep
+one narrower than a block, else one pixel.  The superclass is asked
+first, so a user's width is what the storage holds when the setting
+leaves it."
+  (let* ((storage (ffi:peek-u32 message +gci-storage-offset+))
+         (super (mui:do-super-method class object message))
+         (user (and (/= super 0) (/= storage 0)
+                    (let ((setting (ffi:peek-u32 (ffi:make-foreign-pointer storage) 0)))
+                      (and (/= setting 0)
+                           (ffi:peek-u32 (ffi:make-foreign-pointer setting) 0)))))
+         (want (cond (*block-cursor* +cursor-width-block+)
+                     ((and user (< 0 user +cursor-width-block+)) nil)
+                     (t +cursor-width-bar+))))
+    (cond ((null want) super)
+          ((= storage 0) super)
+          (t
+           (let ((buf (mui-editor-cursor-width-buf editor)))
+             (ffi:poke-u32 buf want 0)
+             (ffi:poke-u32 (ffi:make-foreign-pointer storage) (object-address buf) 0))
+           1))))
+
+(defun text-cursor-width (doc)
+  "How wide the cursor of DOC's text object is drawn, in pixels, read off
+MUIA_TextEditor_CursorPosition -- the character's width for a block, the
+prefs' or one pixel for a bar; NIL before the object is set up.  What a
+drive reads back after a pick."
+  (let* ((object (mdoc-text doc))
+         (address (and object (mui:get-attr +tea-cursor-position+ object))))
+    (and address (/= address 0)
+         ;; struct Rectangle { WORD MinX, MinY, MaxX, MaxY; }
+         (let ((rect (ffi:make-foreign-pointer address)))
+           (1+ (- (ffi:peek-u16 rect 4) (ffi:peek-u16 rect 0)))))))
 
 (defmethod editor-apply-theme ((editor mui-editor) theme)
   "THEME remembered, and the windows marked for THEME-REPAINT.  Before the
@@ -2090,10 +2148,11 @@ window; NIL when it is NIL or not open."
 ;;; NM_BARLABEL, (STRPTR)-1: a separator, as libraries/gadtools.h spells it.
 (defconstant +nm-barlabel+ #xFFFFFFFF)
 
-;;; The dynamic groups this frontend makes items for: the open buffers and
-;;; the themes (phase T3 of specs/clamacs-themes.md), one mechanism below.
+;;; The dynamic groups this frontend makes items for: the open buffers,
+;;; the themes (phase T3 of specs/clamacs-themes.md) and the cursor's
+;;; shape, one mechanism below.
 (defmethod editor-dynamic-groups ((editor mui-editor))
-  '(:buffers :themes))
+  '(:buffers :themes :cursor))
 
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --
@@ -3265,7 +3324,8 @@ function: an image is saved before it runs and restores into it."
                  (mui-editor-bg-buf editor) (mui:pool-alloc +bg-buffer-size+)
                  (mui-editor-cursor-buf editor) (mui:pool-alloc +pen-spec-size+)
                  (mui-editor-marked-buf editor) (mui:pool-alloc +pen-spec-size+)
-                 (mui-editor-fg-buf editor) (mui:pool-alloc +pen-spec-size+))
+                 (mui-editor-fg-buf editor) (mui:pool-alloc +pen-spec-size+)
+                 (mui-editor-cursor-width-buf editor) (mui:pool-alloc 4))
            (create-classes editor)
            (install-hooks editor)
            ;; The menu strip goes in at creation (MUIA_Application_Menustrip

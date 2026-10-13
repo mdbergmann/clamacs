@@ -25,7 +25,9 @@
 // Phase H9: a minimap beside every source view -- the whole text in
 // miniature, the part on screen boxed -- painted here from the text and
 // its colours; CK.setMinimap shows or hides it (View > Minimap, a
-// setting Lisp keeps).
+// setting Lisp keeps).  The cursor's shape is another such setting
+// (View > Block Cursor): CK.setBlockCursor sets data-cursor, and the
+// page's one rule makes CodeMirror's bar a block.
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
@@ -480,6 +482,17 @@
   // A scroll is many events: the report goes when the box moved to
   // other lines, and at most a few times a second.
   let mapReported = "", mapReportTimer = 0;
+  // ---- the cursor's shape ---------------------------------------------------
+  //
+  // A block the width of a character or a bar (theme.lisp's
+  // block-cursor): data-cursor on the document element, which the
+  // style's one rule reads; the report carries it (`cursor' in
+  // clamacsPanels) so a script checks the page took it.
+  let blockCursor = false;
+  function cursorState() {
+    return {block: blockCursor};
+  }
+
   function reportMinimap() {
     const key = JSON.stringify(minimapState());
     if (key === mapReported) return;
@@ -819,6 +832,8 @@
       completions: completionsState(),
       // The minimap: shown or not, and what the shown source's map draws
       minimap: minimapState(),
+      // The cursor's shape, as set here
+      cursor: cursorState(),
       // Which documents this page holds, and whether it is a detached
       // window's: what a script checks after a move (phase H7)
       tabs: {source, dock, active: activeId},
@@ -1041,6 +1056,13 @@
       document.documentElement.dataset.theme = dark ? "dark" : "light";
       forgetMapColours();
       for (const d of docs.values()) if (d.map) d.map.schedule(true);
+      reportPanels();
+    },
+
+    // The cursor's shape in this window (View > Block Cursor).
+    setBlockCursor(flag) {
+      blockCursor = !!flag;
+      document.documentElement.dataset.cursor = blockCursor ? "block" : "bar";
       reportPanels();
     },
 
