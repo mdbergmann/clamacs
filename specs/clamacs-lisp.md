@@ -17,7 +17,7 @@ phases 1-6 -- stands and is the specification this port has to meet.
 Rewrite the Clamacs editor in Common Lisp, running as its **own amilisp
 instance**, and keep the architecture that works today: two Amiga
 processes talking over ARexx, the editor the client of amilisp's
-`CLAMIGA` port for everything it asks, the Lisp the client of the
+`AMILISP` port for everything it asks, the Lisp the client of the
 editor's port for everything it pushes.  The user-visible result is the
 same editor -- same keys, same windows, same ARexx command set, same
 `drive.rexx` passing -- with three things the C version cannot offer:
@@ -88,7 +88,7 @@ runtime; recording them is what turns this from a mood into a decision.
   amilisp --image clamacs.img              amilisp (the user's)
   +------------------------------+  ARexx  +-----------------------------+
   | CLAMACS package              | ------> | AMIGA.AREXX handler thread  |
-  |  MUI task (main thread):     | CLAMIGA |  EXT.DEV command layer      |
+  |  MUI task (main thread):     | AMILISP |  EXT.DEV command layer      |
   |   Application, doc windows   |         |  REPL thread, debugger loop |
   |   ClamacsText (Lisp subclass | <------ |                             |
   |    of TextEditor.mcc)        | CLAMACS |                             |
@@ -327,7 +327,7 @@ Each is an AmiLisp item; none blocks phase 1, all shape it.
    question; the editor wants `--heap 4M` and a collector whose pause
    tracks the live set.  `ext:%gc-time-stats` gives the split.
 3. **Off-heap footprint ~6 MB** beyond arena and binary (`Avail` before
-   and with the instance running).  `CLAMIGA_MEM_DIAG=1` was set for
+   and with the instance running).  `AMILISP_MEM_DIAG=1` was set for
    every run but printed nothing into the `run >file` log on either
    FS-UAE or the Vampire -- either the report does not reach a redirected
    `Output()` or the switch is not seen by the child; open.
@@ -358,7 +358,7 @@ Each is an AmiLisp item; none blocks phase 1, all shape it.
    the relocation tables: the conservative native-stack scan validated
    each spilled word by walking the *whole arena* header by header,
    and with the JIT on every collection runs under a native frame.  A
-   per-page block-start index (`gc_hdr_page[]`, `CLAMIGA_HDR_INDEX=0`
+   per-page block-start index (`gc_hdr_page[]`, `AMILISP_HDR_INDEX=0`
    is the A/B switch) bounds that to a page.  Re-measured with this
    spike, same box, same binary, explicit full GC first / later:
    Vampire 129 / 55 ms with the index vs 342 / 90 ms without vs 123 /
@@ -366,8 +366,8 @@ Each is an AmiLisp item; none blocks phase 1, all shape it.
    161 / 48 vs 314 / 74 vs 155 / 38 ms; FS-UAE 68020 5.3 / 1.7 s vs
    11.0 / 2.7 s.  A collection under the JIT now costs what one without
    it costs; per-key cost is unchanged.  The runners took two knobs for
-   this (`SPIKE_SETENV`, `SPIKE_CLAMIGA_ARGS`; `run-vamp.py` also
-   `SPIKE_CLAMIGA` for a binary pushed beside the release's).
+   this (`SPIKE_SETENV`, `SPIKE_AMILISP_ARGS`; `run-vamp.py` also
+   `SPIKE_AMILISP` for a binary pushed beside the release's).
 7. **The generational collector cannot help on the Amiga as it is**: it
    tracks dirty pages with `mprotect`, and `specs/generational-gc.md`
    deliberately rejected a source-level write barrier.  A 68k version
@@ -749,7 +749,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    (`wire-switch`): only when nothing is in flight or queued, after a
    `REPL-DETACH` of the old side, and an open REPL window re-attaches to
    the new side (`repl-switched`).  Commands `clamacs-connect-self` /
-   `clamacs-connect-clamiga` (AmiLisp menu, rules `:self`/`:not-self`)
+   `clamacs-connect-amilisp` (AmiLisp menu, rules `:self`/`:not-self`)
    and `clamacs-room` (Windows > Editor Memory: `ROOM` plus exec's
    `AvailMem` through `editor-memory-lines`).  Self-REPL forms run on the
    REPL thread, not the MUI task -- the REPL thread needs the MUI task to
@@ -796,7 +796,7 @@ clamacs/
                    inspector.lisp, menu.lisp, snapshot.lisp
   tests/           host tests: run by ../build/host/amilisp (pure modules,
                    the data of today's test_*.c), also under
-                   CLAMIGA_GC_STRESS=1
+                   AMILISP_GC_STRESS=1
   verify/realamiga drive.rexx, run-drive, sendkey.c (stays C: a 68k CLI
                    tool), the FS-UAE configs -- unchanged
   scripts/         save-editor-image.lisp, verify-editor-image.lisp
@@ -817,7 +817,7 @@ remain; `sendkey` is built by the superproject's toolchain from
 - **Host**: `make test` runs the pure modules' tests under
   `../build/host/amilisp --non-interactive` (the superproject's build,
   as the FS-UAE leg already depends on it), and again with
-  `CLAMIGA_GC_STRESS=1` so allocation in the editor's logic is exercised
+  `AMILISP_GC_STRESS=1` so allocation in the editor's logic is exercised
   under compaction.  The dispatcher plumbing is host-testable too: on the
   host, hooks and dispatchers are libffi callbacks and AmiLisp's
   `tests/test_amiga_boopsi.lisp` drives that path without an Amiga.
@@ -837,7 +837,7 @@ remain; `sendkey` is built by the superproject's toolchain from
 `bin/<target>/clamacs.img` beside `amilisp` and `amilisp.img`, per build,
 saved in FS-UAE from the staged layout for aos3 and aos3-fpu and
 natively for mos.  `lib/clamacs/*.fasl`.  The three root launchers keep
-their names; `Clamacs` runs `bin/<target>/clamiga --image
+their names; `Clamacs` runs `bin/<target>/amilisp --image
 bin/<target>/clamacs.img`.  TextEditor.mcc's floor (15.29) and MUI 3.8's
 `muimaster.library` 19 are checked at `start`, as now.  Versions: the
 editor is released with the runtime it was saved by, so the "oldest
@@ -962,7 +962,7 @@ phases 0-5 plan, and why:
 - Whether the client thread or an asynchronous platform send is the
   better shape; the spike did not exercise the wire.
 - The runtime items the spike raised (character-scan cost, GC pause vs
-  live set, off-heap footprint, the silent `CLAMIGA_MEM_DIAG`).
+  live set, off-heap footprint, the silent `AMILISP_MEM_DIAG`).
 - Whether `EXT.DEV:HANDLE-COMMAND`'s process-wide table is right for an
   editor instance whose port answers `LOAD` and `EVAL` too.  It is
   useful (a macro can evaluate editor commands) and harmless (it is the

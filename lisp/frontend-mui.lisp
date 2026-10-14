@@ -57,7 +57,7 @@
                   ("INTUI" "AMIGA.RAW.INTUITION") ("GFX" "AMIGA.RAW.GRAPHICS")
                   ("KEYMAP" "AMIGA.RAW.KEYMAP") ("ASL" "AMIGA.RAW.ASL")
                   ("DISKFONT" "AMIGA.RAW.DISKFONT")))
-    (clamiga::add-package-local-nickname (first nick) (second nick) :clamacs)))
+    (amilisp::add-package-local-nickname (first nick) (second nick) :clamacs)))
 
 (in-package :clamacs)
 

@@ -14,7 +14,7 @@
 (defvar *clamacs-host-quit* nil)
 
 ;; quit.rexx reads this file for the exact port name to message instead of
-;; scanning CLAMIGA/CLAMIGA.1-9: SHOW('P', name) only proves a port is still
+;; scanning AMILISP/AMILISP.1-9: SHOW('P', name) only proves a port is still
 ;; registered, not that the task behind it is alive, and messaging a port
 ;; whose task has already died hangs the sender forever (see CLAUDE.md,
 ;; "Never let an amilisp exit with its port thread alive").  Restricting the
@@ -23,7 +23,7 @@
 (defparameter *clamacs-host-port-file* "T:clamacs-amilisp-port")
 
 (let ((port (amiga.arexx:start)))
-  (format t "CLAMIGA-PORT ~a~%" port)
+  (format t "AMILISP-PORT ~a~%" port)
   (finish-output)
   (with-open-file (s *clamacs-host-port-file*
                       :direction :output :if-exists :supersede)
@@ -38,7 +38,7 @@
       until *clamacs-host-quit*
       do (sleep 1))
 
-(format t "CLAMIGA-HOST ~a~%" (if *clamacs-host-quit* "quit requested" "deadline"))
+(format t "AMILISP-HOST ~a~%" (if *clamacs-host-quit* "quit requested" "deadline"))
 (finish-output)
 (ignore-errors (delete-file *clamacs-host-port-file*))
 (amiga.arexx:stop)

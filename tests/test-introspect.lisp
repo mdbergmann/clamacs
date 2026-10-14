@@ -18,7 +18,7 @@
          "(twice-of 4)"
          ""))
 
-(defun intro-doc (&key (point 0) (port "CLAMIGA"))
+(defun intro-doc (&key (point 0) (port "AMILISP"))
   "A wired fake showing intro.lisp, active, the cursor at POINT.  The
 editor has found amilisp's port already, as it has by the time the drive
 reaches this leg (the idle timer scans for one only now and then)."
@@ -230,11 +230,11 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is (null (fake-asked doc)))
     (is (null (fake-messages doc)))
     ;; The port appears: found on one of the sparse ticks, asked.
-    (setf (fake-transport-port tr) "CLAMIGA")
+    (setf (fake-transport-port tr) "AMILISP")
     (dotimes (i 8) (arglist-idle doc))
     (is (sent-package-p tr))
     (is (wire-connected wire))
-    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA"))
+    (is-equal (fake-last-message doc) "amilisp found on AMILISP"))
   ;; A prompt open, another window active, a non-Lisp buffer: no lookup.
   (multiple-value-bind (doc tr wire) (intro-doc)
     (declare (ignore wire))

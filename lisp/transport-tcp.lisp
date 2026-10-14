@@ -15,8 +15,8 @@
 ;;;;     refused is the port being gone (`wire-reply ... :lost t'), and the
 ;;;;     next request tries to connect again.
 ;;;;   - FINDING amilisp is a connect attempt to HOST:PORT with the token,
-;;;;     from `CLAMACS_CLAMIGA' (`host:port', default 127.0.0.1:4005) and
-;;;;     `CLAMACS_CLAMIGA_TOKEN' in the editor's environment, or from what
+;;;;     from `CLAMACS_AMILISP' (`host:port', default 127.0.0.1:4005) and
+;;;;     `CLAMACS_AMILISP_TOKEN' in the editor's environment, or from what
 ;;;;     the launch below settled.  Without a token there is nothing to try.
 ;;;;     A failed attempt is not repeated for *RETRY-SECONDS*: the idle
 ;;;;     timer and the menu ask often.  On this machine the attempt is made
@@ -25,11 +25,11 @@
 ;;;;     the client thread, and the find only reports what is connected --
 ;;;;     the editor's task never waits for the network.
 ;;;;   - STARTING amilisp (`Start amilisp', M-x run-lisp) is the binary this
-;;;;     editor runs on (EXT:EXECUTABLE-PATH, or `CLAMACS_CLAMIGA_BIN')
+;;;;     editor runs on (EXT:EXECUTABLE-PATH, or `CLAMACS_AMILISP_BIN')
 ;;;;     with `--load' of a preamble that starts the TCP port on an ephemeral
 ;;;;     port and writes the number to a file in the editor's private
 ;;;;     directory; the token the editor drew goes into the child's
-;;;;     ENVIRONMENT (`CLAMIGA_TCP_TOKEN'), never on its command line and in
+;;;;     ENVIRONMENT (`AMILISP_TCP_TOKEN'), never on its command line and in
 ;;;;     no file.  The preamble ends with (ext.dev.tcp:wait), so the child
 ;;;;     serves until it is told to stop -- which the editor does at its own
 ;;;;     exit for an amilisp IT started (`EVAL (ext.dev.tcp:stop)' over the
@@ -54,8 +54,20 @@
 
 (in-package :clamacs)
 
-(defparameter *clamiga-default-address* "127.0.0.1:4005"
-  "Where `Connect' looks when CLAMACS_CLAMIGA says nothing.")
+(defparameter *amilisp-default-address* "127.0.0.1:4005"
+  "Where `Connect' looks when CLAMACS_AMILISP says nothing.")
+
+;;; The name before 0.12, for an init file that still says it.
+(define-symbol-macro *clamiga-default-address* *amilisp-default-address*)
+
+(defun amilisp-getenv (suffix)
+  "The editor's CLAMACS_AMILISP<SUFFIX> environment variable, or the same
+under its spelling before 0.12, CLAMACS_CLAMIGA<SUFFIX>; NIL when neither
+is set.  An empty new spelling counts as unset, as it does for the callers."
+  (let ((new (ext:getenv (concatenate 'string "CLAMACS_AMILISP" suffix))))
+    (if (and new (string/= new ""))
+        new
+        (ext:getenv (concatenate 'string "CLAMACS_CLAMIGA" suffix)))))
 
 (defparameter *retry-seconds* 2
   "How long a failed connect attempt holds off the next one.")
@@ -108,13 +120,13 @@
        (format nil "~A:~D" (tcp-transport-host tr) (tcp-transport-port tr))))
 
 (defun tcp-transport-configure (tr)
-  "The amilisp from the environment: CLAMACS_CLAMIGA (host:port) and
-CLAMACS_CLAMIGA_TOKEN.  A malformed address is reported once and ignored."
-  (let ((address (or (ext:getenv "CLAMACS_CLAMIGA") *clamiga-default-address*))
-        (token (ext:getenv "CLAMACS_CLAMIGA_TOKEN")))
+  "The amilisp from the environment: CLAMACS_AMILISP (host:port) and
+CLAMACS_AMILISP_TOKEN.  A malformed address is reported once and ignored."
+  (let ((address (or (amilisp-getenv "") *amilisp-default-address*))
+        (token (amilisp-getenv "_TOKEN")))
     (multiple-value-bind (host port) (parse-address address)
       (cond ((null host)
-             (format *error-output* "clamacs: CLAMACS_CLAMIGA=~A is not host:port; ignored~%" address))
+             (format *error-output* "clamacs: CLAMACS_AMILISP=~A is not host:port; ignored~%" address))
             (t (setf (tcp-transport-host tr) host
                      (tcp-transport-port tr) port))))
     (when (and token (string/= token ""))
@@ -292,10 +304,10 @@ find asked for it, repeat."
 ;;; Starting amilisp
 ;;; ------------------------------------------------------------------
 
-(defun clamiga-binary ()
-  "The amilisp to start: CLAMACS_CLAMIGA_BIN, else the binary this editor
+(defun amilisp-binary ()
+  "The amilisp to start: CLAMACS_AMILISP_BIN, else the binary this editor
 runs on; NIL when neither is known."
-  (let ((env (ext:getenv "CLAMACS_CLAMIGA_BIN")))
+  (let ((env (amilisp-getenv "_BIN")))
     (if (and env (string/= env ""))
         env
         (let ((f (find-symbol "EXECUTABLE-PATH" "EXT")))
@@ -318,7 +330,7 @@ the token from its environment, the port number to PORT-FILE, then serve
 until stopped."
   (concatenate 'string
                "(require \"dev-tcp\")" (string #\Newline)
-               "(let ((server (ext.dev.tcp:start :port 0 :token (ext:getenv \"CLAMIGA_TCP_TOKEN\"))))"
+               "(let ((server (ext.dev.tcp:start :port 0 :token (ext:getenv \"AMILISP_TCP_TOKEN\"))))"
                (string #\Newline)
                "  (with-open-file (out " (prin1-to-string port-file)
                " :direction :output :if-exists :supersede)" (string #\Newline)
@@ -352,29 +364,29 @@ nobody else may write it in the moments before -- or replace what is there."
                   (subseq text (1+ start) end)))))))
 
 (defun launch-heap ()
-  "The started amilisp's heap: CLAMACS_CLAMIGA_HEAP in the environment,
-else what the init file's *CLAMIGA-HEAP* says."
-  (let ((env (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
+  "The started amilisp's heap: CLAMACS_AMILISP_HEAP in the environment,
+else what the init file's *AMILISP-HEAP* says."
+  (let ((env (amilisp-getenv "_HEAP")))
     (if (and env (string/= env ""))
         env
-        (clamiga-heap))))
+        (amilisp-heap))))
 
 (defun launch-command (bin preamble log)
   "The shell command that starts BIN on PREAMBLE in the background, its
 output in LOG."
   (format nil "~A~{ ~A~} --non-interactive --load ~A </dev/null >~A 2>&1 &"
           (shell-quote bin)
-          (mapcar #'shell-quote (clamiga-launch-options (launch-heap)))
+          (mapcar #'shell-quote (amilisp-launch-options (launch-heap)))
           (shell-quote preamble) (shell-quote log)))
 
 (defmethod transport-launch ((tr tcp-transport))
-  (let ((bin (clamiga-binary))
+  (let ((bin (amilisp-binary))
         (dir (tcp-transport-dir tr))
         (token (random-hex)))
     (setf (tcp-transport-problem tr) nil)
     (cond ((null bin)
            (setf (tcp-transport-problem tr)
-                 "no amilisp binary is known (set CLAMACS_CLAMIGA_BIN)")
+                 "no amilisp binary is known (set CLAMACS_AMILISP_BIN)")
            (return-from transport-launch nil))
           ((null dir)
            (setf (tcp-transport-problem tr)
@@ -392,10 +404,10 @@ output in LOG."
         (setf (tcp-transport-problem tr) (format nil "cannot write ~A" preamble))
         (return-from transport-launch nil))
       ;; The token travels in the child's environment.
-      (setenv "CLAMIGA_TCP_TOKEN" token)
+      (setenv "AMILISP_TCP_TOKEN" token)
       (unwind-protect
            (ext:system-command (launch-command bin preamble log))
-        (unsetenv "CLAMIGA_TCP_TOKEN"))
+        (unsetenv "AMILISP_TCP_TOKEN"))
       ;; The port file appears once the preamble has run.  This is the one
       ;; place the editor waits, and it waits before there is anything to
       ;; be responsive about.
@@ -430,7 +442,7 @@ output in LOG."
                   (tcp-transport-next-try tr) 0))
           (and (tcp-try-connect tr :seconds 5) t))))))
 
-(defun stop-launched-clamiga (tr)
+(defun stop-launched-amilisp (tr)
   "Ask the amilisp this editor started to stop, over the connection (or a
 fresh one); nothing for one the user started."
   (when (tcp-transport-launched tr)
@@ -457,7 +469,7 @@ editor started, the connection."
   (let ((thread (tcp-transport-thread tr)))
     (when thread
       (wait-for-threads (list thread) 5)))
-  (stop-launched-clamiga tr)
+  (stop-launched-amilisp tr)
   (tcp-drop-stream tr))
 
 ;;; ------------------------------------------------------------------

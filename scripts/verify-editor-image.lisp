@@ -72,11 +72,11 @@
    ;; The binding tables of the amiga/raw/* modules the frontend loads are
    ;; shed (save-editor-image.lisp's :shake-bindings): one still attached
    ;; is its whole OS module's names back in the image, tens of KB each.
-   (let ((lazy (remove-if-not #'clamiga::%binding-table-info (list-all-packages))))
+   (let ((lazy (remove-if-not #'amilisp::%binding-table-info (list-all-packages))))
      (editor-image-check "the image holds no amiga/raw binding module (the MUI frontend loads seven)"
                          lazy)
      (editor-image-check "a binding table was not shed (was the image saved without :shake-bindings?)"
-                         (every (lambda (p) (getf (clamiga::%binding-table-info p) :shed))
+                         (every (lambda (p) (getf (amilisp::%binding-table-info p) :shed))
                                 lazy))))
   (:host
    ;; The paths are the saving machine's until RUN re-derives them

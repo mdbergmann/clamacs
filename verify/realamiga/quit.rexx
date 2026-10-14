@@ -42,7 +42,7 @@ END
 /* Only the amilisp this run itself started: arexx-host.lisp records its
 ** port name to T:clamacs-amilisp-port.  SHOW('P', name) only proves a port
 ** is still registered, not that the task behind it is alive, so messaging
-** a port found by scanning CLAMIGA/CLAMIGA.1-9 risks hitting one left by an
+** a port found by scanning AMILISP/AMILISP.1-9 risks hitting one left by an
 ** unrelated, already-dead run -- exactly the stale-port hang CLAUDE.md
 ** warns about ("the sender ... waits forever").  Reading back the name
 ** this run's own host wrote keeps the send off any port we did not watch

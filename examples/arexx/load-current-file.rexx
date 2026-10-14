@@ -27,7 +27,8 @@ IF EDITOR = '' THEN DO
     EXIT 10
 END
 
-LISP = FindPort('CLAMIGA')
+LISP = FindPort('AMILISP')
+IF LISP = '' THEN LISP = FindPort('CLAMIGA')   /* the port's name before 0.12 */
 IF LISP = '' THEN DO
     SAY 'amilisp is not running, or its ARexx port is not started.'
     EXIT 10
@@ -69,7 +70,7 @@ ELSE
 
 EXIT RC_LOAD
 
-/* Both programs number a second instance's port: CLAMACS.1, CLAMIGA.1, and
+/* Both programs number a second instance's port: CLAMACS.1, AMILISP.1, and
 ** so on.  Any macro that does not scan works until the day someone starts a
 ** second copy -- and on MUI 3.8 the FIRST clamacs already comes up as
 ** CLAMACS.1, so scanning is not a corner case here, it is the normal path. */

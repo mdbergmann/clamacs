@@ -4,7 +4,7 @@
 # verify/realamiga/make-editor-image.sh.
 #
 #   host/make-image.sh            under ../build/host/amilisp
-#   CLAMIGA=... names another binary
+#   AMILISP=... names another binary
 #
 # Heap images are per-build, so the binary that will start from the image
 # writes it: the editor is loaded from source with the host frontend
@@ -24,8 +24,8 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 super=$(cd "$root/.." && pwd)
-clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)" >&2; exit 1; }
+amilisp=${AMILISP:-"$super/build/host/amilisp"}
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)" >&2; exit 1; }
 
 "$here/build.sh" >/dev/null || exit 1
 out="$root/build/host-frontend"
@@ -43,7 +43,7 @@ fail() {
 
 # --- save: from the directory the image goes to, the frontend files bound
 # before load.lisp picks the list (the same binding lisp/clamacs.lisp makes).
-(cd "$out" && "$clamiga" --no-userinit --no-image --heap 32M --non-interactive --boot-log \
+(cd "$out" && "$amilisp" --no-userinit --no-image --heap 32M --non-interactive --boot-log \
     --eval '(defvar cl-user::*clamacs-frontend-files* (list "frontend-host" "transport-host" "transport-tcp"))' \
     --load "$root/lisp/load.lisp" \
     --load "$root/scripts/save-editor-image.lisp") </dev/null >"$log" 2>&1
@@ -57,7 +57,7 @@ home=$(mktemp -d "${TMPDIR:-/tmp}/clamacs-image-home.XXXXXX") || exit 1
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/clamacs-image-tmp.XXXXXX") || exit 1
 trap 'rm -rf "$home" "$tmp"' EXIT
 echo "=== verify from $img ===" >>"$log"
-(cd "$tmp" && HOME="$home" TMPDIR="$tmp" "$clamiga" --no-userinit --heap 32M --non-interactive --boot-log \
+(cd "$tmp" && HOME="$home" TMPDIR="$tmp" "$amilisp" --no-userinit --heap 32M --non-interactive --boot-log \
     --image "$img" --load "$root/scripts/verify-editor-image.lisp") </dev/null >>"$log" 2>&1
 grep -E '^IMAGE-|^EDITOR-IMAGE|^; Image saved' "$log" | sed 's/^/    /'
 grep -q 'IMAGE-FAILED' "$log" && fail "a check failed (see EDITOR-IMAGE-FAILED above)"

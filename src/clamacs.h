@@ -281,7 +281,7 @@ typedef struct ck_app {
     /* ARexx client */
     struct MsgPort *reply;
     struct RexxMsg *inflight_msg;
-    char            clamiga_port[32];
+    char            amilisp_port[32];
     int32_t         connected;
     ck_queue        queue;
     ck_diaglist     diags;
@@ -480,7 +480,7 @@ void    ck_rexx_close(ck_app *app);
 uint32_t ck_rexx_signal(ck_app *app);
 void    ck_rexx_handle_replies(ck_app *app);
 
-/* Find amilisp's port (CLAMIGA, CLAMIGA.1, ...).  Returns 1 when one was
+/* Find amilisp's port (AMILISP, AMILISP.1, ...).  Returns 1 when one was
  * found and remembered. */
 int32_t ck_rexx_find_port(ck_app *app);
 int32_t ck_rexx_launch(ck_app *app);

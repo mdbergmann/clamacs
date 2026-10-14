@@ -31,7 +31,7 @@
 
 ;;; --- the pieces --------------------------------------------------------------
 
-(defmacro with-clamiga ((server token) &body body)
+(defmacro with-amilisp ((server token) &body body)
   "A dev-tcp server in this process, playing amilisp."
   `(let ((,server (ext.dev.tcp:start :port 0 :token ,token)))
      (unwind-protect (progn ,@body)
@@ -63,9 +63,9 @@ while a reply is being delivered."
     (make-wire editor tr)
     tr))
 
-(defmacro with-tcp ((f server tr &key (token "clamiga-token")) &body body)
+(defmacro with-tcp ((f server tr &key (token "amilisp-token")) &body body)
   `(with-port (,f)
-     (with-clamiga (,server ,token)
+     (with-amilisp (,server ,token)
        (let ((,tr (tcp-fixture-transport ,f ,server ,token)))
          (unwind-protect (progn ,@body)
            (stop-tcp-transport ,tr))))))
@@ -88,7 +88,7 @@ while a reply is being delivered."
 
 ;;; --- finding and talking --------------------------------------------------------
 
-(deftest tcp-finds-a-clamiga-and-answers-through-the-mailbox
+(deftest tcp-finds-a-amilisp-and-answers-through-the-mailbox
   (with-tcp (f server tr)
     (let* ((editor (port-fixture-editor f))
            (doc (fixture-doc f))
@@ -152,7 +152,7 @@ while a reply is being delivered."
       (is (null (wire-queue wire)))
       (is-equal (ext.dev.tcp::server-served server) 0))))
 
-(deftest tcp-a-clamiga-that-went-is-lost-and-found-again
+(deftest tcp-a-amilisp-that-went-is-lost-and-found-again
   (with-port (f)
     (let* ((editor (port-fixture-editor f))
            (doc (fixture-doc f))
@@ -207,10 +207,10 @@ while a reply is being delivered."
 
 (deftest tcp-background-find-answers-at-once-and-connects-on-the-client-thread
   (with-port (f)
-    (with-clamiga (server "clamiga-token")
+    (with-amilisp (server "amilisp-token")
       (let* ((editor (port-fixture-editor f))
              (doc (fixture-doc f))
-             (tr (tcp-fixture-transport f server "clamiga-token" :background t))
+             (tr (tcp-fixture-transport f server "amilisp-token" :background t))
              (wire (editor-wire editor))
              (name (format nil "127.0.0.1:~D" (ext.dev.tcp:port server))))
         (unwind-protect
@@ -233,7 +233,7 @@ while a reply is being delivered."
 
 (deftest tcp-background-find-that-fails-holds-off-the-next-try
   (with-port (f)
-    (with-clamiga (server "right")
+    (with-amilisp (server "right")
       (let ((tr (tcp-fixture-transport f server "wrong" :background t)))
         (unwind-protect
              (progn
@@ -338,35 +338,45 @@ while a reply is being delivered."
     (is-equal (read-file-text path) (launch-preamble "/tmp/port-file"))
     (delete-file path)))
 
-(deftest tcp-launch-command-gives-the-clamiga-a-heap
+(deftest tcp-launch-command-gives-the-amilisp-a-heap
   ;; amilisp's own default (4M) is exhausted by the first system loaded.
-  (let ((saved (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
+  (let ((saved (ext:getenv "CLAMACS_AMILISP_HEAP"))
+        (saved-old (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
     (unwind-protect
          (progn
+           (unsetenv "CLAMACS_AMILISP_HEAP")
            (unsetenv "CLAMACS_CLAMIGA_HEAP")
            (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/it's.log")
                      "'/bin/amilisp' '--heap' '256M' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/it'\\''s.log' 2>&1 &")
-           (let ((*clamiga-heap* nil))
+           (let ((*amilisp-heap* nil))
              (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/log")
                        "'/bin/amilisp' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
            ;; The init file's settings.
-           (let ((*clamiga-heap* "512M")
-                 (*clamiga-options* '("--no-userinit")))
+           (let ((*amilisp-heap* "512M")
+                 (*amilisp-options* '("--no-userinit")))
              (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/log")
                        "'/bin/amilisp' '--heap' '512M' '--no-userinit' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
            ;; The environment wins, and an empty value says nothing.
-           (setenv "CLAMACS_CLAMIGA_HEAP" "64M")
+           (setenv "CLAMACS_AMILISP_HEAP" "64M")
            (is-equal (launch-heap) "64M")
-           (setenv "CLAMACS_CLAMIGA_HEAP" "")
-           (is-equal (launch-heap) "256M"))
+           (setenv "CLAMACS_AMILISP_HEAP" "")
+           (is-equal (launch-heap) "256M")
+           ;; The spelling before 0.12 is still read, after the new one.
+           (setenv "CLAMACS_CLAMIGA_HEAP" "32M")
+           (is-equal (launch-heap) "32M")
+           (setenv "CLAMACS_AMILISP_HEAP" "64M")
+           (is-equal (launch-heap) "64M"))
       (if saved
-          (setenv "CLAMACS_CLAMIGA_HEAP" saved)
+          (setenv "CLAMACS_AMILISP_HEAP" saved)
+          (unsetenv "CLAMACS_AMILISP_HEAP"))
+      (if saved-old
+          (setenv "CLAMACS_CLAMIGA_HEAP" saved-old)
           (unsetenv "CLAMACS_CLAMIGA_HEAP")))))
 
-(deftest tcp-launch-starts-a-clamiga-on-this-binary-and-exit-stops-it
-  (cond ((equal (ext:getenv "CLAMIGA_GC_STRESS") "1")
+(deftest tcp-launch-starts-a-amilisp-on-this-binary-and-exit-stops-it
+  (cond ((equal (ext:getenv "AMILISP_GC_STRESS") "1")
          (format t "  note  the launch of a second amilisp is not run under GC stress (the child would inherit it)~%"))
-        ((null (clamiga-binary))
+        ((null (amilisp-binary))
          (format t "  note  no amilisp binary is known here: the launch is not run~%"))
         (t
          (with-port (f)
@@ -402,7 +412,7 @@ while a reply is being delivered."
                     ;; Where its output goes is known to the REPL's messages.
                     (is-equal (transport-log tr) log)
                     ;; Its token is not in the editor's environment any more.
-                    (is (null (ext:getenv "CLAMIGA_TCP_TOKEN")))
+                    (is (null (ext:getenv "AMILISP_TCP_TOKEN")))
                     ;; The editor's exit stops the amilisp it started.
                     (stop-tcp-transport tr)
                     (is (tcp-wait (lambda () (search "; amilisp stopped" (or (read-file-text log) ""))) 15)))
@@ -436,7 +446,7 @@ while a reply is being delivered."
              (run-command doc 'clamacs-connect-self)
              (is-equal (fake-last-message doc) "Already talking to the editor itself")
              ;; And back, to an amilisp that is not there.
-             (run-command doc 'clamacs-connect-clamiga)
+             (run-command doc 'clamacs-connect-amilisp)
              (is (not (wire-self-p wire)))
              (is-equal (fake-last-message doc)
                        "Now talking to amilisp, which is not running (Start amilisp)")

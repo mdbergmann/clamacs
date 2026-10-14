@@ -522,7 +522,7 @@ leave to the class: releases, Amiga-key combos, keys without one character."
 
 (defun run ()
   (log-line "spike: ~A; JIT active: ~A" (lisp-implementation-version)
-            (let ((f (find-symbol "%JIT-ACTIVE-P" "CLAMIGA"))) (if (and f (fboundp f)) (funcall f) :unknown)))
+            (let ((f (find-symbol "%JIT-ACTIVE-P" "AMILISP"))) (if (and f (fboundp f)) (funcall f) :unknown)))
   (log-line "spike: heap ~A" (with-output-to-string (*standard-output*) (room)))
   (open-clock)
   (bind "RET" #'cmd-newline-and-indent)

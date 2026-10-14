@@ -23,8 +23,8 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 super=$(cd "$root/.." && pwd)
-clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
+amilisp=${AMILISP:-"$super/build/host/amilisp"}
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)"; exit 1; }
 [ "$(uname -s)" = Darwin ] || { echo "shots.sh takes the Mac editor's pictures; this is $(uname -s)"; exit 1; }
 outdir=$(cd "${1:-$root/docs/screenshots}" && pwd) || exit 1
 
@@ -38,7 +38,7 @@ trap 'rm -rf "$ledger"' EXIT
 cp "$here/shots/accounts.lisp" "$here/shots/report.lisp" "$ledger/" || exit 1
 
 HOME="$run/home" TMPDIR="$run/tmp" \
-    "$clamiga" --no-userinit --heap 32M --non-interactive \
+    "$amilisp" --no-userinit --heap 32M --non-interactive \
     --load "$root/lisp/clamacs.lisp" -- "$ledger/accounts.lisp" \
     </dev/null >"$run/editor.log" 2>&1 &
 pid=$!
@@ -59,7 +59,7 @@ CLAMACS_DRIVE_DIR="$run/tmp/" CLAMACS_DRIVE_ROOT="$root/" \
 CLAMACS_DRIVE_TMP="$run/scratch/" CLAMACS_DRIVE_CFG="$run/home/.clamacs-windows.cfg" \
 CLAMACS_DRIVE_RC="$run/home/.clamacsrc" \
 CLAMACS_SHOTS_OUT="$outdir" CLAMACS_SHOTS_PID="$pid" CLAMACS_SHOTS_LEDGER="$ledger" \
-    "$clamiga" --no-userinit --heap 16M --non-interactive \
+    "$amilisp" --no-userinit --heap 16M --non-interactive \
     --load "$here/shots.lisp" -- shots </dev/null 2>&1 | grep -v '^; Loading' >"$log"
 
 n=0

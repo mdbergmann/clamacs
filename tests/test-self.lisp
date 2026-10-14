@@ -46,7 +46,7 @@ thread: a waiting caller (the REPL thread) blocks until SELF-PUMP ran it."
           (setf (self-mail-values mail) values
                 (self-mail-done mail) t))))))
 
-;;; Generous: under CLAMIGA_GC_STRESS every allocation compacts, and the
+;;; Generous: under AMILISP_GC_STRESS every allocation compacts, and the
 ;;; REPL thread compiles each form it is given.
 (defparameter *self-wait-seconds* 300)
 
@@ -71,7 +71,7 @@ editor's task: the REPL thread may be waiting on it to take a RESULT."
         (self-pump box (lambda () (not (mp:thread-alive-p thread))))))))
 
 (defmacro with-self ((doc tr wire box) &body body)
-  "A wired fake source buffer on a fake amilisp (TR, found on CLAMIGA), and
+  "A wired fake source buffer on a fake amilisp (TR, found on AMILISP), and
 BOX standing in for the editor's task of the self transport that
 `clamacs-connect-self' makes.  Everything is stopped afterwards."
   `(multiple-value-bind (,doc ,tr ,wire) (make-wired-fake "(twice 21)|")
@@ -133,13 +133,13 @@ BOX standing in for the editor's task of the self transport that
     (is (search (lisp-implementation-type) (wire-version wire)))
     (is-equal (fake-transport-sent tr) '())
     ;; And back: amilisp's transport, found on its port again.
-    (run-command doc 'clamacs-connect-clamiga)
+    (run-command doc 'clamacs-connect-amilisp)
     (is (not (wire-self-p wire)))
     (is (eq (wire-transport wire) (wire-home wire)))
-    (is-equal (wire-port-name wire) "CLAMIGA")
+    (is-equal (wire-port-name wire) "AMILISP")
     (is (null (wire-version wire)))
-    (is-equal (fake-last-message doc) "Now talking to CLAMIGA")
-    (run-command doc 'clamacs-connect-clamiga)
+    (is-equal (fake-last-message doc) "Now talking to AMILISP")
+    (run-command doc 'clamacs-connect-amilisp)
     (is-equal (fake-last-message doc) "Already talking to amilisp")))
 
 (deftest connect-self-without-a-maker-says-so
@@ -159,7 +159,7 @@ BOX standing in for the editor's task of the self transport that
     (is (not (wire-self-p wire)))
     (is-equal (fake-last-message doc) "Switching to the editor itself ...")
     ;; A second switch while the first waits is refused.
-    (run-command doc 'clamacs-connect-clamiga)
+    (run-command doc 'clamacs-connect-amilisp)
     (is-equal (fake-last-message doc) "A switch is already under way")
     ;; The reply goes to the side that was asked; then the switch.
     (fake-deliver tr 0 "amilisp 0.11 on AmigaOS")
@@ -187,20 +187,20 @@ BOX standing in for the editor's task of the self transport that
                                                 (repl-idle-p editor)))))
              (is (search "; REPL attached to the editor itself" (transcript repl)))
              ;; And back: the self REPL thread is detached, amilisp's attached.
-             (run-command doc 'clamacs-connect-clamiga)
+             (run-command doc 'clamacs-connect-amilisp)
              (is (self-pump box (lambda () (not (wire-self-p wire)))))
              (is (not (self-repl-running-p)))
              (fake-answer-attach tr)
              (is (repl-session-attached (repl-session editor)))
-             (is (search "; Now talking to CLAMIGA" (transcript repl))))
+             (is (search "; Now talking to AMILISP" (transcript repl))))
         (self-stop box wire)
         (is-equal (self-box-errors box) '())))))
 
-(deftest switching-back-to-a-clamiga-that-is-gone
+(deftest switching-back-to-a-amilisp-that-is-gone
   (with-self (doc tr wire box)
     (run-command doc 'clamacs-connect-self)
     (setf (fake-transport-port tr) nil)
-    (run-command doc 'clamacs-connect-clamiga)
+    (run-command doc 'clamacs-connect-amilisp)
     (is (not (wire-self-p wire)))
     (is (not (wire-connected wire)))
     (is (search "not running" (fake-last-message doc)))))
@@ -312,12 +312,12 @@ BOX standing in for the editor's task of the self transport that
   (with-self (doc tr wire box)
     (let ((editor (doc-editor doc)))
       (is (menu-item-enabled-p editor (menu-find 'clamacs-connect-self)))
-      (is (not (menu-item-enabled-p editor (menu-find 'clamacs-connect-clamiga))))
+      (is (not (menu-item-enabled-p editor (menu-find 'clamacs-connect-amilisp))))
       (menu-pick editor (menu-find 'clamacs-connect-self))
       (is (wire-self-p wire))
       (is (not (menu-item-enabled-p editor (menu-find 'clamacs-connect-self))))
-      (is (menu-item-enabled-p editor (menu-find 'clamacs-connect-clamiga)))
-      (menu-pick editor (menu-find 'clamacs-connect-clamiga))
+      (is (menu-item-enabled-p editor (menu-find 'clamacs-connect-amilisp)))
+      (menu-pick editor (menu-find 'clamacs-connect-amilisp))
       (is (not (wire-self-p wire))))))
 
 (deftest clamacs-room-shows-the-editors-heap

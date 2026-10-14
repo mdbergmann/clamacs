@@ -42,7 +42,7 @@ editor and Lisp are two Amiga processes talking over ARexx.
 ```
   +---------------------------+     ARexx     +-----------------------------+
   | clamacs (C, MUI)          | ------------> | amilisp                     |
-  |  Application              |  port CLAMIGA |  AMIGA.AREXX handler thread |
+  |  Application              |  port AMILISP |  AMIGA.AREXX handler thread |
   |   document windows        |               |   EXT.DEV command layer     |
   |    ClamacsText (subclass  | <------------ |   (lib/dev-commands.lisp)   |
   |     of TextEditor.mcc)    |  port CLAMACS |                             |
@@ -331,7 +331,7 @@ says.
 
 ### Port discovery and launch
 
-Port `CLAMIGA`, else `CLAMIGA.1` .. `CLAMIGA.9` (a second instance), the
+Port `AMILISP`, else `AMILISP.1` .. `AMILISP.9` (a second instance), the
 same scan the shipped `amilisp.rexx` macro does.  If none exists and the
 user asked for a Lisp command, the editor offers to launch amilisp in its
 own console window (`SystemTags` with a `CON:` window, the binary the
@@ -570,7 +570,7 @@ Protocol (AmiLisp side, `lib/dev-repl.lisp` for the debugger,
   restart list for a macro that missed the announcement.  On the m68k
   build a function the JIT compiled natively pushes no VM frame of its
   own, so a `DEBUG` attach turns the JIT's per-call shadow frames on
-  (`clamiga::%jit-set-frames`, a few percent on call-heavy code; such a
+  (`amilisp::%jit-set-frames`, a few percent on call-heavy code; such a
   frame shows the arguments, not the `let`-bound locals) and a detach
   puts them back.
   `FRAME <n>` hands a job to the parked thread and waits
@@ -705,7 +705,7 @@ not have saved; CLAUDE.md carries the short list.
   target.  The editor opens version 19.
 - **The editor's port is `CLAMACS.1` on the first instance**, not
   `CLAMACS`: MUI numbers the port it builds from `MUIA_Application_Base`.
-  Clients scan the base name and `.1` .. `.9`, as they do for `CLAMIGA`.
+  Clients scan the base name and `.1` .. `.9`, as they do for `AMILISP`.
 - **Export with `MUIV_TextEditor_ExportHook_NoStyle`.**  The `Plain` hook
   writes `\033P[...]` colour escapes into the text, which breaks saved files
   and desynchronises every offset from `MUIA_TextEditor_CursorIndex`.
@@ -775,7 +775,7 @@ not have saved; CLAUDE.md carries the short list.
 - **An amilisp that never opens its port under FS-UAE is a cold FASL cache
   plus a small stack** (found 2026-09-10, the first run after pinning the
   submodule).  amilisp's cache lives on the Workbench image
-  (`S:cl-amiga/faslcache/<version>-fasl<N>/`) and is validated by source
+  (`S:amilisp/faslcache/<version>-fasl<N>/`) and is validated by source
   mtime, so a fresh clone or a pull of the AmiLisp superproject makes every
   entry stale and the port's library -- `lib/amiga/arexx.lisp`,
   `lib/dev-commands.lisp` and their requires -- is compiled from source at

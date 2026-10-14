@@ -57,7 +57,7 @@ verb its argument.  The verb's answer, (values RC TEXT)."
   "Every command sent so far, oldest first."
   (reverse (mapcar #'cdr (fake-transport-sent tr))))
 
-(defun make-wired-fake (text &key (port "CLAMIGA"))
+(defun make-wired-fake (text &key (port "AMILISP"))
   "A fake document whose editor has a wire over a fake transport that finds
 PORT.  Three values: the document, the transport, the wire."
   (let* ((editor (make-fake-editor))

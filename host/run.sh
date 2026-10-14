@@ -7,23 +7,23 @@
 #                                   host/make-image.sh when it is missing)
 #
 # Builds what is missing under build/host-frontend/ (host/build.sh) and
-# runs the editor under the superproject's host amilisp; CLAMIGA=... names
+# runs the editor under the superproject's host amilisp; AMILISP=... names
 # another binary.  The files follow `--' on amilisp's command line, as they
 # do for the Amiga launcher; `-- --bind ADDR' is the editor's own option.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 super=$(cd "$root/.." && pwd)
-clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)" >&2; exit 1; }
+amilisp=${AMILISP:-"$super/build/host/amilisp"}
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)" >&2; exit 1; }
 "$here/build.sh" >/dev/null || exit 1
 if [ "${IMAGE:-0}" = 1 ]; then
     img="$root/build/host-frontend/clamacs.img"
     # An image is the binary's own, and the sources' own: one older than
     # the binary or than any lisp/ file is remade (host/image-stale.sh).
-    if "$here/image-stale.sh" "$img" "$clamiga"; then
-        CLAMIGA="$clamiga" "$here/make-image.sh" >/dev/null || exit 1
+    if "$here/image-stale.sh" "$img" "$amilisp"; then
+        AMILISP="$amilisp" "$here/make-image.sh" >/dev/null || exit 1
     fi
-    exec "$clamiga" --heap 32M --non-interactive --image "$img" --eval "(clamacs::run)" -- "$@"
+    exec "$amilisp" --heap 32M --non-interactive --image "$img" --eval "(clamacs::run)" -- "$@"
 fi
-exec "$clamiga" --heap 32M --non-interactive --load "$root/lisp/clamacs.lisp" -- "$@"
+exec "$amilisp" --heap 32M --non-interactive --load "$root/lisp/clamacs.lisp" -- "$@"

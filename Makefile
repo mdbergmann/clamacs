@@ -61,8 +61,8 @@ TESTS = keymap rawkey command bindings killring minihist locstack menudef winsto
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 
 # The Lisp editor's tests run under the SUPERPROJECT's host build.
-CLAMIGA_HOST     ?= ../build/host/amilisp
-CLAMIGA_GCSTRESS ?= ../build/host-gcstress/amilisp
+AMILISP_HOST     ?= ../build/host/amilisp
+AMILISP_GCSTRESS ?= ../build/host-gcstress/amilisp
 
 .PHONY: all test test-lisp test-lisp-gc-stress clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS)) \
         host host-image host-app host-check host-check-image host-check-app host-linux
@@ -85,15 +85,15 @@ test: $(TEST_BINS)
 	    $$t || fail=1; \
 	done; \
 	echo "=== tests/run-lisp-tests.sh ==="; \
-	tests/run-lisp-tests.sh $(CLAMIGA_HOST) || fail=1; \
+	tests/run-lisp-tests.sh $(AMILISP_HOST) || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "=== SOME TESTS FAILED ==="; exit 1; fi; \
 	echo "=== ALL TESTS PASSED ==="
 
 test-lisp:
-	@tests/run-lisp-tests.sh $(CLAMIGA_HOST)
+	@tests/run-lisp-tests.sh $(AMILISP_HOST)
 
 test-lisp-gc-stress:
-	@CLAMIGA_GC_STRESS=1 tests/run-lisp-tests.sh $(CLAMIGA_GCSTRESS)
+	@AMILISP_GC_STRESS=1 tests/run-lisp-tests.sh $(AMILISP_GCSTRESS)
 
 $(patsubst %,test-%,$(TESTS)): test-%: $(BUILDDIR)/test_%
 	$<

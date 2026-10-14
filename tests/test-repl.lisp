@@ -33,11 +33,11 @@
       (is-equal (bound-to (keystate-local (doc-keys repl)) "M-p") 'clamacs-repl-previous-input)
       ;; DEBUG: an error parks the thread and opens the debugger.
       (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
-      (is-equal (fake-last-message repl) "Attaching the REPL to CLAMIGA ...")
+      (is-equal (fake-last-message repl) "Attaching the REPL to AMILISP ...")
       (fake-deliver tr 0 "CL-USER")
       (is (repl-session-attached (repl-session (doc-editor doc))))
-      (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> |"))
-      (is-equal (fake-last-message repl) "REPL attached to CLAMIGA")
+      (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> |"))
+      (is-equal (fake-last-message repl) "REPL attached to AMILISP")
       ;; What the editor inserted never counts as a change.
       (is (not (doc-modified-p repl)))
       ;; A second C-c C-z from the source raises the window, no second attach.
@@ -89,7 +89,7 @@
     (is (repl-window-busy (doc-repl repl)))
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "3"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (+ 1 2)" "3" "CL-USER> |"))
+              (lines "; REPL attached to AMILISP" "CL-USER> (+ 1 2)" "3" "CL-USER> |"))
     (is (not (repl-window-busy (doc-repl repl))))
     (is (not (doc-modified-p repl)))
     (is-equal (fake-last-message repl) "")
@@ -104,7 +104,7 @@
     (fake-inbound (doc-editor repl) (format nil "OUTPUT THERE~%"))
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "42"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA"
+              (lines "; REPL attached to AMILISP"
                      "CL-USER> (progn (princ 'hello) (terpri) (princ 'there) 42)"
                      "HELLO" "THERE" "42" "CL-USER> |"))))
 
@@ -115,7 +115,7 @@
     (fake-inbound (doc-editor repl) "OUTPUT X")
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "X"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (princ 'x)" "X" "X" "CL-USER> |"))))
+              (lines "; REPL attached to AMILISP" "CL-USER> (princ 'x)" "X" "X" "CL-USER> |"))))
 
 (deftest readline-arms-the-input-and-ret-answers-it
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
@@ -132,14 +132,14 @@
     (is (not (repl-window-reading (doc-repl repl))))
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "\"abc\"" "NIL"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (read-line)" "abc"
+              (lines "; REPL attached to AMILISP" "CL-USER> (read-line)" "abc"
                      "\"abc\"" "NIL" "CL-USER> |"))))
 
 (deftest a-blank-ret-gives-a-fresh-prompt-and-an-unfinished-form-a-newline
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
     (declare (ignore doc wire))
     (type-keys repl "RET")
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> " "CL-USER> |"))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> " "CL-USER> |"))
     (is-equal (fake-sent-commands tr) '("REPL-ATTACH CLAMACS DEBUG"))
     ;; Still typing the form: RET indents the next line, sends nothing.
     ;; The body indents under the form as it stands on the prompt line
@@ -164,7 +164,7 @@
     (is-equal (fake-last-message repl) "ERROR: Interrupted")
     (is-equal (fake-beeps repl) 1)
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (loop)" "ERROR: Interrupted" "CL-USER> |"))))
+              (lines "; REPL attached to AMILISP" "CL-USER> (loop)" "ERROR: Interrupted" "CL-USER> |"))))
 
 (deftest the-interrupt-from-a-source-buffer-and-without-a-repl
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
@@ -210,7 +210,7 @@
     (is-equal (repl-window-package (doc-repl repl)) "CL-USER")
     ;; The transcript keeps the record of the buffer eval, above the prompt.
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "; Evaluated: 1" "CL-USER> |"))
+              (lines "; REPL attached to AMILISP" "; Evaluated: 1" "CL-USER> |"))
     ;; The next form at the prompt re-asserts the prompt's package.
     (type-text repl "(+ 1 1)")
     (type-keys repl "RET")
@@ -251,12 +251,12 @@
     (declare (ignore doc tr wire))
     (doc-set-point repl 0)
     (type-text repl "x")
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> x|"))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> x|"))
     ;; Backspace at the input's start is swallowed: the prompt stays.
     (type-keys repl "BS")
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> |"))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> |"))
     (is-equal (type-keys repl "BS") '())
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> |"))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> |"))
     ;; Motion into the transcript is free.
     (type-keys repl "M-<")
     (is-equal (doc-point repl) 0)))
@@ -297,7 +297,7 @@
     (type-keys repl "C-k")
     ;; The cursor was moved to the end of the input first, where C-k
     ;; finds nothing to kill; the transcript is intact.
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "CL-USER> abc|"))))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "CL-USER> abc|"))))
 
 (deftest clear-transcript
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
@@ -325,10 +325,10 @@
     (declare (ignore doc tr wire))
     (type-text repl "(+ 1")
     (fake-inbound (doc-editor repl) (format nil "OUTPUT late~%"))
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "late" "CL-USER> (+ 1|"))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "late" "CL-USER> (+ 1|"))
     (is-equal (repl-window-input-start (doc-repl repl)) (position #\( (transcript repl)))
     (type-text repl " 2)")
-    (is-equal (transcript repl) (lines "; REPL attached to CLAMIGA" "late" "CL-USER> (+ 1 2)|"))))
+    (is-equal (transcript repl) (lines "; REPL attached to AMILISP" "late" "CL-USER> (+ 1 2)|"))))
 
 ;;; --- buffer evals --------------------------------------------------------------
 
@@ -374,14 +374,14 @@
       (eval-from-buffer (lines "RESULT 0 CL-USER" "FOO"))
       (is-equal (fake-last-message doc) "FOO")
       (is-equal (transcript repl)
-                (lines "; REPL attached to CLAMIGA" "; Evaluated: FOO" "CL-USER> |"))
+                (lines "; REPL attached to AMILISP" "; Evaluated: FOO" "CL-USER> |"))
       ;; Output without a newline, then two values
       (run-command doc 'clamacs-eval-last-sexp)
       (fake-deliver tr 0 "")
       (fake-inbound (doc-editor repl) "OUTPUT hello")
       (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "1" "2"))
       (is-equal (transcript repl)
-                (lines "; REPL attached to CLAMIGA" "; Evaluated: FOO" "hello"
+                (lines "; REPL attached to AMILISP" "; Evaluated: FOO" "hello"
                        "; Evaluated: 1" ";   2" "CL-USER> |"))
       ;; amilisp's `; No values'
       (eval-from-buffer (lines "RESULT 0 CL-USER" "; No values"))
@@ -411,7 +411,7 @@
     (setf (fake-colours repl) '())
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "1" "2"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "; Evaluated: 1" ";   2" "CL-USER> |"))
+              (lines "; REPL attached to AMILISP" "; Evaluated: 1" ";   2" "CL-USER> |"))
     (is-equal (fake-line-colours repl 1) '((0 14 :comment)))
     (is-equal (fake-line-colours repl 2) '((0 5 :comment)))))
 
@@ -454,7 +454,7 @@
               "The REPL thread is gone, and what it ran with it -- C-c C-z attaches a new one")
     (is (not (repl-session-attached (repl-session (doc-editor repl)))))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (load-everything)"
+              (lines "; REPL attached to AMILISP" "CL-USER> (load-everything)"
                      "; The REPL thread is gone, and what it ran with it" "CL-USER> |"))
     ;; The prompt is one again: RET says what is missing, C-c C-z gets it.
     (type-text repl "1")
@@ -495,15 +495,15 @@
     (fake-deliver tr 20 "no such port" :lost t)
     (is (not (repl-session-attached (repl-session (doc-editor repl)))))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "CL-USER> (+ 1 2)"
+              (lines "; REPL attached to AMILISP" "CL-USER> (+ 1 2)"
                      "; amilisp is gone (it is attached again when it comes back)" "CL-USER> |"))
     ;; Back: found by the next scan, and attached without being asked.
-    (setf (fake-transport-port tr) "CLAMIGA.1")
+    (setf (fake-transport-port tr) "AMILISP.1")
     (wire-find-port wire)
     (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
     (fake-deliver tr 0 "CL-USER")
     (is (repl-session-attached (repl-session (doc-editor repl))))
-    (is (search (format nil "; amilisp is back on CLAMIGA.1~%; REPL attached to CLAMIGA.1~%CL-USER> |")
+    (is (search (format nil "; amilisp is back on AMILISP.1~%; REPL attached to AMILISP.1~%CL-USER> |")
                 (transcript repl)))))
 
 (deftest closing-the-repl-window-detaches
@@ -554,7 +554,7 @@
     (fake-deliver tr 0 *hello-load-reply*)
     (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA"
+              (lines "; REPL attached to AMILISP"
                      "; loading T:hello.lisp"
                      "hello from the file"
                      "and again"
@@ -569,7 +569,7 @@
     (send-input repl tr "(+ 1 2)")
     (fake-inbound (doc-editor repl) (lines "RESULT 0 CL-USER" "3"))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA"
+              (lines "; REPL attached to AMILISP"
                      "; loading T:hello.lisp"
                      "hello from the file"
                      "and again"
@@ -580,7 +580,7 @@
     (wire-request wire doc :load "LOAD T:quiet.lisp")
     (fake-deliver tr 0 (lines "; loading T:quiet.lisp" "0 error(s), 0 warning(s)" ""))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA"
+              (lines "; REPL attached to AMILISP"
                      "; loading T:hello.lisp"
                      "hello from the file"
                      "and again"
@@ -606,7 +606,7 @@
       (is (repl-session-attached (repl-session editor)))
       (is-equal (transcript repl)
                 (lines "; loading T:hello.lisp" "hello from the file" "and again"
-                       "; REPL attached to CLAMIGA" "CL-USER> |"))
+                       "; REPL attached to AMILISP" "CL-USER> |"))
       (is (eq (editor-active-document editor) doc)))))
 
 (deftest a-quiet-load-opens-no-repl-window
@@ -627,7 +627,7 @@
     (fake-deliver tr 0 *hello-load-reply*)
     (fake-inbound (doc-editor repl) "RESULT 0 CL-USER")
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA"
+              (lines "; REPL attached to AMILISP"
                      "CL-USER> (sleep 6)"
                      "; loading T:hello.lisp"
                      "hello from the file"
@@ -643,4 +643,4 @@
     (fake-deliver tr 0 (lines "T:x.lisp:1: ERROR: boom" "1 error(s), 0 warning(s)"
                               "--- log ---" "printed before the error" ""))
     (is-equal (transcript repl)
-              (lines "; REPL attached to CLAMIGA" "printed before the error" "CL-USER> |"))))
+              (lines "; REPL attached to AMILISP" "printed before the error" "CL-USER> |"))))

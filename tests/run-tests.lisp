@@ -2,7 +2,7 @@
 ;;;;
 ;;;;   ../build/host/amilisp --no-userinit --script tests/run-tests.lisp
 ;;;;
-;;;; (`make test-lisp' does that, and again under CLAMIGA_GC_STRESS=1.)
+;;;; (`make test-lisp' does that, and again under AMILISP_GC_STRESS=1.)
 ;;;; CLAMACS_TEST=keymap runs one file.  The last line is the verdict and
 ;;;; the only thing a caller may trust: amilisp's LOAD recovers form by form
 ;;;; and a script's exit code is 0 even after a reader error, so a file that

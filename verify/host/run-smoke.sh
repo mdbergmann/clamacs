@@ -5,7 +5,7 @@
 #   verify/host/run-smoke.sh            under ../build/host/amilisp
 #   GCSTRESS=1 verify/host/run-smoke.sh under ../build/host-gcstress/amilisp
 #                                       with a compaction at every allocation
-#   CLAMIGA=... names another binary.
+#   AMILISP=... names another binary.
 #
 # The verdict is the LAST LINE (SMOKE: PASS), as for the Lisp tests: a
 # --load recovers form by form, so the exit code alone would pass a script
@@ -16,17 +16,17 @@ root=$(cd "$here/../.." && pwd)
 super=$(cd "$root/.." && pwd)
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-gcstress/amilisp"}
-    CLAMIGA_GC_STRESS=1
-    export CLAMIGA_GC_STRESS
+    amilisp=${AMILISP:-"$super/build/host-gcstress/amilisp"}
+    AMILISP_GC_STRESS=1
+    export AMILISP_GC_STRESS
 else
-    clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
+    amilisp=${AMILISP:-"$super/build/host/amilisp"}
 fi
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
 
-out=$("$clamiga" --no-userinit --heap 32M --non-interactive --load "$here/smoke.lisp" </dev/null 2>&1)
+out=$("$amilisp" --no-userinit --heap 32M --non-interactive --load "$here/smoke.lisp" </dev/null 2>&1)
 rc=$?
 echo "$out" | grep -v '^; Loading'
 if [ "$(echo "$out" | tail -1)" != "SMOKE: PASS" ]; then

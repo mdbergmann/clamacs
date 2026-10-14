@@ -303,7 +303,7 @@
       (is (menu-state-doc-changed (menu-state editor)))
       (is (menu-state-doc-has-path (menu-state editor)))
       ;; The port appears: connected.
-      (setf (fake-transport-port tr) "CLAMIGA")
+      (setf (fake-transport-port tr) "AMILISP")
       (wire-find-port wire)
       (is (menu-state-connected (menu-state editor)))
       ;; Two diagnostics: the error list is not empty.
@@ -388,7 +388,7 @@
       ;; Help > Common Lisp HyperSpec is always live.
       (is-equal (port editor "MENU clamacs-hyperspec STATE") '(0 "enabled")))))
 
-(deftest the-clamiga-menu-follows-the-port
+(deftest the-amilisp-menu-follows-the-port
   (multiple-value-bind (doc tr wire) (make-wired-fake "(+ 1 2)|" :port nil)
     (let ((editor (doc-editor doc)))
       (doc-activate doc)
@@ -396,7 +396,7 @@
       (is-equal (port editor "MENU run-lisp STATE") '(0 "enabled"))
       (is-equal (port editor "MENU clamacs-next-error STATE") '(0 "disabled"))
       ;; The port is found: the AmiLisp menu wakes up, Start amilisp dims.
-      (setf (fake-transport-port tr) "CLAMIGA")
+      (setf (fake-transport-port tr) "AMILISP")
       (wire-find-port wire)
       (is-equal (port editor "MENU clamacs-eval-defun STATE") '(0 "enabled"))
       (is-equal (port editor "MENU run-lisp STATE") '(0 "disabled"))
@@ -609,9 +609,9 @@
         (is (search "fake frontend 1.0" text))
         (is (search "amilisp: not connected" text)))
       ;; Connected but the version not asked yet: the port's name.
-      (setf (fake-transport-port tr) "CLAMIGA.1")
+      (setf (fake-transport-port tr) "AMILISP.1")
       (wire-find-port wire)
-      (is (search "amilisp: CLAMIGA.1" (about-text editor)))
+      (is (search "amilisp: AMILISP.1" (about-text editor)))
       (setf (wire-version wire) "amilisp 0.11")
       (is (search "amilisp: amilisp 0.11" (about-text editor)))
       ;; The command puts it in a requester with one button.

@@ -33,21 +33,21 @@ OPTIONS FAILAT 21
 ** without it the second editor is the C binary, Clamacs:build/amiga/clamacs. */
 MODE = ''
 PHASE = 5
-CLAMIGA = ''
+AMILISP = ''
 PARSE UPPER ARG ARGS
 DO WHILE ARGS ~= ''
     PARSE VAR ARGS WORD ARGS
     SELECT
         WHEN WORD = 'HARDWARE' THEN MODE = 'HARDWARE'
         WHEN WORD = 'PHASE' THEN PARSE VAR ARGS PHASE ARGS
-        WHEN WORD = 'LISP' THEN PARSE VAR ARGS CLAMIGA ARGS
+        WHEN WORD = 'LISP' THEN PARSE VAR ARGS AMILISP ARGS
         OTHERWISE SAY 'INFO ignoring argument' WORD
     END
 END
-IF CLAMIGA = '' THEN
+IF AMILISP = '' THEN
     SECOND = 'Clamacs:build/amiga/clamacs Clamacs:verify/realamiga/sample2.lisp'
 ELSE
-    SECOND = CLAMIGA '--no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample2.lisp'
+    SECOND = AMILISP '--no-userinit --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- Clamacs:verify/realamiga/sample2.lisp'
 
 /* MUI's startup on an emulated 14 MHz 68020 is not instant: the class
 ** scan, the config load and the first window layout all happen before the
@@ -59,7 +59,7 @@ ELSE
 
 /* MUI numbers the port it builds from MUIA_Application_Base, and on MUI 3.8
 ** the FIRST instance already comes up as CLAMACS.1 -- observed, not assumed.
-** So scan the way the spec has the editor scan for CLAMIGA: the base name,
+** So scan the way the spec has the editor scan for AMILISP: the base name,
 ** then .1 .. .9.  A macro written against clamacs has to do the same. */
 PORT = ''
 DO i = 1 TO 120 WHILE PORT = ''
@@ -169,7 +169,7 @@ ELSE
 ** (src/rexxport.c, ck_rx_eval_func), so a form there is simply an unknown
 ** command.  It is frozen and will not grow the door, so the legs run only
 ** for the Lisp editor -- the run that passed `LISP <amilisp>'. */
-IF CLAMIGA ~= '' THEN DO
+IF AMILISP ~= '' THEN DO
 'EVAL (progn (princ "printed") 42)'
 IF RC = 0 & POS('printed', RESULT) > 0 & POS('42', RESULT) > 0 THEN
     SAY 'OK EVAL of a form answered with what it printed and its value'
@@ -185,7 +185,7 @@ IF RC = 0 & POS('Heap:', RESULT) > 0 & POS('bytes free', RESULT) > 0 THEN
     SAY 'OK EVAL (room) reported the editor heap,' LENGTH(RESULT) 'characters'
 ELSE
     SAY 'FAIL EVAL (room) gave rc=' RC 'result=' RESULT
-END /* CLAMIGA ~= '': the form-eval legs, Lisp editor only */
+END /* AMILISP ~= '': the form-eval legs, Lisp editor only */
 
 /* Insert text and read the line back. */
 'EVAL end-of-buffer'
@@ -329,7 +329,7 @@ END /* PHASE >= 5: the menu strip */
 ** id it carries, as the MenuAction hook would.  sample.lisp is active
 ** from the leg above and is left active again.
 ** ------------------------------------------------------------------ */
-IF CLAMIGA ~= '' & PHASE >= 5 THEN DO
+IF AMILISP ~= '' & PHASE >= 5 THEN DO
 NL = '0A'X
 'BUFFERS'
 B = RESULT
@@ -481,7 +481,7 @@ IF RESULT = '> Block Cursor' THEN
 ELSE
     SAY 'FAIL after the second pick CURSOR gave' TRANSLATE(RESULT, '|', NL)
 'EVAL (progn (clamacs::refresh-user-paths) (clamacs::delete-quietly "T:clamacs-drive-rc") clamacs::*init-file*)'
-END /* CLAMIGA ~= '' & PHASE >= 5: the Buffers and View menus */
+END /* AMILISP ~= '' & PHASE >= 5: the Buffers and View menus */
 
 /* ------------------------------------------------------------------ *
 ** The Emacs layer, driven by KEYS rather than by command names.
@@ -891,11 +891,11 @@ END /* PHASE >= 5: the window snapshot */
 ** separates "slow" from "never came up". */
 LISP = ''
 DO i = 1 TO 240 WHILE LISP = ''
-    IF SHOW('P', 'CLAMIGA') THEN
-        LISP = 'CLAMIGA'
+    IF SHOW('P', 'AMILISP') THEN
+        LISP = 'AMILISP'
     ELSE DO n = 1 TO 9
-        IF SHOW('P', 'CLAMIGA.'n) THEN DO
-            LISP = 'CLAMIGA.'n
+        IF SHOW('P', 'AMILISP.'n) THEN DO
+            LISP = 'AMILISP.'n
             LEAVE n
         END
     END
@@ -1011,7 +1011,7 @@ ELSE
 ** reply's `; loading' line; the buffer kept the focus.  The Lisp editor
 ** only, which LISP names: the C editor's EVAL takes a command name, not a
 ** form, and never routes a load's log into a transcript. */
-IF CLAMIGA ~= '' THEN DO
+IF AMILISP ~= '' THEN DO
 'EVAL (let ((repl (clamacs::repl-doc clamacs::*editor*))) (and repl (clamacs::doc-text repl 0 (clamacs::doc-end repl))))'
 IF POS('; loading', RESULT) > 0 & POS('first deliberate error', RESULT) > 0 THEN
     SAY 'OK the load''s output went into the REPL transcript'
@@ -1022,7 +1022,7 @@ IF POS('errors.lisp', RESULT) > 0 THEN
     SAY 'OK the buffer kept the focus over the transcript:' RESULT
 ELSE
     SAY 'FAIL after the load the active window is' RESULT
-END /* CLAMIGA ~= '': the load's transcript, Lisp editor only */
+END /* AMILISP ~= '': the load's transcript, Lisp editor only */
 
 /* The reply filled the error list, which is what enables Next Error. */
 IF PHASE >= 5 THEN DO
@@ -1683,7 +1683,7 @@ END
 ** reports the editor's heap, IN-EDITOR reaches the MUI task and answers
 ** with the active window, and Talk to amilisp switches back.
 ** ------------------------------------------------------------------ */
-IF CLAMIGA ~= '' & PHASE >= 5 THEN DO
+IF AMILISP ~= '' & PHASE >= 5 THEN DO
 'MENU clamacs-connect-self STATE'
 IF RESULT = 'enabled' THEN
     SAY 'OK Talk to the Editor Itself is live while talking to amilisp'
@@ -1731,8 +1731,8 @@ IF Y ~= '' & POS('*clamacs-repl*', L) > 0 THEN
 ELSE
     SAY 'FAIL IN-EDITOR gave' L '(cursor' Y')'
 'EVAL end-of-buffer'
-'MENU clamacs-connect-clamiga'
-ECHO = WaitEcho('REPL attached to CLAMIGA', 120)
+'MENU clamacs-connect-amilisp'
+ECHO = WaitEcho('REPL attached to AMILISP', 120)
 IF ECHO ~= '' THEN
     SAY 'OK Talk to amilisp moved the REPL back:' ECHO
 ELSE DO
@@ -1740,7 +1740,7 @@ ELSE DO
     SAY 'FAIL the REPL did not come back to amilisp; the echo area says' RESULT
 END
 'EVAL end-of-buffer'
-END /* CLAMIGA ~= '' & PHASE >= 5: the editor's own Lisp */
+END /* AMILISP ~= '' & PHASE >= 5: the editor's own Lisp */
 
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp

@@ -123,7 +123,7 @@ echo "editor-idle" >T:cpumeter-note
 C:Wait $IDLE_SECONDS
 echo "=== loop-stats editor-idle ===" >>build/amiga/cpu-idle-run.log
 rx Clamacs:verify/realamiga/loopstats.rexx >>build/amiga/cpu-idle-run.log
-echo "=== phase editor-with-clamiga ===" >>build/amiga/cpu-idle-run.log
+echo "=== phase editor-with-amilisp ===" >>build/amiga/cpu-idle-run.log
 date >>build/amiga/cpu-idle-run.log
 echo "amilisp-starting" >T:cpumeter-note
 cd AmiLisp:
@@ -143,9 +143,9 @@ ENDIF
 echo "OK amilisp port open after about \$n x 2 s" >>build/amiga/cpu-idle-run.log
 C:Wait 5
 rx Clamacs:verify/realamiga/loopstats.rexx RESET
-echo "editor-with-clamiga" >T:cpumeter-note
+echo "editor-with-amilisp" >T:cpumeter-note
 C:Wait $IDLE_SECONDS
-echo "=== loop-stats editor-with-clamiga ===" >>build/amiga/cpu-idle-run.log
+echo "=== loop-stats editor-with-amilisp ===" >>build/amiga/cpu-idle-run.log
 rx Clamacs:verify/realamiga/loopstats.rexx >>build/amiga/cpu-idle-run.log
 LAB typing
 echo "=== phase typing ===" >>build/amiga/cpu-idle-run.log

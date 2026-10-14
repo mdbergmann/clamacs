@@ -4,7 +4,7 @@
 ;;;; asks of amilisp -- the REPL, the debugger, the inspector, arglist,
 ;;;; completion, describe, apropos, `M-.', LOAD -- can be asked of the
 ;;;; editor instead: `M-x clamacs-connect-self' switches the wire over to
-;;;; this transport (wire.lisp, WIRE-SWITCH), `M-x clamacs-connect-clamiga'
+;;;; this transport (wire.lisp, WIRE-SWITCH), `M-x clamacs-connect-amilisp'
 ;;;; switches it back.  That is how the running editor is hacked and
 ;;;; measured from inside, with the tools already written for amilisp and
 ;;;; no second implementation of any of them.
@@ -275,7 +275,7 @@ editor cannot talk to itself.")
                (unless (eq (wire-transport wire) tr)
                  (doc-message doc "Switching to the editor itself ..."))))))))
 
-(define-command clamacs-connect-clamiga (doc arg)
+(define-command clamacs-connect-amilisp (doc arg)
   "Point the REPL, the evals and introspection at amilisp again."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))

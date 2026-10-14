@@ -79,23 +79,27 @@ uint32_t ck_rexx_signal(ck_app *app)
 
 int32_t ck_rexx_find_port(ck_app *app)
 {
+    /* AMILISP, then AMILISP.1 .. AMILISP.9 -- the same scan the shipped
+     * amilisp.rexx macro does, so a second amilisp instance is reachable;
+     * then the same under CLAMIGA, the port's name on a runtime older than
+     * 0.12, so an old installation is still found. */
+    static const char *const bases[] = { "AMILISP", "CLAMIGA" };
     char    name[32];
-    int32_t i;
+    int32_t b, i;
     int32_t was = app->connected;
 
-    /* CLAMIGA, then CLAMIGA.1 .. CLAMIGA.9 -- the same scan the shipped
-     * amilisp.rexx macro does, so a second amilisp instance is reachable. */
+    for (b = 0; b < 2; b++)
     for (i = 0; i <= 9; i++) {
         if (i == 0)
-            strcpy(name, "CLAMIGA");
+            strcpy(name, bases[b]);
         else
-            snprintf(name, sizeof name, "CLAMIGA.%ld", (long)i);
+            snprintf(name, sizeof name, "%s.%ld", bases[b], (long)i);
 
         Forbid();
         if (FindPort((STRPTR)name) != NULL) {
             Permit();
-            strncpy(app->clamiga_port, name, sizeof app->clamiga_port - 1);
-            app->clamiga_port[sizeof app->clamiga_port - 1] = '\0';
+            strncpy(app->amilisp_port, name, sizeof app->amilisp_port - 1);
+            app->amilisp_port[sizeof app->amilisp_port - 1] = '\0';
             app->connected = 1;
             if (!was) {
                 /* Newly found -- at startup, or back after it was gone.
@@ -129,7 +133,7 @@ int32_t ck_rexx_find_port(ck_app *app)
  * fallback, for an amilisp on the shell path.  Returns the command to run
  * in BUF.
  */
-static void ck_rexx_clamiga_command(char *buf, int32_t size)
+static void ck_rexx_amilisp_command(char *buf, int32_t size)
 {
     static const char *const names[] = { "amilisp", "clamiga" };
     BPTR dir = GetProgramDir();
@@ -209,7 +213,7 @@ int32_t ck_rexx_launch(ck_app *app)
     if (ck_rexx_find_port(app))
         return 1;
 
-    ck_rexx_clamiga_command(command, sizeof command);
+    ck_rexx_amilisp_command(command, sizeof command);
     ck_rexx_launch_script_path(script_path, sizeof script_path);
     script_written = ck_rexx_write_launch_script(command, script_path);
     if (script_written)
@@ -297,7 +301,7 @@ static void ck_rexx_pump(ck_app *app)
     /* FindPort and PutMsg must be one atomic step: the port can vanish
      * between them if amilisp exits. */
     Forbid();
-    port = FindPort((STRPTR)app->clamiga_port);
+    port = FindPort((STRPTR)app->amilisp_port);
     if (port != NULL)
         PutMsg(port, (struct Message *)rm);
     Permit();
@@ -313,7 +317,7 @@ static void ck_rexx_pump(ck_app *app)
         doc = ck_doc_active(app);
         if (doc != NULL)
             ck_message(doc, "amilisp is not running (port %s is gone)",
-                       app->clamiga_port);
+                       app->amilisp_port);
         return;
     }
 
@@ -522,7 +526,7 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
     switch (kind) {
     case CK_REQ_PING:
         if (doc != NULL)
-            ck_message(doc, "amilisp answers on %s", app->clamiga_port);
+            ck_message(doc, "amilisp answers on %s", app->amilisp_port);
         break;
 
     case CK_REQ_VERSION:

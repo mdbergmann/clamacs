@@ -5,10 +5,10 @@
 #   run.sh auto     unattended: the page reports ready, Lisp inserts text and
 #                   injects C-x, the key comes back, Lisp terminates the loop;
 #                   the last line is SPIKE-RESULT: PASS
-# CLAMIGA=... names another binary (build/host-gcstress/amilisp with
-# CLAMIGA_GC_STRESS=1 runs it with a compaction at every allocation).
+# AMILISP=... names another binary (build/host-gcstress/amilisp with
+# AMILISP_GC_STRESS=1 runs it with a compaction at every allocation).
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
-clamiga=${CLAMIGA:-"$here/../../../build/host/amilisp"}
+amilisp=${AMILISP:-"$here/../../../build/host/amilisp"}
 [ -f "$here/build/page.html" ] || "$here/build.sh"
-exec "$clamiga" --non-interactive --load "$here/spike.lisp" -- "$@" </dev/null
+exec "$amilisp" --non-interactive --load "$here/spike.lisp" -- "$@" </dev/null

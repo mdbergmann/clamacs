@@ -10,10 +10,10 @@
 # spike's own report), build/amiga/spike-buffer.txt (what arrived in the
 # buffer), build/amiga/spike-amilisp.log (amilisp's stdout/stderr).
 #
-# Environment (as run-vamp.py): SPIKE_CLAMIGA_ARGS adds arguments to the
+# Environment (as run-vamp.py): SPIKE_AMILISP_ARGS adds arguments to the
 # amilisp command line (e.g. --no-jit); SPIKE_SETENV=NAME=VALUE sets one
 # AmigaDOS environment variable before the launch (e.g.
-# CLAMIGA_HDR_INDEX=0 to A/B the GC's block-start index).
+# AMILISP_HDR_INDEX=0 to A/B the GC's block-start index).
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -52,10 +52,10 @@ echo "leg $LEG" >>build/amiga/spike-run.log
 echo "=== avail before ===" >>build/amiga/spike-run.log
 avail >>build/amiga/spike-run.log
 stack 128000
-setenv CLAMIGA_MEM_DIAG 1
+setenv AMILISP_MEM_DIAG 1
 ${SPIKE_SETENV:+setenv ${SPIKE_SETENV%%=*} ${SPIKE_SETENV#*=}}
 cd AmiLisp:
-run >Clamacs:build/amiga/spike-amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive ${SPIKE_CLAMIGA_ARGS:-} --load Clamacs:spike/spike.lisp
+run >Clamacs:build/amiga/spike-amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive ${SPIKE_AMILISP_ARGS:-} --load Clamacs:spike/spike.lisp
 cd Clamacs:
 set n 0
 LAB waitready

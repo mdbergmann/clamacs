@@ -945,12 +945,12 @@ each, with the KeyboardEvent fields a real key would carry."
 
 (defun host-wired-editor (&optional (text "") path)
   "A host editor without a window, a document on it, and a wire over a
-fake transport that finds CLAMIGA: (values editor doc tr wire)."
+fake transport that finds AMILISP: (values editor doc tr wire)."
   (let* ((editor (host-test-editor))
          (tr (make-fake-transport))
          (wire (make-wire editor tr)))
     (setf (fake-transport-wire tr) wire
-          (fake-transport-port tr) "CLAMIGA")
+          (fake-transport-port tr) "AMILISP")
     (let ((doc (host-test-document editor text path)))
       (with-entry (editor) (wire-find-port wire))
       (host-take-evals editor)

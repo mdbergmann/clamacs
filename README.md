@@ -147,11 +147,11 @@ yourself opens its port with
 
 ```lisp
 (require "amiga/arexx")
-(amiga.arexx:start)                  ; port CLAMIGA; a second instance takes CLAMIGA.1, ...
+(amiga.arexx:start)                  ; port AMILISP; a second instance takes AMILISP.1, ...
 ```
 
 (in `S:.amilisprc`, or at its prompt), and the editor finds it by
-scanning `CLAMIGA`, `CLAMIGA.1`, ... .  The amilisp the editor starts
+scanning `AMILISP`, `AMILISP.1`, ... .  The amilisp the editor starts
 itself gets a console window of its own and opens its port from a
 preamble the editor writes.
 
@@ -165,8 +165,8 @@ amilisp you start yourself opens it with
 (ext.dev.tcp:start :host "192.168.1.5")  ; reachable from the LAN, on this one address
 ```
 
-and `CLAMACS_CLAMIGA=host:port` (default `127.0.0.1:4005`) and
-`CLAMACS_CLAMIGA_TOKEN` in the editor's environment name it -- an Amiga
+and `CLAMACS_AMILISP=host:port` (default `127.0.0.1:4005`) and
+`CLAMACS_AMILISP_TOKEN` in the editor's environment name it -- an Amiga
 on the LAN included, when its port was started with `:host` and the
 editor with `--bind` (see "The editor's own port").  The amilisp the
 editor starts gets its token through its environment, writes its port
@@ -178,16 +178,22 @@ The token authenticates; nothing is encrypted.
 line options from the init file:
 
 ```lisp
-(setq *clamiga-heap* "512M")               ; as amilisp's --heap takes it
-(setq *clamiga-options* '("--no-userinit"))
+(setq *amilisp-heap* "512M")               ; as amilisp's --heap takes it
+(setq *amilisp-options* '("--no-userinit"))
 ```
 
 The heap is what a loaded system and everything it depends on has to fit
 in.  Without a setting it is 256M on macOS, Linux and Windows, and
 amilisp's own default on an Amiga or MorphOS, where a size is yours to
-choose for the machine; `(setq *clamiga-heap* nil)` asks for amilisp's
-default everywhere.  On the host `CLAMACS_CLAMIGA_HEAP` in the editor's
-environment goes before the init file.  When a form runs out of heap all
+choose for the machine; `(setq *amilisp-heap* nil)` asks for amilisp's
+default everywhere.  On the host `CLAMACS_AMILISP_HEAP` in the editor's
+environment goes before the init file.  (The names before 0.12 still
+work: a `(setq *clamiga-heap* ...)` / `*clamiga-options*` in an old init
+file sets the same variables, and `CLAMACS_CLAMIGA`,
+`CLAMACS_CLAMIGA_TOKEN`, `CLAMACS_CLAMIGA_BIN` and `CLAMACS_CLAMIGA_HEAP`
+are read when the `CLAMACS_AMILISP...` spelling is not set.  The ARexx
+scan finds a `CLAMIGA` port too, which an amilisp older than 0.12
+opens.)  When a form runs out of heap all
 the same, amilisp's REPL thread ends with it: `C-c C-c` then says so and
 names the log of the started amilisp, and `C-c C-z` attaches a new REPL.
 
@@ -475,7 +481,7 @@ earlier binding.
 The settings the menus remember -- `load-theme`, `font-size`,
 `show-minimap`, `block-cursor`, `syntax-colouring`, `paren-matching` --
 and the started
-amilisp's `*clamiga-heap*` / `*clamiga-options*` live here too, see the
+amilisp's `*amilisp-heap*` / `*amilisp-options*` live here too, see the
 sections above.
 
 The heap image keeps only the Amiga OS names the editor uses itself (it is
@@ -632,7 +638,7 @@ run `make -f Makefile.cross amiga` in `amilisp` first). The Workbench image
 (with MUI and TextEditor.mcc) and `FS-UAE.app` are not tracked in git; the
 run takes them from the superproject's `verify/realamiga/` too. A standalone
 clone falls back to an `amilisp` checkout next to it. Override with
-`EMU_DIR` (the emulator assets) and `CLAMIGA_DIR` (the amilisp runtime).
+`EMU_DIR` (the emulator assets) and `AMILISP_DIR` (the amilisp runtime).
 
 ## Layout
 

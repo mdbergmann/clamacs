@@ -173,7 +173,7 @@ locals."
     (fake-deliver tr 0 "0: late")
     (is-equal (fake-editor-dbg-frames (doc-editor repl)) '("0: dbg-fn  T:dbg.lisp:27" "1: <anonymous>"))))
 
-(deftest clamiga-refusing-a-debugger-command-is-reported
+(deftest amilisp-refusing-a-debugger-command-is-reported
   (multiple-value-bind (doc repl tr wire) (dbg-fixture)
     (declare (ignore doc wire))
     (dbg-answer-entry repl tr)

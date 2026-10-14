@@ -154,7 +154,7 @@
      (item 'run-lisp                    :not-connected "Start amilisp"          nil       :global)
      (bar)
      (item 'clamacs-connect-self        :not-self      "Talk to the Editor Itself" nil    :global)
-     (item 'clamacs-connect-clamiga     :self          "Talk to amilisp"        nil       :global)
+     (item 'clamacs-connect-amilisp     :self          "Talk to amilisp"        nil       :global)
      (bar)
      (item 'clamacs-load-buffer         :connected     "Load Buffer"            "C-c C-k" :lisp)
      (item 'clamacs-load-file           :connected     "Load File..."           "C-c C-l" :lisp

@@ -1612,7 +1612,7 @@ cursor's line marked only when nothing is selected."
       (fail "after clamacs-repl the active window is ~A" *result*))
   (check-panels '(:dock "the REPL tab") "open height" "\"dock\":{\"open\":true,\"shown\":\"doc"))
 
-(defun leg-start-clamiga ()
+(defun leg-start-amilisp ()
   "`Start amilisp': the editor starts a second amilisp on the binary it
 runs on, the token in the child's environment, and connects to it."
   (cmd "MENU clamacs-eval-defun STATE")
@@ -1693,7 +1693,7 @@ runs on, the token in the child's environment, and connects to it."
             (ok "IN-EDITOR ran on the editor's task and named the active window: ~A" l)
             (fail "IN-EDITOR gave ~A (cursor ~A)" l y))))
     (cmd "EVAL end-of-buffer"))
-  (cmd "MENU clamacs-connect-clamiga")
+  (cmd "MENU clamacs-connect-amilisp")
   (let ((echo (wait-echo "REPL attached to 127.0.0.1:" 120)))
     (if (string/= echo "")
         (ok "Talk to amilisp moved the REPL back: ~A" echo)
@@ -1861,7 +1861,7 @@ requester asked.  Then wait for the port to go."
   (leg-keys)
   (leg-selection)
   (leg-snapshot)
-  (leg-start-clamiga)
+  (leg-start-amilisp)
   (leg-integration)
   (leg-introspection)
   (leg-repl)

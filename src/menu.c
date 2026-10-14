@@ -63,7 +63,7 @@ static void ck_menu_about(ck_app *app, ck_doc *doc)
              (long)MUIMasterBase->lib_Version, (long)MUIMasterBase->lib_Revision,
              (long)app->te_version, (long)app->te_revision,
              app->connected
-                 ? (app->version[0] != '\0' ? app->version : app->clamiga_port)
+                 ? (app->version[0] != '\0' ? app->version : app->amilisp_port)
                  : "not connected");
 
     MUI_Request(app->app, doc != NULL ? doc->win : NULL, 0, "About clamacs",

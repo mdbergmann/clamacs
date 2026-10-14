@@ -7,10 +7,10 @@ run log.  The amilisp used is the installed release (RELEASE below).
 Environment: AMIGA_HOST (default 192.168.50.235), AMIGA_TOKEN (required,
 no default -- must match the agent server's token on the box),
 SPIKE_RELEASE (the release drawer), SPIKE_OUT (scratch drawer),
-SPIKE_CLAMIGA (a binary other than the release's, e.g. a cross-built one
-pushed beside it so it finds the release's lib/), SPIKE_CLAMIGA_ARGS (extra
+SPIKE_AMILISP (a binary other than the release's, e.g. a cross-built one
+pushed beside it so it finds the release's lib/), SPIKE_AMILISP_ARGS (extra
 amilisp arguments, e.g. --no-jit), SPIKE_SETENV=NAME=VALUE (one AmigaDOS
-environment variable set before the launch, e.g. CLAMIGA_HDR_INDEX=0, and
+environment variable set before the launch, e.g. AMILISP_HDR_INDEX=0, and
 unset again after the run -- a setenv outlives the run otherwise)."""
 import os, sys, time, subprocess
 sys.path.insert(0, os.path.expanduser("~/Development/MySources/amimcp/server"))
@@ -22,9 +22,9 @@ HOST = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("AMIGA_HOST", "192.1
 TOKEN = os.environ["AMIGA_TOKEN"]
 RELEASE = os.environ.get("SPIKE_RELEASE", "Work:Download/clamiga-0.10.0-snapshot-814c7017")
 OUT = os.environ.get("SPIKE_OUT", "Work:Download/spike")
-CLAMIGA = os.environ.get("SPIKE_CLAMIGA", RELEASE + "/bin/aos3/amilisp")
+AMILISP = os.environ.get("SPIKE_AMILISP", RELEASE + "/bin/aos3/amilisp")
 STACK = os.environ.get("SPIKE_STACK", "128000")
-EXTRA = os.environ.get("SPIKE_CLAMIGA_ARGS", "")   # e.g. --no-jit
+EXTRA = os.environ.get("SPIKE_AMILISP_ARGS", "")   # e.g. --no-jit
 TAG = os.environ.get("SPIKE_TAG", "vamp")
 SETENV = os.environ.get("SPIKE_SETENV", "")
 SETENV_LINE = ("setenv " + SETENV.replace("=", " ", 1)) if SETENV else ""
@@ -49,9 +49,9 @@ version >>spike-run.log
 echo "=== avail before ===" >>spike-run.log
 avail >>spike-run.log
 stack {STACK}
-setenv CLAMIGA_MEM_DIAG 1
+setenv AMILISP_MEM_DIAG 1
 {SETENV_LINE}
-run >{OUT}/spike-amilisp.log {CLAMIGA} --no-userinit --heap 8M --non-interactive {EXTRA} --load {OUT}/spike-out.lisp --load {OUT}/spike.lisp
+run >{OUT}/spike-amilisp.log {AMILISP} --no-userinit --heap 8M --non-interactive {EXTRA} --load {OUT}/spike-out.lisp --load {OUT}/spike.lisp
 set n 0
 LAB waitready
 IF NOT EXISTS {OUT}/spike-ready

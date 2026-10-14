@@ -98,7 +98,7 @@ still allocated at exit -- the shutdown criterion; run it after touching
 (2026-09-26) is `lisp/transport-tcp.lisp`, the wire's home on the host:
 a separate amilisp over AmiLisp's `lib/dev-tcp.lisp` port (`AUTH
 <token>` first, the same frames as the editor's own port), found through
-`CLAMACS_CLAMIGA` / `CLAMACS_CLAMIGA_TOKEN` or started by `Start amilisp`
+`CLAMACS_AMILISP` / `CLAMACS_AMILISP_TOKEN` or started by `Start amilisp`
 on the binary the editor runs on (`ext:executable-path`; the token in the
 child's environment, its port number through a file in the private
 directory, its output in `clamacs-amilisp.log` there, `(ext.dev.tcp:wait)`
@@ -354,7 +354,7 @@ behaviour spec.  New editor work goes into `lisp/`:
   `clamacs-snapshot-windows` reads `doc-geometry` /
   `editor-aux-windows`, `GETWINDOW` for the port).
   `transport-self.lisp` is the wire's third transport, to the editor's
-  OWN image (`clamacs-connect-self` / `clamacs-connect-clamiga`,
+  OWN image (`clamacs-connect-self` / `clamacs-connect-amilisp`,
   `wire-switch` in `wire.lisp`): EXT.DEV run in the editor on a worker
   thread, the REPL thread's inbound verbs delivered in-process through a
   wrapped `EXT.DEV:*REPL-SEND*`, `clamacs:in-editor` for code that must
@@ -429,7 +429,7 @@ behaviour spec.  New editor work goes into `lisp/`:
   per-call vectors.  A command is a symbol (`define-command`), a key a
   fixnum, a keymap an `EQL` hash table.
 - The runner gives amilisp a private, empty FASL cache
-  (`CLAMIGA_FASL_CACHE_DIR`): `LOAD`'s cache is keyed by a file's own
+  (`AMILISP_FASL_CACHE_DIR`): `LOAD`'s cache is keyed by a file's own
   mtime plus, since FASL v35, the layouts of the `DEFSTRUCT`s it inlined
   (a changed struct recompiles the dependents) -- but a changed macro or
   inline function in another file still leaves cached dependents stale.
@@ -472,7 +472,22 @@ behaviour spec.  New editor work goes into `lisp/`:
 ## The wire: amilisp's ARexx port
 
 `(require "amiga/arexx") (amiga.arexx:start)` in the user's `S:.amilisprc`
-opens port `CLAMIGA` (a second instance takes `CLAMIGA.1`, ...). Served by
+opens port `AMILISP` (a second instance takes `AMILISP.1`, ...; before
+0.12 the port was `CLAMIGA`, and the scans here still try those names
+after the new ones -- `*amilisp-port-names*`, `ck_rexx_find_port`, the
+shipped macro).  The Lisp-level names followed the runtime's on
+2026-10-14: the implementation package is `AMILISP` (`CLAMIGA` stays a
+nickname, new code says `amilisp::`), the runtime's environment variables
+are `AMILISP_*` (`AMILISP_GC_STRESS`, `AMILISP_FASL_CACHE_DIR`, ...; the
+runtime reads an unset one under `CLAMIGA_*` too), the editor's own are
+`CLAMACS_AMILISP`, `CLAMACS_AMILISP_TOKEN`, `_BIN`, `_HEAP`
+(`amilisp-getenv` reads the `CLAMACS_CLAMIGA...` spelling as the
+fallback), and the init file's variables are `*amilisp-heap*`,
+`*amilisp-options*`, `*amilisp-port-names*`, `*amilisp-default-address*`
+-- each old `*clamiga-...*` name is a symbol macro for the new one, so a
+`setq` of it in an old `S:.clamacsrc` still takes effect.  `#+clamiga`
+and `#+cl-amiga` stay: the features are all four of `:amilisp`,
+`:amicl`, `:clamiga`, `:cl-amiga`.  Served by
 its own thread, so it answers while the REPL is busy. Commands today:
 `PING`, `VERSION`, `LOAD <file>`, `COMPILE-FILE <file>`, `EVAL <form>`,
 `IN-PACKAGE <pkg>`, `LASTRESULT`; a string starting with `(` is evaluated.
@@ -584,7 +599,7 @@ list under "Answered during phase 1".
   cursor's line, no further.
 - The C editor's ARexx port is `CLAMACS.1` on the first instance, not
   `CLAMACS` (MUI numbers the port it builds from `MUIA_Application_Base`);
-  the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `CLAMIGA`.
+  the Lisp editor's is `CLAMACS`.  Clients scan, as they do for `AMILISP`.
 - Export with `MUIV_TextEditor_ExportHook_NoStyle`.  The `Plain` hook writes
   colour escapes into the text, which breaks saved files and desynchronises
   every offset from `MUIA_TextEditor_CursorIndex`.
@@ -759,11 +774,11 @@ list under "Answered during phase 1".
   amiga` up there first; without it the leg is skipped with a NOTE). The
   emulator assets (the aos3 Workbench with MUI + TextEditor.mcc, and
   FS-UAE.app) are not tracked in git; `run-fs-uae.sh` takes them from the
-  superproject too (`EMU_DIR` overrides; `CLAMIGA_DIR` points the runtime at
+  superproject too (`EMU_DIR` overrides; `AMILISP_DIR` points the runtime at
   another checkout; a standalone clone falls back to `../amilisp`, then `../cl-amiga`, for both).
   The `.fs-uae` configs carry the same two paths as absolute
   `hard_drive_1`/`hard_drive_2` entries and must agree with them.
-  amilisp's FASL cache lives on that Workbench image (`S:cl-amiga/faslcache`)
+  amilisp's FASL cache lives on that Workbench image (`S:amilisp/faslcache`)
   and is validated by source mtime, so after a fresh clone or a pull of the
   superproject the first run compiles the port's library from source: that needs
   the `stack 128000` the boot scripts set (at 65000 the reader's guard fires
@@ -775,7 +790,7 @@ list under "Answered during phase 1".
   host edit loads the cached old contents: `run-fs-uae.sh` deletes
   `verify/realamiga/*.uaem` before each run for that.
   `quit.rexx` ends the run: it quits the editor, waits for its port to go,
-  then sets the flag `arexx-host.lisp` waits on through every `CLAMIGA`
+  then sets the flag `arexx-host.lisp` waits on through every `AMILISP`
   port it finds, and the host stops its port and exits.  Never let an
   amilisp exit with its port thread alive: the process `_exit`s around the
   thread, which stays on the public port with the VM torn down, and the

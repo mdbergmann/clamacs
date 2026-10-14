@@ -14,7 +14,7 @@ Cocoa through the FFI (months) and a terminal (not "on the Mac").  The
 spike under `spike/host-webview/` proved the round trip -- `dlopen` of
 `libwebview.dylib`, `ffi:make-callback` as a `webview_bind` handler,
 `webview_return`, `webview_eval`, a 380 KB page through
-`webview_set_html` -- and passed under `CLAMIGA_GC_STRESS=1`.
+`webview_set_html` -- and passed under `AMILISP_GC_STRESS=1`.
 
 ## What parity means
 
@@ -244,10 +244,10 @@ the token has been checked.
 - **editor**: `lisp/transport-tcp.lisp` -- a client thread with one
   request in flight, replies posted to the mailbox (the shape of
   `transport-arexx.lisp`'s `client-loop`), `transport-find-port` a
-  connect attempt to `CLAMACS_CLAMIGA` (`host:port`, default
-  `127.0.0.1:4005`; the token from `CLAMACS_CLAMIGA_TOKEN`, sent as
+  connect attempt to `CLAMACS_AMILISP` (`host:port`, default
+  `127.0.0.1:4005`; the token from `CLAMACS_AMILISP_TOKEN`, sent as
   the first frame), `transport-launch` an `amilisp --load` of a preamble
-  that starts the TCP port with `:token` read from `CLAMIGA_TCP_TOKEN`
+  that starts the TCP port with `:token` read from `AMILISP_TCP_TOKEN`
   -- a token the editor drew and put in the child's environment, never
   on its command line.  The host has no `ext:run-program` yet: runtime
   item R3, or the shim's `posix_spawn`.
@@ -667,7 +667,7 @@ with the memory note updated.
 - Light and dark palettes, the fixed font, the tab close markers, the
   modified marker, the arglist in the status line, the beep.
 - Shutdown: every callback freed, both dylibs closed, the listener
-  stopped, nothing left (`CLAMIGA_MEM_DIAG=1` clean on the host too).
+  stopped, nothing left (`AMILISP_MEM_DIAG=1` clean on the host too).
 - Done when: every item of "What parity means" 1-7 and 10 is ticked
   against the MUI frontend, the drive passes PHASE 5 in full, and
   `README.md` + `CLAUDE.md` describe the host editor.
@@ -801,7 +801,7 @@ with the memory note updated.
   REPL attached back over the editor's port (amilisp's REPL thread -- the
   test image's -- connecting to it), the launch of a real second amilisp
   and its stop, the wire starting on TCP with the editor's image on
-  demand; `run-drive.sh` grew `leg-start-clamiga` (the menu's Start
+  demand; `run-drive.sh` grew `leg-start-amilisp` (the menu's Start
   amilisp, the launched flag, no preamble or port file left, the log) and
   runs every Lisp leg against that amilisp (`(find-package :clamacs)` at
   its REPL is `NIL`: a process of its own), the own-Lisp leg is

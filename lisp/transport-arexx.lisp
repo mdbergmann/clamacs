@@ -37,10 +37,7 @@
 ;;; Finding amilisp
 ;;; ------------------------------------------------------------------
 
-;;; The same scan the shipped macros do: the base name, then .1 .. .9, so a
-;;; second amilisp instance is reachable.
-(defparameter *clamiga-port-names*
-  (cons "CLAMIGA" (loop for i from 1 to 9 collect (format nil "CLAMIGA.~D" i))))
+;;; *amilisp-port-names* (the scan list) lives in wire.lisp.
 
 (defun port-exists-p (name)
   (ffi:with-foreign-string (s name)
@@ -60,7 +57,7 @@
   thread)
 
 (defmethod transport-find-port ((tr arexx-transport))
-  (find-if #'port-exists-p *clamiga-port-names*))
+  (find-if #'port-exists-p *amilisp-port-names*))
 
 (defmethod transport-own-port ((tr arexx-transport))
   "AMIGA.AREXX's port, CLAMACS on the first instance: what REPL-ATTACH
@@ -117,7 +114,7 @@ one opened its own."
 (defconstant +launch-stack-size+ 131072)
 (defconstant +launch-wait-seconds+ 20)
 
-(defun own-clamiga-command ()
+(defun own-amilisp-command ()
   "The amilisp this editor runs on -- PROGDIR:amilisp as an absolute path,
 since the shell System() starts has a PROGDIR: of its own (PROGDIR:clamiga,
 the runtime's name before 0.12, is probed second so an old installation
@@ -148,7 +145,7 @@ two rapid launches) never share a file."
 
 (defmethod transport-launch ((tr arexx-transport))
   (multiple-value-bind (script preamble) (launch-file-names)
-    (let ((command (own-clamiga-command)))
+    (let ((command (own-amilisp-command)))
       (unless (and (write-file-text
                     preamble
                     (format nil "(require \"amiga/arexx\")~%(unless (amiga.arexx:running-p) (amiga.arexx:start))~%"))
@@ -156,7 +153,7 @@ two rapid launches) never share a file."
                     script
                     ;; The init file's heap and options (wire.lisp) first.
                     (format nil "Stack ~D~%\"~A\"~{ ~A~} --load ~A~%" +launch-stack-size+ command
-                            (clamiga-launch-options) preamble)))
+                            (amilisp-launch-options) preamble)))
         (delete-quietly preamble)
         (delete-quietly script)
         (return-from transport-launch nil))

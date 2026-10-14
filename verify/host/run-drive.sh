@@ -19,7 +19,7 @@
 #   GCSTRESS=1 verify/host/run-drive.sh under ../build/host-gcstress/amilisp
 #   MEMTRACK=1 verify/host/run-drive.sh under ../build/host-memtrack/amilisp
 #                                       (the superproject's `make test-memleak`
-#                                       build) with CLAMIGA_MEM_DIAG=1: both
+#                                       build) with AMILISP_MEM_DIAG=1: both
 #                                       editors must end with every off-heap
 #                                       block handed back -- the shutdown
 #                                       criterion of phase H4
@@ -32,7 +32,7 @@
 #                                       image, the page and the libraries
 #                                       beside the bundled binary, the amilisp
 #                                       it starts finding its lib/ there
-#   CLAMIGA=... names another binary (not with APP=1: the bundle's is the
+#   AMILISP=... names another binary (not with APP=1: the bundle's is the
 #   superproject's build/host/amilisp).
 #
 # Result: build/host-frontend/drive/drive.log (the drive's OK/FAIL/INFO
@@ -48,20 +48,20 @@ super=$(cd "$root/.." && pwd)
 out=${CLAMACS_DRIVE_OUT:-"$root/build/host-frontend/drive"}
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-gcstress/amilisp"}
-    CLAMIGA_GC_STRESS=1
-    export CLAMIGA_GC_STRESS
+    amilisp=${AMILISP:-"$super/build/host-gcstress/amilisp"}
+    AMILISP_GC_STRESS=1
+    export AMILISP_GC_STRESS
     factor=10
 elif [ "${MEMTRACK:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-memtrack/amilisp"}
-    CLAMIGA_MEM_DIAG=1
-    export CLAMIGA_MEM_DIAG
+    amilisp=${AMILISP:-"$super/build/host-memtrack/amilisp"}
+    AMILISP_MEM_DIAG=1
+    export AMILISP_MEM_DIAG
     factor=1
 else
-    clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
+    amilisp=${AMILISP:-"$super/build/host/amilisp"}
     factor=1
 fi
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
 # How an editor is started: from source, from the image, or through the
@@ -72,7 +72,7 @@ if [ "${APP:-0}" = 1 ]; then
     "$root/host/make-app.sh" || exit 1
     [ -x "$launcher" ] || { echo "no launcher at $launcher"; exit 1; }
 elif [ "${IMAGE:-0}" = 1 ]; then
-    CLAMIGA="$clamiga" "$root/host/make-image.sh" || exit 1
+    AMILISP="$amilisp" "$root/host/make-image.sh" || exit 1
 fi
 rm -rf "$out"
 mkdir -p "$out/home" "$out/tmp-a" "$out/tmp-b" "$out/scratch"
@@ -114,7 +114,7 @@ wait_for_exit() {
 
 check_leaks() {
     # $1 editor log, $2 name.  A DEBUG_MEM_TRACK build under
-    # CLAMIGA_MEM_DIAG=1 prints what is still allocated at exit, with the
+    # AMILISP_MEM_DIAG=1 prints what is still allocated at exit, with the
     # file:line of every block; any build without the line is not checked.
     if grep -q '\[mem\] leak report:' "$1"; then
         if grep -q '\[mem\] leak report: 0 block(s), 0 bytes' "$1"; then
@@ -137,11 +137,11 @@ start_editor() {
             "$launcher" "$3" </dev/null >"$2" 2>&1 &
     elif [ "${IMAGE:-0}" = 1 ]; then
         HOME="$out/home" TMPDIR="$1" \
-            "$clamiga" --no-userinit --heap 32M --non-interactive \
+            "$amilisp" --no-userinit --heap 32M --non-interactive \
             --image "$img" --eval "(clamacs::run)" -- "$3" </dev/null >"$2" 2>&1 &
     else
         HOME="$out/home" TMPDIR="$1" \
-            "$clamiga" --no-userinit --heap 32M --non-interactive \
+            "$amilisp" --no-userinit --heap 32M --non-interactive \
             --load "$root/lisp/clamacs.lisp" -- "$3" </dev/null >"$2" 2>&1 &
     fi
     echo $!
@@ -158,7 +158,7 @@ run_drive() {
     CLAMACS_DRIVE_DIR="$1/" CLAMACS_DRIVE_ROOT="$root/" \
     CLAMACS_DRIVE_TMP="$out/scratch/" CLAMACS_DRIVE_CFG="$cfg" \
     CLAMACS_DRIVE_RC="$out/home/.clamacsrc" \
-        "$clamiga" --no-userinit --heap 16M --non-interactive \
+        "$amilisp" --no-userinit --heap 16M --non-interactive \
         --load "$here/drive.lisp" -- "$2" </dev/null >"$out/drive-$2.out" 2>&1 &
     drive_pid=$!
     died=""

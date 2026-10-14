@@ -32,8 +32,8 @@
 ;;; ------------------------------------------------------------------
 
 (defgeneric transport-find-port (transport)
-  (:documentation "The name of an amilisp port that exists now -- CLAMIGA,
-CLAMIGA.1, ... -- or NIL."))
+  (:documentation "The name of an amilisp port that exists now -- AMILISP,
+AMILISP.1, ... -- or NIL."))
 
 (defgeneric transport-send (transport port command)
   (:documentation "Put COMMAND on the wire to PORT and return at once.  The
@@ -62,36 +62,55 @@ or NIL when there is none.")
 
 ;;; How an amilisp the editor starts is started: the init file's to set.
 
-(defvar *clamiga-heap* :default
+(defvar *amilisp-heap* :default
   "The heap of an amilisp the editor starts, as its `--heap' takes it
 (\"256M\", \"8M\"): what a loaded system and everything it depends on has
 to fit in.  :DEFAULT is 256M on macOS, Linux and Windows and amilisp's own
 default on an Amiga, where the memory is the machine's; NIL is amilisp's
 own default everywhere.")
 
-(defvar *clamiga-options* '()
+(defvar *amilisp-options* '()
   "More command line options for an amilisp the editor starts, a list of
 strings: (\"--no-userinit\"), (\"--no-jit\").")
 
-(defparameter *host-clamiga-heap* "256M")
+(defparameter *host-amilisp-heap* "256M")
 
-(defun clamiga-heap ()
+;;; The names before 0.12, so an init file's (setq *clamiga-heap* ...)
+;;; still takes effect: a symbol macro makes SETQ and SETF of the old name
+;;; the new variable's.
+(define-symbol-macro *clamiga-heap* *amilisp-heap*)
+(define-symbol-macro *clamiga-options* *amilisp-options*)
+(define-symbol-macro *host-clamiga-heap* *host-amilisp-heap*)
+
+;;; The same scan the shipped macros do: the base name, then .1 .. .9, so a
+;;; second amilisp instance is reachable; then the same under CLAMIGA, the
+;;; port's name on a runtime older than 0.12, so an old one is still found.
+;;; Here rather than in transport-arexx.lisp (Amiga only) so the host tests
+;;; can pin the list.
+(defparameter *amilisp-port-names*
+  (loop for base in '("AMILISP" "CLAMIGA")
+        collect base
+        nconc (loop for i from 1 to 9 collect (format nil "~A.~D" base i))))
+
+(define-symbol-macro *clamiga-port-names* *amilisp-port-names*)
+
+(defun amilisp-heap ()
   "The heap to ask for, a string, or NIL for amilisp's own default."
-  (let ((heap *clamiga-heap*))
+  (let ((heap *amilisp-heap*))
     (cond ((eq heap :default)
            ;; Asked at run time: the FASLs are compiled on the host.
            (if (or (member :amigaos *features*) (member :morphos *features*))
                nil
-               *host-clamiga-heap*))
+               *host-amilisp-heap*))
           ((and (stringp heap) (string/= heap "")) heap)
           ((and (integerp heap) (> heap 0)) (format nil "~D" heap))
           (t nil))))
 
-(defun clamiga-launch-options (&optional (heap (clamiga-heap)))
+(defun amilisp-launch-options (&optional (heap (amilisp-heap)))
   "The options a started amilisp gets before the editor's own, a list of
-strings: the heap, then *CLAMIGA-OPTIONS*."
+strings: the heap, then *AMILISP-OPTIONS*."
   (append (and heap (list "--heap" heap))
-          (remove-if-not #'stringp *clamiga-options*)))
+          (remove-if-not #'stringp *amilisp-options*)))
 
 (defun launch-failure-text (wire)
   (format nil "Cannot start amilisp~@[: ~A~]"

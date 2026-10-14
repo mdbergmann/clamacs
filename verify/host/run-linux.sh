@@ -43,7 +43,7 @@ build='set -e; make -C /work --no-print-directory host BUILDDIR=build/host-linux
 # every line was filtered) and the container exits with the script's own
 # status, PIPESTATUS[0] -- the container runs bash, so it exists.
 gate() {
-    run "$build; set +e; CLAMIGA=/work/build/host-linux/amilisp xvfb-run -a -s '-screen 0 1280x800x24' verify/host/$1 2>&1 | grep -v 'libEGL'; exit \${PIPESTATUS[0]}"
+    run "$build; set +e; AMILISP=/work/build/host-linux/amilisp xvfb-run -a -s '-screen 0 1280x800x24' verify/host/$1 2>&1 | grep -v 'libEGL'; exit \${PIPESTATUS[0]}"
 }
 
 case "$what" in

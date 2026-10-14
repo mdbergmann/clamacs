@@ -29,11 +29,11 @@ ROOT=$(cd "$HERE/../.." && pwd)
 #           TextEditor.mcc) and FS-UAE.app.  These are NOT tracked in git;
 #           they live in the superproject's verify/realamiga (override with
 #           EMU_DIR).
-#   CLAMIGA the amilisp RUNTIME the editor drives -- the AmiLisp: volume, from
+#   AMILISP the amilisp RUNTIME the editor drives -- the AmiLisp: volume, from
 #           which boot-override reads AmiLisp:build/cross/amilisp.  That is
 #           the superproject: build amilisp there first (override with
-#           CLAMIGA_DIR to drive another checkout).
-# The .fs-uae config's hard_drive_1 must point at the same place as CLAMIGA.
+#           AMILISP_DIR to drive another checkout).
+# The .fs-uae config's hard_drive_1 must point at the same place as AMILISP.
 # A standalone clone (not under AmiLisp) falls back to ../amilisp, then to
 # ../cl-amiga (the checkout's name before the runtime was renamed).
 if [ -f "$ROOT/../src/core/types.h" ]; then
@@ -44,7 +44,7 @@ else
 	SUPER=$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)
 fi
 EMU="${EMU_DIR:-$SUPER}"
-CLAMIGA="${CLAMIGA_DIR:-$SUPER}"
+AMILISP="${AMILISP_DIR:-$SUPER}"
 
 CONFIG="${1:-$HERE/verify.fs-uae}"
 LOG="$ROOT/build/amiga/clamacs-test.log"
@@ -61,16 +61,16 @@ if [ -z "$EMU" ] || [ ! -d "$EMU/verify/realamiga/aos3" ]; then
 	exit 1
 fi
 
-if [ -z "$CLAMIGA" ] || [ ! -d "$CLAMIGA/verify/realamiga" ]; then
-	echo "amilisp checkout not found at ${CLAMIGA:-<no AmiLisp checkout>}."
+if [ -z "$AMILISP" ] || [ ! -d "$AMILISP/verify/realamiga" ]; then
+	echo "amilisp checkout not found at ${AMILISP:-<no AmiLisp checkout>}."
 	echo "clamacs is a submodule of AmiLisp; run from amilisp/clamacs, or set"
-	echo "CLAMIGA_DIR to an AmiLisp checkout."
+	echo "AMILISP_DIR to an AmiLisp checkout."
 	exit 1
 fi
-if [ ! -f "$CLAMIGA/build/cross/amilisp" ]; then
-	echo "NOTE: $CLAMIGA/build/cross/amilisp is missing -- the integration leg"
+if [ ! -f "$AMILISP/build/cross/amilisp" ]; then
+	echo "NOTE: $AMILISP/build/cross/amilisp is missing -- the integration leg"
 	echo "      will be skipped.  Build the runtime first:"
-	echo "        make -C $CLAMIGA -f Makefile.cross amiga"
+	echo "        make -C $AMILISP -f Makefile.cross amiga"
 fi
 
 # FS-UAE keeps Amiga-side metadata for a file the emulated system wrote --
@@ -93,14 +93,14 @@ if [ ! -f "$ROOT/build/cross/clamacs" ]; then
 	exit 1
 fi
 
-mkdir -p "$ROOT/build/amiga" "$CLAMIGA/build/amiga"
+mkdir -p "$ROOT/build/amiga" "$AMILISP/build/amiga"
 rm -f "$LOG"
 
 # The emulated side runs build/amiga/clamacs, never build/cross/clamacs
 # directly: an experimental `make amiga BUILDDIR=...' must not silently
 # change what the test runs.
 cp "$ROOT/build/cross/clamacs" "$ROOT/build/amiga/clamacs"
-cp "$HERE/boot-override" "$CLAMIGA/build/amiga/boot-override"
+cp "$HERE/boot-override" "$AMILISP/build/amiga/boot-override"
 
 # The key-injection tool rides along when it has been built.  drive.rexx
 # reports its absence as a failure of the raw-key leg rather than skipping
@@ -176,5 +176,5 @@ while kill -0 "$FSUAE_PID" 2>/dev/null; do
 done
 
 wait "$FSUAE_PID" 2>/dev/null
-rm -f "$CLAMIGA/build/amiga/boot-override"
+rm -f "$AMILISP/build/amiga/boot-override"
 exit 0

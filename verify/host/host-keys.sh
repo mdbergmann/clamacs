@@ -14,7 +14,7 @@
 #
 #   verify/host/host-keys.sh            under ../build/host/amilisp
 #   GCSTRESS=1 verify/host/host-keys.sh under ../build/host-gcstress/amilisp
-#   CLAMIGA=... names another binary.
+#   AMILISP=... names another binary.
 #
 # Result: build/host-frontend/keys-out.lisp (what the editor saved),
 # keys-expected.lisp (the fake frontend's), keys-editor.log, keys-host.log.
@@ -27,20 +27,20 @@ out="$root/build/host-frontend"
 keys="$root/verify/realamiga/lisp-editor-keys.lisp"
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-gcstress/amilisp"}
-    CLAMIGA_GC_STRESS=1
-    export CLAMIGA_GC_STRESS
+    amilisp=${AMILISP:-"$super/build/host-gcstress/amilisp"}
+    AMILISP_GC_STRESS=1
+    export AMILISP_GC_STRESS
 else
-    clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
+    amilisp=${AMILISP:-"$super/build/host/amilisp"}
 fi
-[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
+[ -x "$amilisp" ] || { echo "no amilisp at $amilisp (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
 mkdir -p "$out"
 rm -f "$out"/keys-*
 
 # The expected file, from the fake frontend.
-"$clamiga" --no-userinit --heap 16M --non-interactive \
+"$amilisp" --no-userinit --heap 16M --non-interactive \
     --eval '(defvar cl-user::*clamacs-frontend-files* (list))' \
     --load "$root/lisp/load.lisp" \
     --load "$root/tests/fake-frontend.lisp" \
@@ -76,7 +76,7 @@ cat > "$out/keys-driver.lisp" <<EOF
   (write-line "done" s))
 EOF
 
-"$clamiga" --no-userinit --heap 32M --non-interactive --load "$out/keys-driver.lisp" \
+"$amilisp" --no-userinit --heap 32M --non-interactive --load "$out/keys-driver.lisp" \
     </dev/null >"$out/keys-editor.log" 2>&1 &
 pid=$!
 # Under gc-stress every key's round trip compacts the heap many times over.

@@ -39,23 +39,23 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 super=$(cd "$root/.." && pwd)
 out="$root/build/host-frontend"
-clamiga="$super/build/host/amilisp"
+amilisp="$super/build/host/amilisp"
 app="$out/Clamacs.app"
 
 [ "$(uname -s)" = Darwin ] || { echo "make-app.sh: an application bundle is a macOS thing" >&2; exit 1; }
-[ -x "$clamiga" ] || { echo "make-app.sh: no amilisp at $clamiga (make host in the superproject)" >&2; exit 1; }
+[ -x "$amilisp" ] || { echo "make-app.sh: no amilisp at $amilisp (make host in the superproject)" >&2; exit 1; }
 
 "$here/build.sh" >/dev/null
 # The editor's image, this binary's own -- and the sources' own: an image
 # older than the binary or than any of the editor's Lisp files is remade
 # (a bundle built after a lisp/ change once shipped the old editor).
-if "$here/image-stale.sh" "$out/clamacs.img" "$clamiga"; then
-    CLAMIGA="$clamiga" "$here/make-image.sh" >/dev/null
+if "$here/image-stale.sh" "$out/clamacs.img" "$amilisp"; then
+    AMILISP="$amilisp" "$here/make-image.sh" >/dev/null
 fi
 # The runtime's bare-boot image, for an amilisp the editor starts.
 make -C "$super" --no-print-directory image >/dev/null
 
-version=$("$clamiga" --no-userinit --non-interactive \
+version=$("$amilisp" --no-userinit --non-interactive \
     --eval '(progn (princ (lisp-implementation-version)) (terpri) (quit))' </dev/null 2>/dev/null | tail -1)
 case "$version" in
     [0-9]*.[0-9]*) ;;
@@ -65,7 +65,7 @@ esac
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/lib"
 
-cp "$clamiga" "$app/Contents/MacOS/amilisp"
+cp "$amilisp" "$app/Contents/MacOS/amilisp"
 cp "$out/clamacs.img" "$out/page.html" "$out/libwebview.dylib" "$out/libclamacs-host.dylib" \
    "$app/Contents/MacOS/"
 cp -pR "$super/lib/" "$app/Contents/lib/amilisp"

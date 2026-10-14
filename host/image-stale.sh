@@ -1,7 +1,7 @@
 #!/bin/sh
 # image-stale.sh -- whether the editor's heap image must be remade.
 #
-#   host/image-stale.sh IMAGE CLAMIGA     exit 0 = stale (remake it)
+#   host/image-stale.sh IMAGE AMILISP     exit 0 = stale (remake it)
 #   host/image-stale.sh --selftest        run this script's own regression test
 #
 # An image holds the editor as it was when it was saved, so it is out of
@@ -65,10 +65,10 @@ selftest() {
 [ "$1" = "--selftest" ] && selftest
 
 img=$1
-clamiga=$2
+amilisp=$2
 
 [ -f "$img" ] || exit 0
-[ "$clamiga" -nt "$img" ] && exit 0
+[ "$amilisp" -nt "$img" ] && exit 0
 if find "$root/lisp" "$root/scripts" -name '*.lisp' -newer "$img" | grep -q .; then
     exit 0
 fi

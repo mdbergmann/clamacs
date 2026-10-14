@@ -213,7 +213,7 @@ static void ck_repl_attach(ck_doc *doc)
      * debugger window (phase 4) instead of ending the form. */
     if (ck_rexx_send(app, doc, CK_REQ_REPL_ATTACH, "REPL-ATTACH %s DEBUG", own) >= 0) {
         app->repl_attaching = 1;
-        ck_message(doc, "Attaching the REPL to %s ...", app->clamiga_port);
+        ck_message(doc, "Attaching the REPL to %s ...", app->amilisp_port);
     }
 }
 
@@ -717,8 +717,8 @@ void ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
         doc->repl_busy     = 0;
         doc->repl_reading  = 0;
         ck_repl_set_package(doc, line);
-        ck_repl_note(doc, "REPL attached to %s", app->clamiga_port);
-        ck_message(doc, "REPL attached to %s", app->clamiga_port);
+        ck_repl_note(doc, "REPL attached to %s", app->amilisp_port);
+        ck_message(doc, "REPL attached to %s", app->amilisp_port);
         ck_repl_prompt(doc);
         /* Now the buffer eval that asked for the attach. */
         if (app->repl_pending != NULL) {
@@ -822,7 +822,7 @@ void ck_repl_reconnected(ck_app *app)
 
     if (doc == NULL || app->repl_attached || app->repl_attaching)
         return;
-    ck_repl_note(doc, "amilisp is back on %s", app->clamiga_port);
+    ck_repl_note(doc, "amilisp is back on %s", app->amilisp_port);
     ck_repl_attach(doc);
 }
 

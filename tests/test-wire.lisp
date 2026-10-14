@@ -24,7 +24,7 @@
     (is-equal (fake-sent-commands tr) '("PING"))
     (is-equal (length (wire-queue wire)) 1)
     (fake-deliver tr 0 "PONG")
-    (is-equal (fake-last-message doc) "amilisp answers on CLAMIGA")
+    (is-equal (fake-last-message doc) "amilisp answers on AMILISP")
     (is-equal (fake-sent-commands tr) '("PING" "VERSION"))
     (fake-deliver tr 0 "AmiLisp 0.10 on AmigaOS/m68k")
     (is-equal (fake-last-message doc) "AmiLisp 0.10 on AmigaOS/m68k")
@@ -98,8 +98,8 @@
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
     (setf (wire-package wire) "FOO")
     (wire-request wire doc :ping "PING")
-    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA")
-    (is-equal (wire-port-name wire) "CLAMIGA")
+    (is-equal (fake-last-message doc) "amilisp found on AMILISP")
+    (is-equal (wire-port-name wire) "AMILISP")
     ;; A fresh amilisp starts in CL-USER, whatever the old one was told.
     (is (null (wire-package wire)))
     (fake-deliver tr 0 "PONG")
@@ -112,13 +112,13 @@
     (wire-request wire doc :load "LOAD a.lisp")
     (wire-request wire doc :load "LOAD b.lisp")
     (fake-deliver tr 20 "no such port" :lost t)
-    (is-equal (fake-last-message doc) "amilisp is not running (port CLAMIGA is gone)")
+    (is-equal (fake-last-message doc) "amilisp is not running (port AMILISP is gone)")
     (is (not (wire-connected wire)))
     (is (null (wire-queue wire)))
     (is-equal (fake-sent-commands tr) '("LOAD a.lisp"))
     ;; Back again: found afresh, announced afresh.
     (wire-request wire doc :ping "PING")
-    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA")))
+    (is-equal (fake-last-message doc) "amilisp found on AMILISP")))
 
 (deftest without-a-port-the-user-is-asked-and-may-cancel
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
@@ -130,15 +130,15 @@
     (is-equal (fake-transport-launched tr) 0)
     (is (null (fake-transport-sent tr)))))
 
-(deftest without-a-port-start-launches-clamiga
+(deftest without-a-port-start-launches-amilisp
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
-    (setf (fake-transport-launch-port tr) "CLAMIGA.1")
+    (setf (fake-transport-launch-port tr) "AMILISP.1")
     (push :start (fake-answers doc))
     (is (wire-request wire doc :ping "PING"))
     (is-equal (fake-transport-launched tr) 1)
-    (is-equal (wire-port-name wire) "CLAMIGA.1")
+    (is-equal (wire-port-name wire) "AMILISP.1")
     (is-equal (fake-last-sent tr) "PING")
-    (is-equal (first (fake-transport-sent tr)) '("CLAMIGA.1" . "PING"))))
+    (is-equal (first (fake-transport-sent tr)) '("AMILISP.1" . "PING"))))
 
 (deftest a-failed-launch-is-reported
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
@@ -168,7 +168,7 @@
     (is (repl-doc (doc-editor doc)))
     (is (eq (editor-active-document (doc-editor doc)) doc))
     (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
-    (is-equal (fake-last-message (repl-doc (doc-editor doc))) "Attaching the REPL to CLAMIGA ...")
+    (is-equal (fake-last-message (repl-doc (doc-editor doc))) "Attaching the REPL to AMILISP ...")
     (fake-deliver tr 0 "CL-USER")
     ;; No (in-package ...) in the buffer means CL-USER -- and the attach
     ;; reply just said the port is there, so it is not repeated (a buffer
@@ -449,11 +449,11 @@
     (is-equal (fake-transport-launched tr) 1)
     (is (null (fake-transport-sent tr)))
     ;; ... and one that worked is connected to, VERSION asked as after a find
-    (setf (fake-transport-launch-port tr) "CLAMIGA")
+    (setf (fake-transport-launch-port tr) "AMILISP")
     (push :start (fake-answers doc))
     (run-command doc 'clamacs-connect)
     (is-equal (fake-transport-launched tr) 2)
-    (is-equal (wire-port-name wire) "CLAMIGA")
+    (is-equal (wire-port-name wire) "AMILISP")
     (is-equal (fake-last-sent tr) "VERSION")
     (fake-deliver tr 0 "AmiLisp 0.11")
     (is-equal (fake-last-message doc) "AmiLisp 0.11")
@@ -463,13 +463,13 @@
   ;; at ONCE -- not after a VERSION sent into the void (2026-10-06: the
   ;; requester came on the second Connect, the first only flipped the
   ;; menu to "Start amilisp").
-  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "AMILISP")
     (run-command doc 'clamacs-connect)
     (fake-deliver tr 0 "AmiLisp 0.11")
     (is (wire-connected wire))
     (setf (fake-transport-port tr) nil
           (fake-transport-sent tr) '()
-          (fake-transport-launch-port tr) "CLAMIGA")
+          (fake-transport-launch-port tr) "AMILISP")
     (push :start (fake-answers doc))
     (run-command doc 'clamacs-connect)
     (is-equal (first (fake-asked doc))
@@ -480,7 +480,7 @@
     (is (null (fake-answers doc))))
   ;; A port still there: Connect asks nothing and does not treat it as
   ;; newly found (no "amilisp found" message, no REPL re-attach).
-  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "AMILISP")
     (run-command doc 'clamacs-connect)
     (fake-deliver tr 0 "AmiLisp 0.11")
     (setf (fake-messages doc) '())
@@ -492,10 +492,10 @@
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (run-command doc 'run-lisp)
     (is-equal (fake-last-message doc) "Cannot start amilisp")
-    (setf (fake-transport-launch-port tr) "CLAMIGA")
+    (setf (fake-transport-launch-port tr) "AMILISP")
     (run-command doc 'run-lisp)
     (is-equal (fake-last-message doc) "Started amilisp")
-    (is-equal (wire-port-name wire) "CLAMIGA")
+    (is-equal (wire-port-name wire) "AMILISP")
     (setf (fake-messages doc) '())
     ;; Connected already: no second launch, and Connect asks nothing.
     (run-command doc 'run-lisp)
@@ -626,31 +626,54 @@ values: the .asd, the source file, and everything to delete."
 
 ;;; --- how amilisp is started ----------------------------------------------------
 
-(deftest the-started-clamiga-s-heap-and-options-are-the-init-file-s
-  (let ((*clamiga-options* '()))
+(deftest the-started-amilisp-s-heap-and-options-are-the-init-file-s
+  (let ((*amilisp-options* '()))
     ;; The default is the platform's: the tests run on a host.
-    (let ((*clamiga-heap* :default)
+    (let ((*amilisp-heap* :default)
           (*features* (remove :morphos (remove :amigaos *features*))))
-      (is-equal (clamiga-launch-options) '("--heap" "256M")))
+      (is-equal (amilisp-launch-options) '("--heap" "256M")))
     ;; An Amiga keeps amilisp's own default: the memory is the machine's.
-    (let ((*clamiga-heap* :default)
+    (let ((*amilisp-heap* :default)
           (*features* (cons :amigaos *features*)))
-      (is-equal (clamiga-heap) nil)
-      (is-equal (clamiga-launch-options) '()))
-    (let ((*clamiga-heap* :default)
+      (is-equal (amilisp-heap) nil)
+      (is-equal (amilisp-launch-options) '()))
+    (let ((*amilisp-heap* :default)
           (*features* (cons :morphos *features*)))
-      (is-equal (clamiga-launch-options) '()))
+      (is-equal (amilisp-launch-options) '()))
     ;; What the init file says goes on every platform.
-    (let ((*clamiga-heap* "24M")
+    (let ((*amilisp-heap* "24M")
           (*features* (cons :amigaos *features*)))
-      (is-equal (clamiga-launch-options) '("--heap" "24M")))
-    (let ((*clamiga-heap* 8388608))
-      (is-equal (clamiga-launch-options) '("--heap" "8388608")))
+      (is-equal (amilisp-launch-options) '("--heap" "24M")))
+    (let ((*amilisp-heap* 8388608))
+      (is-equal (amilisp-launch-options) '("--heap" "8388608")))
     ;; NIL, and anything that is no size, is amilisp's own default.
     (dolist (none '(nil "" 0 -1 :big))
-      (let ((*clamiga-heap* none))
-        (is-equal (clamiga-launch-options) '())))
+      (let ((*amilisp-heap* none))
+        (is-equal (amilisp-launch-options) '())))
     ;; The options follow the heap; what is no string is left out.
-    (let ((*clamiga-heap* "64M")
-          (*clamiga-options* '("--no-userinit" 42 "--no-jit")))
-      (is-equal (clamiga-launch-options) '("--heap" "64M" "--no-userinit" "--no-jit")))))
+    (let ((*amilisp-heap* "64M")
+          (*amilisp-options* '("--no-userinit" 42 "--no-jit")))
+      (is-equal (amilisp-launch-options) '("--heap" "64M" "--no-userinit" "--no-jit")))))
+
+(deftest the-init-file-s-old-names-still-set-the-heap-and-options
+  ;; An init file written before 0.12 says *clamiga-heap*: a SETQ of the
+  ;; old name is the new variable's.
+  (let ((*amilisp-heap* :default)
+        (*amilisp-options* '()))
+    (setq *clamiga-heap* "48M")
+    (setq *clamiga-options* '("--no-jit"))
+    (is-equal *amilisp-heap* "48M")
+    (is-equal *clamiga-heap* "48M")
+    (is-equal (amilisp-launch-options) '("--heap" "48M" "--no-jit"))
+    (setf *clamiga-heap* nil)
+    (is-equal (amilisp-launch-options) '("--no-jit"))))
+
+(deftest the-port-scan-tries-amilisp-before-the-old-clamiga-names
+  (is-equal (length *amilisp-port-names*) 20)
+  (is-equal (subseq *amilisp-port-names* 0 3) '("AMILISP" "AMILISP.1" "AMILISP.2"))
+  (is-equal (nth 9 *amilisp-port-names*) "AMILISP.9")
+  (is-equal (nth 10 *amilisp-port-names*) "CLAMIGA")
+  (is-equal (car (last *amilisp-port-names*)) "CLAMIGA.9")
+  (is (eq *clamiga-port-names* *amilisp-port-names*))
+  (let ((*amilisp-port-names* '("X")))
+    (is-equal *clamiga-port-names* '("X"))))

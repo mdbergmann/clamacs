@@ -9,15 +9,15 @@
 # LOAD recovers form by form, so a file that failed to load would otherwise
 # pass for a file without failing tests.  Any ERROR line fails the run too.
 #
-# CLAMACS_TEST=keymap runs one file; CLAMIGA_GC_STRESS=1 with a
+# CLAMACS_TEST=keymap runs one file; AMILISP_GC_STRESS=1 with a
 # DEBUG_GC_STRESS binary (the superproject's build/host-gcstress) forces a
 # compaction at every allocation.
 
 here=$(cd "$(dirname "$0")" && pwd)
-clamiga=${1:-$here/../../build/host/amilisp}
+amilisp=${1:-$here/../../build/host/amilisp}
 
-if [ ! -x "$clamiga" ]; then
-    echo "NOTE: no amilisp at $clamiga -- Lisp tests SKIPPED"
+if [ ! -x "$amilisp" ]; then
+    echo "NOTE: no amilisp at $amilisp -- Lisp tests SKIPPED"
     echo "      (run \`make host' in the superproject first)"
     exit 0
 fi
@@ -29,10 +29,10 @@ fi
 # read the wrong slot).  The tests must run what the sources say.
 cache=$(mktemp -d "${TMPDIR:-/tmp}/clamacs-faslcache.XXXXXX") || exit 1
 trap 'rm -rf "$cache"' EXIT
-CLAMIGA_FASL_CACHE_DIR=$cache
-export CLAMIGA_FASL_CACHE_DIR
+AMILISP_FASL_CACHE_DIR=$cache
+export AMILISP_FASL_CACHE_DIR
 
-out=$("$clamiga" --no-userinit --heap 16M --script "$here/run-tests.lisp" \
+out=$("$amilisp" --no-userinit --heap 16M --script "$here/run-tests.lisp" \
       </dev/null 2>&1)
 echo "$out" | grep -v '^; Loading'
 
