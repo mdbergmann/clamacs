@@ -1,17 +1,17 @@
-;;;; test-transport-tcp.lisp -- the wire to a clamiga over TCP
+;;;; test-transport-tcp.lisp -- the wire to an amilisp over TCP
 ;;;; (lisp/transport-tcp.lisp), against a dev-tcp server in this process.
 ;;;;
-;;;; The "clamiga" is lib/dev-tcp.lisp's port started in the test image --
+;;;; The "amilisp" is lib/dev-tcp.lisp's port started in the test image --
 ;;;; the real EXT.DEV commands and the real REPL thread, as test-self.lisp
 ;;;; uses them -- and the editor is test-transport-host.lisp's port fixture:
 ;;;; a wired fake with its mailbox pumped by a thread, its own port up, so
-;;;; the REPL's way back (clamiga's REPL thread connecting to the editor's
+;;;; the REPL's way back (amilisp's REPL thread connecting to the editor's
 ;;;; port with the token REPL-ATTACH handed over) runs end to end over two
-;;;; loopback connections.  What is checked: a clamiga found and answered
+;;;; loopback connections.  What is checked: an amilisp found and answered
 ;;;; through the mailbox; no token, nothing tried; a wrong token, the
-;;;; request lost and never answered; a clamiga that went, lost and found
+;;;; request lost and never answered; an amilisp that went, lost and found
 ;;;; again; the REPL attached back over the editor's port; the launch of a
-;;;; real second clamiga on this binary, and its stop at the editor's exit;
+;;;; real second amilisp on this binary, and its stop at the editor's exit;
 ;;;; the wire starting on TCP with the editor's own image on demand.
 
 (in-package :clamacs)
@@ -32,7 +32,7 @@
 ;;; --- the pieces --------------------------------------------------------------
 
 (defmacro with-clamiga ((server token) &body body)
-  "A dev-tcp server in this process, playing clamiga."
+  "A dev-tcp server in this process, playing amilisp."
   `(let ((,server (ext.dev.tcp:start :port 0 :token ,token)))
      (unwind-protect (progn ,@body)
        (ext.dev.tcp:stop ,server))))
@@ -97,13 +97,13 @@ while a reply is being delivered."
       (is-equal (on-editor editor (lambda () (wire-find-port wire))) t)
       (is-equal (wire-port-name wire) name)
       (is (wire-connected wire))
-      (is-equal (fake-last-message doc) (format nil "clamiga found on ~A" name))
+      (is-equal (fake-last-message doc) (format nil "amilisp found on ~A" name))
       ;; A request goes out on the client thread, the reply comes back
       ;; through the mailbox.
       (is (on-editor editor (lambda () (wire-request wire doc :ping "PING"))))
-      (is (tcp-wait (last-message-p doc (format nil "clamiga answers on ~A" name))))
+      (is (tcp-wait (last-message-p doc (format nil "amilisp answers on ~A" name))))
       (is (on-editor editor (lambda () (wire-request wire doc :version "VERSION"))))
-      (is (tcp-wait (lambda () (search "CL-Amiga" (fake-last-message doc)))))
+      (is (tcp-wait (lambda () (search "AmiLisp" (fake-last-message doc)))))
       ;; One request in flight: the second waits for the first's reply.
       (on-editor editor (lambda ()
                           (wire-request wire doc :eval "EVAL (+ 1 2)")
@@ -147,7 +147,7 @@ while a reply is being delivered."
                           (setf (wire-connected wire) t
                                 (wire-port-name wire) name)
                           (wire-request wire doc :ping "PING")))
-      (is (tcp-wait (last-message-p doc (format nil "clamiga is not running (port ~A is gone)" name))))
+      (is (tcp-wait (last-message-p doc (format nil "amilisp is not running (port ~A is gone)" name))))
       (is (null (wire-connected wire)))
       (is (null (wire-queue wire)))
       (is-equal (ext.dev.tcp::server-served server) 0))))
@@ -164,26 +164,26 @@ while a reply is being delivered."
       (unwind-protect
            (progn
              (on-editor editor (lambda () (wire-request wire doc :ping "PING")))
-             (is (tcp-wait (last-message-p doc (format nil "clamiga answers on ~A" name))))
-             ;; clamiga goes.
+             (is (tcp-wait (last-message-p doc (format nil "amilisp answers on ~A" name))))
+             ;; amilisp goes.
              (ext.dev.tcp:stop server)
              (setq server nil)
              (on-editor editor (lambda () (wire-request wire doc :ping "PING")))
-             (is (tcp-wait (last-message-p doc (format nil "clamiga is not running (port ~A is gone)" name))))
+             (is (tcp-wait (last-message-p doc (format nil "amilisp is not running (port ~A is gone)" name))))
              (is (null (wire-connected wire)))
              (is (null (tcp-transport-stream tr)))
-             ;; A clamiga on the same port again: found, once the hold-off
+             ;; An amilisp on the same port again: found, once the hold-off
              ;; is over, and announced.
              (setq server (ext.dev.tcp:start :port port :token "tok"))
              (setf (tcp-transport-next-try tr) 0)
              (on-editor editor (lambda () (wire-request wire doc :ping "PING")))
-             (is (tcp-wait (last-message-p doc (format nil "clamiga answers on ~A" name))))
+             (is (tcp-wait (last-message-p doc (format nil "amilisp answers on ~A" name))))
              (is (wire-connected wire)))
         (stop-tcp-transport tr)
         (when server (ext.dev.tcp:stop server))))))
 
 ;;; --- finding on the client thread ------------------------------------------------
-;;; A clamiga on another machine can leave a SYN unanswered for seconds: the
+;;; An amilisp on another machine can leave a SYN unanswered for seconds: the
 ;;; editor's task must never wait for it, so finding there only reports the
 ;;; connection and asks the client thread to make one.
 
@@ -219,11 +219,11 @@ while a reply is being delivered."
                ;; thread asked.
                (is (null (transport-find-port tr)))
                (is (tcp-wait (lambda () (tcp-transport-stream tr))))
-               ;; It told the wire, which found the clamiga on the editor's
+               ;; It told the wire, which found the amilisp on the editor's
                ;; task and announced it, with no second find of ours.
                (is (tcp-wait (lambda () (wire-connected wire))))
                (is-equal (wire-port-name wire) name)
-               (is (tcp-wait (last-message-p doc (format nil "clamiga found on ~A" name))))
+               (is (tcp-wait (last-message-p doc (format nil "amilisp found on ~A" name))))
                (is-equal (transport-find-port tr) name)
                (is (not (tcp-transport-connecting tr)))
                ;; And the connection serves.
@@ -276,7 +276,7 @@ while a reply is being delivered."
         (is (search (format nil "REPL-ATTACH tcp:127.0.0.1:~D/~A DEBUG" (host-port-number hp) (host-port-token hp))
                     (first (wire-sent wire))))
         ;; A form at the prompt: its output streams back over a connection
-        ;; clamiga's REPL thread opens to the editor's port on its first
+        ;; amilisp's REPL thread opens to the editor's port on its first
         ;; send (from this process here), then the value and the next
         ;; prompt.
         (on-editor editor (lambda ()
@@ -296,9 +296,9 @@ while a reply is being delivered."
         (on-editor editor (lambda () (run-command repl 'clamacs-debugger-abort)))
         (is (tcp-wait (lambda () (and (not (debugger-active-p editor)) (repl-idle-p editor)))))
         (is (search "; Aborted" (transcript repl)))
-        ;; clamiga goes (its port stops, its connection to the editor's
+        ;; amilisp goes (its port stops, its connection to the editor's
         ;; port with it): the REPL window learns it from the next request.
-        ;; The REPL thread of a real clamiga dies with its process; this
+        ;; The REPL thread of a real amilisp dies with its process; this
         ;; one is the test image's and is stopped by hand.
         (ext.dev.tcp:stop server)
         (is (tcp-wait (lambda () (null (host-port-connections hp)))))
@@ -309,7 +309,7 @@ while a reply is being delivered."
         (is (tcp-wait (lambda () (not (and ext.dev::*repl-thread*
                                            (mp:thread-alive-p ext.dev::*repl-thread*))))))))))
 
-;;; --- starting clamiga ------------------------------------------------------------
+;;; --- starting amilisp ------------------------------------------------------------
 
 (deftest tcp-launch-failure-names-the-reason
   (with-port (f)
@@ -320,7 +320,7 @@ while a reply is being delivered."
            (progn
              (setf (tcp-transport-dir tr) nil)
              (on-editor editor (lambda () (run-command doc 'run-lisp)))
-             (is (search "Cannot start clamiga: no private directory" (fake-last-message doc)))
+             (is (search "Cannot start amilisp: no private directory" (fake-last-message doc)))
              (is (null (tcp-transport-launched tr))))
         (stop-tcp-transport tr)))))
 
@@ -339,21 +339,21 @@ while a reply is being delivered."
     (delete-file path)))
 
 (deftest tcp-launch-command-gives-the-clamiga-a-heap
-  ;; clamiga's own default (4M) is exhausted by the first system loaded.
+  ;; amilisp's own default (4M) is exhausted by the first system loaded.
   (let ((saved (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
     (unwind-protect
          (progn
            (unsetenv "CLAMACS_CLAMIGA_HEAP")
-           (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/it's.log")
-                     "'/bin/clamiga' '--heap' '256M' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/it'\\''s.log' 2>&1 &")
+           (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/it's.log")
+                     "'/bin/amilisp' '--heap' '256M' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/it'\\''s.log' 2>&1 &")
            (let ((*clamiga-heap* nil))
-             (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/log")
-                       "'/bin/clamiga' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
+             (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/log")
+                       "'/bin/amilisp' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
            ;; The init file's settings.
            (let ((*clamiga-heap* "512M")
                  (*clamiga-options* '("--no-userinit")))
-             (is-equal (launch-command "/bin/clamiga" "/t/pre.lisp" "/t/log")
-                       "'/bin/clamiga' '--heap' '512M' '--no-userinit' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
+             (is-equal (launch-command "/bin/amilisp" "/t/pre.lisp" "/t/log")
+                       "'/bin/amilisp' '--heap' '512M' '--no-userinit' --non-interactive --load '/t/pre.lisp' </dev/null >'/t/log' 2>&1 &"))
            ;; The environment wins, and an empty value says nothing.
            (setenv "CLAMACS_CLAMIGA_HEAP" "64M")
            (is-equal (launch-heap) "64M")
@@ -365,9 +365,9 @@ while a reply is being delivered."
 
 (deftest tcp-launch-starts-a-clamiga-on-this-binary-and-exit-stops-it
   (cond ((equal (ext:getenv "CLAMIGA_GC_STRESS") "1")
-         (format t "  note  the launch of a second clamiga is not run under GC stress (the child would inherit it)~%"))
+         (format t "  note  the launch of a second amilisp is not run under GC stress (the child would inherit it)~%"))
         ((null (clamiga-binary))
-         (format t "  note  no clamiga binary is known here: the launch is not run~%"))
+         (format t "  note  no amilisp binary is known here: the launch is not run~%"))
         (t
          (with-port (f)
            (let* ((editor (port-fixture-editor f))
@@ -380,10 +380,10 @@ while a reply is being delivered."
              (unwind-protect
                   (progn
                     (is (null (on-editor editor (lambda () (wire-find-port wire)))))
-                    ;; `Start clamiga': the binary this editor runs on, the
+                    ;; `Start amilisp': the binary this editor runs on, the
                     ;; token in its environment, its port from the file.
                     (on-editor editor (lambda () (run-command doc 'run-lisp)))
-                    (is-equal (fake-last-message doc) "Started clamiga")
+                    (is-equal (fake-last-message doc) "Started amilisp")
                     (is (tcp-transport-launched tr))
                     (is-equal (tcp-transport-host tr) "127.0.0.1")
                     ;; It is on this machine now: found without the client thread.
@@ -394,18 +394,18 @@ while a reply is being delivered."
                     (is (null (probe-file (concatenate 'string dir *launch-preamble-name*))))
                     (is (null (probe-file (concatenate 'string dir *launch-port-file-name*))))
                     (is (probe-file log))
-                    ;; It answers as a clamiga does, in its own process.
+                    ;; It answers as an amilisp does, in its own process.
                     (on-editor editor (lambda () (wire-request wire doc :version "VERSION")))
-                    (is (tcp-wait (lambda () (search "CL-Amiga" (fake-last-message doc)))))
+                    (is (tcp-wait (lambda () (search "AmiLisp" (fake-last-message doc)))))
                     (on-editor editor (lambda () (wire-request wire doc :eval "EVAL (ext:executable-path)")))
-                    (is (tcp-wait (lambda () (search "clamiga" (fake-last-message doc)))))
+                    (is (tcp-wait (lambda () (search "amilisp" (fake-last-message doc)))))
                     ;; Where its output goes is known to the REPL's messages.
                     (is-equal (transport-log tr) log)
                     ;; Its token is not in the editor's environment any more.
                     (is (null (ext:getenv "CLAMIGA_TCP_TOKEN")))
-                    ;; The editor's exit stops the clamiga it started.
+                    ;; The editor's exit stops the amilisp it started.
                     (stop-tcp-transport tr)
-                    (is (tcp-wait (lambda () (search "; clamiga stopped" (or (read-file-text log) ""))) 15)))
+                    (is (tcp-wait (lambda () (search "; amilisp stopped" (or (read-file-text log) ""))) 15)))
                (stop-tcp-transport tr)))))))
 
 ;;; --- the wire ------------------------------------------------------------------
@@ -435,11 +435,11 @@ while a reply is being delivered."
              (is-equal (transport-own-port (wire-transport wire)) *self-own-port*)
              (run-command doc 'clamacs-connect-self)
              (is-equal (fake-last-message doc) "Already talking to the editor itself")
-             ;; And back, to a clamiga that is not there.
+             ;; And back, to an amilisp that is not there.
              (run-command doc 'clamacs-connect-clamiga)
              (is (not (wire-self-p wire)))
              (is-equal (fake-last-message doc)
-                       "Now talking to clamiga, which is not running (Start clamiga)")
+                       "Now talking to amilisp, which is not running (Start amilisp)")
              (stop-host-wire editor)
              (is (null *host-port*))
              (is (null *self-transport*))))

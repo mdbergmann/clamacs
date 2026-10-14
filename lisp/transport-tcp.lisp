@@ -1,20 +1,20 @@
-;;;; transport-tcp.lisp -- the wire to a clamiga over TCP.
+;;;; transport-tcp.lisp -- the wire to an amilisp over TCP.
 ;;;;
 ;;;; The host's counterpart of transport-arexx.lisp (specs/clamacs-host.md,
 ;;;; "The wire: the editor's own image first, TCP second"): the wire's HOME
-;;;; transport on the host, to a separate clamiga process serving
+;;;; transport on the host, to a separate amilisp process serving
 ;;;; lib/dev-tcp.lisp's port, with the self transport (transport-self.lisp)
 ;;;; as the other side of `Talk to the Editor Itself'.  Three parts, the
 ;;;; same rule as on the Amiga: only the editor's task touches the editor.
 ;;;;
 ;;;;   - The CLIENT thread takes one command at a time from TRANSPORT-SEND,
-;;;;     writes it on the authenticated connection to clamiga, reads the
+;;;;     writes it on the authenticated connection to amilisp, reads the
 ;;;;     reply and posts it into the editor's mailbox.  That keeps the editor
 ;;;;     live during a long LOAD; the wire's queue keeps one request in
 ;;;;     flight, as the protocol demands.  A connection that is closed or
 ;;;;     refused is the port being gone (`wire-reply ... :lost t'), and the
 ;;;;     next request tries to connect again.
-;;;;   - FINDING clamiga is a connect attempt to HOST:PORT with the token,
+;;;;   - FINDING amilisp is a connect attempt to HOST:PORT with the token,
 ;;;;     from `CLAMACS_CLAMIGA' (`host:port', default 127.0.0.1:4005) and
 ;;;;     `CLAMACS_CLAMIGA_TOKEN' in the editor's environment, or from what
 ;;;;     the launch below settled.  Without a token there is nothing to try.
@@ -24,7 +24,7 @@
 ;;;;     machine, which may leave a SYN unanswered for seconds, it is made by
 ;;;;     the client thread, and the find only reports what is connected --
 ;;;;     the editor's task never waits for the network.
-;;;;   - STARTING clamiga (`Start clamiga', M-x run-lisp) is the binary this
+;;;;   - STARTING amilisp (`Start amilisp', M-x run-lisp) is the binary this
 ;;;;     editor runs on (EXT:EXECUTABLE-PATH, or `CLAMACS_CLAMIGA_BIN')
 ;;;;     with `--load' of a preamble that starts the TCP port on an ephemeral
 ;;;;     port and writes the number to a file in the editor's private
@@ -32,20 +32,20 @@
 ;;;;     ENVIRONMENT (`CLAMIGA_TCP_TOKEN'), never on its command line and in
 ;;;;     no file.  The preamble ends with (ext.dev.tcp:wait), so the child
 ;;;;     serves until it is told to stop -- which the editor does at its own
-;;;;     exit for a clamiga IT started (`EVAL (ext.dev.tcp:stop)' over the
+;;;;     exit for an amilisp IT started (`EVAL (ext.dev.tcp:stop)' over the
 ;;;;     connection), and never for one the user started.  Its output goes
-;;;;     to `clamacs-clamiga.log' beside the port files.
+;;;;     to `clamacs-amilisp.log' beside the port files.
 ;;;;
 ;;;; The REPL's way back: TRANSPORT-OWN-PORT names the editor's own port as
-;;;; `tcp:HOST:PORT/TOKEN' (transport-host.lisp), handed to clamiga on the
-;;;; already authenticated connection by REPL-ATTACH; clamiga's REPL thread
+;;;; `tcp:HOST:PORT/TOKEN' (transport-host.lisp), handed to amilisp on the
+;;;; already authenticated connection by REPL-ATTACH; amilisp's REPL thread
 ;;;; connects back to it for OUTPUT, READLINE, RESULT and DEBUGGER, which
 ;;;; the port serves through PORT-RAW-COMMAND as it does for a macro.
 ;;;;
 ;;;; Portable Lisp: EXT sockets, MP threads, EXT.DEV.TCP's client side, two
 ;;;; libc calls (setenv, unsetenv) through the FFI for the launch.
 ;;;; tests/test-transport-tcp.lisp drives it against a dev-tcp server in the
-;;;; test process, and verify/host/run-drive.sh against a clamiga the
+;;;; test process, and verify/host/run-drive.sh against an amilisp the
 ;;;; editor starts.
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -61,11 +61,11 @@
   "How long a failed connect attempt holds off the next one.")
 
 (defparameter *launch-wait-seconds* 20
-  "How long a started clamiga has to write its port file.")
+  "How long a started amilisp has to write its port file.")
 
-(defparameter *launch-port-file-name* "clamacs-clamiga-port")
-(defparameter *launch-preamble-name* "clamacs-clamiga.lisp")
-(defparameter *launch-log-name* "clamacs-clamiga.log")
+(defparameter *launch-port-file-name* "clamacs-amilisp-port")
+(defparameter *launch-preamble-name* "clamacs-amilisp.lisp")
+(defparameter *launch-log-name* "clamacs-amilisp.log")
 
 (defun parse-address (text)
   "(values HOST PORT) of `host:port', or NIL for anything else."
@@ -87,7 +87,7 @@
   (pending nil)             ; the command for the client thread
   (quit nil)
   thread
-  ;; The clamiga to talk to.  TOKEN NIL: nothing to authenticate with, so
+  ;; The amilisp to talk to.  TOKEN NIL: nothing to authenticate with, so
   ;; nothing to try.
   host
   port
@@ -97,8 +97,8 @@
   (background nil)          ; finding connects on the client thread (a host
                             ; that may not answer: see LOOPBACK-HOST-P)
   (connecting nil)          ; the client thread is to connect, or is at it
-  (launched nil)            ; HOST:PORT is a clamiga this editor started
-  (log nil)                 ; that clamiga's log file
+  (launched nil)            ; HOST:PORT is an amilisp this editor started
+  (log nil)                 ; that amilisp's log file
   (dir nil)                 ; where the launch's files go (the private dir)
   (problem nil))            ; why the last launch failed
 
@@ -108,7 +108,7 @@
        (format nil "~A:~D" (tcp-transport-host tr) (tcp-transport-port tr))))
 
 (defun tcp-transport-configure (tr)
-  "The clamiga from the environment: CLAMACS_CLAMIGA (host:port) and
+  "The amilisp from the environment: CLAMACS_CLAMIGA (host:port) and
 CLAMACS_CLAMIGA_TOKEN.  A malformed address is reported once and ignored."
   (let ((address (or (ext:getenv "CLAMACS_CLAMIGA") *clamiga-default-address*))
         (token (ext:getenv "CLAMACS_CLAMIGA_TOKEN")))
@@ -131,7 +131,7 @@ once, where one to another machine can wait out a SYN timeout."
                                        (background :auto))
   "The transport for EDITOR, its client thread running.  CONFIGURE reads
 the environment; HOST, PORT and TOKEN override it (the tests).  BACKGROUND
-says whether finding clamiga connects on the client thread, so the editor's
+says whether finding amilisp connects on the client thread, so the editor's
 task never waits for a machine that does not answer: :AUTO, for a host
 that is not this one."
   (let ((tr (%make-tcp-transport editor)))
@@ -210,7 +210,7 @@ thread posts a WIRE-FIND-PORT), and the next find answers with the name."
       (tcp-try-connect tr)))
 
 (defmethod transport-own-port ((tr tcp-transport))
-  "The editor's own port as clamiga's REPL thread must reach it:
+  "The editor's own port as amilisp's REPL thread must reach it:
 `tcp:HOST:PORT/TOKEN' -- or NIL while the port is not up."
   (let ((hp *host-port*))
     (and hp (ext.dev.tcp:port-name (host-port-host hp) (host-port-number hp) (host-port-token hp)))))
@@ -229,7 +229,7 @@ thread posts a WIRE-FIND-PORT), and the next find answers with the name."
 
 (defun tcp-background-connect (tr)
   "The connect a find asked for (TCP-REQUEST-CONNECT), on the client thread.
-A clamiga found is announced: the wire looks for it again on the editor's
+An amilisp found is announced: the wire looks for it again on the editor's
 task, where it now finds the connection."
   (let ((name (ignore-errors (tcp-try-connect tr)))
         (editor (tcp-transport-editor tr)))
@@ -270,13 +270,13 @@ find asked for it, repeat."
           (let ((stream (mp:with-lock-held (lock) (tcp-transport-stream tr))))
             (multiple-value-bind (rc text lost)
                 (cond ((null stream)
-                       (values +rc-fatal+ "no connection to clamiga" t))
+                       (values +rc-fatal+ "no connection to amilisp" t))
                       (t
                        (handler-case
                            (multiple-value-bind (rc text) (ext.dev.tcp:request stream job)
                              (if rc
                                  (values rc text nil)
-                                 (values +rc-fatal+ "the connection to clamiga was closed" t)))
+                                 (values +rc-fatal+ "the connection to amilisp was closed" t)))
                          (error (e)
                            (values +rc-fatal+
                                    (handler-case (princ-to-string e)
@@ -289,11 +289,11 @@ find asked for it, repeat."
                                 :wait nil)))))))))
 
 ;;; ------------------------------------------------------------------
-;;; Starting clamiga
+;;; Starting amilisp
 ;;; ------------------------------------------------------------------
 
 (defun clamiga-binary ()
-  "The clamiga to start: CLAMACS_CLAMIGA_BIN, else the binary this editor
+  "The amilisp to start: CLAMACS_CLAMIGA_BIN, else the binary this editor
 runs on; NIL when neither is known."
   (let ((env (ext:getenv "CLAMACS_CLAMIGA_BIN")))
     (if (and env (string/= env ""))
@@ -313,7 +313,7 @@ runs on; NIL when neither is known."
     (ffi:call-foreign (ffi:symbol-pointer "unsetenv" nil) :int32 '(:pointer) (list n))))
 
 (defun launch-preamble (port-file)
-  "The file the started clamiga loads: the port on an ephemeral port with
+  "The file the started amilisp loads: the port on an ephemeral port with
 the token from its environment, the port number to PORT-FILE, then serve
 until stopped."
   (concatenate 'string
@@ -324,7 +324,7 @@ until stopped."
                " :direction :output :if-exists :supersede)" (string #\Newline)
                "    (format out \"~D~%\" (ext.dev.tcp:port server)))" (string #\Newline)
                "  (ext.dev.tcp:wait server))" (string #\Newline)
-               "(format t \"; clamiga stopped~%\")" (string #\Newline)))
+               "(format t \"; amilisp stopped~%\")" (string #\Newline)))
 
 (defun write-launch-preamble (path port-file)
   "The preamble to PATH, for the owner alone: a second process LOADs it, so
@@ -352,7 +352,7 @@ nobody else may write it in the moments before -- or replace what is there."
                   (subseq text (1+ start) end)))))))
 
 (defun launch-heap ()
-  "The started clamiga's heap: CLAMACS_CLAMIGA_HEAP in the environment,
+  "The started amilisp's heap: CLAMACS_CLAMIGA_HEAP in the environment,
 else what the init file's *CLAMIGA-HEAP* says."
   (let ((env (ext:getenv "CLAMACS_CLAMIGA_HEAP")))
     (if (and env (string/= env ""))
@@ -374,7 +374,7 @@ output in LOG."
     (setf (tcp-transport-problem tr) nil)
     (cond ((null bin)
            (setf (tcp-transport-problem tr)
-                 "no clamiga binary is known (set CLAMACS_CLAMIGA_BIN)")
+                 "no amilisp binary is known (set CLAMACS_CLAMIGA_BIN)")
            (return-from transport-launch nil))
           ((null dir)
            (setf (tcp-transport-problem tr)
@@ -431,7 +431,7 @@ output in LOG."
           (and (tcp-try-connect tr :seconds 5) t))))))
 
 (defun stop-launched-clamiga (tr)
-  "Ask the clamiga this editor started to stop, over the connection (or a
+  "Ask the amilisp this editor started to stop, over the connection (or a
 fresh one); nothing for one the user started."
   (when (tcp-transport-launched tr)
     (let ((stream (or (mp:with-lock-held ((tcp-transport-lock tr))
@@ -449,7 +449,7 @@ fresh one); nothing for one the user started."
     (setf (tcp-transport-launched tr) nil)))
 
 (defun stop-tcp-transport (tr)
-  "The client thread (a job pending still goes out), the clamiga this
+  "The client thread (a job pending still goes out), the amilisp this
 editor started, the connection."
   (mp:with-lock-held ((tcp-transport-lock tr))
     (setf (tcp-transport-quit tr) t)
@@ -465,12 +465,12 @@ editor started, the connection."
 ;;; ------------------------------------------------------------------
 
 (defun start-host-wire (editor)
-  "The wire on the TCP transport -- clamiga, found or started -- with the
+  "The wire on the TCP transport -- amilisp, found or started -- with the
 editor's own image reached through `Talk to the Editor Itself' (the self
 transport, made on first use); then the port."
   (let ((tr (make-tcp-transport editor)))
     (make-wire editor tr)
-    ;; A clamiga on another machine is looked for at once, on the client
+    ;; An amilisp on another machine is looked for at once, on the client
     ;; thread, so it is found before the first command asks for it.
     (when (tcp-transport-background tr)
       (tcp-request-connect tr)))

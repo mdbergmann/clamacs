@@ -1,4 +1,4 @@
-;;;; symcache.lisp -- what clamiga has already said about a symbol.
+;;;; symcache.lisp -- what amilisp has already said about a symbol.
 ;;;;
 ;;;; The status line asks for the arglist of the operator at point whenever
 ;;;; the cursor comes to rest somewhere new, and most of the time that
@@ -40,7 +40,7 @@
 (defun symcache-put (cache key value)
   "Remember VALUE for KEY.  An existing key is updated in place; a new one
 takes the oldest slot once the ring is full.  VALUE may be \"\" (or NIL) to
-record that clamiga had no answer.  True, or NIL for a junk key."
+record that amilisp had no answer.  True, or NIL for a junk key."
   (let ((k (symcache-key key))
         (value (or value "")))
     (when k

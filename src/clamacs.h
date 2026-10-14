@@ -141,7 +141,7 @@ typedef enum {
     CK_COMPLETE_COMMAND,
     CK_COMPLETE_FILE,
     CK_COMPLETE_BUFFER,
-    CK_COMPLETE_SYMBOL   /* symbol names, asked from clamiga (phase 2) */
+    CK_COMPLETE_SYMBOL   /* symbol names, asked from amilisp (phase 2) */
 } ck_complete_source;
 
 typedef struct ck_doc {
@@ -219,7 +219,7 @@ typedef struct ck_doc {
     int32_t  idle_ticks;
     int32_t  edit_serial;              /* bumped on every content change */
 
-    /* Phase 2: symbol completion.  The candidates clamiga sent for
+    /* Phase 2: symbol completion.  The candidates amilisp sent for
      * completions_prefix, and the stretch of buffer `M-TAB' replaces. */
     ck_strlist completions;
     char       completions_prefix[CK_SYM_MAX];
@@ -287,21 +287,21 @@ typedef struct ck_app {
     ck_diaglist     diags;
     char            version[128];
 
-    /* The package clamiga's port was last told (IN-PACKAGE), so a request
+    /* The package amilisp's port was last told (IN-PACKAGE), so a request
      * from a buffer in the same package does not repeat it.  Cleared when a
-     * port is (re)found, since a fresh clamiga starts in CL-USER. */
+     * port is (re)found, since a fresh amilisp starts in CL-USER. */
     char            wire_package[CK_PKG_MAX];
 
     /* Phase 2 */
-    ck_symcache     arglists;    /* what clamiga said about each operator */
+    ck_symcache     arglists;    /* what amilisp said about each operator */
     ck_locstack     locations;   /* where `M-.' came from */
 
-    /* Phase 3: the REPL window and clamiga's REPL thread.  The editor's own
-     * port name is what REPL-ATTACH tells clamiga to send to; MUI numbers
+    /* Phase 3: the REPL window and amilisp's REPL thread.  The editor's own
+     * port name is what REPL-ATTACH tells amilisp to send to; MUI numbers
      * it (CLAMACS.1 on the first instance), so it is looked up, not
      * assumed. */
     ck_doc  *repl;               /* the *clamacs-repl* window, or NULL */
-    int32_t  repl_attached;      /* clamiga's REPL thread sends to us */
+    int32_t  repl_attached;      /* amilisp's REPL thread sends to us */
     int32_t  repl_attaching;     /* a REPL-ATTACH is on the wire */
     char     own_port[32];
     /* A buffer eval (C-c C-c, C-x C-e, C-c C-r, C-c C-e) runs on the REPL
@@ -319,7 +319,7 @@ typedef struct ck_app {
     int32_t error_row;   /* the diagnostic next-error last visited, or -1 */
 
     /* Phase 4: the debugger window (debugwin.c).  dbg_level is the level
-     * clamiga last announced with DEBUGGER, 0 when its REPL thread is not
+     * amilisp last announced with DEBUGGER, 0 when its REPL thread is not
      * parked in the debugger.  The strings are what the Text objects and
      * the window title point at, so they live here (see the ck_doc note on
      * MUIA_Text_Contents). */
@@ -336,7 +336,7 @@ typedef struct ck_app {
     char    dbg_title[64];
 
     /* Phase 4: the inspector window (inspectwin.c).  insp_depth is the
-     * depth of clamiga's navigation stack, 0 when nothing is inspected. */
+     * depth of amilisp's navigation stack, 0 when nothing is inspected. */
     Object *inspectwin;
     Object *insp_object_obj;
     Object *insp_parts;
@@ -445,7 +445,7 @@ void    ck_doc_goto_line(ck_doc *doc, int32_t line);
 ck_doc *ck_doc_scratch(ck_app *app, const char *name, int32_t lisp_mode);
 void    ck_doc_set_text(ck_doc *doc, const char *text);
 
-/* Tell clamiga the buffer's package if it is not what the port was last
+/* Tell amilisp the buffer's package if it is not what the port was last
  * told; with TRACK the buffer is re-read for its (in-package ...) first,
  * which costs a full export -- the per-user-action commands do that, the
  * idle timer does not. */
@@ -480,13 +480,13 @@ void    ck_rexx_close(ck_app *app);
 uint32_t ck_rexx_signal(ck_app *app);
 void    ck_rexx_handle_replies(ck_app *app);
 
-/* Find clamiga's port (CLAMIGA, CLAMIGA.1, ...).  Returns 1 when one was
+/* Find amilisp's port (CLAMIGA, CLAMIGA.1, ...).  Returns 1 when one was
  * found and remembered. */
 int32_t ck_rexx_find_port(ck_app *app);
 int32_t ck_rexx_launch(ck_app *app);
 
 /* Queue a command.  KIND says what the reply is for; DOC may be NULL.  When
- * no port is known the user is offered to start clamiga first, so this is
+ * no port is known the user is offered to start amilisp first, so this is
  * for things the user asked for. */
 int32_t ck_rexx_send(ck_app *app, ck_doc *doc, uint16_t kind, const char *fmt, ...);
 
@@ -512,7 +512,7 @@ void    ck_intro_idle(ck_doc *doc);
 
 /* The arglist of the operator at point into the status line.  ECHO also
  * puts it in the echo area (`M-x clamacs-arglist') and may ask the user to
- * start clamiga; quiet calls never prompt.  Returns 1 when handled, 0 when
+ * start amilisp; quiet calls never prompt.  Returns 1 when handled, 0 when
  * it could not act now (no port, a request already out) and should be
  * tried again. */
 int32_t ck_intro_arglist(ck_doc *doc, int32_t echo);
@@ -539,7 +539,7 @@ void    ck_intro_reply(ck_app *app, ck_doc *doc, uint16_t kind,
 
 /* ---- repl.c (phase 3) -------------------------------------------- */
 
-/* `C-c C-z': open or raise the REPL window, attaching clamiga's REPL
+/* `C-c C-z': open or raise the REPL window, attaching amilisp's REPL
  * thread to the editor's port when it is not attached yet.  FROM is the
  * document the user was in (for messages). */
 void    ck_repl_switch(ck_doc *from);
@@ -557,7 +557,7 @@ void    ck_repl_interrupt(ck_doc *doc);               /* C-c C-c, from anywhere 
 int32_t ck_repl_unbound_key(ck_doc *doc, ck_key key);
 int32_t ck_repl_allow_command(ck_doc *doc, int16_t command);
 
-/* What clamiga's REPL thread sends to the editor's port (rexxport.c hands
+/* What amilisp's REPL thread sends to the editor's port (rexxport.c hands
  * them over after ck_replmsg_parse). */
 void    ck_repl_output(ck_app *app, const char *text);
 void    ck_repl_readline(ck_app *app);
@@ -573,7 +573,7 @@ void    ck_repl_debugger(ck_app *app, int32_t level, const char *package,
 void    ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
                       const char *text);
 
-/* Housekeeping: the REPL window is closing; clamiga's port went away; the
+/* Housekeeping: the REPL window is closing; amilisp's port went away; the
  * editor is quitting (detaches, so the REPL thread stops). */
 void    ck_repl_closed(ck_doc *doc);
 void    ck_repl_disconnected(ck_app *app);
@@ -590,7 +590,7 @@ void    ck_repl_quit(ck_app *app);
 
 extern const struct MUI_Command ck_rexx_commands[];
 
-/* MUIA_Application_RexxHook: the commands clamiga's REPL thread sends
+/* MUIA_Application_RexxHook: the commands amilisp's REPL thread sends
  * (OUTPUT, READLINE, RESULT), taken raw from the RexxMsg. */
 extern struct Hook ck_rexx_repl_hook;
 

@@ -1,6 +1,6 @@
-;;; intro.lisp -- what the phase-2 leg of drive.rexx asks clamiga about.
+;;; intro.lisp -- what the phase-2 leg of drive.rexx asks amilisp about.
 ;;;
-;;; The script loads this into clamiga (C-c C-k) and then points every
+;;; The script loads this into amilisp (C-c C-k) and then points every
 ;;; introspection command at these definitions, so each answer is known in
 ;;; advance.  Line numbers matter: SOURCE-LOCATION must report the line of
 ;;; the DEFUN, and the script goes to the forms below by line number.

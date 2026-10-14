@@ -1,5 +1,5 @@
 /*
- * symcache.h -- what clamiga has already said about a symbol.
+ * symcache.h -- what amilisp has already said about a symbol.
  *
  * The status line asks for the arglist of the operator at point whenever
  * the cursor comes to rest somewhere new, and most of the time that operator
@@ -37,7 +37,7 @@ void ck_symcache_init(ck_symcache *cache);
 void ck_symcache_clear(ck_symcache *cache);
 
 /* Remember VALUE for KEY.  An existing key is updated in place; a new one
- * takes the oldest slot.  VALUE may be "" to record that clamiga had no
+ * takes the oldest slot.  VALUE may be "" to record that amilisp had no
  * answer.  Returns 0, or -1 when out of memory. */
 int32_t ck_symcache_put(ck_symcache *cache, const char *key, const char *value);
 

@@ -6,7 +6,7 @@
 ;;;; OWN port -- OUTPUT as it is printed, READLINE when the form reads from
 ;;;; standard input, RESULT with the values and the package for the next
 ;;;; prompt, DEBUGGER when a form is parked in the debugger (debugger.lisp).
-;;;; The other end is clamiga's REPL thread, lib/dev-repl.lisp in cl-amiga;
+;;;; The other end is amilisp's REPL thread, lib/dev-repl.lisp in AmiLisp;
 ;;;; specs/clamacs-ide.md, phase 3, has the protocol and the reason it is
 ;;;; two-way: a port answers a command the moment the verb returns, so the
 ;;;; editor can hold no reply until the user has typed.  This is the port of
@@ -32,10 +32,10 @@
 
 (defparameter *repl-name* "*clamacs-repl*")
 
-;;; What the editor knows about clamiga's REPL thread.
+;;; What the editor knows about amilisp's REPL thread.
 (defstruct (repl-session (:constructor make-repl-session ()))
   (doc nil)                 ; the REPL window, or NIL
-  (attached nil)            ; clamiga's REPL thread sends to our port
+  (attached nil)            ; amilisp's REPL thread sends to our port
   (attaching nil)           ; a REPL-ATTACH is on the wire
   (origin nil)              ; the document whose buffer eval is running
   (pending nil)             ; a buffer eval waiting for the attach: its text
@@ -141,7 +141,7 @@ without a newline, which gets its line break -- else at the end."
 (defun repl-eval-note-text (rc values)
   "What the transcript says of a buffer eval's outcome: `; Evaluated: FOO'
 -- every value on a line, the first with the label -- or `; Evaluation
-failed: ...' with clamiga's first line.  The `; ' clamiga puts before its
+failed: ...' with amilisp's first line.  The `; ' amilisp puts before its
 own note (`; No values') is not doubled."
   (let* ((lines (or (split-lines values) '("")))
          (first (string-left-trim "; " (first lines))))
@@ -161,7 +161,7 @@ shows the first value for a moment, the transcript keeps the record."
 ;;; ------------------------------------------------------------------
 
 (defun repl-wire-package (editor package)
-  "clamiga's *COMMAND-PACKAGE* moved: a buffer eval that follows must not
+  "amilisp's *COMMAND-PACKAGE* moved: a buffer eval that follows must not
 assume the port is still where it last put it."
   (let ((wire (editor-wire editor)))
     (when (and wire package (string/= package ""))
@@ -201,7 +201,7 @@ the port in between."
 ;;; ------------------------------------------------------------------
 
 (defun repl-attach (doc)
-  "Ask clamiga to attach its REPL thread to this editor's port, in DEBUG
+  "Ask amilisp to attach its REPL thread to this editor's port, in DEBUG
 mode: an unhandled error parks the thread and opens the debugger window
 instead of ending the form."
   (let* ((editor (doc-editor doc))
@@ -509,7 +509,7 @@ input."
        t))))
 
 ;;; ------------------------------------------------------------------
-;;; What clamiga sends
+;;; What amilisp sends
 ;;; ------------------------------------------------------------------
 
 (defun repl-output (editor text)
@@ -531,7 +531,7 @@ input."
   "What a LOAD or COMPILE-FILE printed (the `--- log ---' of its reply,
 diag.lisp), into the transcript under a `; HEADER' line (none when HEADER
 is NIL), above the prompt when one is showing.  The command ran on
-clamiga's handler thread, so nothing streamed: this is where its output
+amilisp's handler thread, so nothing streamed: this is where its output
 lands.  A REPL window that is not open yet opens behind FROM and
 attaches, as a buffer eval's does, so the log is not shown to nobody."
   (let ((repl (repl-open-behind editor from))
@@ -553,7 +553,7 @@ attaches, as a buffer eval's does, so the log is not shown to nobody."
               (repl-window-prompt-start state) end
               (repl-window-input-start state) end)
         (doc-set-point doc end)
-        (doc-message doc "clamiga is reading a line: type it and press RET")))))
+        (doc-message doc "amilisp is reading a line: type it and press RET")))))
 
 (defun repl-result (editor rc package values)
   (let* ((session (repl-session editor))
@@ -696,7 +696,7 @@ document it was about (NIL once closed)."
               (repl-eval-from from form package))))))
       (:repl-eval
        (when (and (/= rc +rc-ok+) doc)
-         ;; Refused: the REPL thread is gone (clamiga restarted) or still busy.
+         ;; Refused: the REPL thread is gone (amilisp restarted) or still busy.
          (when (search "no REPL attached" text)
            (setf (repl-session-attached session) nil))
          (doc-message doc (if (string/= line "") line "REPL-EVAL failed"))
@@ -722,7 +722,7 @@ document it was about (NIL once closed)."
       (t nil))))
 
 (defun repl-thread-gone (editor doc)
-  "clamiga answers, but its REPL thread is no more: what it was running is
+  "amilisp answers, but its REPL thread is no more: what it was running is
 over.  The transcript says so and where to look, the prompt comes back,
 and C-c C-z or the next buffer eval attaches a new thread.  DOC is where the
 interrupt was asked, NIL once closed."
@@ -762,7 +762,7 @@ interrupt was asked, NIL once closed."
 
 (defun repl-closed (doc)
   "The REPL window is closing: a transcript is not a file, and closing it
-stops clamiga's REPL thread."
+stops amilisp's REPL thread."
   (let* ((editor (doc-editor doc))
          (session (repl-session editor)))
     (when (eq (repl-session-doc session) doc)
@@ -777,7 +777,7 @@ stops clamiga's REPL thread."
       (debug-left editor))))
 
 (defun repl-disconnected (editor)
-  "clamiga's port is gone."
+  "amilisp's port is gone."
   (let* ((session (repl-session editor))
          (doc (repl-doc editor)))
     (when (or (repl-session-attached session) (repl-session-attaching session))
@@ -792,7 +792,7 @@ stops clamiga's REPL thread."
                 (repl-window-reading state) nil
                 (repl-window-prompt-start state) nil
                 (repl-window-input-start state) nil))
-        (repl-note doc "clamiga is gone (it is attached again when it comes back)")
+        (repl-note doc "amilisp is gone (it is attached again when it comes back)")
         (repl-prompt doc)))))
 
 (defun repl-switched (editor news)
@@ -826,5 +826,5 @@ prompt or C-c C-c in a buffer just works."
     (when (and doc
                (not (repl-session-attached session))
                (not (repl-session-attaching session)))
-      (repl-note doc "clamiga is back on ~A" (wire-port-name (editor-wire editor)))
+      (repl-note doc "amilisp is back on ~A" (wire-port-name (editor-wire editor)))
       (repl-attach doc))))

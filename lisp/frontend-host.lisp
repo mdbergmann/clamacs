@@ -92,7 +92,7 @@ there, and none for the BSDs, which host/build.sh does not build for)."
   "The directory of the page and the libraries: ENV (CLAMACS_HOST_FRONTEND)
 when it is set; else EXE-DIR, the running binary's directory, when the page
 is there -- the Clamacs.app bundle and an installed layout put page,
-libraries and image beside clamiga; else DEFAULT, the checkout's build
+libraries and image beside amilisp; else DEFAULT, the checkout's build
 directory.  Each with a trailing slash."
   (cond ((and env (string/= env "")) (with-trailing-slash env))
         ((and exe-dir
@@ -2732,8 +2732,8 @@ loopback as if the option had not been given."
 
 (defun run ()
   "The editor as a program: the user's init file (~/.clamacsrc), then
-START on the program's own arguments -- what follows `--' on clamiga's
-command line.  The image's start (`clamiga --image clamacs.img --eval
+START on the program's own arguments -- what follows `--' on amilisp's
+command line.  The image's start (`amilisp --image clamacs.img --eval
 \"(clamacs::run)\"') comes here too, so the user's paths are re-derived
 first: the image holds the saving machine's."
   (refresh-user-paths)

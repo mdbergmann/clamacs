@@ -2,20 +2,20 @@
 # run-fs-uae.sh [CONFIG]
 #
 # Boot AmigaOS 3 in FS-UAE, run clamacs, drive it through its own ARexx port
-# and quit -- fully unattended.  Modelled on cl-amiga's harness of the same
+# and quit -- fully unattended.  Modelled on AmiLisp's harness of the same
 # name, and it borrows two things from that repository on purpose rather than
 # duplicating them:
 #
 #   * the Workbench image (verify/realamiga/aos3), which already has MUI and
 #     TextEditor.mcc installed, and
 #   * the boot hook: that system's S/user-startup ends with
-#         execute CLAmiga:verify/realamiga/call-on-ustartup
-#     and call-on-ustartup runs CLAmiga:build/amiga/boot-override instead of
+#         execute AmiLisp:verify/realamiga/call-on-ustartup
+#     and call-on-ustartup runs AmiLisp:build/amiga/boot-override instead of
 #     its own suite when one is present.  It consumes the file (copies it to
 #     RAM: and deletes it) before executing, so what we drop there cannot
-#     hijack a later cl-amiga run.
+#     hijack a later AmiLisp run.
 #
-# Shutdown has the same three paths as the cl-amiga script: a clean UAEquit
+# Shutdown has the same three paths as the AmiLisp script: a clean UAEquit
 # from the boot script, a sentinel kill once "=== run end ===" appears, and a
 # stall/hard timeout if the emulated side never gets that far.
 set -u
@@ -23,20 +23,23 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
-# Two dependencies, both normally the cl-amiga checkout this repository is a
-# submodule of (clamacs lives at cl-amiga/clamacs):
+# Two dependencies, both normally the AmiLisp checkout this repository is a
+# submodule of (clamacs lives at amilisp/clamacs):
 #   EMU     the emulator assets -- the aos3 Workbench image (with MUI and
 #           TextEditor.mcc) and FS-UAE.app.  These are NOT tracked in git;
 #           they live in the superproject's verify/realamiga (override with
 #           EMU_DIR).
-#   CLAMIGA the clamiga RUNTIME the editor drives -- the CLAmiga: volume, from
-#           which boot-override reads CLAmiga:build/cross/clamiga.  That is
-#           the superproject: build clamiga there first (override with
+#   CLAMIGA the amilisp RUNTIME the editor drives -- the AmiLisp: volume, from
+#           which boot-override reads AmiLisp:build/cross/amilisp.  That is
+#           the superproject: build amilisp there first (override with
 #           CLAMIGA_DIR to drive another checkout).
 # The .fs-uae config's hard_drive_1 must point at the same place as CLAMIGA.
-# A standalone clone (not under cl-amiga) falls back to ../cl-amiga.
+# A standalone clone (not under AmiLisp) falls back to ../amilisp, then to
+# ../cl-amiga (the checkout's name before the runtime was renamed).
 if [ -f "$ROOT/../src/core/types.h" ]; then
 	SUPER=$(cd "$ROOT/.." && pwd)
+elif [ -d "$ROOT/../amilisp" ]; then
+	SUPER=$(cd "$ROOT/../amilisp" && pwd)
 else
 	SUPER=$(cd "$ROOT/../cl-amiga" 2>/dev/null && pwd)
 fi
@@ -52,20 +55,20 @@ STALL_TIMEOUT="${STALL_TIMEOUT:-300}"
 HARD_TIMEOUT="${HARD_TIMEOUT:-1200}"
 
 if [ -z "$EMU" ] || [ ! -d "$EMU/verify/realamiga/aos3" ]; then
-	echo "cl-amiga emulator assets not found at ${EMU:-<no cl-amiga checkout>}."
+	echo "AmiLisp emulator assets not found at ${EMU:-<no AmiLisp checkout>}."
 	echo "The Workbench image (aos3) and FS-UAE.app are not tracked in git."
-	echo "Set EMU_DIR to a cl-amiga checkout that has verify/realamiga/aos3."
+	echo "Set EMU_DIR to an AmiLisp checkout that has verify/realamiga/aos3."
 	exit 1
 fi
 
 if [ -z "$CLAMIGA" ] || [ ! -d "$CLAMIGA/verify/realamiga" ]; then
-	echo "clamiga checkout not found at ${CLAMIGA:-<no cl-amiga checkout>}."
-	echo "clamacs is a submodule of cl-amiga; run from cl-amiga/clamacs, or set"
-	echo "CLAMIGA_DIR to a cl-amiga checkout."
+	echo "amilisp checkout not found at ${CLAMIGA:-<no AmiLisp checkout>}."
+	echo "clamacs is a submodule of AmiLisp; run from amilisp/clamacs, or set"
+	echo "CLAMIGA_DIR to an AmiLisp checkout."
 	exit 1
 fi
-if [ ! -f "$CLAMIGA/build/cross/clamiga" ]; then
-	echo "NOTE: $CLAMIGA/build/cross/clamiga is missing -- the integration leg"
+if [ ! -f "$CLAMIGA/build/cross/amilisp" ]; then
+	echo "NOTE: $CLAMIGA/build/cross/amilisp is missing -- the integration leg"
 	echo "      will be skipped.  Build the runtime first:"
 	echo "        make -C $CLAMIGA -f Makefile.cross amiga"
 fi
@@ -75,7 +78,7 @@ fi
 # beside it, and shows THAT date to the Amiga from then on.  The fixtures
 # the run saves (clamacs-load-buffer saves before it loads) get one, so a
 # fixture edited on the host afterwards still looks as old as its last
-# save, and clamiga's FASL cache (validated by source mtime) serves the
+# save, and amilisp's FASL cache (validated by source mtime) serves the
 # previous contents.  Dropping them makes the Amiga see the host's mtime.
 rm -f "$HERE"/*.uaem
 

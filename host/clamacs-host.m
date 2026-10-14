@@ -536,7 +536,7 @@ int clamacs_host_menu_set(void *win, const char *table,
             index++;
         }
         /* The application menu's title is the bundle's CFBundleName, or the
-         * process name without a bundle (`clamiga' from run.sh; the bundle
+         * process name without a bundle (`amilisp' from run.sh; the bundle
          * says Clamacs).  AppKit reads it from the main bundle's info
          * dictionary when the menu is installed, and that dictionary is
          * mutable in practice: the name is set there first. */
@@ -1064,7 +1064,7 @@ void clamacs_host_wake(void)
 /* ---- string arguments ------------------------------------------------ */
 
 /* Text is Latin-1: each byte is the code point, so the widening is a copy.
- * A path is UTF-8 (what clamiga's Windows platform layer hands out).
+ * A path is UTF-8 (what amilisp's Windows platform layer hands out).
  * Both malloc'd; the caller frees. */
 static wchar_t *text_arg(const char *s)
 {
@@ -1214,7 +1214,7 @@ char *clamacs_host_ask_file(void *win, const char *title, int save, const char *
                 | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
     ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
     if (ok) {
-        /* The editor's paths use forward slashes (clamiga's platform layer
+        /* The editor's paths use forward slashes (amilisp's platform layer
          * normalises to them). */
         wchar_t *q;
         for (q = file; *q; q++)

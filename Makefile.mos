@@ -1,7 +1,7 @@
 # Clamacs Makefile for MorphOS (PPC) -- native build.
 #
 # Builds clamacs UNDER MorphOS FOR MorphOS with the MorphOS SDK's gcc, the way
-# cl-amiga's Makefile.mos does; there is no PPC cross-compiler on the Mac.
+# AmiLisp's Makefile.mos does; there is no PPC cross-compiler on the Mac.
 # Run from a MorphOS shell (gg:bin/sh) in the checkout:
 #
 #     make -f Makefile.mos              # build/morphos/clamacs

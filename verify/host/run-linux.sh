@@ -9,7 +9,7 @@
 #
 # Needs a docker CLI with a running daemon (Docker Desktop, OrbStack,
 # Colima).  The image, verify/host/linux/Dockerfile, is built once; the
-# superproject is mounted at /work and clamiga is built for Linux into
+# superproject is mounted at /work and amilisp is built for Linux into
 # build/host-linux/ there (its own BUILDDIR, so the host's binaries stay),
 # and host/build.sh writes libwebview.so and libclamacs-host.so beside the
 # Mac's .dylibs under build/host-frontend/.  The page is the same on every
@@ -43,7 +43,7 @@ build='set -e; make -C /work --no-print-directory host BUILDDIR=build/host-linux
 # every line was filtered) and the container exits with the script's own
 # status, PIPESTATUS[0] -- the container runs bash, so it exists.
 gate() {
-    run "$build; set +e; CLAMIGA=/work/build/host-linux/clamiga xvfb-run -a -s '-screen 0 1280x800x24' verify/host/$1 2>&1 | grep -v 'libEGL'; exit \${PIPESTATUS[0]}"
+    run "$build; set +e; CLAMIGA=/work/build/host-linux/amilisp xvfb-run -a -s '-screen 0 1280x800x24' verify/host/$1 2>&1 | grep -v 'libEGL'; exit \${PIPESTATUS[0]}"
 }
 
 case "$what" in

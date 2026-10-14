@@ -1,9 +1,9 @@
 /*
  * queue.h -- the ARexx request queue.
  *
- * clamiga's port serves ONE message at a time, and the editor must never
+ * amilisp's port serves ONE message at a time, and the editor must never
  * block waiting for a reply -- a long COMPILE-FILE would otherwise freeze
- * redisplay, and the phase-3 REPL depends on the editor answering clamiga's
+ * redisplay, and the phase-3 REPL depends on the editor answering amilisp's
  * calls while its own request is outstanding.  So: at most one request in
  * flight, everything else waits here in order, and each request carries the
  * continuation that will consume its reply.
@@ -42,7 +42,7 @@ typedef enum {
     CK_REQ_SOURCE_LOCATION,  /* M-.: jump there */
     CK_REQ_MACROEXPAND,      /* the macroexpansion window */
 
-    /* Phase 3: the REPL window.  These replies say only whether clamiga
+    /* Phase 3: the REPL window.  These replies say only whether amilisp
      * took the command; what the user waits for (output, a read request,
      * the values) arrives later as commands at the editor's own port. */
     CK_REQ_REPL_ATTACH,      /* the reply is the prompt's package */
@@ -51,7 +51,7 @@ typedef enum {
     CK_REQ_REPL_INTERRUPT,
     CK_REQ_REPL_DETACH,
 
-    /* Phase 4: the debugger window (asked while clamiga's REPL thread is
+    /* Phase 4: the debugger window (asked while amilisp's REPL thread is
      * parked at a DEBUGGER level) and the inspector window. */
     CK_REQ_DBG_BACKTRACE,    /* the frames list */
     CK_REQ_DBG_FRAME,        /* the locals list of one frame */

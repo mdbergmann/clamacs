@@ -1,4 +1,4 @@
-# Clamacs in Lisp: the editor as a clamiga program
+# Clamacs in Lisp: the editor as an amilisp program
 
 Status: IN PROGRESS (phase 5's editor side done on FS-UAE 2026-09-20: the
 menu strip, the window snapshot, the HyperSpec, `.clamacsrc`; next: the
@@ -14,9 +14,9 @@ phases 1-6 -- stands and is the specification this port has to meet.
 
 ## Goal
 
-Rewrite the Clamacs editor in Common Lisp, running as its **own clamiga
+Rewrite the Clamacs editor in Common Lisp, running as its **own amilisp
 instance**, and keep the architecture that works today: two Amiga
-processes talking over ARexx, the editor the client of clamiga's
+processes talking over ARexx, the editor the client of amilisp's
 `CLAMIGA` port for everything it asks, the Lisp the client of the
 editor's port for everything it pushes.  The user-visible result is the
 same editor -- same keys, same windows, same ARexx command set, same
@@ -26,13 +26,13 @@ same editor -- same keys, same windows, same ARexx command set, same
   Lisp, and it is the hardest interactive workload the runtime has: FFI
   callbacks on every keystroke, the MUI bindings, threads, GC under an
   interactive load, a shipped heap image.  Every bug it finds is a
-  runtime commit under cl-amiga's gates.
+  runtime commit under AmiLisp's gates.
 - **It is live-hackable.**  A new command is `defun`ed into the running
   editor and bound to a key without a restart, and the user's init file
   is Lisp, not ARexx.  An Emacs-flavoured editor whose extension language
   is not Lisp was the compromise; this removes it.
 - **One source for both targets.**  The MorphOS build of the editor
-  disappears: clamiga's native MorphOS binary runs the same Lisp.  No
+  disappears: amilisp's native MorphOS binary runs the same Lisp.  No
   `Makefile.mos`, no `muistubs.c`, no SDK header differences.
 
 ## Non-goals
@@ -51,11 +51,11 @@ same editor -- same keys, same windows, same ARexx command set, same
   (Redisplay as bytecode was the 2026-09-08 objection; it does not arise
   as long as this holds.)
 - **One process.**  The editor instance never hosts the user's code.  A
-  Guru in user code kills the target clamiga, the editor stays up and
+  Guru in user code kills the target amilisp, the editor stays up and
   reconnects, as now.
 - **A new wire.**  The ARexx protocol and the `EXT.DEV` command set are
   unchanged; anything the Lisp editor needs from the runtime is an
-  `EXT.DEV` command or a runtime fix committed in cl-amiga.
+  `EXT.DEV` command or a runtime fix committed in AmiLisp.
 - Emacs Lisp compatibility, split windows on one buffer, non-Lisp modes:
   as in `clamacs-ide.md`.
 
@@ -69,8 +69,8 @@ runtime; recording them is what turns this from a mood into a decision.
 | Redisplay and buffer edits must not run as bytecode on a 68020 | They still do not: TextEditor.mcc keeps them.  What moves to Lisp is the per-key Emacs layer (keymap lookup, command dispatch, indentation, sexp scanning), which the m68k JIT compiles.  The 68020 is no longer the IDE's target machine (Non-goals). |
 | A GC pause must not freeze the editor | The editor heap is small and its own; nothing the user evaluates allocates in it.  Pause length is measured in the spike.  The generational collector is host-only, so the Amiga number is the classic collector's and is the one that counts. |
 | A crash in either half must not take the other down | Preserved by keeping two processes.  This was never an argument against Lisp, only against one process. |
-| (implicit) No way to write a MUI custom class in Lisp | `AMIGA.MUI:CREATE-CUSTOM-CLASS` with a Lisp dispatcher, `DO-SUPER-METHOD`, `INST-DATA`, the foreign pool that deletes the class -- `examples/amiga/mui/class1.lisp` in cl-amiga is the MUI SDK's Class1.c in Lisp.  The foreign-callback boundary (an error inside a method is caught at the callback, the method returns 0, the condition re-signals when the MUI call returns) is what makes a dispatcher on MUI's stack safe. |
-| (implicit) Startup: loading an editor from FASLs on a 68k | Heap images: `EXT:SAVE-IMAGE`, `--image`, `*save-hooks*`/`*restore-hooks*`, `:shake-bindings`; the release already saves a `clamiga.img` beside every binary from the staged layout. |
+| (implicit) No way to write a MUI custom class in Lisp | `AMIGA.MUI:CREATE-CUSTOM-CLASS` with a Lisp dispatcher, `DO-SUPER-METHOD`, `INST-DATA`, the foreign pool that deletes the class -- `examples/amiga/mui/class1.lisp` in AmiLisp is the MUI SDK's Class1.c in Lisp.  The foreign-callback boundary (an error inside a method is caught at the callback, the method returns 0, the condition re-signals when the MUI call returns) is what makes a dispatcher on MUI's stack safe. |
+| (implicit) Startup: loading an editor from FASLs on a 68k | Heap images: `EXT:SAVE-IMAGE`, `--image`, `*save-hooks*`/`*restore-hooks*`, `:shake-bindings`; the release already saves an `amilisp.img` beside every binary from the staged layout. |
 | (implicit) The wire needs C | `AMIGA.AREXX` has both ends: `START` (a served port on its own thread, verbs added with `EXT.DEV:DEFINE-COMMAND`) and `SEND`. |
 
 ## Options considered
@@ -78,14 +78,14 @@ runtime; recording them is what turns this from a mood into a decision.
 | Option | Verdict |
 |--------|---------|
 | Stay in C | The working baseline, kept shipping until parity.  Gives up the three goals above. |
-| Emacs model: embed the VM in the C editor, C core for MUI/redisplay, Lisp for the command layer | Would need clamiga packaged as a library (a new runtime deliverable), keeps two toolchains and a MorphOS C build, and the user's code still runs elsewhere -- so it buys extensibility without buying dog food.  Second choice. |
-| Editor logic in the *target* clamiga, driving a thin C editor over ARexx | A round trip per keystroke over ARexx: too slow, and a user-code crash takes the editor logic with it. |
-| **A clamiga program over `AMIGA.MUI`, own instance, ARexx wire unchanged** | **Chosen.**  Every building block exists; the test harness is protocol-level and transfers unchanged; one source for both targets. |
+| Emacs model: embed the VM in the C editor, C core for MUI/redisplay, Lisp for the command layer | Would need amilisp packaged as a library (a new runtime deliverable), keeps two toolchains and a MorphOS C build, and the user's code still runs elsewhere -- so it buys extensibility without buying dog food.  Second choice. |
+| Editor logic in the *target* amilisp, driving a thin C editor over ARexx | A round trip per keystroke over ARexx: too slow, and a user-code crash takes the editor logic with it. |
+| **An amilisp program over `AMIGA.MUI`, own instance, ARexx wire unchanged** | **Chosen.**  Every building block exists; the test harness is protocol-level and transfers unchanged; one source for both targets. |
 
 ## Architecture
 
 ```
-  clamiga --image clamacs.img              clamiga (the user's)
+  amilisp --image clamacs.img              amilisp (the user's)
   +------------------------------+  ARexx  +-----------------------------+
   | CLAMACS package              | ------> | AMIGA.AREXX handler thread  |
   |  MUI task (main thread):     | CLAMIGA |  EXT.DEV command layer      |
@@ -127,7 +127,7 @@ MUI task touches MUI.**
   the first instance is `CLAMACS`.  `ck_rexx_own_port()`'s task scan is
   replaced by `AMIGA.AREXX:PORT-NAME`.
 
-Foreign state follows cl-amiga's MUI conventions: the whole GUI lives
+Foreign state follows AmiLisp's MUI conventions: the whole GUI lives
 inside one `WITH-FOREIGN-POOL`, custom classes are created with
 `CREATE-CUSTOM-CLASS` and deleted by the pool after the objects, hooks
 are `POOL-HOOK`s.  Per-object state (document path, package, modified
@@ -212,7 +212,7 @@ debugger.
 
 ### Memory and startup
 
-Two clamiga processes, each with the 820 KB m68k binary loaded (AmigaDOS
+Two amilisp processes, each with the 820 KB m68k binary loaded (AmigaDOS
 shares no code between two `LoadSeg`s of the same file unless the binary
 is resident) and its own heap.  Budget to *measure* in the spike, not to
 assume:
@@ -221,13 +221,13 @@ assume:
 |---|---|
 | editor binary + heap (`--heap 4M`, the default) | ~5 MB estimated; the spike measured ~14-15 MB at `--heap 8M` (see Spike) |
 | editor image on disk (boot + CLOS + editor, `:shake-bindings t`) | 1-2 MB |
-| target clamiga | whatever the user gives it |
+| target amilisp | whatever the user gives it |
 
 That is comfortable on a Vampire or MorphOS and tight on 8 MB.  A
-resident (pure) clamiga binary would share the code segment between the
+resident (pure) amilisp binary would share the code segment between the
 two; it is noted, not planned.
 
-Startup is `clamiga --image clamacs.img`.  The image is saved from a
+Startup is `amilisp --image clamacs.img`.  The image is saved from a
 booted editor *before* any OS object exists: `*save-hooks*` is not
 needed because the image is saved by a script that loads the editor and
 saves, never from a running GUI.  `*restore-hooks*` runs `clamacs:start`,
@@ -239,7 +239,7 @@ already holds.
 
 ## Spike (phase 0) -- DONE 2026-09-16
 
-`spike/spike.lisp` is a clamiga program: a Lisp subclass of the installed
+`spike/spike.lisp` is an amilisp program: a Lisp subclass of the installed
 TextEditor.mcc (`AMIGA.MUI:CREATE-CUSTOM-CLASS`) that registers its own
 RAWKEY handler node at priority 1 in `MUIM_Setup`, decodes every key in
 `MUIM_HandleEvent` through MapRawKey with `src/emacs/rawkey.c`'s rules,
@@ -260,7 +260,7 @@ Per-key = the pass-through path (decode, keymap lookup, return 0 to the
 class), the cost the Lisp layer adds to every keystroke.  RET = export the
 whole buffer, scan it for the innermost open paren twice (a naive generic
 loop and a declared `SIMPLE-STRING` state machine), insert newline plus
-indentation through the class.  Heap `--heap 8M`, clamiga 0.10.0 release
+indentation through the class.  Heap `--heap 8M`, amilisp 0.10.0 release
 build (JIT on), warm FASL cache.
 
 | | FS-UAE A4000/68040 + emulator JIT | Vampire V4 (real 68040-class FPGA) | FS-UAE A1200/68020, accuracy 2 |
@@ -308,7 +308,7 @@ Emacs-model fallback is not needed.
 
 ### What the spike found for the runtime (dog food, first serving)
 
-Each is a cl-amiga item; none blocks phase 1, all shape it.
+Each is an AmiLisp item; none blocks phase 1, all shape it.
 
 1. **Character scanning is 25-65 us per character on a real 68040**
    (declared / naive), i.e. 1,000-2,500 instructions per `SCHAR` +
@@ -354,7 +354,7 @@ Each is a cl-amiga item; none blocks phase 1, all shape it.
    collection.  Two runtime items: the per-call round trip that makes
    JIT'd generic code slower than bytecode, and the marker's JIT cost.
 
-   **The marker's JIT cost: DONE 2026-09-16 (cl-amiga).**  It was not
+   **The marker's JIT cost: DONE 2026-09-16 (AmiLisp).**  It was not
    the relocation tables: the conservative native-stack scan validated
    each spilled word by walking the *whole arena* header by header,
    and with the JIT on every collection runs under a native frame.  A
@@ -382,8 +382,8 @@ Each is a cl-amiga item; none blocks phase 1, all shape it.
 
 ## Phases
 
-**Before phase 1: a runtime cycle the spike asks for.**  Three cl-amiga
-commits, each under cl-amiga's gates and each re-measured with the spike
+**Before phase 1: a runtime cycle the spike asks for.**  Three AmiLisp
+commits, each under AmiLisp's gates and each re-measured with the spike
 (`spike/run-vamp.py` on the Vampire, `spike/run-spike.sh 020` for the
 68020), in this order because each helps every machine, not only the
 68020:
@@ -396,7 +396,7 @@ commits, each under cl-amiga's gates and each re-measured with the spike
 2. The JIT's default policy for generic code: bytecode beats it on the
    call-heavy paths (per key 0.71 vs 1.04 ms) -- either the per-call
    round trip gets cheaper or only declared code is compiled.  **DONE
-   2026-09-16 (cl-amiga, the round trip)**: every call from native code
+   2026-09-16 (AmiLisp, the round trip)**: every call from native code
    went through the generic `cl_vm_apply` trampoline and, for a Lisp
    callee, a stub interpreter frame -- a JIT'd call to a native leaf cost
    18.8 us on the Vampire where the interpreter's cost 11.8.  The JIT's
@@ -412,7 +412,7 @@ commits, each under cl-amiga's gates and each re-measured with the spike
 3. A string-scan fast path: fused character opcodes for `SCHAR`, `CHAR=`
    / `CASE` on characters and list push/pop, with a `trunk/bench-general`
    row; 26 us per character on a real 68040 today, a tenth of that is
-   the aim.  **DONE 2026-09-16 (cl-amiga, `specs/performance.md` 4.4)**:
+   the aim.  **DONE 2026-09-16 (AmiLisp, `specs/performance.md` 4.4)**:
    two-argument `AREF`/`SVREF`/`CHAR`/`SCHAR` and `CHAR=` compile to one
    opcode each, a comparison under a branch fuses with it, `PUSH`/`POP` on
    a local are one opcode, `CASE` misses a key in one dispatch and
@@ -500,22 +500,22 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    are not driven there (synthetic keys hold a MUI String's focus for
    one key): the minibuffer's MUI dance is checked on hardware and,
    from phase 2 on, through the port.  **Command line and Workbench
-   arguments DONE 2026-09-18**, on the runtime side: clamiga loads a
+   arguments DONE 2026-09-18**, on the runtime side: amilisp loads a
    bare argument, so `--` now ends its options and what follows is
-   `ext:*command-line-args*` (never loaded, set before `.clamigarc` and
+   `ext:*command-line-args*` (never loaded, set before `.amilisprc` and
    the restore hooks -- the image start needs exactly that); a
    Workbench start (argc 0, the `WBStartup` message) becomes a command
    line from the icons' `ARGS`/`WINDOW` tool types with every project
    icon one argument after `--`, `ext:*workbench-started-p*` says so,
    and the 68k binary gives itself the 128K stack an icon does not
-   (cl-amiga's README "Program arguments" / "Starting from Workbench",
+   (AmiLisp's README "Program arguments" / "Starting from Workbench",
    `tests/test_command_line_args.sh`, and `tests/amiga/wb-check.lisp`
    started through `verify/realamiga/wbrun.c`, a real `WBStartup`
    sender, in the FS-UAE suite).  `lisp/clamacs.lisp` starts on that
    list; `run-lisp-editor.sh` passes its file after `--`.  Next: the
    wire.
 
-   What the port found for the runtime so far (cl-amiga commits):
+   What the port found for the runtime so far (AmiLisp commits):
    - **A GC-safety bug in the compiler's pre-scans, FIXED 2026-09-17.**
      Both speculative macroexpansion scans held the form unprotected
      across `cl_build_lex_env`, which conses only inside a `MACROLET`
@@ -541,7 +541,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
 2. **The wire.**  Client thread and queue, `AMIGA.AREXX:START` for the
    editor's port with the phase-1 verb set, diagnostic parser, error list
    window, `LOAD`/`COMPILE-FILE`/`EVAL`/`IN-PACKAGE` with clickable
-   diagnostics, launch of the target clamiga when no port is found.
+   diagnostics, launch of the target amilisp when no port is found.
    Gate: `drive.rexx`'s phase-1 leg.
    **DONE 2026-09-18.**  Three pure modules, host-tested on the fake
    frontend and a fake transport (`tests/fake-transport.lisp`; 355 tests
@@ -559,7 +559,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    thread (one `AMIGA.AREXX:SEND` at a time, the reply posted to the MUI
    task), the port thread's verbs as `EXT.DEV:DEFINE-COMMAND`s that post
    to the MUI task and wait, the first instance's port being `CLAMACS`,
-   and the launch of `PROGDIR:clamiga` through an Execute script with a
+   and the launch of `PROGDIR:amilisp` through an Execute script with a
    `--load` preamble that opens the port.  The mailbox lives in
    `frontend-mui.lisp` (`call-in-editor`, drained by the event loop on a
    signal bit of its own), with the diagnostics window a plain MUI List.
@@ -572,7 +572,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    editor's menu and snapshot are gated by `PHASE`, and the C run still
    gets all of it.
 
-   What the wire found for the runtime (cl-amiga commits, 2026-09-18):
+   What the wire found for the runtime (AmiLisp commits, 2026-09-18):
    - **A raw exec `Wait()` is invisible to a stop-the-world GC.**  The
      MUI loop (and ReAction's) waited with `AMIGA.RAW.EXEC:WAIT`, a plain
      library call outside any safe region, so a collection started by
@@ -594,7 +594,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    cache, its miss memory and its one-quiet-question-at-a-time rule;
    `ARGLIST-IDLE`, the tick the frontend's timer calls; buffer completion
    with the hand-off to a `Complete:` prompt whose completer answers
-   `:HANDLED` because its candidates come from clamiga later; `M-.` over
+   `:HANDLED` because its candidates come from amilisp later; `M-.` over
    the location stack and `M-,`; describe, apropos and macroexpand into
    scratch windows found or made by `ENSURE-SCRATCH-DOCUMENT`).  The
    replies come back through `WIRE-DISPATCH` as before, one continuation
@@ -605,7 +605,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    arglist to the status line.  Host tests: `tests/test-introspect.lisp`
    walks drive.rexx's introspection leg request by request on the fake
    frontend and fake transport, plus what only a host test can check (a
-   late reply, a lost port, an abandoned prompt, clamiga's cap); 389
+   late reply, a lost port, an abandoned prompt, amilisp's cap); 389
    tests in all.  Gate: `run-lisp-drive.sh 040 3` (now the
    `test-lisp-amiga` default), the unchanged drive.rexx with `PHASE 3`.
    No runtime change was needed.
@@ -645,7 +645,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    now, and the buffer-eval leg saves and kills its RAM: buffer by
    command name, which the C editor answers the same way.
 
-   What phase 4 found for the runtime (cl-amiga commit cdaed011):
+   What phase 4 found for the runtime (AmiLisp commit cdaed011):
    - **`EXT.DEV` trims every command at both ends**, which is right for
      `LOAD foo.lisp` and wrong for the REPL thread's `OUTPUT <chunk>`:
      an indented line lost its indentation and a chunk ending in a
@@ -658,7 +658,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
      that way (`*raw-port-verbs*`).  `tests/test_dev_commands.sh` pins
      the cases of clamacs's `test_replmsg.c` from that side.
    - The client thread now sends a job that is pending at the quit: the
-     `REPL-DETACH` the closing REPL window queued must reach clamiga, or
+     `REPL-DETACH` the closing REPL window queued must reach amilisp, or
      its REPL thread is left sending to a port about to vanish.
    Noted: a form typed across lines at the prompt indents under its
    first line as it stands on the prompt line (column 9 after
@@ -667,8 +667,8 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
 5. **Parity and release.**  Menu strip from the ported table, window
    snapshot, HyperSpec URL through `openurl.library`, `.clamacsrc`.
    Editor image saved by `scripts/make-binary-release.sh` beside each
-   binary (aos3, aos3-fpu, mos) the way `clamiga.img` is; the `Clamacs`
-   launcher scripts start `clamiga --image clamacs.img`; the editor's
+   binary (aos3, aos3-fpu, mos) the way `amilisp.img` is; the `Clamacs`
+   launcher scripts start `amilisp --image clamacs.img`; the editor's
    sources ship under `lib/clamacs/` as FASLs; `docs/clamacs.md` and the
    guide updated.  Gate: every `drive.rexx` leg on FS-UAE, the Vampire
    and MorphOS, plus the Non-goals' lowend-startup check.  Then the C
@@ -715,7 +715,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    About, the HyperSpec, the init file): 479 tests, green and green under
    GC stress.  Gate: `run-lisp-drive.sh 040 5` (now the default) -- the
    whole of drive.rexx, its snapshot leg starting a second LISP editor
-   through the new `LISP <clamiga>` argument -- 124 `OK` lines, the
+   through the new `LISP <amilisp>` argument -- 124 `OK` lines, the
    second editor up at `doc1 24 48 400 160` as the file said.
    Still to do in this phase: the image in the release script, the
    Vampire and MorphOS runs, the lowend check, the retirement of `src/`.
@@ -737,7 +737,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    `LISP` only (the C editor has no Buffers menu).
 
    **Beyond parity: the editor's own Lisp (2026-09-23).**  The editor is
-   a clamiga, so the wire can talk to it instead of to clamiga:
+   an amilisp, so the wire can talk to it instead of to amilisp:
    `lisp/transport-self.lisp` is a third transport, portable (MP and
    `EXT.DEV`, no MUI).  A command goes to a worker thread that runs
    `EXT.DEV:HANDLE-COMMAND` in the editor and posts the reply to the MUI
@@ -749,7 +749,7 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    (`wire-switch`): only when nothing is in flight or queued, after a
    `REPL-DETACH` of the old side, and an open REPL window re-attaches to
    the new side (`repl-switched`).  Commands `clamacs-connect-self` /
-   `clamacs-connect-clamiga` (Clamiga menu, rules `:self`/`:not-self`)
+   `clamacs-connect-clamiga` (AmiLisp menu, rules `:self`/`:not-self`)
    and `clamacs-room` (Windows > Editor Memory: `ROOM` plus exec's
    `AvailMem` through `editor-memory-lines`).  Self-REPL forms run on the
    REPL thread, not the MUI task -- the REPL thread needs the MUI task to
@@ -758,12 +758,12 @@ The C editor keeps shipping and stays frozen (bug fixes only) until phase
    captured and printed on the caller's thread, an error re-signalled
    there).  The first host run found a runtime race: dev-repl sent
    `RESULT` before it marked itself idle, so an editor that sends the
-   next form at once was told the REPL was busy (fixed in cl-amiga,
+   next form at once was told the REPL was busy (fixed in AmiLisp,
    `%repl-run` finishes the job first).  Host tests:
    `tests/test-self.lisp`, the real EXT.DEV and REPL thread with the test
    thread as the MUI task; drive.rexx has a Lisp-editor-only leg.
 
-Runtime work expected along the way, each a cl-amiga commit under its
+Runtime work expected along the way, each an AmiLisp commit under its
 gates, none blocking phase 0:
 
 - A way to hand a thread's result to the MUI task: `AMIGA.RAW.EXEC`'s
@@ -794,7 +794,7 @@ clamacs/
                    token.lisp, transport.lisp, transport-arexx.lisp,
                    port.lisp, diag.lisp, repl.lisp, debugger.lisp,
                    inspector.lisp, menu.lisp, snapshot.lisp
-  tests/           host tests: run by ../build/host/clamiga (pure modules,
+  tests/           host tests: run by ../build/host/amilisp (pure modules,
                    the data of today's test_*.c), also under
                    CLAMIGA_GC_STRESS=1
   verify/realamiga drive.rexx, run-drive, sendkey.c (stays C: a 68k CLI
@@ -803,23 +803,23 @@ clamacs/
   specs/ docs/     this file; clamacs-ide.md as the behaviour spec
 ```
 
-The repository stays a submodule of cl-amiga: its pin still says which
+The repository stays a submodule of AmiLisp: its pin still says which
 editor a release ships, its history and harness stay whole, and the
 release script keeps one place to look.  No `Makefile.cross`,
 `Makefile.mos`, `vendor/texteditor` (the MUI struct offsets the editor
 needs are constants in `lib/amiga/mui.lisp`, checked against the
-generated raw module by cl-amiga's own test) or toolchain dependency
+generated raw module by AmiLisp's own test) or toolchain dependency
 remain; `sendkey` is built by the superproject's toolchain from
 `verify/realamiga/`.
 
 ## Testing
 
 - **Host**: `make test` runs the pure modules' tests under
-  `../build/host/clamiga --non-interactive` (the superproject's build,
+  `../build/host/amilisp --non-interactive` (the superproject's build,
   as the FS-UAE leg already depends on it), and again with
   `CLAMIGA_GC_STRESS=1` so allocation in the editor's logic is exercised
   under compaction.  The dispatcher plumbing is host-testable too: on the
-  host, hooks and dispatchers are libffi callbacks and cl-amiga's
+  host, hooks and dispatchers are libffi callbacks and AmiLisp's
   `tests/test_amiga_boopsi.lisp` drives that path without an Amiga.
 - **FS-UAE**: `run-drive` and `drive.rexx` unchanged, plus a lowend leg
   (`verify-8mb.fs-uae`) that only checks the editor starts from its
@@ -834,15 +834,15 @@ remain; `sendkey` is built by the superproject's toolchain from
 
 ## Release
 
-`bin/<target>/clamacs.img` beside `clamiga` and `clamiga.img`, per build,
+`bin/<target>/clamacs.img` beside `amilisp` and `amilisp.img`, per build,
 saved in FS-UAE from the staged layout for aos3 and aos3-fpu and
 natively for mos.  `lib/clamacs/*.fasl`.  The three root launchers keep
 their names; `Clamacs` runs `bin/<target>/clamiga --image
 bin/<target>/clamacs.img`.  TextEditor.mcc's floor (15.29) and MUI 3.8's
 `muimaster.library` 19 are checked at `start`, as now.  Versions: the
 editor is released with the runtime it was saved by, so the "oldest
-clamiga it works with" check collapses to the image fingerprint on the
-editor side, while the `VERSION` check against the *target* clamiga
+amilisp it works with" check collapses to the image fingerprint on the
+editor side, while the `VERSION` check against the *target* amilisp
 stays.
 
 ## A host frontend (Mac)
@@ -871,10 +871,10 @@ phases 0-5 plan, and why:
 - **Wire.**  ARexx is Amiga-only.  The command layer is already
   transport-agnostic (`AMIGA.AREXX` is "the transport half only"; the
   verbs are host-tested), so the host side is a line-oriented TCP server
-  in cl-amiga (`lib/dev-tcp.lisp`, over the existing sockets) and a
+  in AmiLisp (`lib/dev-tcp.lisp`, over the existing sockets) and a
   socket transport in the editor.  The inbound REPL traffic uses the same
   connection.  This is a small runtime commit and is also what a Mac user
-  driving an *Amiga* clamiga over the network would use.
+  driving an *Amiga* amilisp over the network would use.
 - **Runtime gaps to expect.**  A `wish` child process needs
   `ext:run-program` with piped streams, or the user starts `wish` and the
   editor connects over TCP (Tk can listen on a socket; the latter needs
@@ -882,7 +882,7 @@ phases 0-5 plan, and why:
   not raw codes, so the decoder gets a second implementation behind the
   same key encoding.
 - **Audience.**  On the Mac the user already has SLY and ICL against
-  clamiga.  A host Clamacs is a portability and dog-food exercise, and it
+  amilisp.  A host Clamacs is a portability and dog-food exercise, and it
   is the second audience; it must not slow the first.  What phases 1-5
   owe it is only the discipline above, and a host frontend is a phase of
   its own once parity is declared, with its own spec.
@@ -894,7 +894,7 @@ phases 0-5 plan, and why:
   call the Lisp editor's `MUIA_String_EditHook` -- from input.device's
   task, once per key into the active String, where the runtime answers
   a callback with 0 without running it (the foreign-task rule of
-  cl-amiga's `specs/mui-bindings.md` §10.3.2), so `*mini-trace*` saw
+  AmiLisp's `specs/mui-bindings.md` §10.3.2), so `*mini-trace*` saw
   nothing and the handler node only key releases: the HARDWARE leg's
   raw TAB, C-g, Alt-x and isearch keys into the active minibuffer were
   lost, where the C editor's identical hook -- C, indifferent to the
@@ -916,7 +916,7 @@ phases 0-5 plan, and why:
   `complete`'s `mismatch` call saw a non-symbol where `:end1` should be,
   with a different garbage error each time; the FASL file was good, a
   fresh in-process compile fine, the JIT not involved, and a reboot made
-  it go away for the day.  Two days of hunting in cl-amiga (the stack
+  it go away for the day.  Two days of hunting in AmiLisp (the stack
   swap, exec's context save, the GC roots -- all exonerated) ended at
   the hardware: the Apollo 68080 core loses the last store of a
   memory-to-memory `move.l <abs>,(aN)+` followed by further stores,
@@ -925,7 +925,7 @@ phases 0-5 plan, and why:
   sound and broken per LAUNCH, and the untouched C local of
   `bi_mismatch` (its `key_fn`) showed whatever the previous frame left
   there.  A real 68040 and a real 68060 are clean.  There is no software
-  fix; clamiga's startup self-test (`src/platform/cpu_store_probe_m68k.s`,
+  fix; amilisp's startup self-test (`src/platform/cpu_store_probe_m68k.s`,
   README "CPU store self-test") warns on such a launch and puts
   `:CPU-LOST-STORES` on `*FEATURES*`, `verify/realamiga/apollo-repro.c`
   is the report to the Apollo team.  Consequence for this port: a
@@ -949,7 +949,7 @@ phases 0-5 plan, and why:
   address, freed after the String's dispose; the teardown forgets a
   window before disposing of it, catches what a dispose signals and logs
   it to `T:clamacs-exit.log` (`*exit-trace*` logs every step there; what
-  a `Run >log` clamiga prints never reaches the log on AmigaOS), and
+  a `Run >log` amilisp prints never reaches the log on AmigaOS), and
   disposes of the diagnostics window itself.  Pinned by three checks:
   `drive.rexx` closes the second document over the port and reopens it
   (the mid-run reap), `quit.rexx` switches the trace on before the quit

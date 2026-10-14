@@ -12,8 +12,8 @@
 # what the SAME keys produce under the fake frontend on the host, and the
 # editor must have come down by itself.
 #
-#   verify/host/host-keys.sh            under ../build/host/clamiga
-#   GCSTRESS=1 verify/host/host-keys.sh under ../build/host-gcstress/clamiga
+#   verify/host/host-keys.sh            under ../build/host/amilisp
+#   GCSTRESS=1 verify/host/host-keys.sh under ../build/host-gcstress/amilisp
 #   CLAMIGA=... names another binary.
 #
 # Result: build/host-frontend/keys-out.lisp (what the editor saved),
@@ -27,13 +27,13 @@ out="$root/build/host-frontend"
 keys="$root/verify/realamiga/lisp-editor-keys.lisp"
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-gcstress/clamiga"}
+    clamiga=${CLAMIGA:-"$super/build/host-gcstress/amilisp"}
     CLAMIGA_GC_STRESS=1
     export CLAMIGA_GC_STRESS
 else
-    clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
+    clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
 fi
-[ -x "$clamiga" ] || { echo "no clamiga at $clamiga (make host in the superproject)"; exit 1; }
+[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
 mkdir -p "$out"

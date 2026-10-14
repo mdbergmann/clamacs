@@ -15,7 +15,7 @@
  * passes straight through to MUIM_TextEditor_ARexxCmd, so the macros people
  * already have for CygnusEd-style editors keep working.
  *
- * Phase 3 adds the three commands clamiga's REPL thread sends the OTHER way
+ * Phase 3 adds the three commands amilisp's REPL thread sends the OTHER way
  * -- OUTPUT, READLINE, RESULT -- but not to this table: they come in through
  * MUIA_Application_RexxHook (ck_rexx_repl_hook, at the end), which MUI calls
  * with the raw RexxMsg for any command it cannot map.  That keeps ReadArgs
@@ -390,7 +390,7 @@ HOOKPROTONHNO(ck_rx_menu_func, LONG, IPTR *args)
 MakeStaticHook(ck_rx_menu_hook, ck_rx_menu_func);
 
 /*
- * OUTPUT, READLINE, RESULT and (phase 4) DEBUGGER from clamiga's REPL
+ * OUTPUT, READLINE, RESULT and (phase 4) DEBUGGER from amilisp's REPL
  * thread.  The hook gets the
  * RexxMsg itself (a1) and its return value is the message's rc; the text is
  * rm_Args[0], the command as sent.  Each returns at once -- the REPL thread

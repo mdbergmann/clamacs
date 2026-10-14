@@ -2,7 +2,7 @@
 #
 #   make -f Makefile.cross amiga
 #
-# Flags mirror cl-amiga's Makefile.cross so both repos use one compiler with
+# Flags mirror AmiLisp's Makefile.cross so both repos use one compiler with
 # one set of settings.  Two of them are not preferences:
 #
 #   -Os      this gcc miscompiles flexible-array pointer arithmetic at -O2,
@@ -20,7 +20,7 @@
 # developer kit is needed: that directory has libraries/mui.h, the muimaster
 # protos and inlines, mui/TextEditor_mcc.h and the SDI headers.
 
-# The compiler is the superproject's: clamacs is a submodule of cl-amiga,
+# The compiler is the superproject's: clamacs is a submodule of AmiLisp,
 # whose tools/setup-toolchain.sh installs m68k-amigaos-gcc one level up.
 # There is no toolchain of our own.  TOOLCHAIN=... on the command line
 # points a standalone clone at any install.
@@ -101,7 +101,7 @@ check-toolchain:
 	    echo "  m68k-amigaos-gcc not found at:"; \
 	    echo "    $(CC)"; \
 	    echo ""; \
-	    echo "  Install it in the cl-amiga superproject (one level up):"; \
+	    echo "  Install it in the AmiLisp superproject (one level up):"; \
 	    echo "    ../tools/setup-toolchain.sh"; \
 	    echo "  or point at an install:  make -f Makefile.cross amiga TOOLCHAIN=/path/to/prefix"; \
 	    echo ""; \
@@ -128,7 +128,7 @@ clean:
 
 # Unattended FS-UAE run: boot AmigaOS 3, start clamacs, drive it through its
 # own ARexx port, quit.  See verify/realamiga/run-fs-uae.sh for how the boot
-# hook is borrowed from the cl-amiga checkout next door.
+# hook is borrowed from the AmiLisp checkout next door.
 .PHONY: test-amiga verify-amiga test-lisp-amiga
 
 test-amiga: $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
@@ -137,7 +137,7 @@ test-amiga: $(BUILDDIR)/clamacs $(BUILDDIR)/sendkey
 
 # The LISP editor (specs/clamacs-lisp.md) through the same drive.rexx, on
 # the 68040 config, for the legs its phase has reached (PHASE=5 default:
-# all of them); the runtime is the superproject's build/cross/clamiga.
+# all of them); the runtime is the superproject's build/cross/amilisp.
 # The script verifies the log itself.
 PHASE ?= 5
 test-lisp-amiga: $(BUILDDIR)/sendkey
@@ -207,15 +207,15 @@ verify-amiga:
 	    echo "=== Amiga verification FAILED (the boot script did not finish) ==="; \
 	    exit 1; \
 	fi
-	@# The clamiga leg needs a clamiga that actually came up, which on a
+	@# The amilisp leg needs an amilisp that actually came up, which on a
 	@# small machine it may not (see docs/memory.md).  When it DID come up,
 	@# none of its results are optional -- including the shipped macro's
 	@# verdict, since without a Lisp the macro can only bail out.
-	@if grep -q 'clamiga ARexx port is' build/amiga/clamacs-test.log; then \
+	@if grep -q 'amilisp ARexx port is' build/amiga/clamacs-test.log; then \
 	    for want in \
 	        'OK eval-last-sexp on (+ 1 2) echoed 3' \
-	        'OK the Clamiga menu woke up with the port' \
-	        'OK Start clamiga is dimmed while connected' \
+	        'OK the AmiLisp menu woke up with the port' \
+	        'OK Start amilisp is dimmed while connected' \
 	        'OK the editor answered while a load was in flight' \
 	        'OK clamacs-load-buffer reported 2 error(s)' \
 	        'OK Next Error woke up with the diagnostics' \
@@ -285,6 +285,6 @@ verify-amiga:
 	        exit 1; \
 	    fi; \
 	else \
-	    echo "NOTE: clamiga did not come up -- the integration leg was skipped."; \
+	    echo "NOTE: amilisp did not come up -- the integration leg was skipped."; \
 	fi
 	@echo "=== Amiga verification PASSED ==="

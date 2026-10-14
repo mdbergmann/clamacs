@@ -1,11 +1,11 @@
 ;;;; debugger.lisp -- the debugger window.
 ;;;;
-;;;; When a form at the REPL signals an unhandled error, clamiga's REPL
+;;;; When a form at the REPL signals an unhandled error, amilisp's REPL
 ;;;; thread (attached with REPL-ATTACH ... DEBUG) does not end the form: it
 ;;;; stays on the erring stack, sends `DEBUGGER <level>' with the condition
 ;;;; and the restarts to the editor's port, and waits for its next step over
 ;;;; the port -- BACKTRACE, FRAME, FRAME-EVAL, RESTART, ABORT, CONTINUE
-;;;; (cl-amiga's lib/dev-repl.lisp has the protocol; specs/clamacs-ide.md,
+;;;; (AmiLisp's lib/dev-repl.lisp has the protocol; specs/clamacs-ide.md,
 ;;;; phase 4).  This is the editor's face for that: the condition, the
 ;;;; restarts (a double-click invokes one), the backtrace (selecting a frame
 ;;;; asks for its locals, a double-click opens its source), the locals, and
@@ -92,7 +92,7 @@ wherever the user is."
     (and wire (wire-request wire doc kind command))))
 
 ;;; ------------------------------------------------------------------
-;;; What clamiga announces
+;;; What amilisp announces
 ;;; ------------------------------------------------------------------
 
 (defun continue-restart-row-p (row)
@@ -294,7 +294,7 @@ restart is chosen, and `M-x clamacs-debugger' brings the window back."
     (cond
       ((/= rc +rc-ok+)
        (when doc
-         (doc-message doc (if (string/= line "") line "clamiga refused the debugger command"))
+         (doc-message doc (if (string/= line "") line "amilisp refused the debugger command"))
          (doc-beep doc)))
       ;; A reply to a level that is already gone is stale.
       ((zerop (debugger-level dbg)) nil)

@@ -3,7 +3,7 @@
  *
  * Split in two because Lisp mode is the only mode phase 1 has, and the
  * commands that only make sense with a Lisp reader behind them (sexp motion,
- * indentation, everything that talks to clamiga) belong to it rather than to
+ * indentation, everything that talks to amilisp) belong to it rather than to
  * every buffer.  The state machine consults the local map first, so a
  * non-Lisp buffer still gets the whole global table.
  */

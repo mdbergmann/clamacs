@@ -4,7 +4,7 @@
 # How much CPU the Lisp editor takes when nobody is typing.  A task at
 # priority -5 (cpumeter.lisp) counts how often it gets to run, in windows
 # of five seconds, through four phases: the bare system, the editor open
-# on a file and left alone, the editor with a target clamiga's port up
+# on a file and left alone, the editor with a target amilisp's port up
 # (the wire connected, the idle tick asking arglists), and a defun typed
 # with sendkey.  Every window's count against the bare system's says what
 # share of the CPU the editor took in that phase.
@@ -39,7 +39,7 @@ CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
 RUNLOG="$OUT/cpu-idle-run.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
-HOST="$SUPER/build/host/clamiga"
+HOST="$SUPER/build/host/amilisp"
 IDLE_SECONDS="${IDLE_SECONDS:-40}"
 
 POLL=5
@@ -50,7 +50,7 @@ HARD_TIMEOUT="${HARD_TIMEOUT:-2400}"
 [ -f "$CONFIG" ] || { echo "no config $CONFIG"; exit 1; }
 [ -x "$FSUAE" ] || { echo "FS-UAE not found at $FSUAE"; exit 1; }
 [ -x "$HOST" ] || { echo "build the host runtime first: make -C $SUPER host"; exit 1; }
-[ -f "$SUPER/build/cross/clamiga" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
+[ -f "$SUPER/build/cross/amilisp" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
 [ -f "$ROOT/build/cross/sendkey" ] || { echo "sendkey missing: make -C $ROOT -f Makefile.cross amiga"; exit 1; }
 
 mkdir -p "$OUT" "$SUPER/build/amiga"
@@ -85,7 +85,7 @@ PRE
 WINDOWS=$((IDLE_SECONDS / 5))
 
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
-; cpu-idle boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
+; cpu-idle boot-override -- consumed by AmiLisp:verify/realamiga/call-on-ustartup
 failat 21
 cd Clamacs:
 echo "=== run start ===" >build/amiga/cpu-idle-run.log
@@ -93,17 +93,17 @@ echo "leg $LEG" >>build/amiga/cpu-idle-run.log
 stack 128000
 delete >NIL: T:cpumeter-stop
 delete >NIL: T:cpumeter-note
-delete >NIL: T:clamacs-clamiga-port
+delete >NIL: T:clamacs-amilisp-port
 echo "bare" >T:cpumeter-note
 run >NIL: SYS:System/RexxMast
-run >NIL: CLAmiga:build/cross/clamiga --no-userinit --heap 4M --non-interactive --load Clamacs:verify/realamiga/cpumeter.lisp
+run >NIL: AmiLisp:build/cross/amilisp --no-userinit --heap 4M --non-interactive --load Clamacs:verify/realamiga/cpumeter.lisp
 C:Wait 20
 echo "=== phase editor-idle ===" >>build/amiga/cpu-idle-run.log
 date >>build/amiga/cpu-idle-run.log
 echo "starting" >T:cpumeter-note
 copy >NIL: Clamacs:verify/realamiga/sample.lisp Clamacs:build/amiga/cpu-idle-out.lisp
-cd CLAmiga:
-run >Clamacs:build/amiga/cpu-idle-editor.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/cpu-idle-driver.lisp -- Clamacs:build/amiga/cpu-idle-out.lisp
+cd AmiLisp:
+run >Clamacs:build/amiga/cpu-idle-editor.log build/cross/amilisp --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/cpu-idle-driver.lisp -- Clamacs:build/amiga/cpu-idle-out.lisp
 cd Clamacs:
 set n 0
 LAB waitready
@@ -125,22 +125,22 @@ echo "=== loop-stats editor-idle ===" >>build/amiga/cpu-idle-run.log
 rx Clamacs:verify/realamiga/loopstats.rexx >>build/amiga/cpu-idle-run.log
 echo "=== phase editor-with-clamiga ===" >>build/amiga/cpu-idle-run.log
 date >>build/amiga/cpu-idle-run.log
-echo "clamiga-starting" >T:cpumeter-note
-cd CLAmiga:
-run >Clamacs:build/amiga/cpu-idle-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+echo "amilisp-starting" >T:cpumeter-note
+cd AmiLisp:
+run >Clamacs:build/amiga/cpu-idle-amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
 cd Clamacs:
 set n 0
 LAB waitport
-IF NOT EXISTS T:clamacs-clamiga-port
+IF NOT EXISTS T:clamacs-amilisp-port
   IF \$n EQ 120
-    echo "FAIL clamiga never opened its port" >>build/amiga/cpu-idle-run.log
+    echo "FAIL amilisp never opened its port" >>build/amiga/cpu-idle-run.log
     SKIP typing
   ENDIF
   set n \`eval \$n + 1\`
   C:Wait 2
   SKIP waitport BACK
 ENDIF
-echo "OK clamiga port open after about \$n x 2 s" >>build/amiga/cpu-idle-run.log
+echo "OK amilisp port open after about \$n x 2 s" >>build/amiga/cpu-idle-run.log
 C:Wait 5
 rx Clamacs:verify/realamiga/loopstats.rexx RESET
 echo "editor-with-clamiga" >T:cpumeter-note
@@ -163,8 +163,8 @@ rx Clamacs:verify/realamiga/loopstats.rexx >>build/amiga/cpu-idle-run.log
 ; The display is held back while the keys come: photographed now, the
 ; typed defun must show its colours and the status line its place.
 delete >NIL: RAM:screenshot.ppm
-cd CLAmiga:
-build/cross/clamiga --no-userinit --heap 16M --non-interactive --load CLAmiga:examples/amiga/gfx/screenshot.lisp >>Clamacs:build/amiga/cpu-idle-run.log
+cd AmiLisp:
+build/cross/amilisp --no-userinit --heap 16M --non-interactive --load AmiLisp:examples/amiga/gfx/screenshot.lisp >>Clamacs:build/amiga/cpu-idle-run.log
 cd Clamacs:
 copy >NIL: RAM:screenshot.ppm build/amiga/cpu-idle-after-typing.ppm
 echo "=== phase quit ===" >>build/amiga/cpu-idle-run.log

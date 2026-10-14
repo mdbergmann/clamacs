@@ -34,19 +34,19 @@
 
 (defun fake-answer-attach (tr &key (package "CL-USER"))
   "The REPL-ATTACH the first buffer eval (or C-c C-z) put on the wire,
-answered with PACKAGE: the prompt's package, as clamiga replies."
+answered with PACKAGE: the prompt's package, as amilisp replies."
   (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
   (fake-deliver tr 0 package))
 
 (defun fake-inbound (editor line)
-  "A command clamiga's REPL thread sends to the editor's port, delivered
+  "A command amilisp's REPL thread sends to the editor's port, delivered
 as the transport would: OUTPUT, READLINE, RESULT, DEBUGGER -- LINE is the
 raw command, verbatim after the verb's one blank, as EXT.DEV hands a raw
 verb its argument.  The verb's answer, (values RC TEXT)."
   (port-raw-command editor line))
 
 (defun fake-deliver (tr rc text &key lost)
-  "clamiga's reply to the command on the wire."
+  "amilisp's reply to the command on the wire."
   (wire-reply (fake-transport-wire tr) rc text :lost lost))
 
 (defun fake-last-sent (tr)
@@ -117,7 +117,7 @@ with C-c C-z and attached: (values source repl transport wire)."
   (fake-state repl))
 
 (defun send-input (repl tr text)
-  "Type TEXT at the prompt and RET, and answer the REPL-EVAL as clamiga
+  "Type TEXT at the prompt and RET, and answer the REPL-EVAL as amilisp
 does at once (rc 0, no text)."
   (type-text repl text)
   (type-keys repl "RET")

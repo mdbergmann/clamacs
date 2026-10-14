@@ -87,12 +87,12 @@ answer took, above the new prompt."
     (fail "no clamacs port appeared under ~A" *dir*)
     (return-from shots nil))
   (place)
-  ;; The clamiga behind the editor, and the ledger loaded into it.
+  ;; The amilisp behind the editor, and the ledger loaded into it.
   (cmd "MENU run-lisp")
   (cmd "STATUS")
-  (if (string= *result* "Started clamiga")
-      (ok "Start clamiga: ~A" *result*)
-      (fail "Start clamiga said ~A" *result*))
+  (if (string= *result* "Started amilisp")
+      (ok "Start amilisp: ~A" *result*)
+      (fail "Start amilisp said ~A" *result*))
   (cmd (format nil "OPEN FILE ~A" (shots-file "accounts.lisp")))
   (cmd "EVAL clamacs-load-buffer")
   (if (string/= (wait-echo "0 error(s)" 240) "")

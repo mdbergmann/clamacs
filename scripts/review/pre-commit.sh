@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Auto-review gate (pre-commit).  The same gate cl-amiga uses, adapted to
+# Auto-review gate (pre-commit).  The same gate AmiLisp uses, adapted to
 # clamacs: it reviews the STAGED diff with a headless `claude`, and if the
 # review is clean the commit proceeds untouched; if it finds problems and
 # AUTO_FIX is on, a fix agent edits the affected files, the fixes are
@@ -165,16 +165,16 @@ PARENT="$(git rev-parse --short HEAD 2>/dev/null || echo root)"
 LOG=".reviews/log-$(date '+%Y%m%d-%H%M%S').md"
 printf '# Auto-review log — %s (parent %s)\n\n' "$TS" "$PARENT" > "$LOG"
 
-REVIEW_PROMPT='You are reviewing a git diff for a commit about to be made to clamacs, an Emacs-flavoured Common Lisp IDE for AmigaOS 3 and MorphOS: a native C MUI editor that drives a running clamiga (the CL-Amiga runtime) over ARexx. The staged diff to review is in the file '"$DIFF_FILE"' — read that file first.
+REVIEW_PROMPT='You are reviewing a git diff for a commit about to be made to clamacs, an Emacs-flavoured Common Lisp IDE for AmigaOS 3 and MorphOS: a native C MUI editor that drives a running amilisp (the AmiLisp runtime) over ARexx. The staged diff to review is in the file '"$DIFF_FILE"' — read that file first.
 
 Enforce these project rules (from CLAUDE.md and specs/clamacs-ide.md):
-- Two processes, one job each: the editor is native C, the Lisp lives in clamiga. Editor/redisplay/buffer logic must NOT be moved into Lisp.
+- Two processes, one job each: the editor is native C, the Lisp lives in amilisp. Editor/redisplay/buffer logic must NOT be moved into Lisp.
 - The host-testable core (src/emacs, src/lisp, src/rexx) must stay free of MUI and OS types — it may not include clamacs.h or any <proto/*>, <mui/*>, <exec/*> header. Code that needs OS types belongs in the MUI half (main/textclass/document/introspect/rexxclient/rexxport/errorwin).
 - C89/C99 only; the target is built at -Os with no LTO (this m68k gcc miscompiles at -O2 and -flto is broken). No C11+ features.
 - Sized integers (uint32_t/int32_t) everywhere that crosses the OS boundary; no size_t or pointer-sized fields in anything shared with the OS or the wire.
 - TextEditor.mcc is subclassed at runtime, never forked or built; do not add a build of the class.
 - ARexx client rules: never block the MUI loop waiting for a reply; every MUI ARexx command hook returns LONG 0 explicitly; export with the NoStyle hook; save and restore MUIA_TextEditor_HasChanged around a SetBlock that only paints; never dispose a window from a notification hook.
-- New clamiga capabilities are commits in cl-amiga under its own gates, not editor-side workarounds.
+- New amilisp capabilities are commits in AmiLisp under its own gates, not editor-side workarounds.
 - Every feature/bugfix needs a test where the code is host-testable; a bug fix needs a regression test.
 
 Output format, STRICTLY:

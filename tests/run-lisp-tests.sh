@@ -1,11 +1,11 @@
 #!/bin/sh
 # run-lisp-tests.sh -- the Lisp editor's pure-module tests on the host.
 #
-#   tests/run-lisp-tests.sh [clamiga-binary]
+#   tests/run-lisp-tests.sh [amilisp-binary]
 #
-# Runs tests/run-tests.lisp under the superproject's host clamiga (the
+# Runs tests/run-tests.lisp under the superproject's host amilisp (the
 # default binary; the FS-UAE leg depends on the superproject the same way)
-# and decides on the verdict LINE, never on the exit code alone: clamiga's
+# and decides on the verdict LINE, never on the exit code alone: amilisp's
 # LOAD recovers form by form, so a file that failed to load would otherwise
 # pass for a file without failing tests.  Any ERROR line fails the run too.
 #
@@ -14,15 +14,15 @@
 # compaction at every allocation.
 
 here=$(cd "$(dirname "$0")" && pwd)
-clamiga=${1:-$here/../../build/host/clamiga}
+clamiga=${1:-$here/../../build/host/amilisp}
 
 if [ ! -x "$clamiga" ]; then
-    echo "NOTE: no clamiga at $clamiga -- Lisp tests SKIPPED"
+    echo "NOTE: no amilisp at $clamiga -- Lisp tests SKIPPED"
     echo "      (run \`make host' in the superproject first)"
     exit 0
 fi
 
-# A private, empty FASL cache: clamiga's LOAD caches compiled files keyed by
+# A private, empty FASL cache: amilisp's LOAD caches compiled files keyed by
 # the file's OWN mtime, and code that inlined another file's DEFSTRUCT slot
 # offsets goes stale when that defstruct changes (2026-09-17: a slot added
 # to EDITOR in lisp/frontend.lisp made the cached tests/test-commands.lisp

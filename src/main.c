@@ -3,7 +3,7 @@
  *
  * The loop is the reason the ARexx client can be asynchronous: the reply
  * port's signal joins the mask MUI's own Wait() uses, so a reply from
- * clamiga arrives as one more event among keystrokes and window messages.
+ * amilisp arrives as one more event among keystrokes and window messages.
  * Nothing here ever waits for a reply on its own.
  */
 
@@ -20,7 +20,7 @@ struct Library       *KeymapBase;
 struct Library       *AslBase;
 /* The definition must match the extern in proto/rexxsyslib.h, and the two
  * SDKs disagree: the m68k NDK declares `struct RxsLib *`, the MorphOS SDK
- * `struct Library *` (cl-amiga's platform_amiga_rexx.c does the same). */
+ * `struct Library *` (AmiLisp's platform_amiga_rexx.c does the same). */
 #ifdef __MORPHOS__
 typedef struct Library ck_rexxsysbase_t;
 #else
@@ -227,12 +227,12 @@ static int32_t ck_app_create(ck_app *app)
         MUIA_Application_Version,     (IPTR)"$VER: clamacs 0.1 (" __DATE__ ")",
         MUIA_Application_Copyright,   (IPTR)"(c) 2026 Manfred Bergmann",
         MUIA_Application_Author,      (IPTR)"Manfred Bergmann",
-        MUIA_Application_Description, (IPTR)"Common Lisp IDE for clamiga",
+        MUIA_Application_Description, (IPTR)"Common Lisp IDE for AmiLisp",
         MUIA_Application_Base,        (IPTR)"CLAMACS",
         MUIA_Application_UsedClasses, (IPTR)ck_used_classes,
         MUIA_Application_UseRexx,     TRUE,
         MUIA_Application_Commands,    (IPTR)ck_rexx_commands,
-        /* What clamiga's REPL thread sends (phase 3), raw. */
+        /* What amilisp's REPL thread sends (phase 3), raw. */
         MUIA_Application_RexxHook,    (IPTR)&ck_rexx_repl_hook,
         /* TAG_IGNORE when there is no strip: MUI would take NULL as one. */
         app->menustrip != NULL ? MUIA_Application_Menustrip : TAG_IGNORE,
@@ -301,7 +301,7 @@ static void ck_app_run(ck_app *app)
             if ((sigs & SIGBREAKF_CTRL_C) != 0)
                 break;
         }
-        /* A reply from clamiga is just another event in the loop; the client
+        /* A reply from amilisp is just another event in the loop; the client
          * never blocks on one. */
         if ((sigs & rexx) != 0)
             ck_rexx_handle_replies(app);

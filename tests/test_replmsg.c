@@ -1,7 +1,7 @@
 /*
- * test_replmsg.c -- the commands clamiga's REPL thread sends to the editor.
+ * test_replmsg.c -- the commands amilisp's REPL thread sends to the editor.
  *
- * The strings here are what cl-amiga's tests/test_dev_commands.sh shows the
+ * The strings here are what AmiLisp's tests/test_dev_commands.sh shows the
  * REPL thread sending (`SENT EDITOR|OUTPUT hello', `RESULT 0 CL-USER' with
  * the value on the next line), so the two ends are pinned to one wire
  * format from both sides.

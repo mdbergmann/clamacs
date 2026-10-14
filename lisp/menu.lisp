@@ -59,10 +59,10 @@
   '(:always
     :doc-changed            ; the active document has unsaved changes
     :doc-has-path           ; ... has a file behind it
-    :connected              ; a clamiga port is known
+    :connected              ; an amilisp port is known
     :not-connected
     :repl-window            ; the active document is the REPL window
-    :debugging              ; clamiga's REPL thread is parked in the debugger
+    :debugging              ; amilisp's REPL thread is parked in the debugger
     :diagnostics            ; the error list is not empty
     :can-pop                ; `M-.' has been used: there is a place to go back to
     :self                   ; the wire talks to the editor's own Lisp
@@ -149,12 +149,12 @@
            (item 'clamacs-test-system      :connected  "Test System"            nil       :lisp)))
 
      (list
-     (title "Clamiga")
+     (title "AmiLisp")
      (item 'clamacs-connect             :always        "Connect"                nil       :global)
-     (item 'run-lisp                    :not-connected "Start clamiga"          nil       :global)
+     (item 'run-lisp                    :not-connected "Start amilisp"          nil       :global)
      (bar)
      (item 'clamacs-connect-self        :not-self      "Talk to the Editor Itself" nil    :global)
-     (item 'clamacs-connect-clamiga     :self          "Talk to clamiga"        nil       :global)
+     (item 'clamacs-connect-clamiga     :self          "Talk to amilisp"        nil       :global)
      (bar)
      (item 'clamacs-load-buffer         :connected     "Load Buffer"            "C-c C-k" :lisp)
      (item 'clamacs-load-file           :connected     "Load File..."           "C-c C-l" :lisp
@@ -541,7 +541,7 @@ About requester: the MUI and TextEditor.mcc versions.")
 
 (defun about-text (editor)
   (let ((wire (editor-wire editor)))
-    (format nil "clamacs ~A~%An Emacs-flavoured Common Lisp IDE for clamiga~%~%~{~A~%~}clamiga: ~A"
+    (format nil "clamacs ~A~%An Emacs-flavoured Common Lisp IDE for AmiLisp~%~%~{~A~%~}amilisp: ~A"
             *clamacs-version*
             (editor-toolkit-lines editor)
             (cond ((null wire) "not connected")

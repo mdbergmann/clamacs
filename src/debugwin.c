@@ -1,11 +1,11 @@
 /*
  * debugwin.c -- phase 4: the debugger window.
  *
- * When a form at the REPL signals an unhandled error, clamiga's REPL thread
+ * When a form at the REPL signals an unhandled error, amilisp's REPL thread
  * (attached with REPL-ATTACH ... DEBUG) does not end the form: it stays on
  * the erring stack, sends `DEBUGGER <level>' with the condition and the
  * restarts to the editor's port, and waits for its next step over the port
- * -- BACKTRACE, FRAME, FRAME-EVAL, RESTART, ABORT, CONTINUE (cl-amiga's
+ * -- BACKTRACE, FRAME, FRAME-EVAL, RESTART, ABORT, CONTINUE (AmiLisp's
  * lib/dev-repl.lisp has the protocol; specs/clamacs-ide.md, phase 4).
  * This window is the editor's face for that: the condition, the restarts
  * (double-click invokes one), the backtrace (selecting a frame asks for its
@@ -84,7 +84,7 @@ static int32_t ck_debug_active(ck_doc *doc)
 }
 
 /* ------------------------------------------------------------------ *
- * What clamiga announces
+ * What amilisp announces
  * ------------------------------------------------------------------ */
 
 void ck_debug_entered(ck_app *app, int32_t level, const char *text)
@@ -247,7 +247,7 @@ void ck_debug_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
 
     if (rc != CK_RC_OK) {
         if (doc != NULL) {
-            ck_message(doc, "%s", line[0] != '\0' ? line : "clamiga refused the debugger command");
+            ck_message(doc, "%s", line[0] != '\0' ? line : "amilisp refused the debugger command");
             ck_beep(doc);
         }
         return;

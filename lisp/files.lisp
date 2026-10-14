@@ -197,7 +197,7 @@ and Cancel."
 
 (defun find-document-by-path (editor path)
   "The window showing PATH.  AmigaDOS paths are case-insensitive, and
-clamiga spells a path back (a diagnostic's, a source location's) as it
+amilisp spells a path back (a diagnostic's, a source location's) as it
 was given, not necessarily as the window was opened."
   (find-if (lambda (doc)
              (let ((p (doc-path doc)))
@@ -418,7 +418,7 @@ an unnamed buffer needs a name: the requester opens (the user is in a
 requester already) and the window stays."
   (unless (doc-closing doc)
     ;; A transcript is not a file: the REPL window never asks to save, and
-    ;; closing it stops clamiga's REPL thread (repl.lisp).
+    ;; closing it stops amilisp's REPL thread (repl.lisp).
     (when (doc-repl doc)
       (repl-closed doc)
       (setq ask nil))

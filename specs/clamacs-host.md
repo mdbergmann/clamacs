@@ -49,7 +49,7 @@ no command, no test and no port verb knows which frontend answered:
    `drive.rexx` does.
 8. **The wire**: the REPL, the debugger, the inspector, introspection,
    LOAD/COMPILE-FILE against a Lisp -- the editor's own image first, a
-   separate clamiga second.
+   separate amilisp second.
 9. **The acceptance run**: the legs of `verify/realamiga/drive.rexx`,
    minus what is Amiga-only (raw `sendkey` events, ARexx port names, the
    68080 store check), passing unattended on the host.
@@ -176,7 +176,7 @@ dialog's nested loop.
 
 Should stepping prove insufficient, the runtime alternative is a
 `:gc-safe` foreign call whose callbacks leave and re-enter the safe
-region -- a cl-amiga commit under its gates, useful beyond Clamacs, noted
+region -- an AmiLisp commit under its gates, useful beyond Clamacs, noted
 as runtime item R2 below.
 
 ### The native shim
@@ -217,7 +217,7 @@ There is no ARexx on the host.  The wire's home transport is the **self
 transport** (`transport-self.lisp`, portable, tested by
 `tests/test-self.lisp`): the REPL, the debugger, the inspector,
 introspection and LOAD all work against the editor's own image from the
-first session, and `Talk to the Editor Itself` / `Talk to clamiga` are
+first session, and `Talk to the Editor Itself` / `Talk to amilisp` are
 the same transport twice until the second one exists.
 
 The second is **TCP**, in two halves, both on a length-framed line
@@ -228,7 +228,7 @@ for both listeners is **loopback by default, a token always** -- see
 "Who may connect" below; nothing in this section serves a frame before
 the token has been checked.
 
-- **runtime**: `lib/dev-tcp.lisp` in cl-amiga -- `(ext.dev.tcp:start
+- **runtime**: `lib/dev-tcp.lisp` in AmiLisp -- `(ext.dev.tcp:start
   :port N)` listens on 127.0.0.1 unless the caller passes `:host` with
   another address, requires the session token from every connection
   before it serves anything, then serves `ext.dev:handle-command` (and the
@@ -236,17 +236,17 @@ the token has been checked.
   `ext.dev:*repl-send*` for a port name of the form `tcp:HOST:PORT/TOKEN`
   to a connection it opens to the editor (the token is the *editor's*,
   handed over on the already authenticated connection by `REPL-ATTACH`,
-  so it is on no command line and in no file the clamiga reads).  A
+  so it is on no command line and in no file the amilisp reads).  A
   runtime commit under every gate, host-tested by
   `tests/test_dev_tcp.sh`.  With `:host` set it is also what a Mac user
-  driving an *Amiga* clamiga over the network uses: that opt-in is what it
+  driving an *Amiga* amilisp over the network uses: that opt-in is what it
   is for, and the only reason it exists.
 - **editor**: `lisp/transport-tcp.lisp` -- a client thread with one
   request in flight, replies posted to the mailbox (the shape of
   `transport-arexx.lisp`'s `client-loop`), `transport-find-port` a
   connect attempt to `CLAMACS_CLAMIGA` (`host:port`, default
   `127.0.0.1:4005`; the token from `CLAMACS_CLAMIGA_TOKEN`, sent as
-  the first frame), `transport-launch` a `clamiga --load` of a preamble
+  the first frame), `transport-launch` an `amilisp --load` of a preamble
   that starts the TCP port with `:token` read from `CLAMIGA_TCP_TOKEN`
   -- a token the editor drew and put in the child's environment, never
   on its command line.  The host has no `ext:run-program` yet: runtime
@@ -310,15 +310,15 @@ keep the same three rules:
   are refused with a message and no port: `parse-command-line` passes
   every spelling on and `host-port-start` judges, so an option that was
   not honoured is never taken for one that was not given.)  A Mac
-  driving an Amiga clamiga over the
-  LAN needs both -- the clamiga listening for the editor, the editor
-  listening for the clamiga's REPL leg.  A non-loopback bind is for a
+  driving an Amiga amilisp over the
+  LAN needs both -- the amilisp listening for the editor, the editor
+  listening for the amilisp's REPL leg.  A non-loopback bind is for a
   trusted network: the token authenticates, it does not encrypt -- every
   byte, the token included, crosses the wire in the clear -- and this
   spec does not pretend otherwise.
 - **Token**: 128 bits, hex, per session, drawn from the OS entropy source
   (POSIX `/dev/urandom`, Windows `BCryptGenRandom`) by the process that
-  listens; `start` also takes `:token` for a clamiga where there is no
+  listens; `start` also takes `:token` for an amilisp where there is no
   such source (the Amiga: the user picks it), and **refuses to listen
   without one or the other**.  It is compared in constant time.
 - **Where it is kept**: the editor's own port writes
@@ -328,7 +328,7 @@ keep the same three rules:
   `$TMPDIR` is shared between users (Linux `/tmp`) the files go in
   `$XDG_RUNTIME_DIR` instead, and the editor starts without its port,
   saying so, if it can do neither.  A token `start` drew itself is
-  printed to that clamiga's own standard output, once; one it was given
+  printed to that amilisp's own standard output, once; one it was given
   (`:token`) is not.
 
 Each of the three rules has a test.  `tests/test_dev_tcp.sh` (runtime) and
@@ -468,7 +468,7 @@ host/clamacs-host.m        the shim: Cocoa, GTK and Win32 bodies
 host/page-head.html        layout and palettes
 host/page-entry.mjs        the CodeMirror bundle's entry
 host/page-app.js           CK.* and the bindings
-host/run.sh                clamiga --heap 32M --non-interactive --load lisp/clamacs.lisp -- files; IMAGE=1 from the image
+host/run.sh                amilisp --heap 32M --non-interactive --load lisp/clamacs.lisp -- files; IMAGE=1 from the image
 host/make-image.sh         build/host-frontend/clamacs.img, saved and verified (phase H6)
 host/make-app.sh           build/host-frontend/Clamacs.app, the macOS bundle (phase H6)
 host/Clamacs.svg           its icon
@@ -477,7 +477,7 @@ lisp/textmirror.lisp       pure: the text model (from tests/fake-frontend.lisp)
 lisp/mailbox.lisp          pure: call-in-editor / drain, wake as a parameter
 lisp/frontend-host.lisp    the frontend: the host editor and document, the page
 lisp/transport-host.lisp   the editor's own port over TCP; the wire on the self transport
-lisp/transport-tcp.lisp    the wire to a clamiga over TCP (phase H5)
+lisp/transport-tcp.lisp    the wire to an amilisp over TCP (phase H5)
 tests/test-json.lisp       the reader and writer
 tests/test-textmirror.lisp the model, shared with the fake
 tests/test-mailbox.lisp    post, drain, wait, close, across threads
@@ -531,7 +531,7 @@ with the memory note updated.
   `run-lisp-editor.sh` run green on the MUI frontend over the shared
   mailbox, `run-smoke.sh` green (also `GCSTRESS=1`).  What it found:
   the ASCII rule above; and runtime item R0 -- `ffi:close-library` on
-  the host was the AmigaOS stub (fixed in cl-amiga with a regression
+  the host was the AmigaOS stub (fixed in AmiLisp with a regression
   test, needed before the smoke can close its libraries).
 
 ### H1 -- the document window
@@ -704,7 +704,7 @@ with the memory note updated.
   reachable from the port struct) freed them, and the make-thread
   reaper runs only when the table is full.  The fix is the runtime's:
   `cl_thread_shutdown` reaps finished, unclaimed workers before the
-  registry goes (cl-amiga, with a scenario in
+  registry goes (AmiLisp, with a scenario in
   `tests/test_memleak_tracked.sh`), which also covers the MUI editor
   and the runtime's own `%repl-stop` on the Amiga, where those stacks
   were Fast RAM lost per launch.  With it the leak-tracking drive ends
@@ -744,7 +744,7 @@ with the memory note updated.
   paragraph below describes the state before that.
   `clamacs_host_menu_clear()` at `host-close` puts the menu bar
   back.  The application menu's title is the bundle's `CFBundleName`, or
-  the process name without a bundle (`clamiga` from `run.sh`), so the
+  the process name without a bundle (`amilisp` from `run.sh`), so the
   shim sets that key in the main bundle's info dictionary before
   installing the menu; a title set on the NSMenu is ignored.  The Emacs
   chord beside an item is an attributed run (smaller,
@@ -768,54 +768,54 @@ with the memory note updated.
 
 ### H5 -- the second process: TCP
 
-- cl-amiga: `lib/dev-tcp.lisp` (R1) with its `AUTH` gate, loopback
+- AmiLisp: `lib/dev-tcp.lisp` (R1) with its `AUTH` gate, loopback
   default and `:host` / `:token` arguments, `tests/test_dev_tcp.sh` (with
   the refusal cases of "Who may connect"),
   `tests/amiga/dev-tcp-tests.lisp` (bsdsocket.library on the Amiga: the
-  same server, so a Mac Clamacs can drive an Amiga clamiga; the emulator
+  same server, so a Mac Clamacs can drive an Amiga amilisp; the emulator
   run is over loopback, the LAN leg is checked by hand once), README
   section.  Gates: `make test`, `make test-gc-stress`, `test-amiga`.
 - clamacs: `lisp/transport-tcp.lisp`, `tests/test-transport-tcp.lisp`
   (against a `dev-tcp` server in the test process; a connection to it
   with a wrong or missing token gets `wire-reply ... :lost t` and never
-  a reply), the Clamiga menu's
-  Connect / Start clamiga live on the host, `run-drive.sh` grows a leg
-  against a second clamiga process (the "editor answered while a load was
+  a reply), the AmiLisp menu's
+  Connect / Start amilisp live on the host, `run-drive.sh` grows a leg
+  against a second amilisp process (the "editor answered while a load was
   in flight" criterion).
-- Done when: the drive passes against a separate clamiga, and
-  `Talk to the Editor Itself` / `Talk to clamiga` switch between the two.
-- **Done 2026-09-26** (branch `host-h5`; runtime on cl-amiga's
+- Done when: the drive passes against a separate amilisp, and
+  `Talk to the Editor Itself` / `Talk to amilisp` switch between the two.
+- **Done 2026-09-26** (branch `host-h5`; runtime on AmiLisp's
   `feat/dev-tcp`): the wire's home on the host is `lisp/transport-tcp.lisp`
   -- a client thread with one request in flight posting replies to the
   mailbox, `transport-find-port` a connect attempt (with the token, held
   off for two seconds after a failure since the idle timer and the menu
   ask often), `transport-own-port` the editor's port as
-  `tcp:HOST:PORT/TOKEN`, `transport-launch` the start of a clamiga on the
-  binary the editor runs on (R3 above), and the editor's exit stopping a
-  clamiga it started (`EVAL (ext.dev.tcp:stop)` over the connection; one
+  `tcp:HOST:PORT/TOKEN`, `transport-launch` the start of an amilisp on the
+  binary the editor runs on (R3 above), and the editor's exit stopping an
+  amilisp it started (`EVAL (ext.dev.tcp:stop)` over the connection; one
   the user started is left alone) -- while the self transport is made on
   the first `Talk to the Editor Itself`.  `tests/test-transport-tcp.lisp`
   (9 tests, 44 in the file's run with the two fixtures it borrows):
   found and answered through the mailbox, no token nothing tried, a
-  wrong token refused and the request lost, a clamiga gone and back, the
-  REPL attached back over the editor's port (clamiga's REPL thread -- the
-  test image's -- connecting to it), the launch of a real second clamiga
+  wrong token refused and the request lost, an amilisp gone and back, the
+  REPL attached back over the editor's port (amilisp's REPL thread -- the
+  test image's -- connecting to it), the launch of a real second amilisp
   and its stop, the wire starting on TCP with the editor's image on
   demand; `run-drive.sh` grew `leg-start-clamiga` (the menu's Start
-  clamiga, the launched flag, no preamble or port file left, the log) and
-  runs every Lisp leg against that clamiga (`(find-package :clamacs)` at
+  amilisp, the launched flag, no preamble or port file left, the log) and
+  runs every Lisp leg against that amilisp (`(find-package :clamacs)` at
   its REPL is `NIL`: a process of its own), the own-Lisp leg is
   drive.rexx's phase 5 (switch, `(room)`, `in-editor`, switch back), and
-  the script checks that the started clamiga logged `; clamiga stopped`
+  the script checks that the started amilisp logged `; amilisp stopped`
   after the editor's exit and, under `MEMTRACK=1`, its leak report.  What
-  it settled: `wire-connect`'s question became "No running clamiga was
+  it settled: `wire-connect`'s question became "No running amilisp was
   found. Start one?" and a failed launch says why
   (`transport-launch-problem`, new in wire.lisp); a `--bind` address is
   honoured now (R1) and `host-port-address` is the bound one.  What it
   found: `ext.dev.tcp:stop` run from a connection thread (`EVAL
   (ext.dev.tcp:stop)`) must leave that connection open for its reply
   (`*connection*`), and a REPL thread whose editor went is stopped by
-  its next failing send, never by the server's stop -- in a real clamiga
+  its next failing send, never by the server's stop -- in a real amilisp
   the process exit does it.
 
 ### H6 -- the other hosts and the image (when asked)
@@ -854,7 +854,7 @@ with the memory note updated.
   `*features*` and `.dll` otherwise, since the runtime puts no Windows
   feature there (a runtime item for that first Windows session).
   `verify/host/run-linux.sh` (`make host-linux`) builds an Ubuntu 24.04
-  image (`verify/host/linux/Dockerfile`), builds clamiga for Linux into
+  image (`verify/host/linux/Dockerfile`), builds amilisp for Linux into
   `build/host-linux/` of the superproject, runs `build.sh` there and the
   smoke and the drive under `xvfb-run`: green on the first drive but for
   About (the drive now accepts each host's first line; 169 OK after) --
@@ -876,11 +876,11 @@ with the memory note updated.
   `user-homedir-pathname` is the saving machine's in an image.
   `IMAGE=1 host/run.sh` starts from the image (remade when older than the
   binary).  The bundle: `host/make-app.sh` lays out `Clamacs.app` --
-  `Contents/MacOS/` holds the launcher (a shell script: `exec clamiga
+  `Contents/MacOS/` holds the launcher (a shell script: `exec amilisp
   --heap 32M --non-interactive --image clamacs.img --eval "(clamacs::run)"
-  -- files`), clamiga, the image, the page and the two libraries, and
-  `Contents/lib/clamiga/` the runtime library with the bare-boot
-  `clamiga.img` of `make image`, so a clamiga the editor starts finds its
+  -- files`), amilisp, the image, the page and the two libraries, and
+  `Contents/lib/amilisp/` the runtime library with the bare-boot
+  `amilisp.img` of `make image`, so an amilisp the editor starts finds its
   lib and boots from the image; `Contents/Resources/Clamacs.icns` is
   `host/Clamacs.svg` through rsvg-convert and iconutil.  Cocoa takes the
   bundle from the executable's path, so the Dock shows Clamacs with the
@@ -1002,7 +1002,7 @@ with the memory note updated.
 ### H8 -- the completion list: a growable minibuffer with a cursor
 
 - **Done 2026-09-28.**  What TAB has to offer at a prompt (`M-x`, a file
-  name, a theme, a symbol from clamiga) was a count and the first eight
+  name, a theme, a symbol from amilisp) was a count and the first eight
   names in the echo row; on the host it is now also a list above the
   status line, as `*Completions*` is in Emacs -- the views give way to
   it, up to eight rows, more scroll.  The pure layer got one generic,
@@ -1032,7 +1032,7 @@ with the memory note updated.
   and never widens the page.  The second user test saw no list at all:
   `Clamacs.app` had been built after the change but started from the
   heap image saved before it -- `make-app.sh` and `run.sh` remade the
-  image only when the clamiga binary was newer than it.  `host/image-stale.sh`
+  image only when the amilisp binary was newer than it.  `host/image-stale.sh`
   is the one test now: missing, older than the binary, or older than any
   `lisp/*.lisp` or image script; `APP=1 run-drive.sh` drives the bundle.  The host keeps the list on the document
   (`hdoc-mini-completions`) and replays it with the prompt when the
@@ -1124,7 +1124,7 @@ with the memory note updated.
   theme's and the minimap's); the drive's CURSOR leg and the View menu
   leg of `drive.rexx` (the drawn width before and after the pick).
 
-## Runtime items (commits in cl-amiga, each under every gate)
+## Runtime items (commits in AmiLisp, each under every gate)
 
 - **R0** (done 2026-09-25) `ffi:close-library` on the host: `AMIGA` uses
   `FFI`, so the AmigaOS host stub registered under the same name replaced
@@ -1134,7 +1134,7 @@ with the memory note updated.
   `ffi:foreign-string` answers "argument must be a string" for a wide
   string -- both should say what happened.
 
-- **R1** (done 2026-09-26, cl-amiga branch `feat/dev-tcp`)
+- **R1** (done 2026-09-26, AmiLisp branch `feat/dev-tcp`)
   `lib/dev-tcp.lisp`: the development port over TCP (H5), with the
   `AUTH` gate, the loopback default, the entropy-drawn token (or
   `:token`) of "Who may connect", and `ext:socket-listen` taking one
@@ -1149,12 +1149,12 @@ with the memory note updated.
   on entry and re-enters on return.
 - **R3** (settled 2026-09-26 without a spawn primitive) `transport-launch`
   on the host is `ext:system-command` of a backgrounded shell line
-  (`clamiga --non-interactive --load preamble </dev/null >log 2>&1 &`),
+  (`amilisp --non-interactive --load preamble </dev/null >log 2>&1 &`),
   with the token put in the editor's own environment by libc `setenv`
   through the FFI for the child to inherit and taken out again after --
   on no command line, in no file.  What the runtime did add is
   `ext:executable-path` (the running binary as a path another process
-  can start it by), so the editor starts the clamiga it runs on.
+  can start it by), so the editor starts the amilisp it runs on.
   `ext:run-program` stays open for another day.
 - **R4** (open, for the first Windows session) a Windows feature on
   `*features*` (`:win32`, beside `:darwin` and `:linux`, which
@@ -1171,9 +1171,9 @@ with the memory note updated.
   `probe-file` of the concatenated `page.html` path answered as if the
   file were missing, so `default` came back.  Not seen in any run since.
   To reduce: run the call in a loop with the page present, on the plain
-  host binary and on `build/host-gcstress/clamiga` (`string-right-trim` on
+  host binary and on `build/host-gcstress/amilisp` (`string-right-trim` on
   a fresh string, `concatenate`, `probe-file` are the suspects), and if it
-  reproduces, fix it in cl-amiga with a regression test there.
+  reproduces, fix it in AmiLisp with a regression test there.
 
 ## Risks and what decides them
 

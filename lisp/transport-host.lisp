@@ -5,7 +5,7 @@
 ;;;; transport-arexx.lisp do there is done here in two parts
 ;;;; (specs/clamacs-host.md, "The wire" and "Who may connect"):
 ;;;;
-;;;;   - The WIRE's home transport is the TCP one to a separate clamiga
+;;;;   - The WIRE's home transport is the TCP one to a separate amilisp
 ;;;;     (transport-tcp.lisp, phase H5), the self transport
 ;;;;     (transport-self.lisp) the other side of `Talk to the Editor
 ;;;;     Itself': the REPL, the debugger, the inspector, introspection and
@@ -48,7 +48,7 @@
 ;;;;
 ;;;; `--bind ADDR' (after `--') is parsed by frontend-host.lisp, which
 ;;;; judges nothing: HOST-PORT-START binds that one address (a Mac driving
-;;;; an Amiga clamiga over the LAN needs the clamiga to reach the editor's
+;;;; an Amiga amilisp over the LAN needs the amilisp to reach the editor's
 ;;;; port for the REPL leg), refuses a wildcard or a missing address
 ;;;; (BIND-REFUSAL) -- no port, a message -- and reports an address no
 ;;;; interface has as the runtime's error.  The port file still holds the

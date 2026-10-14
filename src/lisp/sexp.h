@@ -69,7 +69,7 @@ int32_t ck_sexp_down(const char *buf, int32_t len, int32_t pos);
 
 /* The `(' in column 0 at or before POS, and the position just past the form
  * it opens.  These are what `C-M-a' / `C-M-e' move to, and what bounds the
- * text `C-c C-c' sends to clamiga. */
+ * text `C-c C-c' sends to amilisp. */
 int32_t ck_sexp_defun_start(const char *buf, int32_t len, int32_t pos);
 int32_t ck_sexp_defun_end(const char *buf, int32_t len, int32_t pos);
 
@@ -89,7 +89,7 @@ int32_t ck_sexp_current_package(const char *buf, int32_t len, int32_t pos,
                                 char *out, int32_t out_size);
 
 /* ------------------------------------------------------------------ *
- * Phase 2: what to ask clamiga about
+ * Phase 2: what to ask amilisp about
  * ------------------------------------------------------------------ */
 
 /* The operator whose arglist the status line should show: the head symbol

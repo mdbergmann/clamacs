@@ -38,7 +38,7 @@ int32_t ck_command_complete(const char *prefix, const char **out, int32_t max,
                             char *common, int32_t common_size)
 {
     /* One completion implementation for the whole editor: `M-x', file names
-     * and, from phase 2, symbol names from clamiga. */
+     * and, from phase 2, symbol names from amilisp. */
     return ck_complete(ck_command_names, (int32_t)CK_CMD_COUNT, prefix,
                        out, max, common, common_size);
 }

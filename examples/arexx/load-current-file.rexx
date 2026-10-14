@@ -1,13 +1,13 @@
-/* load-current-file.rexx -- load the buffer clamacs is showing into clamiga.
+/* load-current-file.rexx -- load the buffer clamacs is showing into amilisp.
 **
-** The clamacs counterpart of cl-amiga's examples/amiga/arexx/
+** The clamacs counterpart of AmiLisp's examples/amiga/arexx/
 ** load-current-file.ced, which does the same job from CygnusEd.  Copy it to
 ** REXX: and run it with `rx load-current-file'; bind it to a key from your
 ** shell or a Workbench icon if you like, though inside clamacs you would
 ** normally just press C-c C-k.
 **
-** Start the port on the clamiga side first -- these two lines belong in
-** S:.clamigarc:
+** Start the port on the amilisp side first -- these two lines belong in
+** S:.amilisprc:
 **
 **     (require "amiga/arexx")
 **     (amiga.arexx:start)
@@ -17,7 +17,7 @@ OPTIONS RESULTS
 
 /* FAILAT 21 is not optional.  ARexx aborts a macro when a command's return
 ** code reaches the FAILAT threshold, and the default is 10 -- which is
-** exactly the code clamiga returns for `your file has errors'.  Without
+** exactly the code amilisp returns for `your file has errors'.  Without
 ** this the macro would die at the moment it had something to report. */
 OPTIONS FAILAT 21
 
@@ -29,11 +29,11 @@ END
 
 LISP = FindPort('CLAMIGA')
 IF LISP = '' THEN DO
-    SAY 'clamiga is not running, or its ARexx port is not started.'
+    SAY 'amilisp is not running, or its ARexx port is not started.'
     EXIT 10
 END
 
-/* --- save the buffer so clamiga loads what is on screen -------------- */
+/* --- save the buffer so amilisp loads what is on screen -------------- */
 
 ADDRESS VALUE EDITOR
 'GETFILE'
@@ -56,7 +56,7 @@ IF RC_LOAD = 0 THEN DO
 END
 
 /* rc /= 0, so ARexx did not give us RESULT: ask for the text explicitly.
-** This is the protocol, not a clamiga quirk -- a result string may only
+** This is the protocol, not an amilisp quirk -- a result string may only
 ** accompany a zero return code. */
 ADDRESS VALUE LISP
 'LASTRESULT'

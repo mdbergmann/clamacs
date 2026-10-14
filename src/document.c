@@ -8,7 +8,7 @@
  * stable entry point into exactly those operations -- and is the same
  * interface the editor's `TE' ARexx command passes through to.  Only the
  * things the class has no notion of -- the kill ring, sexp motion, Lisp
- * indentation, talking to clamiga -- are implemented here.
+ * indentation, talking to amilisp -- are implemented here.
  *
  * One byte-offset convention holds throughout: MUIA_TextEditor_CursorIndex
  * and the offsets in exported text are the same numbers, because a line
@@ -290,7 +290,7 @@ int32_t ck_doc_context(ck_doc *doc, ck_context *ctx)
 
 /*
  * The whole buffer, for the structural commands -- end-of-defun, the sexp
- * motions, and everything that hands a form to clamiga.  A window is wrong
+ * motions, and everything that hands a form to amilisp.  A window is wrong
  * for these: a defun whose closing paren falls outside it reads as
  * unbalanced, so `C-M-e' would not move and `C-c C-c' would refuse to
  * evaluate.  These are single user actions, not per-keystroke work, so the
@@ -955,7 +955,7 @@ int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
         if (doc->mini_source == CK_COMPLETE_COMMAND) {
             n = ck_command_complete(text, hits, 16, common, (int32_t)sizeof common);
         } else if (doc->mini_source == CK_COMPLETE_SYMBOL) {
-            /* Symbols come from clamiga, asynchronously; introspect.c
+            /* Symbols come from amilisp, asynchronously; introspect.c
              * completes from the candidates it has or asks for more. */
             ck_intro_mini_complete(doc, text);
             return 1;
@@ -987,7 +987,7 @@ int32_t ck_doc_minibuffer_key(ck_doc *doc, ck_key key)
 }
 
 /* ------------------------------------------------------------------ *
- * Talking to clamiga
+ * Talking to amilisp
  * ------------------------------------------------------------------ */
 
 static void ck_doc_track_package(ck_doc *doc)
@@ -1017,7 +1017,7 @@ void ck_doc_send_package(ck_doc *doc, int32_t track)
         ck_doc_track_package(doc);
 
     /* No (in-package ...) in the buffer means CL-USER, which is also where
-     * a fresh clamiga starts -- but not where it stays once another buffer
+     * a fresh amilisp starts -- but not where it stays once another buffer
      * has spoken, so it is said explicitly. */
     pkg = (doc->package[0] != '\0') ? doc->package : "CL-USER";
     if (Stricmp((STRPTR)pkg, (STRPTR)app->wire_package) == 0)
@@ -1565,7 +1565,7 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
     }
 
     case CK_CMD_SAVE_BUFFERS_KILL_EMACS:
-        /* Stop clamiga's REPL thread on the way out; ck_rexx_close() waits
+        /* Stop amilisp's REPL thread on the way out; ck_rexx_close() waits
          * for that one reply. */
         ck_repl_quit(app);
         app->quitting = 1;
@@ -1622,7 +1622,7 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         ck_cmd_indent_region(doc);
         break;
 
-    /* --- clamiga -------------------------------------------------- */
+    /* --- amilisp -------------------------------------------------- */
     case CK_CMD_LOAD_BUFFER:
         ck_doc_save_and_load(doc);
         break;
@@ -1667,14 +1667,14 @@ void ck_doc_run_command(ck_doc *doc, int16_t command, int32_t arg)
         if (ck_rexx_find_port(app))
             ck_rexx_send(app, doc, CK_REQ_VERSION, "VERSION");
         else
-            ck_message(doc, "No clamiga port found");
+            ck_message(doc, "No amilisp port found");
         break;
 
     case CK_CMD_RUN_LISP:
         if (ck_rexx_launch(app))
-            ck_message(doc, "Started clamiga");
+            ck_message(doc, "Started amilisp");
         else
-            ck_message(doc, "Cannot start clamiga");
+            ck_message(doc, "Cannot start amilisp");
         break;
 
     case CK_CMD_SHOW_ERRORS:
@@ -2392,7 +2392,7 @@ void ck_doc_close(ck_doc *doc, int32_t ask)
         return;
 
     /* A transcript is not a file: the REPL window never asks to save, and
-     * closing it stops clamiga's REPL thread. */
+     * closing it stops amilisp's REPL thread. */
     if (doc->repl_mode)
         ck_repl_closed(doc);
 

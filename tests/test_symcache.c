@@ -16,7 +16,7 @@ TEST(unknown_miss_and_hit_are_three_different_answers)
     ASSERT_EQ_INT(ck_symcache_put(&c, "CL-USER|foo", "(a &optional b)"), 0);
     ASSERT_STR_EQ(ck_symcache_get(&c, "CL-USER|foo"), "(a &optional b)");
 
-    /* Asked, and clamiga had nothing: "" -- remembered so the cursor
+    /* Asked, and amilisp had nothing: "" -- remembered so the cursor
      * entering a binding list does not ask about `x' every time. */
     ASSERT_EQ_INT(ck_symcache_put(&c, "CL-USER|x", ""), 0);
     ASSERT_STR_EQ(ck_symcache_get(&c, "CL-USER|x"), "");

@@ -109,22 +109,22 @@ Emacs's names has not learnt yet."
  forward-sexp backward-sexp backward-up-list down-list
  beginning-of-defun end-of-defun kill-sexp insert-parentheses
  indent-for-tab-command newline-and-indent indent-region
- ;; Lisp mode: talking to clamiga
+ ;; Lisp mode: talking to amilisp
  clamacs-load-buffer clamacs-load-file clamacs-compile-file
  clamacs-eval-defun clamacs-eval-last-sexp clamacs-eval-region
  clamacs-eval-expression clamacs-connect clamacs-show-errors
  clamacs-next-error clamacs-previous-error run-lisp
  ;; Lisp mode: systems.  The .asd the buffer belongs to, loaded and
- ;; tested by ASDF in clamiga (wire.lisp).
+ ;; tested by ASDF in amilisp (wire.lisp).
  clamacs-load-system clamacs-load-system-from clamacs-test-system
  ;; Lisp mode: introspection.  `complete-symbol' keeps its Emacs name
  ;; because it is the same key doing the same thing; the rest carry the
- ;; editor's prefix, as the other clamiga commands do.
+ ;; editor's prefix, as the other amilisp commands do.
  complete-symbol clamacs-arglist clamacs-edit-definition
  clamacs-pop-definition clamacs-describe-symbol clamacs-apropos
  clamacs-macroexpand-1 clamacs-macroexpand
  ;; The REPL window.  `clamacs-repl' opens or raises it from any document;
- ;; the `clamacs-repl-*' commands act in it; the interrupt reaches clamiga's
+ ;; the `clamacs-repl-*' commands act in it; the interrupt reaches amilisp's
  ;; REPL thread from anywhere.
  clamacs-repl clamacs-repl-return clamacs-repl-previous-input
  clamacs-repl-next-input clamacs-repl-clear clamacs-interrupt

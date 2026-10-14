@@ -20,7 +20,7 @@
 ;;;
 ;;; A key is a fixnum: a 16-bit key code in the low half and modifier bits
 ;;; above it.  Codes #x01..#xFF are ISO-8859-1 characters (the editor is
-;;; 8-bit, matching clamiga's narrow strings); codes from +KEY-UP+ up name
+;;; 8-bit, matching amilisp's narrow strings); codes from +KEY-UP+ up name
 ;;; the keys that have no character.  "No key" is NIL.  A fixnum because it
 ;;; is the EQL hash key of every keymap lookup, once per keystroke.
 ;;; ------------------------------------------------------------------

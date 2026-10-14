@@ -407,7 +407,7 @@ skipped.  Returns KIND START END, or NIL when there is none."
 
 (defun sexp-defun-start (buf pos)
   "The `(' in column 0 at or before POS.  With SEXP-DEFUN-END, what `C-M-a'
-and `C-M-e' move to, and what bounds the text `C-c C-c' sends to clamiga."
+and `C-M-e' move to, and what bounds the text `C-c C-c' sends to amilisp."
   (declare (fixnum pos))
   (let* ((buf (sx-simple buf))
          (len (length buf))
@@ -582,12 +582,12 @@ that mentions it answers true -- since a true only costs a scan."
         (return t)))))
 
 ;;; ------------------------------------------------------------------
-;;; Phase 2: what to ask clamiga about
+;;; Phase 2: what to ask amilisp about
 ;;; ------------------------------------------------------------------
 
 (defun sx-operator-like-p (buf s e)
   "Whether the atom at [S, E) could name an operator.  Numbers, keywords and
-character literals cannot, and asking clamiga about `1' or `:key' would only
+character literals cannot, and asking amilisp about `1' or `:key' would only
 fill the arglist cache with misses."
   (declare (simple-string buf) (fixnum s e))
   (and (> e s)

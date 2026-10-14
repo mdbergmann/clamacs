@@ -1,11 +1,11 @@
 ;;;; inspector.lisp -- the inspector window.
 ;;;;
-;;;; `C-c I' asks for a form, clamiga evaluates it and answers INSPECT with
-;;;; the object and its numbered parts (cl-amiga's lib/dev-commands.lisp: a
+;;;; `C-c I' asks for a form, amilisp evaluates it and answers INSPECT with
+;;;; the object and its numbered parts (AmiLisp's lib/dev-commands.lisp: a
 ;;;; header `<TYPE> <depth> <count>', the object, then `<n>: <label> =
 ;;;; <value>' per part).  The window shows the object and the parts; a
 ;;;; double-click on a part sends PART <n> and the window shows that, Back
-;;;; sends POP.  The navigation stack lives in clamiga, one per connection,
+;;;; sends POP.  The navigation stack lives in amilisp, one per connection,
 ;;;; so the editor only mirrors the depth it is told.  Synchronous replies,
 ;;;; unlike the debugger's: the object is evaluated on the port's handler
 ;;;; thread (with the REPL's `*' in scope, so `C-c I *' looks at the last
@@ -70,7 +70,7 @@ and open it with the keyboard."))
                (wire-request wire doc :inspect "POP")))))))
 
 (define-command clamacs-inspect (doc arg)
-  "Evaluate a form in clamiga and open its value in the inspector window."
+  "Evaluate a form in amilisp and open its value in the inspector window."
   (declare (ignore arg))
   (prompt-for-form doc "Inspect value (evaluated): " #'inspect-form))
 
@@ -118,7 +118,7 @@ it selected (NIL: none is).  The row's own number is what counts: the
         ((null type)
          (when doc
            (let ((line (first-line text)))
-             (doc-message doc (if (string/= line "") line "clamiga could not inspect that"))
+             (doc-message doc (if (string/= line "") line "amilisp could not inspect that"))
              (doc-beep doc))))
         (t
          ;; The header, the object, then the parts.

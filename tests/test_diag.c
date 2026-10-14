@@ -1,5 +1,5 @@
 /*
- * test_diag.c -- parsing clamiga's replies.
+ * test_diag.c -- parsing amilisp's replies.
  */
 
 #include "test.h"
@@ -113,7 +113,7 @@ TEST(full_reply)
 TEST(the_log_section_is_not_parsed)
 {
     /* The reply carries the diagnostics first, then the summary, then
-     * everything the command printed.  That last part contains clamiga's own
+     * everything the command printed.  That last part contains amilisp's own
      * error reports, which begin with `ERROR: ' -- and reading those as
      * diagnostics doubles the list, so `C-x `' walks into rows that are not
      * real and cannot be jumped to.  Found on the Amiga, not here; this test

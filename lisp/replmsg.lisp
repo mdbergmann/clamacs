@@ -1,8 +1,8 @@
-;;;; replmsg.lisp -- what clamiga's REPL thread sends, and the lines of the
+;;;; replmsg.lisp -- what amilisp's REPL thread sends, and the lines of the
 ;;;; debugger's and the inspector's replies.
 ;;;;
 ;;;; The port of src/rexx/replmsg.c and src/rexx/dbgmsg.c.  Four commands
-;;;; arrive at the editor's OWN port from clamiga's REPL thread
+;;;; arrive at the editor's OWN port from amilisp's REPL thread
 ;;;; (lib/dev-repl.lisp): OUTPUT with a chunk of program output, READLINE,
 ;;;; RESULT and DEBUGGER with a header `<number> <package>' and a body after
 ;;;; the first newline.  The verb is split off by EXT.DEV before a port verb
@@ -10,7 +10,7 @@
 ;;;; the argument is verbatim); PARSE-REPL-MESSAGE does the whole job for a
 ;;;; caller that has the raw line, and PARSE-RESULT-HEADER the header for
 ;;;; one that has the argument.  The strings the tests use are what
-;;;; cl-amiga's tests/test_dev_commands.sh shows the REPL thread sending, so
+;;;; AmiLisp's tests/test_dev_commands.sh shows the REPL thread sending, so
 ;;;; the two ends are pinned to one wire format from both sides.
 ;;;;
 ;;;; Pure: no MUI, no OS types.

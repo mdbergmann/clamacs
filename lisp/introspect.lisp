@@ -1,10 +1,10 @@
-;;;; introspect.lisp -- what the editor asks clamiga about a symbol.
+;;;; introspect.lisp -- what the editor asks amilisp about a symbol.
 ;;;;
-;;;; Everything here is a question put to clamiga's port and a place for the
+;;;; Everything here is a question put to amilisp's port and a place for the
 ;;;; answer to land: the arglist of the operator at point goes to the status
 ;;;; line, completions go into the buffer or the minibuffer, a source
 ;;;; location moves the cursor, and DESCRIBE, APROPOS and MACROEXPAND open a
-;;;; scratch window.  The questions are the six commands cl-amiga's
+;;;; scratch window.  The questions are the six commands AmiLisp's
 ;;;; lib/dev-commands.lisp answers (ARGLIST, COMPLETE, SOURCE-LOCATION,
 ;;;; DESCRIBE, APROPOS, MACROEXPAND[-1]); the editor adds no logic of its
 ;;;; own to their replies beyond parsing a `file:line'.  This is the port
@@ -13,7 +13,7 @@
 ;;;; Two rules from the wire carry over.  Nothing here waits for a reply:
 ;;;; each request has a continuation in INTRO-REPLY, reached from
 ;;;; WIRE-DISPATCH when the reply arrives.  And the idle timer never
-;;;; prompts: a status-line lookup that found no clamiga port stays quiet,
+;;;; prompts: a status-line lookup that found no amilisp port stays quiet,
 ;;;; where a command the user typed may offer to start one.
 ;;;;
 ;;;; The idle timer itself is the frontend's (a MUI input handler that
@@ -54,8 +54,8 @@
   (package-lines 0)
   (package-verify nil)
   (package-scans 0)
-  ;; Completion: the candidates clamiga sent, the prefix they were asked
-  ;; for and whether the list was cut at clamiga's cap; the range of the
+  ;; Completion: the candidates amilisp sent, the prefix they were asked
+  ;; for and whether the list was cut at amilisp's cap; the range of the
   ;; buffer a completion replaces; the minibuffer completer over them.
   (completions '())
   (completions-prefix "")
@@ -221,7 +221,7 @@ or \"\" -- `ARGLIST foo' gives `foo'."
   (format nil "~A|~A" package op))
 
 (defun render-arglist (op reply)
-  "`(a &optional b)' from clamiga becomes `(foo a &optional b)' on the
+  "`(a &optional b)' from amilisp becomes `(foo a &optional b)' on the
 status line: the operator is what the user is looking at."
   (if (and (> (length reply) 0) (char= (char reply 0) #\())
       (format nil "(~A~A~A" op
@@ -259,8 +259,8 @@ idle tick look again from scratch."
 
 (defun arglist-lookup (doc echo)
   "Put the arglist of the operator at point in the status line: from the
-cache at once, else by asking clamiga.  ECHO is `M-x clamacs-arglist': the
-answer is echoed too, and clamiga may be started for it.  True when the
+cache at once, else by asking amilisp.  ECHO is `M-x clamacs-arglist': the
+answer is echoed too, and amilisp may be started for it.  True when the
 status line is settled -- shown, cleared, or asked for; NIL when a quiet
 lookup could not ask (no port known, one already in flight) and the idle
 tick should try again."
@@ -405,7 +405,7 @@ timer up only while there is work takes it down on NIL."
 
 (defun completions-cover-p (state text)
   "Whether the candidates on hand answer for TEXT: they were fetched for a
-prefix of it, and the list was not cut short by clamiga's cap (past the
+prefix of it, and the list was not cut short by amilisp's cap (past the
 cap a longer prefix may match symbols that were never sent)."
   (let ((prefix (intro-completions-prefix state)))
     (and (> (length prefix) 0)
@@ -416,7 +416,7 @@ cap a longer prefix may match symbols that were never sent)."
 (defun apply-candidates (doc state text)
   "Complete TEXT in the minibuffer from the candidates on hand: as far as
 it goes, and say what is left.  The candidates may CONTAIN the text
-rather than start with it (clamiga's COMPLETE falls back to that when
+rather than start with it (amilisp's COMPLETE falls back to that when
 nothing starts with it), so the match is COMPLETE-WITHIN's."
   (multiple-value-bind (matches common) (complete-within (intro-completions state) text)
     (cond ((null matches)
@@ -434,7 +434,7 @@ nothing starts with it), so the match is COMPLETE-WITHIN's."
     t))
 
 (defun symbol-completer (doc)
-  "The minibuffer completer for a symbol name.  Symbols come from clamiga,
+  "The minibuffer completer for a symbol name.  Symbols come from amilisp,
 asynchronously: TAB completes from the candidates on hand when they cover
 the input, and asks for more otherwise -- the reply completes the input
 then (COMPLETE-MINI-REPLY).  Either way it answers :HANDLED: the message
@@ -458,7 +458,7 @@ and the input line are its own business."
   (doc-insert doc text))
 
 (define-command complete-symbol (doc arg)
-  "Complete the symbol before the cursor, asking clamiga for the candidates."
+  "Complete the symbol before the cursor, asking amilisp for the candidates."
   (declare (ignore arg))
   (let ((point (doc-point doc))
         (state (doc-intro doc)))
@@ -647,7 +647,7 @@ cursor at the top.  The window, or NIL when none could be made."
   (cond ((/= rc +rc-ok+)
          (when doc
            (let ((line (first-line text)))
-             (doc-message doc (if (string/= line "") line "clamiga could not answer"))
+             (doc-message doc (if (string/= line "") line "amilisp could not answer"))
              (doc-beep doc))))
         ((and (eq kind :apropos) (string= text ""))
          (when doc

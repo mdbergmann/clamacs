@@ -5,7 +5,7 @@
  * Every request is a RexxMsg sent with PutMsg; the reply port's signal is
  * folded into the MUI input loop's Wait() mask and the reply is handled like
  * any other event.  A long COMPILE-FILE therefore does not freeze redisplay,
- * and -- the reason it matters beyond comfort -- phase 3's REPL has clamiga
+ * and -- the reason it matters beyond comfort -- phase 3's REPL has amilisp
  * calling back into the editor's own port while the editor's REPL-EVAL is
  * still outstanding.  A blocking client would deadlock there.
  *
@@ -35,9 +35,9 @@ int32_t ck_rexx_open(ck_app *app)
 void ck_rexx_close(ck_app *app)
 {
     /* A message still on the wire will be replied to whatever we do, so wait
-     * for it rather than leaving clamiga's handler thread writing into a
+     * for it rather than leaving amilisp's handler thread writing into a
      * port that no longer exists.  A REPL-DETACH queued behind it (the
-     * editor is quitting with a REPL attached) goes out too, so clamiga's
+     * editor is quitting with a REPL attached) goes out too, so amilisp's
      * REPL thread is stopped rather than left sending to a port that is
      * about to vanish; everything else queued is dropped. */
     for (;;) {
@@ -84,7 +84,7 @@ int32_t ck_rexx_find_port(ck_app *app)
     int32_t was = app->connected;
 
     /* CLAMIGA, then CLAMIGA.1 .. CLAMIGA.9 -- the same scan the shipped
-     * clamiga.rexx macro does, so a second clamiga instance is reachable. */
+     * amilisp.rexx macro does, so a second amilisp instance is reachable. */
     for (i = 0; i <= 9; i++) {
         if (i == 0)
             strcpy(name, "CLAMIGA");
@@ -101,12 +101,12 @@ int32_t ck_rexx_find_port(ck_app *app)
                 /* Newly found -- at startup, or back after it was gone.
                  * Say so where the user is looking, since the command
                  * that provoked the scan would otherwise just work as if
-                 * nothing had happened; and a fresh clamiga starts in
+                 * nothing had happened; and a fresh amilisp starts in
                  * CL-USER, whatever the old one was last told. */
                 ck_doc *doc = ck_doc_active(app);
                 app->wire_package[0] = '\0';
                 if (doc != NULL)
-                    ck_message(doc, "clamiga found on %s", name);
+                    ck_message(doc, "amilisp found on %s", name);
                 ck_repl_reconnected(app);
             }
             ck_menu_update(app);
@@ -121,30 +121,36 @@ int32_t ck_rexx_find_port(ck_app *app)
 }
 
 /*
- * Where the clamiga to start is.  The binary release puts clamiga beside
- * the editor (bin/aos3/), so PROGDIR:clamiga is tried first -- resolved to
+ * Where the amilisp to start is.  The binary release puts amilisp beside
+ * the editor (bin/aos3/), so PROGDIR:amilisp is tried first -- resolved to
  * an absolute path here, because the shell System() starts has a PROGDIR:
- * of its own.  A bare "clamiga" is the fallback, for a clamiga on the
- * shell path.  Returns the command to run in BUF.
+ * of its own; PROGDIR:clamiga (the runtime's name before 0.12) is probed
+ * second so an old installation still starts.  A bare "amilisp" is the
+ * fallback, for an amilisp on the shell path.  Returns the command to run
+ * in BUF.
  */
 static void ck_rexx_clamiga_command(char *buf, int32_t size)
 {
+    static const char *const names[] = { "amilisp", "clamiga" };
     BPTR dir = GetProgramDir();
+    int32_t i;
 
-    if (dir != (BPTR)0 && NameFromLock(dir, (STRPTR)buf, (LONG)size)
-        && AddPart((STRPTR)buf, (STRPTR)"clamiga", (ULONG)size)) {
-        BPTR lock = Lock((STRPTR)buf, ACCESS_READ);
-        if (lock != (BPTR)0) {
-            UnLock(lock);
-            return;
+    for (i = 0; dir != (BPTR)0 && i < 2; i++) {
+        if (NameFromLock(dir, (STRPTR)buf, (LONG)size)
+            && AddPart((STRPTR)buf, (STRPTR)names[i], (ULONG)size)) {
+            BPTR lock = Lock((STRPTR)buf, ACCESS_READ);
+            if (lock != (BPTR)0) {
+                UnLock(lock);
+                return;
+            }
         }
     }
-    strncpy(buf, "clamiga", (size_t)size - 1);
+    strncpy(buf, "amilisp", (size_t)size - 1);
     buf[size - 1] = '\0';
 }
 
 /*
- * clamiga needs a 128K stack (the AmigaOS default of 64K is enough for the
+ * amilisp needs a 128K stack (the AmigaOS default of 64K is enough for the
  * core, not for the GUI libraries or Quicklisp), and the stack a shell runs
  * a command on is its cli_DefaultStack -- inherited from whatever started
  * the editor, so from Workbench it is the 16K system default.  The one
@@ -166,7 +172,7 @@ static void ck_rexx_clamiga_command(char *buf, int32_t size)
  */
 static void ck_rexx_launch_script_path(char *path, int32_t size)
 {
-    snprintf(path, (size_t)size, "T:clamacs-start-clamiga-%08lx",
+    snprintf(path, (size_t)size, "T:clamacs-start-amilisp-%08lx",
              (unsigned long)FindTask(NULL));
 }
 
@@ -210,9 +216,9 @@ int32_t ck_rexx_launch(ck_app *app)
         snprintf(command, sizeof command, "Execute %s", script_path);
     cmdline = command;
 
-    /* clamiga gets its own console window: it is a REPL in its own right,
+    /* amilisp gets its own console window: it is a REPL in its own right,
      * and until phase 3 lands that window IS the REPL. */
-    console = Open((STRPTR)"CON:0/40/640/220/clamiga/CLOSE/WAIT",
+    console = Open((STRPTR)"CON:0/40/640/220/amilisp/CLOSE/WAIT",
                    MODE_OLDFILE);
     if (console == (BPTR)0) {
         if (script_written)
@@ -224,7 +230,7 @@ int32_t ck_rexx_launch(ck_app *app)
                     SYS_Input,   (IPTR)console,
                     SYS_Output,  (IPTR)NULL,
                     SYS_Asynch,  TRUE,
-                    NP_Name,     (IPTR)"clamiga",
+                    NP_Name,     (IPTR)"amilisp",
                     NP_StackSize, CK_LAUNCH_STACK_SIZE,
                     TAG_DONE);
     if (rc != 0) {
@@ -235,7 +241,7 @@ int32_t ck_rexx_launch(ck_app *app)
         return 0;
     }
 
-    /* The port appears once the user's S:.clamigarc has run
+    /* The port appears once the user's S:.amilisprc has run
      * (require "amiga/arexx") (amiga.arexx:start).  Give it a few seconds;
      * this is the one place the editor waits, and it waits before there is
      * anything to be responsive about.  By the first time this loop checks,
@@ -289,7 +295,7 @@ static void ck_rexx_pump(ck_app *app)
     rm->rm_Action  = RXCOMM | RXFF_RESULT;
 
     /* FindPort and PutMsg must be one atomic step: the port can vanish
-     * between them if clamiga exits. */
+     * between them if amilisp exits. */
     Forbid();
     port = FindPort((STRPTR)app->clamiga_port);
     if (port != NULL)
@@ -306,7 +312,7 @@ static void ck_rexx_pump(ck_app *app)
         ck_menu_update(app);
         doc = ck_doc_active(app);
         if (doc != NULL)
-            ck_message(doc, "clamiga is not running (port %s is gone)",
+            ck_message(doc, "amilisp is not running (port %s is gone)",
                        app->clamiga_port);
         return;
     }
@@ -316,7 +322,7 @@ static void ck_rexx_pump(ck_app *app)
 
 /*
  * Make sure a port is known before queuing a command.  When DOC is given and
- * none is, the spec's launch-if-missing offers to start clamiga; a quiet
+ * none is, the spec's launch-if-missing offers to start amilisp; a quiet
  * caller (DOC NULL) just fails.  Returns 1 when a command may be queued.
  */
 static int32_t ck_rexx_connect(ck_app *app, ck_doc *doc)
@@ -326,13 +332,13 @@ static int32_t ck_rexx_connect(ck_app *app, ck_doc *doc)
 
     if (doc != NULL) {
         if (MUI_Request(app->app, doc->win, 0, "clamacs", "_Start|_Cancel",
-                        "No clamiga ARexx port was found.\n"
-                        "Start clamiga in its own console window?") != 1)
+                        "No amilisp ARexx port was found.\n"
+                        "Start amilisp in its own console window?") != 1)
             return 0;
     }
     if (!ck_rexx_launch(app)) {
         if (doc != NULL)
-            ck_message(doc, "Cannot start clamiga");
+            ck_message(doc, "Cannot start amilisp");
         return 0;
     }
     return 1;
@@ -516,7 +522,7 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
     switch (kind) {
     case CK_REQ_PING:
         if (doc != NULL)
-            ck_message(doc, "clamiga answers on %s", app->clamiga_port);
+            ck_message(doc, "amilisp answers on %s", app->clamiga_port);
         break;
 
     case CK_REQ_VERSION:
@@ -564,7 +570,7 @@ static void ck_rexx_dispatch(ck_app *app, ck_request *req, int32_t rc,
         ck_intro_reply(app, doc, kind, ck_request_subject(req), orig_rc, text);
         break;
 
-    /* --- phase 3: the REPL.  These replies only say whether clamiga took
+    /* --- phase 3: the REPL.  These replies only say whether amilisp took
      * the command; the output, the read requests and the values come in
      * through the editor's own port (rexxport.c -> repl.c). */
     case CK_REQ_REPL_ATTACH:

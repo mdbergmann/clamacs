@@ -6,8 +6,8 @@
  * balance, and what comes back arrives as commands at the editor's OWN
  * ARexx port -- OUTPUT as it is printed, READLINE when the form reads from
  * standard input, RESULT with the values and the package for the next
- * prompt (rexxport.c hands them over).  The other end is clamiga's REPL
- * thread, lib/dev-repl.lisp in cl-amiga; specs/clamacs-ide.md, phase 3,
+ * prompt (rexxport.c hands them over).  The other end is amilisp's REPL
+ * thread, lib/dev-repl.lisp in AmiLisp; specs/clamacs-ide.md, phase 3,
  * has the protocol and the reason it is two-way: MUI answers an ARexx
  * command the moment the hook returns, so the editor can hold no reply
  * until the user has typed.
@@ -140,7 +140,7 @@ static void ck_repl_note(ck_doc *doc, const char *fmt, ...)
     ck_repl_append(doc, line);
 }
 
-/* clamiga's *command-package* moved: a buffer eval that follows must not
+/* amilisp's *command-package* moved: a buffer eval that follows must not
  * assume the port is still where it last put it. */
 static void ck_repl_wire_package(ck_app *app, const char *package)
 {
@@ -556,7 +556,7 @@ int32_t ck_repl_allow_command(ck_doc *doc, int16_t command)
 }
 
 /* ------------------------------------------------------------------ *
- * What clamiga sends
+ * What amilisp sends
  * ------------------------------------------------------------------ */
 
 void ck_repl_output(ck_app *app, const char *text)
@@ -591,7 +591,7 @@ void ck_repl_readline(ck_app *app)
     doc->prompt_start = end;
     doc->input_start  = end;
     ck_doc_set_cursor_index(doc, end);
-    ck_message(doc, "clamiga is reading a line: type it and press RET");
+    ck_message(doc, "amilisp is reading a line: type it and press RET");
 }
 
 void ck_repl_result(ck_app *app, int32_t rc, const char *package,
@@ -734,7 +734,7 @@ void ck_repl_reply(ck_app *app, ck_doc *doc, uint16_t kind, int32_t rc,
 
     case CK_REQ_REPL_EVAL:
         if (rc != CK_RC_OK && doc != NULL) {
-            /* Refused: the REPL thread is gone (clamiga restarted) or
+            /* Refused: the REPL thread is gone (amilisp restarted) or
              * still busy. */
             if (strstr(text, "no REPL attached") != NULL)
                 app->repl_attached = 0;
@@ -807,14 +807,14 @@ void ck_repl_disconnected(ck_app *app)
     doc->repl_reading = 0;
     doc->prompt_start = -1;
     doc->input_start  = -1;
-    ck_repl_note(doc, "clamiga is gone (it is attached again when it comes back)");
+    ck_repl_note(doc, "amilisp is gone (it is attached again when it comes back)");
     ck_repl_prompt(doc);
 }
 
 /* The port is back (ck_rexx_find_port saw it appear).  A REPL window that
  * lost its thread gets a new one without being asked: the transcript
  * says so, and the next RET at the prompt or C-c C-c in a buffer just
- * works.  A fresh clamiga has no REPL thread, so this is an attach, not a
+ * works.  A fresh amilisp has no REPL thread, so this is an attach, not a
  * resume -- the old session's history is gone with the old process. */
 void ck_repl_reconnected(ck_app *app)
 {
@@ -822,7 +822,7 @@ void ck_repl_reconnected(ck_app *app)
 
     if (doc == NULL || app->repl_attached || app->repl_attaching)
         return;
-    ck_repl_note(doc, "clamiga is back on %s", app->clamiga_port);
+    ck_repl_note(doc, "amilisp is back on %s", app->clamiga_port);
     ck_repl_attach(doc);
 }
 

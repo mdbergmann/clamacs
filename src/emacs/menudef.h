@@ -29,10 +29,10 @@ typedef enum {
     CK_MENU_ALWAYS = 0,
     CK_MENU_DOC_CHANGED,    /* the active document has unsaved changes */
     CK_MENU_DOC_HAS_PATH,   /* ... has a file behind it */
-    CK_MENU_CONNECTED,      /* a clamiga port is known */
+    CK_MENU_CONNECTED,      /* an amilisp port is known */
     CK_MENU_NOT_CONNECTED,
     CK_MENU_REPL_WINDOW,    /* the active document is the REPL window */
-    CK_MENU_DEBUGGING,      /* clamiga's REPL thread is parked in the debugger */
+    CK_MENU_DEBUGGING,      /* amilisp's REPL thread is parked in the debugger */
     CK_MENU_DIAGNOSTICS,    /* the error list is not empty */
     CK_MENU_CAN_POP         /* `M-.' has been used: there is a place to go back to */
 } ck_menu_rule;

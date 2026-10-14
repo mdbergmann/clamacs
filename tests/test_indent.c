@@ -115,7 +115,7 @@ TEST(multi_line_string_is_left_alone)
 TEST(unknown_def_form_is_treated_as_a_definer)
 {
     /* A project's own `define-...' macro indents sensibly before phase 2 can
-     * ask clamiga where its &body starts. */
+     * ask amilisp where its &body starts. */
     ASSERT_EQ_INT(indent_of_line_with("(define-widget bar baz\n  body)\n", "body"), 2);
     ASSERT_EQ_INT(indent_of_line_with("(define-widget bar\n    baz)\n", "baz"), 4);
 }

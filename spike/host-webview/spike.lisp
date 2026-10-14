@@ -1,11 +1,11 @@
-;;;; spike.lisp -- can clamiga drive a webview window with CodeMirror in it?
+;;;; spike.lisp -- can amilisp drive a webview window with CodeMirror in it?
 ;;;;
 ;;;; The round trip under test: JS -> Lisp (webview_bind callback into a
 ;;;; ffi:make-callback closure), Lisp -> JS (webview_eval), and a synchronous
 ;;;; answer to the JS promise (webview_return).
 ;;;;
-;;;;   clamiga --non-interactive --load spike.lisp            interactive
-;;;;   clamiga --non-interactive --load spike.lisp -- auto    unattended:
+;;;;   amilisp --non-interactive --load spike.lisp            interactive
+;;;;   amilisp --non-interactive --load spike.lisp -- auto    unattended:
 ;;;;      the page reports ready, Lisp inserts text and injects C-x, the
 ;;;;      key comes back through the binding, Lisp terminates the loop.
 
@@ -106,7 +106,7 @@
     ;; Lisp -> JS: an edit, then a synthetic Emacs key that must come back.
     (js-eval "cmInsert(~a)" (js-string "(+ 1 2) "))
     (js-eval "simulateKey(\"x\", {ctrlKey: true})"))
-  "Hello from clamiga -- keys go to Lisp first")
+  "Hello from amilisp -- keys go to Lisp first")
 
 (defun on-key (key ctrl alt meta shift point len)
   (incf *keys-seen*)

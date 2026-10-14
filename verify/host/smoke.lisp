@@ -1,7 +1,7 @@
 ;;;; smoke.lisp -- the host frontend's ground, exercised end to end
 ;;;; (specs/clamacs-host.md, phase H0).
 ;;;;
-;;;;   clamiga --non-interactive --load verify/host/smoke.lisp
+;;;;   amilisp --non-interactive --load verify/host/smoke.lisp
 ;;;;
 ;;;; Unattended: the window opens on build/host-frontend/page.html, the
 ;;;; page reports clamacsReady through a binding, Lisp makes a document

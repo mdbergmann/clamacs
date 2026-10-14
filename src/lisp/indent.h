@@ -10,7 +10,7 @@
  * and `(foo bar\n     baz)' alike.
  *
  * The table is data, so phase 2 can extend it with &body positions asked
- * from clamiga rather than guessed here.
+ * from amilisp rather than guessed here.
  *
  * Pure C: no MUI, no OS types.  Same buffer contract as sexp.h -- offset 0
  * must be outside any string and any comment.

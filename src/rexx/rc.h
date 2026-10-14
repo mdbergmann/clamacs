@@ -3,8 +3,8 @@
  *
  * These values are not arbitrary and they are not ours: ARexx aborts a macro
  * when a command's return code reaches FAILAT, which defaults to 10.  That
- * is why clamiga puts warnings at 5 (a style warning must not kill an editor
- * macro) and errors at 10 (a failed load must).  See cl-amiga's
+ * is why amilisp puts warnings at 5 (a style warning must not kill an editor
+ * macro) and errors at 10 (a failed load must).  See AmiLisp's
  * lib/dev-commands.lisp, which defines the other end of this contract.
  *
  * Its own header because both halves of the ARexx client need it -- the

@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Split in two because Lisp mode is the only mode the editor has, and the
 ;;;; commands that only make sense with a Lisp reader behind them (sexp
-;;;; motion, indentation, everything that talks to clamiga) belong to it
+;;;; motion, indentation, everything that talks to amilisp) belong to it
 ;;;; rather than to every buffer.  The state machine consults the local map
 ;;;; first, so a non-Lisp buffer still gets the whole global table.
 ;;;;
@@ -63,7 +63,7 @@
     ;; handling, which is exactly what an unbound key gets.
     ("TAB" indent-for-tab-command) ("RET" newline-and-indent)
     ("C-M-\\" indent-region)
-    ;; talking to clamiga
+    ;; talking to amilisp
     ("C-c C-k" clamacs-load-buffer) ("C-c C-l" clamacs-load-file)
     ("C-c C-c" clamacs-eval-defun) ("C-x C-e" clamacs-eval-last-sexp)
     ("C-c C-r" clamacs-eval-region) ("C-c C-e" clamacs-eval-expression)
@@ -81,7 +81,7 @@
     ("C-c M-m" clamacs-macroexpand)
     ;; the REPL thread: SLIME's interrupt key in a source buffer
     ("C-c C-b" clamacs-interrupt)
-    ;; the inspector: SLIME's key, a form evaluated in clamiga
+    ;; the inspector: SLIME's key, a form evaluated in amilisp
     ("C-c I" clamacs-inspect)))
 
 ;;; Laid over the Lisp map for the REPL window.  RET sends the input (or,

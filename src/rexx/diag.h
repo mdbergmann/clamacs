@@ -1,7 +1,7 @@
 /*
- * diag.h -- parsing clamiga's replies into a diagnostic list.
+ * diag.h -- parsing amilisp's replies into a diagnostic list.
  *
- * clamiga renders diagnostics as `file:line: SEVERITY: message' followed by
+ * amilisp renders diagnostics as `file:line: SEVERITY: message' followed by
  * a `N error(s), M warning(s)' summary (lib/dev-commands.lisp, %RENDER-DIAG).
  * The editor turns those lines into rows in the error list window, where
  * selecting one jumps to the file and line.
@@ -46,7 +46,7 @@ typedef struct {
     int32_t  warnings;
     int32_t  summary_seen;
 
-    /* Markers clamiga appends. */
+    /* Markers amilisp appends. */
     int32_t  truncated;   /* the reply hit *MAX-RESULT-LENGTH* */
     int32_t  aborted;     /* a reader error took the rest of the file with it */
 

@@ -1,7 +1,7 @@
-;;;; test-replmsg.lisp -- the commands clamiga's REPL thread sends to the
+;;;; test-replmsg.lisp -- the commands amilisp's REPL thread sends to the
 ;;;; editor, and the lines of the debugger's and inspector's replies: the
 ;;;; cases of tests/test_replmsg.c and tests/test_dbgmsg.c.  The strings are
-;;;; what cl-amiga's tests/test_dev_commands.sh shows the other end sending
+;;;; what AmiLisp's tests/test_dev_commands.sh shows the other end sending
 ;;;; (`OUTPUT hello', `RESULT 0 CL-USER' with the value on the next line,
 ;;;; `0: dbg-fn  <file>:27', `ARG0 = 3', `CONS 1 2'), so the two ends are
 ;;;; pinned to one wire format from both sides.

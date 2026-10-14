@@ -572,11 +572,11 @@ int32_t ck_sexp_current_package(const char *buf, int32_t len, int32_t pos,
 }
 
 /* ------------------------------------------------------------------ *
- * Phase 2: what to ask clamiga about
+ * Phase 2: what to ask amilisp about
  * ------------------------------------------------------------------ */
 
 /* Whether the atom at [S,E) could name an operator.  Numbers, keywords and
- * character literals cannot, and asking clamiga about `1' or `:key' would
+ * character literals cannot, and asking amilisp about `1' or `:key' would
  * only fill the arglist cache with misses. */
 static int32_t sx_operator_like(const char *buf, int32_t s, int32_t e)
 {

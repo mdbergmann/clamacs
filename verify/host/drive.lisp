@@ -3,16 +3,16 @@
 ;;;; verify/realamiga/drive.rexx transcribed leg by leg, the same OK lines
 ;;;; and the same wants, minus what only an Amiga has (ARexx ports,
 ;;;; sendkey's raw keys, ENVARC:) -- each such leg is an INFO line here,
-;;;; not a silent gap.  The Lisp the legs talk to is a SECOND clamiga
-;;;; process: the editor starts it (`Start clamiga', the TCP transport of
+;;;; not a silent gap.  The Lisp the legs talk to is a SECOND amilisp
+;;;; process: the editor starts it (`Start amilisp', the TCP transport of
 ;;;; phase H5) on the binary it runs on, so the integration,
 ;;;; introspection, REPL, debugger and inspector legs run against a
-;;;; separate clamiga, and the own-Lisp leg switches to the editor itself
+;;;; separate amilisp, and the own-Lisp leg switches to the editor itself
 ;;;; and back, as drive.rexx's phase 5 does on the Amiga.  The editor
-;;;; stops that clamiga at its own exit; run-drive.sh checks its log.
+;;;; stops that amilisp at its own exit; run-drive.sh checks its log.
 ;;;;
-;;;;   clamiga --non-interactive --load verify/host/drive.lisp -- main
-;;;;   clamiga --non-interactive --load verify/host/drive.lisp -- second
+;;;;   amilisp --non-interactive --load verify/host/drive.lisp -- main
+;;;;   amilisp --non-interactive --load verify/host/drive.lisp -- second
 ;;;;
 ;;;; MAIN drives the editor verify/host/run-drive.sh started on sample.lisp
 ;;;; and quits it; SECOND talks to the second editor the script starts
@@ -666,7 +666,7 @@ off a variable."
       (fail "THEMES Nobody gave ~A" *result*))
   ;; A theme of the drive's own, defined and loaded in the init file:
   ;; the editor takes it up at once when the file is loaded the way
-  ;; RUN loads it (the port's LOAD verb is clamiga's, not the editor's),
+  ;; RUN loads it (the port's LOAD verb is amilisp's, not the editor's),
   ;; and the second editor comes up in it
   (write-file *rc-file* (format nil ";; the drive's init file~%(define-theme :drive-theme (:inherits :one-dark :label \"Drive Theme\")~%  :keyword \"#ff9900\")~%(load-theme :drive-theme)~%"))
   (cmd (format nil "EVAL (clamacs::load-init-file ~S)" *rc-file*))
@@ -1054,7 +1054,7 @@ cursor's line marked only when nothing is selected."
   (let ((before *result*) (answer "") (last "") (n 0))
     (cmd "EVAL clamacs-eval-last-sexp")
     ;; The first eval attaches the REPL, which loads dev-repl into the
-    ;; clamiga the editor started.
+    ;; amilisp the editor started.
     (dotimes (i 240)
       (pause 25)
       (setq n (1+ i))
@@ -1073,12 +1073,12 @@ cursor's line marked only when nothing is selected."
       (fail "after the buffer eval the active window is ~A" *result*))
   (cmd "MENU clamacs-eval-defun STATE")
   (if (string= *result* "enabled")
-      (ok "the Clamiga menu woke up with the port")
+      (ok "the AmiLisp menu woke up with the port")
       (fail "Eval Defun with a port is ~A" *result*))
   (cmd "MENU run-lisp STATE")
   (if (string= *result* "disabled")
-      (ok "Start clamiga is dimmed while connected")
-      (fail "Start clamiga while connected is ~A" *result*))
+      (ok "Start amilisp is dimmed while connected")
+      (fail "Start amilisp while connected is ~A" *result*))
 
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (cmd "STATUS")
@@ -1091,7 +1091,7 @@ cursor's line marked only when nothing is selected."
     (if (search "2 error(s)" diags)
         (ok "clamacs-load-buffer reported ~A" diags)
         (fail "load-buffer diagnostics were ~A" diags)))
-  ;; What the load printed (clamiga's own report of the first error) came
+  ;; What the load printed (amilisp's own report of the first error) came
   ;; back in the reply's log and went into the REPL transcript, under the
   ;; reply's `; loading' line; the buffer kept the focus.
   (cmd "EVAL (let ((repl (clamacs::repl-doc clamacs::*editor*))) (and repl (clamacs::doc-text repl 0 (clamacs::doc-end repl))))")
@@ -1271,7 +1271,7 @@ cursor's line marked only when nothing is selected."
         (ok "C-g took the list down")
         (fail "after C-g the page reports ~A" *result*))
     (cmd "KEY C-M-i")
-    ;; The candidates come from clamiga: the prompt opens with its reply.
+    ;; The candidates come from amilisp: the prompt opens with its reply.
     (if (string/= (wait-echo "Complete:" 40) "")
         (ok "C-M-i prompted again")
         (progn (cmd "STATUS")
@@ -1380,8 +1380,8 @@ cursor's line marked only when nothing is selected."
         (cmd (format nil "GOTOLINE ~D" (+ p 2)))
         (let ((l (get-line)))
           (if (and y (string= l "NIL"))
-              (ok "the REPL runs in a clamiga of its own: no CLAMACS package there")
-              (fail "(find-package :clamacs) at the clamiga REPL gave ~A (cursor ~A)" l y))))
+              (ok "the REPL runs in an amilisp of its own: no CLAMACS package there")
+              (fail "(find-package :clamacs) at the amilisp REPL gave ~A (cursor ~A)" l y))))
       (cmd "EVAL end-of-buffer"))
 
     ;; IN-PACKAGE moves the prompt.
@@ -1450,7 +1450,7 @@ cursor's line marked only when nothing is selected."
     (if (string= *result* "enabled")
         (ok "the Debugger item woke up with the debugger")
         (fail "the Debugger item while debugging is ~A" *result*))
-    (info "clamiga's own view (RESTARTS, BACKTRACE over its port) is the editor's own image here; not asked")
+    (info "amilisp's own view (RESTARTS, BACKTRACE over its port) is the editor's own image here; not asked")
     ;; The dock's debugger panel: open on level 1 with frame 0 selected
     ;; and its locals in, on both sides of the page boundary.
     (check-panels '(:debugger "the debugger panel") "open level 1" "\"debugger\":{\"open\":true,\"level\":1,")
@@ -1613,26 +1613,26 @@ cursor's line marked only when nothing is selected."
   (check-panels '(:dock "the REPL tab") "open height" "\"dock\":{\"open\":true,\"shown\":\"doc"))
 
 (defun leg-start-clamiga ()
-  "`Start clamiga': the editor starts a second clamiga on the binary it
+  "`Start amilisp': the editor starts a second amilisp on the binary it
 runs on, the token in the child's environment, and connects to it."
   (cmd "MENU clamacs-eval-defun STATE")
   (if (string= *result* "disabled")
-      (ok "the Clamiga menu is dimmed while no clamiga is connected")
-      (fail "Eval Defun without a clamiga is ~A" *result*))
+      (ok "the AmiLisp menu is dimmed while no amilisp is connected")
+      (fail "Eval Defun without an amilisp is ~A" *result*))
   (cmd "MENU run-lisp STATE")
   (if (string= *result* "enabled")
-      (ok "Start clamiga is live while no clamiga is connected")
-      (fail "Start clamiga without a clamiga is ~A" *result*))
-  ;; The pick returns once the clamiga's port is up (the launch waits for
+      (ok "Start amilisp is live while no amilisp is connected")
+      (fail "Start amilisp without an amilisp is ~A" *result*))
+  ;; The pick returns once the amilisp's port is up (the launch waits for
   ;; its port file), or with the reason it is not.
   (cmd "MENU run-lisp")
   (cmd "STATUS")
-  (if (string= *result* "Started clamiga")
-      (ok "Start clamiga started a clamiga: ~A" *result*)
-      (fail "Start clamiga said ~A" *result*))
+  (if (string= *result* "Started amilisp")
+      (ok "Start amilisp started an amilisp: ~A" *result*)
+      (fail "Start amilisp said ~A" *result*))
   (cmd "EVAL (clamacs::tcp-transport-launched (clamacs::wire-home (clamacs::editor-wire clamacs::*editor*)))")
   (if (result-is "T")
-      (ok "the wire's home transport knows it started that clamiga")
+      (ok "the wire's home transport knows it started that amilisp")
       (fail "the transport's launched flag is ~A" *result*))
   (cmd "EVAL (clamacs::wire-port-name (clamacs::editor-wire clamacs::*editor*))")
   (if (and (= *rc* 0) (search "\"127.0.0.1:" *result*))
@@ -1640,27 +1640,27 @@ runs on, the token in the child's environment, and connects to it."
       (fail "the wire's port name is ~A" *result*))
   (cmd "MENU run-lisp STATE")
   (if (string= *result* "disabled")
-      (ok "Start clamiga is dimmed once connected")
-      (fail "Start clamiga while connected is ~A" *result*))
+      (ok "Start amilisp is dimmed once connected")
+      (fail "Start amilisp while connected is ~A" *result*))
   ;; The token went through the child's environment: no file of the
   ;; launch is left, and its log is where the editor said.
-  (if (and (null (probe-file (concatenate 'string *dir* "clamacs-clamiga.lisp")))
-           (null (probe-file (concatenate 'string *dir* "clamacs-clamiga-port"))))
+  (if (and (null (probe-file (concatenate 'string *dir* "clamacs-amilisp.lisp")))
+           (null (probe-file (concatenate 'string *dir* "clamacs-amilisp-port"))))
       (ok "the launch left no preamble and no port file behind")
       (fail "the launch's files are still under ~A" *dir*))
-  (if (probe-file (concatenate 'string *dir* "clamacs-clamiga.log"))
-      (ok "the started clamiga logs to ~Aclamacs-clamiga.log" *dir*)
-      (fail "no clamacs-clamiga.log under ~A" *dir*)))
+  (if (probe-file (concatenate 'string *dir* "clamacs-amilisp.log"))
+      (ok "the started amilisp logs to ~Aclamacs-amilisp.log" *dir*)
+      (fail "no clamacs-amilisp.log under ~A" *dir*)))
 
 (defun leg-own-lisp ()
   ;; The editor's own Lisp (drive.rexx's phase 5): Talk to the Editor
   ;; Itself switches the wire over -- the REPL window is detached from
-  ;; clamiga and attached to the EDITOR's image, loading dev-repl into the
+  ;; amilisp and attached to the EDITOR's image, loading dev-repl into the
   ;; editor on this first attach, so the wait is long -- and a form at that
-  ;; prompt runs in the editor; Talk to clamiga switches back.
+  ;; prompt runs in the editor; Talk to amilisp switches back.
   (cmd "MENU clamacs-connect-self STATE")
   (if (string= *result* "enabled")
-      (ok "Talk to the Editor Itself is live while talking to clamiga")
+      (ok "Talk to the Editor Itself is live while talking to amilisp")
       (fail "Talk to the Editor Itself is ~A" *result*))
   (cmd "MENU clamacs-connect-self")
   (let ((echo (wait-echo "REPL attached to the editor itself" 360)))
@@ -1696,9 +1696,9 @@ runs on, the token in the child's environment, and connects to it."
   (cmd "MENU clamacs-connect-clamiga")
   (let ((echo (wait-echo "REPL attached to 127.0.0.1:" 120)))
     (if (string/= echo "")
-        (ok "Talk to clamiga moved the REPL back: ~A" echo)
+        (ok "Talk to amilisp moved the REPL back: ~A" echo)
         (progn (cmd "STATUS")
-               (fail "the REPL did not come back to clamiga; the echo area says ~A" *result*))))
+               (fail "the REPL did not come back to amilisp; the echo area says ~A" *result*))))
   (cmd "EVAL end-of-buffer"))
 
 (defun window-state (needle &optional (ticks 20))
@@ -1794,7 +1794,7 @@ requester asked.  Then wait for the port to go."
 
 ;;; The ASDF menu: a project written here (an .asd and two files below
 ;;; it), the source opened, and Load System picked as the mouse would --
-;;; clamiga finds ASDF, loads the definition above the file and the system,
+;;; amilisp finds ASDF, loads the definition above the file and the system,
 ;;; on the REPL thread, and the editor stays answering meanwhile.
 (defun leg-systems ()
   (let* ((root (scratch "drivesys/"))

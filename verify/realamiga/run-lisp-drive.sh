@@ -2,7 +2,7 @@
 # run-lisp-drive.sh [040|020] [PHASE]
 #
 # The Lisp editor's acceptance run (specs/clamacs-lisp.md): boot AmigaOS 3
-# in FS-UAE, start a clamiga with its development port, start the editor
+# in FS-UAE, start an amilisp with its development port, start the editor
 # from lisp/clamacs.lisp on sample.lisp, and drive it through its own
 # ARexx port with verify/realamiga/drive.rexx -- the SAME script that
 # gates the C editor, told with `PHASE n' which legs the port has reached
@@ -26,7 +26,7 @@
 # -- the raw OS names the editor never used -- fails a leg here.  The
 # verdict also wants the shed report and the saved image.
 #
-# Result: build/amiga/clamacs-test.log, build/amiga/clamiga.log (the
+# Result: build/amiga/clamacs-test.log, build/amiga/amilisp.log (the
 # target's output), build/amiga/lisp-drive-editor.log (the editor's own).
 set -u
 
@@ -47,11 +47,11 @@ HARD_TIMEOUT="${HARD_TIMEOUT:-2400}"
 
 [ -f "$CONFIG" ] || { echo "no config $CONFIG"; exit 1; }
 [ -x "$FSUAE" ] || { echo "FS-UAE not found at $FSUAE"; exit 1; }
-[ -f "$SUPER/build/cross/clamiga" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
+[ -f "$SUPER/build/cross/amilisp" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
 [ -f "$ROOT/build/cross/sendkey" ] || { echo "sendkey missing: make -C $ROOT -f Makefile.cross amiga"; exit 1; }
 
 mkdir -p "$ROOT/build/amiga" "$SUPER/build/amiga"
-rm -f "$LOG" "$ROOT/build/amiga/clamiga.log" "$ROOT/build/amiga/lisp-drive-editor.log"
+rm -f "$LOG" "$ROOT/build/amiga/amilisp.log" "$ROOT/build/amiga/lisp-drive-editor.log"
 # A fixture the run saves gets a .uaem pinning the Amiga date it saw; a
 # later host edit would then load the cached old contents (run-fs-uae.sh).
 rm -f "$HERE"/*.uaem "$ROOT"/build/amiga/*.uaem
@@ -64,7 +64,7 @@ rm -f "$ROOT/build/amiga/clamacs.img"
 if [ "$IMAGE" = 1 ]; then
 	SAVE_IMAGE='echo "=== saving the editor image ===" >>build/amiga/clamacs-test.log
 cd Clamacs:build/amiga
-CLAmiga:build/cross/clamiga --no-userinit --no-image --heap 8M --non-interactive --load Clamacs:lisp/load.lisp --load Clamacs:scripts/save-editor-image.lisp >>clamacs-test.log
+AmiLisp:build/cross/amilisp --no-userinit --no-image --heap 8M --non-interactive --load Clamacs:lisp/load.lisp --load Clamacs:scripts/save-editor-image.lisp >>clamacs-test.log
 cd Clamacs:
 IF NOT EXISTS build/amiga/clamacs.img
   echo "FAIL the editor image was not saved" >>build/amiga/clamacs-test.log
@@ -79,7 +79,7 @@ else
 fi
 
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
-; run-lisp-drive boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
+; run-lisp-drive boot-override -- consumed by AmiLisp:verify/realamiga/call-on-ustartup
 cd Clamacs:
 echo "=== run start ===" >build/amiga/clamacs-test.log
 echo "leg $LEG phase $PHASE" >>build/amiga/clamacs-test.log
@@ -97,17 +97,17 @@ IF EXISTS T:clamacs-exit.log
   delete >NIL: T:clamacs-exit.log
 ENDIF
 $SAVE_IMAGE
-; The target clamiga first, with its development port (see boot-override).
-cd CLAmiga:
-run >Clamacs:build/amiga/clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
+; The target amilisp first, with its development port (see boot-override).
+cd AmiLisp:
+run >Clamacs:build/amiga/amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive --load Clamacs:verify/realamiga/arexx-host.lisp
 C:Wait 5
-; The editor: a second clamiga running lisp/clamacs.lisp (or the image) on the sample.
-run >Clamacs:build/amiga/lisp-drive-editor.log build/cross/clamiga --no-userinit --heap 8M --non-interactive $EDITOR -- Clamacs:verify/realamiga/sample.lisp
+; The editor: a second amilisp running lisp/clamacs.lisp (or the image) on the sample.
+run >Clamacs:build/amiga/lisp-drive-editor.log build/cross/amilisp --no-userinit --heap 8M --non-interactive $EDITOR -- Clamacs:verify/realamiga/sample.lisp
 cd Clamacs:
-SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx PHASE $PHASE LISP CLAmiga:build/cross/clamiga >>build/amiga/clamacs-test.log
-echo "=== clamiga.log ===" >>build/amiga/clamacs-test.log
-IF EXISTS build/amiga/clamiga.log
-  type build/amiga/clamiga.log >>build/amiga/clamacs-test.log
+SYS:Rexxc/RX Clamacs:verify/realamiga/drive.rexx PHASE $PHASE LISP AmiLisp:build/cross/amilisp >>build/amiga/clamacs-test.log
+echo "=== amilisp.log ===" >>build/amiga/clamacs-test.log
+IF EXISTS build/amiga/amilisp.log
+  type build/amiga/amilisp.log >>build/amiga/clamacs-test.log
 ENDIF
 echo "=== status ===" >>build/amiga/clamacs-test.log
 status >>build/amiga/clamacs-test.log
@@ -169,7 +169,7 @@ if grep -q '^FAIL' "$LOG"; then
 fi
 grep -q 'DRIVE-DONE' "$LOG" || { echo "=== FAIL: drive.rexx did not finish ==="; exit 1; }
 grep -q '=== run end ===' "$LOG" || { echo "=== FAIL: the boot script did not finish ==="; exit 1; }
-grep -q 'clamiga ARexx port is' "$LOG" || { echo "=== FAIL: clamiga did not come up; the integration leg was skipped ==="; exit 1; }
+grep -q 'amilisp ARexx port is' "$LOG" || { echo "=== FAIL: amilisp did not come up; the integration leg was skipped ==="; exit 1; }
 if [ "$IMAGE" = 1 ]; then
 	grep -q 'SAVE-IMAGE: shed [0-9]* binding table' "$LOG" || { echo "=== FAIL: the editor image was saved without shedding the binding tables ==="; exit 1; }
 	grep -q 'Image saved to "clamacs.img"' "$LOG" || { echo "=== FAIL: the editor image was not saved ==="; exit 1; }
@@ -177,7 +177,7 @@ fi
 
 want_phase2='OK clamacs ARexx port is CLAMACS
 OK the editor keeps its stores on this launch
-OK the target clamiga keeps its stores on this launch
+OK the target amilisp keeps its stores on this launch
 OK GETFILE
 OK GOTOLINE 3 put the cursor
 OK EVAL end-of-buffer
@@ -312,17 +312,17 @@ OK a second editor is at
 OK a second editor came up where the file said
 OK the second editor quit
 OK the snapshot files are gone again
-OK the Clamiga menu woke up with the port
-OK Start clamiga is dimmed while connected
+OK the AmiLisp menu woke up with the port
+OK Start amilisp is dimmed while connected
 OK Next Error woke up with the diagnostics
 OK Clear Transcript is live in the REPL window
 OK the Debugger item woke up with the debugger
 OK the Debugger item dimmed with the restart
-OK Talk to the Editor Itself is live while talking to clamiga
+OK Talk to the Editor Itself is live while talking to amilisp
 OK the REPL moved to the editor itself
 OK (room) at the self REPL reported the editor heap
 OK IN-EDITOR ran on the MUI task and named the active window
-OK Talk to clamiga moved the REPL back'
+OK Talk to amilisp moved the REPL back'
 
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then

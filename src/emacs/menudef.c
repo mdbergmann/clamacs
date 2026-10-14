@@ -62,9 +62,9 @@ static const ck_menu_entry ck_menu_table[] = {
     ITEM(CK_CMD_MACROEXPAND_1,           CK_MENU_CONNECTED,     "Macroexpand Once",    "C-c RET", 1),
     ITEM(CK_CMD_MACROEXPAND,             CK_MENU_CONNECTED,     "Macroexpand All",     "C-c M-m", 1),
 
-    TITLE("Clamiga"),
+    TITLE("AmiLisp"),
     ITEM(CK_CMD_CONNECT,                 CK_MENU_ALWAYS,        "Connect",             NULL,      0),
-    ITEM(CK_CMD_RUN_LISP,                CK_MENU_NOT_CONNECTED, "Start clamiga",       NULL,      0),
+    ITEM(CK_CMD_RUN_LISP,                CK_MENU_NOT_CONNECTED, "Start amilisp",       NULL,      0),
     BAR,
     ITEM(CK_CMD_LOAD_BUFFER,             CK_MENU_CONNECTED,     "Load Buffer",         "C-c C-k", 1),
     ITEM(CK_CMD_LOAD_FILE,               CK_MENU_CONNECTED,     "Load File...",        "C-c C-l", 1),

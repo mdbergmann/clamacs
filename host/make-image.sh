@@ -1,9 +1,9 @@
 #!/bin/sh
 # make-image.sh -- save the host editor's heap image and prove it starts
-# the editor (specs/clamacs-host.md, phase H6): the host twin of cl-amiga's
+# the editor (specs/clamacs-host.md, phase H6): the host twin of AmiLisp's
 # verify/realamiga/make-editor-image.sh.
 #
-#   host/make-image.sh            under ../build/host/clamiga
+#   host/make-image.sh            under ../build/host/amilisp
 #   CLAMIGA=... names another binary
 #
 # Heap images are per-build, so the binary that will start from the image
@@ -24,8 +24,8 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 super=$(cd "$root/.." && pwd)
-clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
-[ -x "$clamiga" ] || { echo "no clamiga at $clamiga (make host in the superproject)" >&2; exit 1; }
+clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
+[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)" >&2; exit 1; }
 
 "$here/build.sh" >/dev/null || exit 1
 out="$root/build/host-frontend"

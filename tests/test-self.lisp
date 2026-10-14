@@ -71,7 +71,7 @@ editor's task: the REPL thread may be waiting on it to take a RESULT."
         (self-pump box (lambda () (not (mp:thread-alive-p thread))))))))
 
 (defmacro with-self ((doc tr wire box) &body body)
-  "A wired fake source buffer on a fake clamiga (TR, found on CLAMIGA), and
+  "A wired fake source buffer on a fake amilisp (TR, found on CLAMIGA), and
 BOX standing in for the editor's task of the self transport that
 `clamacs-connect-self' makes.  Everything is stopped afterwards."
   `(multiple-value-bind (,doc ,tr ,wire) (make-wired-fake "(twice 21)|")
@@ -132,7 +132,7 @@ BOX standing in for the editor's task of the self transport that
     (is (self-pump box (lambda () (wire-version wire))))
     (is (search (lisp-implementation-type) (wire-version wire)))
     (is-equal (fake-transport-sent tr) '())
-    ;; And back: clamiga's transport, found on its port again.
+    ;; And back: amilisp's transport, found on its port again.
     (run-command doc 'clamacs-connect-clamiga)
     (is (not (wire-self-p wire)))
     (is (eq (wire-transport wire) (wire-home wire)))
@@ -140,7 +140,7 @@ BOX standing in for the editor's task of the self transport that
     (is (null (wire-version wire)))
     (is-equal (fake-last-message doc) "Now talking to CLAMIGA")
     (run-command doc 'clamacs-connect-clamiga)
-    (is-equal (fake-last-message doc) "Already talking to clamiga")))
+    (is-equal (fake-last-message doc) "Already talking to amilisp")))
 
 (deftest connect-self-without-a-maker-says-so
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
@@ -152,7 +152,7 @@ BOX standing in for the editor's task of the self transport that
 
 (deftest a-switch-waits-for-the-reply-in-flight
   (with-self (doc tr wire box)
-    ;; A request to clamiga is out when the switch is asked for.
+    ;; A request to amilisp is out when the switch is asked for.
     (run-command doc 'clamacs-connect)
     (is-equal (fake-last-sent tr) "VERSION")
     (run-command doc 'clamacs-connect-self)
@@ -162,7 +162,7 @@ BOX standing in for the editor's task of the self transport that
     (run-command doc 'clamacs-connect-clamiga)
     (is-equal (fake-last-message doc) "A switch is already under way")
     ;; The reply goes to the side that was asked; then the switch.
-    (fake-deliver tr 0 "clamiga 0.11 on AmigaOS")
+    (fake-deliver tr 0 "amilisp 0.11 on AmigaOS")
     (is (wire-self-p wire))
     (is (null (wire-version wire)))))
 
@@ -174,7 +174,7 @@ BOX standing in for the editor's task of the self transport that
              (lambda (editor) (make-self-transport editor (self-box-call box)))))
       (unwind-protect
            (progn
-             ;; clamiga's REPL thread is told to stop before anything moves.
+             ;; amilisp's REPL thread is told to stop before anything moves.
              (run-command doc 'clamacs-connect-self)
              (is-equal (fake-last-sent tr) "REPL-DETACH")
              (is (not (wire-self-p wire)))
@@ -186,7 +186,7 @@ BOX standing in for the editor's task of the self transport that
              (is (self-pump box (lambda () (and (repl-session-attached (repl-session editor))
                                                 (repl-idle-p editor)))))
              (is (search "; REPL attached to the editor itself" (transcript repl)))
-             ;; And back: the self REPL thread is detached, clamiga's attached.
+             ;; And back: the self REPL thread is detached, amilisp's attached.
              (run-command doc 'clamacs-connect-clamiga)
              (is (self-pump box (lambda () (not (wire-self-p wire)))))
              (is (not (self-repl-running-p)))
@@ -215,7 +215,7 @@ BOX standing in for the editor's task of the self transport that
     (let ((repl (self-repl doc box)))
       (is repl)
       (is (search "REPL attached to the editor itself" (transcript repl)))
-      (is-equal (fake-last-sent tr) nil)   ; nothing went to clamiga
+      (is-equal (fake-last-sent tr) nil)   ; nothing went to amilisp
       (self-input repl box "(+ 1 2)")
       (is (search (lines "(+ 1 2)" "3" "CL-USER> ") (transcript repl)))
       ;; The same image: the REPL thread's SETQ is this process's variable.
@@ -225,7 +225,7 @@ BOX standing in for the editor's task of the self transport that
       ;; ROOM reports this heap, streamed into the transcript.
       (self-input repl box "(room)")
       (is (search "Heap:" (transcript repl)))
-      ;; IN-PACKAGE moves the prompt, as on clamiga.
+      ;; IN-PACKAGE moves the prompt, as on amilisp.
       (self-input repl box "(in-package :clamacs)")
       (is (search "CLAMACS> " (transcript repl)))
       (self-input repl box "(in-package :cl-user)"))))

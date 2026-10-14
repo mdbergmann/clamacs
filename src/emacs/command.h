@@ -86,7 +86,7 @@
     X(INDENT_FOR_TAB_COMMAND,   "indent-for-tab-command")                     \
     X(NEWLINE_AND_INDENT,       "newline-and-indent")                         \
     X(INDENT_REGION,            "indent-region")                              \
-    /* Lisp mode: talking to clamiga */                                       \
+    /* Lisp mode: talking to amilisp */                                       \
     X(LOAD_BUFFER,              "clamacs-load-buffer")                        \
     X(LOAD_FILE,                "clamacs-load-file")                          \
     X(COMPILE_FILE,             "clamacs-compile-file")                       \
@@ -101,7 +101,7 @@
     X(RUN_LISP,                 "run-lisp")                                   \
     /* Lisp mode: introspection (phase 2).  `complete-symbol' keeps its Emacs
      * name because it is the same key doing the same thing; the rest carry
-     * the editor's prefix, as the other clamiga commands do. */              \
+     * the editor's prefix, as the other amilisp commands do. */              \
     X(COMPLETE_SYMBOL,          "complete-symbol")                            \
     X(ARGLIST,                  "clamacs-arglist")                            \
     X(EDIT_DEFINITION,          "clamacs-edit-definition")                    \
@@ -112,7 +112,7 @@
     X(MACROEXPAND,              "clamacs-macroexpand")                        \
     /* The REPL window (phase 3).  `clamacs-repl' opens or raises it from
      * any document; the `clamacs-repl-*' commands act in it; the interrupt
-     * reaches clamiga's REPL thread from anywhere. */                        \
+     * reaches amilisp's REPL thread from anywhere. */                        \
     X(REPL,                     "clamacs-repl")                               \
     X(REPL_RETURN,              "clamacs-repl-return")                        \
     X(REPL_PREVIOUS_INPUT,      "clamacs-repl-previous-input")                \

@@ -81,7 +81,7 @@
   (is-equal (command-completions "eval-zzz") '(() "")))
 
 (deftest clamacs-commands-are-namespaced
-  ;; The commands that talk to clamiga carry the editor's own prefix, so
+  ;; The commands that talk to amilisp carry the editor's own prefix, so
   ;; `M-x' completion separates them from ordinary editing commands.
   (is (>= (length (complete-command "clamacs-")) 8))
   (is (find-command "clamacs-load-buffer"))

@@ -24,7 +24,7 @@
  *
  * A ck_key is a 16-bit key code in the low half and modifier bits in the
  * high half.  Codes 0x01..0xFF are ISO-8859-1 characters (the editor is
- * 8-bit, matching clamiga's narrow strings); codes from CK_KEY_UP up name
+ * 8-bit, matching amilisp's narrow strings); codes from CK_KEY_UP up name
  * the keys that have no character.
  * ------------------------------------------------------------------ */
 

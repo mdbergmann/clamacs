@@ -1,15 +1,15 @@
 ;;;; transport-self.lisp -- the wire to the editor's own Lisp.
 ;;;;
-;;;; The editor is a clamiga instance of its own, so everything the wire
-;;;; asks of clamiga -- the REPL, the debugger, the inspector, arglist,
+;;;; The editor is an amilisp instance of its own, so everything the wire
+;;;; asks of amilisp -- the REPL, the debugger, the inspector, arglist,
 ;;;; completion, describe, apropos, `M-.', LOAD -- can be asked of the
 ;;;; editor instead: `M-x clamacs-connect-self' switches the wire over to
 ;;;; this transport (wire.lisp, WIRE-SWITCH), `M-x clamacs-connect-clamiga'
 ;;;; switches it back.  That is how the running editor is hacked and
-;;;; measured from inside, with the tools already written for clamiga and
+;;;; measured from inside, with the tools already written for amilisp and
 ;;;; no second implementation of any of them.
 ;;;;
-;;;; The command set is clamiga's own: EXT.DEV (lib/dev-commands.lisp and,
+;;;; The command set is amilisp's own: EXT.DEV (lib/dev-commands.lisp and,
 ;;;; on the first REPL-ATTACH, lib/dev-repl.lisp) is already in the editor,
 ;;;; because its ARexx port is served from the same table.  What changes is
 ;;;; only the route:
@@ -276,7 +276,7 @@ editor cannot talk to itself.")
                  (doc-message doc "Switching to the editor itself ..."))))))))
 
 (define-command clamacs-connect-clamiga (doc arg)
-  "Point the REPL, the evals and introspection at clamiga again."
+  "Point the REPL, the evals and introspection at amilisp again."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
@@ -285,11 +285,11 @@ editor cannot talk to itself.")
                (doc-message doc "A switch is already under way")
                (doc-beep doc))
               ((eq (wire-transport wire) home)
-               (doc-message doc "Already talking to clamiga"))
+               (doc-message doc "Already talking to amilisp"))
               (t
                (wire-switch wire home)
                (unless (eq (wire-transport wire) home)
-                 (doc-message doc "Switching back to clamiga ..."))))))))
+                 (doc-message doc "Switching back to amilisp ..."))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The editor's memory

@@ -2,7 +2,7 @@
 #define CLAMACS_TEST_H
 
 /*
- * Minimal test framework for clamacs, in the style of cl-amiga's tests/test.h.
+ * Minimal test framework for clamacs, in the style of AmiLisp's tests/test.h.
  *
  *   TEST(name) { ASSERT(...); ASSERT_EQ_INT(...); }
  *   int main(void) { RUN(name); REPORT(); }

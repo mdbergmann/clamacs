@@ -6,7 +6,7 @@
 ;;;; task at priority 0 that is busy starves it.  Each window's count,
 ;;;; against the count of the quietest window, is the share left over.
 ;;;;
-;;;;   clamiga --no-userinit --heap 4M --non-interactive --load cpumeter.lisp
+;;;;   amilisp --no-userinit --heap 4M --non-interactive --load cpumeter.lisp
 ;;;;
 ;;;; writes one line per WINDOW seconds to *LOG* -- "<seconds-since-start>
 ;;;; <count> <note>", the note being the contents of T:cpumeter-note when

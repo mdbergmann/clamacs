@@ -6,7 +6,7 @@
 ;;;; MUI, and only it touches the editor's state.
 ;;;;
 ;;;;   - The CLIENT thread takes one command at a time from TRANSPORT-SEND,
-;;;;     performs the blocking AMIGA.AREXX:SEND to clamiga's port, and posts
+;;;;     performs the blocking AMIGA.AREXX:SEND to amilisp's port, and posts
 ;;;;     the reply into the MUI task's mailbox.  That is what keeps the
 ;;;;     editor live during a long LOAD without an asynchronous send in the
 ;;;;     runtime; the wire's queue keeps one request in flight, as the
@@ -16,8 +16,8 @@
 ;;;;     the MUI task's answer.  The first instance's port is CLAMACS: the
 ;;;;     application object has no MUIA_Application_Base, so MUI opens no
 ;;;;     port of its own and the C editor's CLAMACS.1 quirk is gone.
-;;;;   - Starting clamiga when no port is found is the C editor's recipe:
-;;;;     the binary this editor runs on (PROGDIR:clamiga), through an
+;;;;   - Starting amilisp when no port is found is the C editor's recipe:
+;;;;     the binary this editor runs on (PROGDIR:amilisp), through an
 ;;;;     Execute script that sets the 128K stack, in a console of its own,
 ;;;;     with a --load file that opens the development port -- no quoting
 ;;;;     on the DOS command line, where `*' and `"' have meanings of their
@@ -34,11 +34,11 @@
 (in-package :clamacs)
 
 ;;; ------------------------------------------------------------------
-;;; Finding clamiga
+;;; Finding amilisp
 ;;; ------------------------------------------------------------------
 
 ;;; The same scan the shipped macros do: the base name, then .1 .. .9, so a
-;;; second clamiga instance is reachable.
+;;; second amilisp instance is reachable.
 (defparameter *clamiga-port-names*
   (cons "CLAMIGA" (loop for i from 1 to 9 collect (format nil "CLAMIGA.~D" i))))
 
@@ -86,7 +86,7 @@ one opened its own."
                    (prog1 (arexx-transport-pending tr)
                      (setf (arexx-transport-pending tr) nil)))))
         ;; A job pending at the quit still goes out: it is the REPL-DETACH
-        ;; the closing REPL window queued, and clamiga's REPL thread must be
+        ;; the closing REPL window queued, and amilisp's REPL thread must be
         ;; stopped rather than left sending to a port about to vanish.
         (when (and (arexx-transport-quit tr) (null job))
           (return))
@@ -108,38 +108,42 @@ one opened its own."
                               :wait nil))))))))
 
 ;;; ------------------------------------------------------------------
-;;; Starting clamiga
+;;; Starting amilisp
 ;;; ------------------------------------------------------------------
 
-;;; clamiga needs a 128K stack, and the stack a shell runs a command on is
+;;; amilisp needs a 128K stack, and the stack a shell runs a command on is
 ;;; inherited from whatever started the editor -- from Workbench the 8000
 ;;; bytes of an icon -- so the launch is an Execute script that says Stack.
 (defconstant +launch-stack-size+ 131072)
 (defconstant +launch-wait-seconds+ 20)
 
 (defun own-clamiga-command ()
-  "The clamiga this editor runs on -- PROGDIR:clamiga as an absolute path,
-since the shell System() starts has a PROGDIR: of its own -- or a bare
-`clamiga' for one on the shell path."
+  "The amilisp this editor runs on -- PROGDIR:amilisp as an absolute path,
+since the shell System() starts has a PROGDIR: of its own (PROGDIR:clamiga,
+the runtime's name before 0.12, is probed second so an old installation
+still starts) -- or a bare `amilisp' for one on the shell path."
   (let ((dir (dos:get-program-dir)))
     (or (and (/= dir 0)
              (let ((buf (ffi:alloc-foreign 512)))
                (unwind-protect
-                    (ffi:with-foreign-string (name "clamiga")
-                      (and (/= 0 (dos:name-from-lock dir buf 512))
-                           (dos:add-part buf name 512)
-                           (let ((lock (dos:lock buf dos:+access-read+)))
-                             (when (/= lock 0)
-                               (dos:un-lock lock)
-                               (ffi:foreign-to-string buf)))))
+                    (dolist (binary '("amilisp" "clamiga") nil)
+                      (let ((found
+                              (ffi:with-foreign-string (name binary)
+                                (and (/= 0 (dos:name-from-lock dir buf 512))
+                                     (dos:add-part buf name 512)
+                                     (let ((lock (dos:lock buf dos:+access-read+)))
+                                       (when (/= lock 0)
+                                         (dos:un-lock lock)
+                                         (ffi:foreign-to-string buf)))))))
+                        (when found (return found))))
                  (ffi:free-foreign buf))))
-        "clamiga")))
+        "amilisp")))
 
 (defun launch-file-names ()
   "The script and the preamble, named after this task so two editors (or
 two rapid launches) never share a file."
   (let ((tag (format nil "~8,'0X" (ffi:foreign-pointer-address (exec:find-task nil)))))
-    (values (format nil "T:clamacs-start-clamiga-~A" tag)
+    (values (format nil "T:clamacs-start-amilisp-~A" tag)
             (format nil "T:clamacs-port-~A.lisp" tag))))
 
 (defmethod transport-launch ((tr arexx-transport))
@@ -156,8 +160,8 @@ two rapid launches) never share a file."
         (delete-quietly preamble)
         (delete-quietly script)
         (return-from transport-launch nil))
-      ;; clamiga gets a console of its own: it is a REPL in its own right.
-      (let ((console (ffi:with-foreign-string (s "CON:0/40/640/220/clamiga/CLOSE/WAIT")
+      ;; amilisp gets a console of its own: it is a REPL in its own right.
+      (let ((console (ffi:with-foreign-string (s "CON:0/40/640/220/amilisp/CLOSE/WAIT")
                        (dos:open s dos:+mode-oldfile+))))
         (when (zerop console)
           (delete-quietly preamble)
@@ -167,7 +171,7 @@ two rapid launches) never share a file."
                     (mui:with-tags (tags dos:+sys-input+ console
                                          dos:+sys-output+ 0
                                          dos:+sys-asynch+ t
-                                         dos:+np-name+ "clamiga"
+                                         dos:+np-name+ "amilisp"
                                          dos:+np-stack-size+ +launch-stack-size+)
                       (dos:system-tag-list cmd tags)))))
           (when (/= rc 0)
@@ -179,7 +183,7 @@ two rapid launches) never share a file."
           ;; The port appears once the preamble has run.  This is the one
           ;; place the editor waits, and it waits before there is anything
           ;; to be responsive about.  By then Execute has read the script
-          ;; and clamiga the preamble, so both can go.
+          ;; and amilisp the preamble, so both can go.
           (let ((found nil))
             (dotimes (i (* 5 +launch-wait-seconds+))
               (sleep 0.2)
@@ -206,7 +210,7 @@ two rapid launches) never share a file."
 (defun register-port-verbs ()
   "Every verb of port.lisp as an EXT.DEV command -- the same table the
 handler thread dispatches from, so the editor's port is served exactly as
-clamiga's.  EVAL replaces EXT.DEV's own: on this port it names an editor
+amilisp's.  EVAL replaces EXT.DEV's own: on this port it names an editor
 command, or a form for the editor's Lisp when it starts with `('.  The
 REPL thread's OUTPUT, RESULT and DEBUGGER (repl.lisp) are RAW verbs: a
 chunk of output keeps its blanks and its newline, where every other
@@ -232,7 +236,7 @@ argument is trimmed."
 (defun stop-wire (editor)
   "The port first (its handler thread may be parked in CALL-IN-EDITOR;
 the closed mailbox has answered it), then the client thread.  A client
-still inside a send to a clamiga that never replies cannot be helped:
+still inside a send to an amilisp that never replies cannot be helped:
 that is the ARexx rule, and the editor does not wait for it forever."
   (handler-case (amiga.arexx:stop)
     (error (e) (report-error editor e)))

@@ -99,7 +99,7 @@ a HISTORY, is what M-p and M-n walk and where the answer is recorded."
   (doc-open-minibuffer doc label initial))
 
 (defun prompt-for-form (doc label continuation)
-  "Prompt for a Lisp form to hand to clamiga; the answer is not a command
+  "Prompt for a Lisp form to hand to amilisp; the answer is not a command
 name, so no completion, and the command history keeps it."
   (prompt doc label continuation
           :history (editor-command-history (doc-editor doc))))
@@ -278,7 +278,7 @@ cycles through the candidates instead."
            (multiple-value-bind (matches common shown) (funcall completer text)
              (cond ((eq matches :handled)
                     ;; The completer did the whole job itself -- the symbol
-                    ;; completer, whose candidates come from clamiga later
+                    ;; completer, whose candidates come from amilisp later
                     ;; and go through MINIBUFFER-OFFER when they are many.
                     )
                    ((null matches)

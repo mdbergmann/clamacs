@@ -1,7 +1,7 @@
 ;;; spike.lisp -- phase 0 of specs/clamacs-lisp.md: is a TextEditor.mcc
 ;;; subclass whose Emacs layer is Lisp fast enough?
 ;;;
-;;; A clamiga program.  It creates a private subclass of the installed
+;;; An amilisp program.  It creates a private subclass of the installed
 ;;; TextEditor.mcc with AMIGA.MUI:CREATE-CUSTOM-CLASS, registers its OWN
 ;;; RAWKEY handler node at priority 1 in MUIM_Setup (the phase-1 fact: a
 ;;; bare MUIM_HandleEvent override on a TextEditor subclass is never
@@ -16,7 +16,7 @@
 ;;; Clamacs:build/amiga/spike-buffer.txt, so the run can check that what
 ;;; was typed is what arrived.  spike/run-spike.sh drives it in FS-UAE.
 ;;;
-;;;   clamiga --heap 8M --non-interactive --load Clamacs:spike/spike.lisp
+;;;   amilisp --heap 8M --non-interactive --load Clamacs:spike/spike.lisp
 
 (require "amiga/mui")
 (require "amiga/exec")

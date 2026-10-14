@@ -2,7 +2,7 @@
 ** ARexx port: the phase-1 editor checks, the window-position snapshot
 ** (with a second editor started to see the restore), then the integration
 ** checks, the phase-2 introspection leg, the phase-3 REPL leg and the
-** phase-4 debugger and inspector leg against the same clamiga.
+** phase-4 debugger and inspector leg against the same amilisp.
 **
 ** This is the shape specs/clamacs-ide.md asks for under Testing: a script
 ** that talks to the editor the way a user's macro would, so the run is
@@ -28,7 +28,7 @@ OPTIONS FAILAT 21
 ** The checks themselves are the same either way -- the script talks to a
 ** port and reads a log, so it does not know which language answered.
 **
-** `LISP <clamiga>' names the clamiga binary the snapshot leg starts its
+** `LISP <amilisp>' names the amilisp binary the snapshot leg starts its
 ** SECOND editor with (the Lisp editor, from Clamacs:lisp/clamacs.lisp);
 ** without it the second editor is the C binary, Clamacs:build/amiga/clamacs. */
 MODE = ''
@@ -85,12 +85,12 @@ SAY 'OK clamacs ARexx port is' PORT
 
 ADDRESS VALUE PORT
 
-/* A launch of clamiga whose CPU loses memory stores cannot be gated: the
+/* A launch of amilisp whose CPU loses memory stores cannot be gated: the
 ** Apollo 68080 drops a store depending on where the data hunk landed, so
 ** about every second launch on a Vampire fails somewhere at random
-** (cl-amiga's README "CPU store self-test"; it was finding (C) of the
+** (AmiLisp's README "CPU store self-test"; it was finding (C) of the
 ** phase-3 hardware run, two days of hunting a bug that was not there).
-** clamiga's startup self-test puts :CPU-LOST-STORES on *FEATURES* on such
+** amilisp's startup self-test puts :CPU-LOST-STORES on *FEATURES* on such
 ** a launch; asked here, before anything is driven, so the log names the
 ** cause and no leg below is chased.  Relaunch and rerun.  The C editor
 ** answers `unknown command' to a form and has no such CPU under it. */
@@ -168,7 +168,7 @@ ELSE
 ** answered: the C editor's EVAL looks a command name up and nothing else
 ** (src/rexxport.c, ck_rx_eval_func), so a form there is simply an unknown
 ** command.  It is frozen and will not grow the door, so the legs run only
-** for the Lisp editor -- the run that passed `LISP <clamiga>'. */
+** for the Lisp editor -- the run that passed `LISP <amilisp>'. */
 IF CLAMIGA ~= '' THEN DO
 'EVAL (progn (princ "printed") 42)'
 IF RC = 0 & POS('printed', RESULT) > 0 & POS('42', RESULT) > 0 THEN
@@ -882,10 +882,10 @@ ELSE
 END /* PHASE >= 5: the window snapshot */
 
 /* ------------------------------------------------------------------ *
-** The point of the whole thing: driving a real clamiga.
+** The point of the whole thing: driving a real amilisp.
 ** ------------------------------------------------------------------ */
 
-/* clamiga was started before the editor, but it compiles the port's library
+/* amilisp was started before the editor, but it compiles the port's library
 ** from source before the port exists, and on an emulated 14 MHz 68020 that
 ** can outlast the editor leg above.  Two minutes of patience here is what
 ** separates "slow" from "never came up". */
@@ -903,15 +903,15 @@ DO i = 1 TO 240 WHILE LISP = ''
 END
 
 IF LISP = '' THEN DO
-    SAY 'INFO no clamiga port -- skipping the integration leg'
+    SAY 'INFO no amilisp port -- skipping the integration leg'
     SAY 'DRIVE-DONE'
     EXIT 0
 END
-SAY 'OK clamiga ARexx port is' LISP
+SAY 'OK amilisp ARexx port is' LISP
 
-/* The target clamiga is a launch of its own, with a data hunk of its
+/* The target amilisp is a launch of its own, with a data hunk of its
 ** own: the same check as for the editor (see the top). */
-CALL checkstores LISP, 'the target clamiga'
+CALL checkstores LISP, 'the target amilisp'
 
 /* C-x C-e: evaluate the last expression before point.  The spec's
 ** acceptance criterion is literally "C-x C-e on (+ 1 2) echoes 3". */
@@ -924,11 +924,11 @@ BEFORE = RESULT
 
 /* The client never blocks on a reply, so the answer arrives later -- poll
 ** the echo area for it rather than assuming it is already there.  A buffer
-** eval runs on clamiga's REPL thread, and this is the first one: the
+** eval runs on amilisp's REPL thread, and this is the first one: the
 ** editor opens the REPL window and attaches it first, which loads dev-repl
-** in clamiga -- gray streams and CLOS, compiled from source when the FASL
+** in amilisp -- gray streams and CLOS, compiled from source when the FASL
 ** cache is cold, so minutes on an emulated 68020 -- and the echo area
-** says other things (`clamiga found on ...') on the way.  So wait for the
+** says other things (`amilisp found on ...') on the way.  So wait for the
 ** value itself, and generously: a cold cache took the first attach past
 ** the 180 s the REPL leg budgets (2026-09-14), the value arriving only
 ** after that leg had given up. */
@@ -957,19 +957,19 @@ IF RESULT = 'eval.lisp' THEN
 ELSE
     SAY 'FAIL after the buffer eval the active window is' RESULT
 
-/* That request found the port, so the Clamiga menu is live now and Start
-** clamiga is not. */
+/* That request found the port, so the AmiLisp menu is live now and Start
+** amilisp is not. */
 IF PHASE >= 5 THEN DO
 'MENU clamacs-eval-defun STATE'
 IF RESULT = 'enabled' THEN
-    SAY 'OK the Clamiga menu woke up with the port'
+    SAY 'OK the AmiLisp menu woke up with the port'
 ELSE
     SAY 'FAIL Eval Defun with a port is' RESULT
 'MENU run-lisp STATE'
 IF RESULT = 'disabled' THEN
-    SAY 'OK Start clamiga is dimmed while connected'
+    SAY 'OK Start amilisp is dimmed while connected'
 ELSE
-    SAY 'FAIL Start clamiga while connected is' RESULT
+    SAY 'FAIL Start amilisp while connected is' RESULT
 END
 
 /* C-c C-k on a file with two errors.  The reply comes back with rc 10, so
@@ -982,7 +982,7 @@ BEFORE = RESULT
 'EVAL clamacs-load-buffer'
 
 /* And while that load is in flight, the editor must still answer.  This is
-** the "stays responsive while clamiga compiles" criterion: if the client
+** the "stays responsive while amilisp compiles" criterion: if the client
 ** waited for its reply, this GETFILE would not come back until the load
 ** finished. */
 'GETFILE'
@@ -1006,7 +1006,7 @@ IF POS('2 error(s)', DIAGS) > 0 THEN
 ELSE
     SAY 'FAIL load-buffer diagnostics were' DIAGS
 
-/* What the load printed (clamiga's own report of the first error) came
+/* What the load printed (amilisp's own report of the first error) came
 ** back in the reply's log and went into the REPL transcript, under the
 ** reply's `; loading' line; the buffer kept the focus.  The Lisp editor
 ** only, which LISP names: the C editor's EVAL takes a command name, not a
@@ -1067,12 +1067,12 @@ ELSE
     SAY 'FAIL previous-error CursorY=' RESULT
 
 /* ------------------------------------------------------------------ *
-** Phase 2: introspection.  Six questions to clamiga -- ARGLIST, COMPLETE,
+** Phase 2: introspection.  Six questions to amilisp -- ARGLIST, COMPLETE,
 ** SOURCE-LOCATION, DESCRIBE, APROPOS, MACROEXPAND -- each asked the way a
 ** user asks it (the SLIME keys, through the keymaps), and each answered
 ** later, so every check waits for the answer to land where it belongs: the
 ** echo area, the buffer, the cursor, or a scratch window.  intro.lisp holds
-** the definitions the answers are about; it is loaded first, since clamiga
+** the definitions the answers are about; it is loaded first, since amilisp
 ** can only describe what it has.  The WaitXxx procedures are at the end.
 ** ------------------------------------------------------------------ */
 
@@ -1094,7 +1094,7 @@ ELSE
 ** has rested inside `(twice 21)' for a moment, the editor asks ARGLIST
 ** twice on its own and caches the answer.  The status line cannot be read
 ** through the port, but the cache shows: `M-x clamacs-arglist' answers from
-** it at once, where a cold cache would have to ask clamiga and answer later.
+** it at once, where a cold cache would have to ask amilisp and answer later.
 ** An immediate echo is therefore the proof that the idle path ran. */
 'GOTOLINE 24'
 'TE POSITION SOL'
@@ -1161,7 +1161,7 @@ ELSE
 /* C-c C-d d describes the symbol at point: the minibuffer opens with it
 ** filled in, RET accepts (KEY types into the minibuffer as the gadget
 ** would), and the description lands in a scratch window.  The docstring is
-** in it -- the compiler keeping docstrings was the cl-amiga half of this
+** in it -- the compiler keeping docstrings was the AmiLisp half of this
 ** phase. */
 'OPEN FILE' INTRO
 CALL pause 25
@@ -1266,7 +1266,7 @@ ELSE
 
 /* ------------------------------------------------------------------ *
 ** Phase 3: the REPL window.  C-c C-z opens *clamacs-repl* and attaches
-** clamiga's REPL thread to the editor's own port; from then on the
+** amilisp's REPL thread to the editor's own port; from then on the
 ** conversation is two-way -- the editor sends REPL-EVAL and gets OUTPUT,
 ** READLINE and RESULT back as commands at its port -- so every check here
 ** waits for text to land in the transcript.  The cursor is parked at the
@@ -1298,7 +1298,7 @@ END
 ELSE
     SAY 'FAIL C-c C-z gave window' RESULT
 
-/* The first attach loads dev-repl in clamiga -- gray streams and CLOS,
+/* The first attach loads dev-repl in amilisp -- gray streams and CLOS,
 ** compiled from source when the FASL cache is cold -- so the prompt can
 ** be minutes away on an emulated 68020. */
 LINE = WaitLine('CL-USER> ', 360)
@@ -1432,7 +1432,7 @@ ELSE
 /* The port's handler thread stays free while a form runs: an ARGLIST
 ** asked from a source buffer during (sleep 6) is answered inside it.
 ** twice-again has not been asked about before, so the answer has to come
-** from clamiga, not the cache; the call is typed at the end of intro.lisp
+** from amilisp, not the cache; the call is typed at the end of intro.lisp
 ** (not saved) because the file holds no call to it. */
 'INSERT (sleep 6)'
 'KEY RET'
@@ -1457,7 +1457,7 @@ ELSE
 
 /* ------------------------------------------------------------------ *
 ** Phase 4: the debugger and inspector windows.  The REPL was attached
-** with DEBUG, so an error at the prompt does not end the form: clamiga's
+** with DEBUG, so an error at the prompt does not end the form: amilisp's
 ** REPL thread parks on the erring stack and sends DEBUGGER 1, the editor
 ** opens its debugger window, asks for the backtrace and then for frame
 ** 0's locals, and echoes each step in the REPL's echo area -- the last
@@ -1633,7 +1633,7 @@ END
 'EVAL clamacs-repl'
 'EVAL end-of-buffer'
 
-/* The inspector: C-c I evaluates a form in clamiga and the window shows
+/* The inspector: C-c I evaluates a form in amilisp and the window shows
 ** the object and its numbered parts; a part descends, Back comes up.
 ** The inspector window takes the focus when it opens, so the REPL is
 ** raised again before each command typed by name. */
@@ -1676,17 +1676,17 @@ END
 
 /* ------------------------------------------------------------------ *
 ** The editor's own Lisp (the Lisp editor only: the C editor has no such
-** item).  Clamiga > Talk to the Editor Itself switches the wire over: the
-** REPL window is detached from clamiga and attached to the EDITOR's image
+** item).  AmiLisp > Talk to the Editor Itself switches the wire over: the
+** REPL window is detached from amilisp and attached to the EDITOR's image
 ** -- loading dev-repl into the editor on this first attach, so the wait
 ** is long -- and a form at that prompt runs in the editor.  (room) there
 ** reports the editor's heap, IN-EDITOR reaches the MUI task and answers
-** with the active window, and Talk to clamiga switches back.
+** with the active window, and Talk to amilisp switches back.
 ** ------------------------------------------------------------------ */
 IF CLAMIGA ~= '' & PHASE >= 5 THEN DO
 'MENU clamacs-connect-self STATE'
 IF RESULT = 'enabled' THEN
-    SAY 'OK Talk to the Editor Itself is live while talking to clamiga'
+    SAY 'OK Talk to the Editor Itself is live while talking to amilisp'
 ELSE
     SAY 'FAIL Talk to the Editor Itself is' RESULT
 'MENU clamacs-connect-self'
@@ -1734,10 +1734,10 @@ ELSE
 'MENU clamacs-connect-clamiga'
 ECHO = WaitEcho('REPL attached to CLAMIGA', 120)
 IF ECHO ~= '' THEN
-    SAY 'OK Talk to clamiga moved the REPL back:' ECHO
+    SAY 'OK Talk to amilisp moved the REPL back:' ECHO
 ELSE DO
     'STATUS'
-    SAY 'FAIL the REPL did not come back to clamiga; the echo area says' RESULT
+    SAY 'FAIL the REPL did not come back to amilisp; the echo area says' RESULT
 END
 'EVAL end-of-buffer'
 END /* CLAMIGA ~= '' & PHASE >= 5: the editor's own Lisp */
@@ -1754,7 +1754,7 @@ SAY 'DRIVE-DONE'
 EXIT 0
 
 /* ------------------------------------------------------------------ *
-** Waiting for an answer.  The editor never blocks on clamiga, so a command
+** Waiting for an answer.  The editor never blocks on amilisp, so a command
 ** that asks something returns before the answer exists; each of these polls
 ** the port twice a second until what it waits for is there, or TICKS
 ** half-seconds have passed.  A timeout returns '' (or 0), and the check
@@ -1838,7 +1838,7 @@ WaitCursorAt: PROCEDURE EXPOSE PORT
     END
     RETURN ''
 
-/* clamiga's own view of the debugger, for the log: the current level's
+/* amilisp's own view of the debugger, for the log: the current level's
 ** restarts and backtrace, asked over its port directly.  INFO lines only
 ** -- the checks are made through the editor -- but when one of those
 ** fails, this says which side got it wrong. */
@@ -1897,7 +1897,7 @@ FindLine: PROCEDURE EXPOSE PORT
     END
     RETURN 0
 
-/* Whether the clamiga behind PORT lost memory stores on this launch
+/* Whether the amilisp behind PORT lost memory stores on this launch
 ** (the 68080 defect, see the top): asks the port to evaluate a form.  A
 ** T ends the run with a FAIL that names the cause -- every leg after it
 ** would fail at random and mean nothing.  The C editor answers `unknown
@@ -1913,7 +1913,7 @@ checkstores: PROCEDURE
         RETURN
     END
     IF POS('LOST-STORES', RESULT) > 0 THEN DO
-        SAY 'FAIL' who 'is a launch that LOSES MEMORY STORES (clamiga''s startup self-test, the 68080 defect): this run is void, relaunch it and run again'
+        SAY 'FAIL' who 'is a launch that LOSES MEMORY STORES (amilisp''s startup self-test, the 68080 defect): this run is void, relaunch it and run again'
         SAY 'DRIVE-DONE'
         EXIT 10
     END

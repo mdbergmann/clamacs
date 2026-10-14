@@ -6,8 +6,8 @@
 # TMPDIR of the run's own (so its init file, its layout file and its port
 # files touch nothing of the user's), waits for its port, checks the port
 # files' modes, and runs verify/host/drive.lisp against the port -- the
-# same legs as drive.rexx, against a second clamiga the editor STARTS on
-# the binary it runs on (`Start clamiga', phase H5; the editor stops it
+# same legs as drive.rexx, against a second amilisp the editor STARTS on
+# the binary it runs on (`Start amilisp', phase H5; the editor stops it
 # again at its exit, which this script checks in its log) -- and which
 # quits the editor at the end.  Then a SECOND editor is started against the
 # layout file the drive wrote and the init file it left (a theme of the
@@ -15,9 +15,9 @@
 # the drive's `second' mode reads where it came up and what theme it shows
 # over ITS port and quits it.
 #
-#   verify/host/run-drive.sh            under ../build/host/clamiga
-#   GCSTRESS=1 verify/host/run-drive.sh under ../build/host-gcstress/clamiga
-#   MEMTRACK=1 verify/host/run-drive.sh under ../build/host-memtrack/clamiga
+#   verify/host/run-drive.sh            under ../build/host/amilisp
+#   GCSTRESS=1 verify/host/run-drive.sh under ../build/host-gcstress/amilisp
+#   MEMTRACK=1 verify/host/run-drive.sh under ../build/host-memtrack/amilisp
 #                                       (the superproject's `make test-memleak`
 #                                       build) with CLAMIGA_MEM_DIAG=1: both
 #                                       editors must end with every off-heap
@@ -30,10 +30,10 @@
 #                                       Clamacs.app bundle's launcher
 #                                       (host/make-app.sh, made first): the
 #                                       image, the page and the libraries
-#                                       beside the bundled binary, the clamiga
+#                                       beside the bundled binary, the amilisp
 #                                       it starts finding its lib/ there
 #   CLAMIGA=... names another binary (not with APP=1: the bundle's is the
-#   superproject's build/host/clamiga).
+#   superproject's build/host/amilisp).
 #
 # Result: build/host-frontend/drive/drive.log (the drive's OK/FAIL/INFO
 # lines and the script's own), editor-a.log, editor-b.log.  The verdict
@@ -48,20 +48,20 @@ super=$(cd "$root/.." && pwd)
 out=${CLAMACS_DRIVE_OUT:-"$root/build/host-frontend/drive"}
 
 if [ "${GCSTRESS:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-gcstress/clamiga"}
+    clamiga=${CLAMIGA:-"$super/build/host-gcstress/amilisp"}
     CLAMIGA_GC_STRESS=1
     export CLAMIGA_GC_STRESS
     factor=10
 elif [ "${MEMTRACK:-0}" = 1 ]; then
-    clamiga=${CLAMIGA:-"$super/build/host-memtrack/clamiga"}
+    clamiga=${CLAMIGA:-"$super/build/host-memtrack/amilisp"}
     CLAMIGA_MEM_DIAG=1
     export CLAMIGA_MEM_DIAG
     factor=1
 else
-    clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
+    clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
     factor=1
 fi
-[ -x "$clamiga" ] || { echo "no clamiga at $clamiga (make host in the superproject)"; exit 1; }
+[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
 
 "$root/host/build.sh" || exit 1
 # How an editor is started: from source, from the image, or through the
@@ -132,7 +132,7 @@ start_editor() {
     # $1 tmpdir, $2 log, $3 file
     if [ "${APP:-0}" = 1 ]; then
         # The launcher's own line (no --no-userinit: the bundle is what a
-        # user starts; the private HOME has no .clamigarc anyway).
+        # user starts; the private HOME has no .amilisprc anyway).
         HOME="$out/home" TMPDIR="$1" \
             "$launcher" "$3" </dev/null >"$2" 2>&1 &
     elif [ "${IMAGE:-0}" = 1 ]; then
@@ -226,27 +226,27 @@ if [ "${APP:-0}" = 1 ] || [ "${IMAGE:-0}" = 1 ]; then
 fi
 check_leaks "$out/editor-a.log" "the editor"
 
-# --- the clamiga the editor started, stopped again at its exit ---------
-started_log="$out/tmp-a/clamacs-clamiga.log"
+# --- the amilisp the editor started, stopped again at its exit ---------
+started_log="$out/tmp-a/clamacs-amilisp.log"
 if [ -f "$started_log" ]; then
     n=0
-    while ! grep -q '^; clamiga stopped' "$started_log"; do
+    while ! grep -q '^; amilisp stopped' "$started_log"; do
         if [ "$n" -ge 15 ]; then break; fi
         sleep 1
         n=$((n + 1))
     done
-    if grep -q '^; clamiga stopped' "$started_log"; then
-        echo "OK the clamiga the editor started stopped with the editor" >>"$log"
+    if grep -q '^; amilisp stopped' "$started_log"; then
+        echo "OK the amilisp the editor started stopped with the editor" >>"$log"
     else
-        echo "FAIL the clamiga the editor started did not stop within 15 s (clamacs-clamiga.log)" >>"$log"
+        echo "FAIL the amilisp the editor started did not stop within 15 s (clamacs-amilisp.log)" >>"$log"
     fi
     if grep -q '^ERROR' "$started_log"; then
-        echo "FAIL the started clamiga reported an error (clamacs-clamiga.log):" >>"$log"
+        echo "FAIL the started amilisp reported an error (clamacs-amilisp.log):" >>"$log"
         grep '^ERROR' "$started_log" >>"$log"
     fi
-    check_leaks "$started_log" "the started clamiga"
+    check_leaks "$started_log" "the started amilisp"
 else
-    echo "FAIL the editor started no clamiga (no $started_log)" >>"$log"
+    echo "FAIL the editor started no amilisp (no $started_log)" >>"$log"
 fi
 
 # --- the second editor, against the layout file the drive wrote --------
@@ -274,7 +274,7 @@ oks=$(grep -c '^OK' "$log")
 if [ "$fails" -ne 0 ]; then
     echo "=== FAIL: $fails FAIL line(s), $oks OK ==="
     echo "--- editor-a.log ---"; grep -v '^; Loading' "$out/editor-a.log"
-    [ -f "$out/tmp-a/clamacs-clamiga.log" ] && { echo "--- clamacs-clamiga.log ---"; grep -v '^; Loading' "$out/tmp-a/clamacs-clamiga.log"; }
+    [ -f "$out/tmp-a/clamacs-amilisp.log" ] && { echo "--- clamacs-amilisp.log ---"; grep -v '^; Loading' "$out/tmp-a/clamacs-amilisp.log"; }
     exit 1
 fi
 if ! grep -q '^DRIVE-DONE' "$log"; then

@@ -9,7 +9,7 @@
 ;;;; `when', `handler-case' and `(foo bar\n     baz)' alike.
 ;;;;
 ;;;; The table is data: DEFINE-INDENT adds to it at run time, so phase 2 can
-;;;; extend it with &body positions asked from clamiga rather than guessed
+;;;; extend it with &body positions asked from amilisp rather than guessed
 ;;;; here, and the user's init file can teach it a project's macros.
 ;;;;
 ;;;; A port of src/lisp/indent.c, answering exactly what it answers.  Pure:
@@ -195,7 +195,7 @@ stored, or NIL when there is no name to store.
     ;; An unknown `def...' is almost always a defining macro whose first two
     ;; arguments name the thing being defined.  Guessing 2 here is what
     ;; makes a project's own `define-foo' indent sensibly before phase 2 can
-    ;; ask clamiga for its real &body position.
+    ;; ask amilisp for its real &body position.
     (if (and (> (- end start) 3)
              (char= (ind-lower (schar name start)) #\d)
              (char= (ind-lower (schar name (+ start 1))) #\e)

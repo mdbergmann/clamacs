@@ -37,7 +37,7 @@
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
-# build/amiga/lisp-editor-clamiga.log (clamiga's own output),
+# build/amiga/lisp-editor-amilisp.log (amilisp's own output),
 # build/amiga/shots-<leg>/ (the screenshots).
 set -u
 
@@ -53,7 +53,7 @@ OUT="$ROOT/build/amiga"
 SHOTS="$OUT/shots-$LEG"
 RUNLOG="$OUT/lisp-editor-run.log"
 FSUAE="$SUPER/verify/realamiga/FS-UAE.app/Contents/MacOS/fs-uae"
-HOST="$SUPER/build/host/clamiga"
+HOST="$SUPER/build/host/amilisp"
 
 POLL=5
 SENTINEL_GRACE=15
@@ -63,7 +63,7 @@ HARD_TIMEOUT="${HARD_TIMEOUT:-2400}"
 [ -f "$CONFIG" ] || { echo "no config $CONFIG"; exit 1; }
 [ -x "$FSUAE" ] || { echo "FS-UAE not found at $FSUAE"; exit 1; }
 [ -x "$HOST" ] || { echo "build the host runtime first: make -C $SUPER host"; exit 1; }
-[ -f "$SUPER/build/cross/clamiga" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
+[ -f "$SUPER/build/cross/amilisp" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
 [ -f "$ROOT/build/cross/sendkey" ] || { echo "sendkey missing: make -C $ROOT -f Makefile.cross amiga"; exit 1; }
 
 mkdir -p "$OUT" "$SUPER/build/amiga" "$SHOTS"
@@ -88,7 +88,7 @@ TYPING=$(cat "$OUT/lisp-editor-typing")
 
 # The Amiga side's driver: load the editor, mark the window open, start
 # it on the program's arguments -- the file to save is passed after `--'
-# on clamiga's command line, the way the release launcher and a Workbench
+# on amilisp's command line, the way the release launcher and a Workbench
 # project icon hand files over (EXT:*COMMAND-LINE-ARGS*) -- and mark the
 # exit.  AmigaDOS makes `*' an escape inside quotes, so the forms go
 # through a file, never an --eval.  The ready marker carries what the
@@ -140,7 +140,7 @@ $FONT_FORM
 PRE
 
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
-; lisp-editor boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
+; lisp-editor boot-override -- consumed by AmiLisp:verify/realamiga/call-on-ustartup
 failat 21
 cd Clamacs:
 echo "=== run start ===" >build/amiga/lisp-editor-run.log
@@ -156,9 +156,9 @@ ENDIF
 ; when T:examples-done exists.
 delete >NIL: T:examples-done
 delete >NIL: T:screen-grab-ready
-run >build/amiga/screen-grab-run.log CLAmiga:build/cross/clamiga --no-userinit --heap 16M --non-interactive --load CLAmiga:verify/realamiga/screen-grab.lisp
-cd CLAmiga:
-run >Clamacs:build/amiga/lisp-editor-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/lisp-editor-driver.lisp -- Clamacs:build/amiga/lisp-editor-out.lisp
+run >build/amiga/screen-grab-run.log AmiLisp:build/cross/amilisp --no-userinit --heap 16M --non-interactive --load AmiLisp:verify/realamiga/screen-grab.lisp
+cd AmiLisp:
+run >Clamacs:build/amiga/lisp-editor-amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive --load Clamacs:build/amiga/lisp-editor-driver.lisp -- Clamacs:build/amiga/lisp-editor-out.lisp
 cd Clamacs:
 set n 0
 LAB waitready
@@ -207,9 +207,9 @@ echo "=== clamacs-exit.log ===" >>build/amiga/lisp-editor-run.log
 IF EXISTS T:clamacs-exit.log
   type T:clamacs-exit.log >>build/amiga/lisp-editor-run.log
 ENDIF
-echo "=== lisp-editor-clamiga.log ===" >>build/amiga/lisp-editor-run.log
-IF EXISTS build/amiga/lisp-editor-clamiga.log
-  type build/amiga/lisp-editor-clamiga.log >>build/amiga/lisp-editor-run.log
+echo "=== lisp-editor-amilisp.log ===" >>build/amiga/lisp-editor-run.log
+IF EXISTS build/amiga/lisp-editor-amilisp.log
+  type build/amiga/lisp-editor-amilisp.log >>build/amiga/lisp-editor-run.log
 ENDIF
 echo "=== lisp-editor-out.lisp ===" >>build/amiga/lisp-editor-run.log
 IF EXISTS build/amiga/lisp-editor-out.lisp
@@ -239,7 +239,7 @@ while kill -0 "$FSUAE_PID" 2>/dev/null; do
 	sleep "$POLL"
 	now=$(date +%s)
 	size=0; [ -f "$RUNLOG" ] && size=$(wc -c < "$RUNLOG" | tr -d ' ')
-	[ -f "$OUT/lisp-editor-clamiga.log" ] && size=$((size + $(wc -c < "$OUT/lisp-editor-clamiga.log" | tr -d ' ')))
+	[ -f "$OUT/lisp-editor-amilisp.log" ] && size=$((size + $(wc -c < "$OUT/lisp-editor-amilisp.log" | tr -d ' ')))
 	if [ "$size" != "$last_size" ]; then last_size=$size; last_change=$now; fi
 	if [ "$end_seen" -eq 0 ] && [ -f "$RUNLOG" ] && grep -q '=== run end ===' "$RUNLOG"; then end_seen=$now; fi
 	if [ "$end_seen" -ne 0 ] && [ $((now - end_seen)) -ge "$SENTINEL_GRACE" ]; then echo "=== run finished; quitting FS-UAE ==="; kill_fsuae; break; fi
@@ -277,7 +277,7 @@ if ! cmp -s "$OUT/lisp-editor-out.lisp" "$OUT/lisp-editor-expected.lisp"; then
 	diff "$OUT/lisp-editor-expected.lisp" "$OUT/lisp-editor-out.lisp"
 	exit 1
 fi
-exitlog=$(sed -n '/^=== clamacs-exit.log ===/,/^=== lisp-editor-clamiga.log ===/p' "$RUNLOG" | grep '^clamacs: exit')
+exitlog=$(sed -n '/^=== clamacs-exit.log ===/,/^=== lisp-editor-amilisp.log ===/p' "$RUNLOG" | grep '^clamacs: exit')
 if [ -z "$exitlog" ]; then
 	echo "=== FAIL: the editor wrote no exit log although its trace was on ==="
 	exit 1

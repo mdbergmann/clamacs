@@ -1,4 +1,4 @@
-;;;; diag.lisp -- parsing clamiga's replies.
+;;;; diag.lisp -- parsing amilisp's replies.
 ;;;;
 ;;;; A LOAD, COMPILE-FILE or EVAL over the wire answers with the machine-
 ;;;; readable rows first, one diagnostic per line --
@@ -9,7 +9,7 @@
 ;;;;   --- log ---
 ;;;;   ...whatever the command printed...
 ;;;;
-;;;; -- and cl-amiga's lib/dev-commands.lisp (%REPLY) is the specification
+;;;; -- and AmiLisp's lib/dev-commands.lisp (%REPLY) is the specification
 ;;;; of that shape.  This is the port of src/rexx/diag.c: the same rules,
 ;;;; the C test cases as the data of tests/test-diag.lisp.  The one trap is
 ;;;; that an Amiga path has colons of its own (`Work:src/foo.lisp', `Ram
@@ -23,7 +23,7 @@
 (defstruct (diagnostic (:constructor make-diagnostic
                            (severity file line text rendered)))
   severity     ; :ERROR, :WARNING or :NOTE
-  file         ; a path, or NIL for a diagnostic clamiga could not locate
+  file         ; a path, or NIL for a diagnostic amilisp could not locate
   line         ; 1-based, or 0 when there is none
   text         ; the message without the prefix
   rendered)    ; the whole line, for the error list
@@ -141,7 +141,7 @@ severity, or NIL."
 (defun parse-diagnostics (list text)
   "Add the diagnostics in TEXT, a whole reply, to LIST.  Returns how many
 were added.  Everything after the `--- log ---' marker is what the command
-PRINTED, for a human to read -- clamiga's own error reports in there begin
+PRINTED, for a human to read -- amilisp's own error reports in there begin
 with `ERROR: ' and must not become rows -- except the truncation marker,
 which %TRUNCATE appends to the whole reply, after the log.  The log's
 lines are kept verbatim (the truncation marker among them, so a reader

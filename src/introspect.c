@@ -1,18 +1,18 @@
 /*
- * introspect.c -- phase 2: what the editor asks clamiga about a symbol.
+ * introspect.c -- phase 2: what the editor asks amilisp about a symbol.
  *
- * Everything here is a question put to clamiga's port and a place for the
+ * Everything here is a question put to amilisp's port and a place for the
  * answer to land: the arglist of the operator at point goes to the status
  * line, completions go into the buffer or the minibuffer, a source location
  * moves the cursor, and DESCRIBE, APROPOS and MACROEXPAND open a scratch
- * window.  The questions are the six commands cl-amiga added for this phase
+ * window.  The questions are the six commands AmiLisp added for this phase
  * (lib/dev-commands.lisp); the editor adds no logic of its own to their
  * replies beyond parsing a `file:line'.
  *
  * Two rules from the ARexx client carry over.  Nothing here waits for a
  * reply: each request has a continuation in ck_intro_reply(), reached from
  * the input loop when the reply arrives.  And the idle timer never prompts:
- * a status-line lookup that found no clamiga port stays quiet, where a
+ * a status-line lookup that found no amilisp port stays quiet, where a
  * command the user typed may offer to start one.
  *
  * What the scanner side of this looks like is in lisp/sexp.c
@@ -122,7 +122,7 @@ static void ck_intro_cache_key(ck_doc *doc, const char *op, char *key, int32_t s
              doc->package[0] != '\0' ? doc->package : "CL-USER", op);
 }
 
-/* `(a &optional b)' from clamiga becomes `(foo a &optional b)' on the
+/* `(a &optional b)' from amilisp becomes `(foo a &optional b)' on the
  * status line: the operator is what the user is looking at. */
 static void ck_intro_render_arglist(const char *op, const char *reply,
                                     char *out, int32_t size)
@@ -197,7 +197,7 @@ int32_t ck_intro_arglist(ck_doc *doc, int32_t echo)
     ck_doc_send_package(doc, 0);
     if (ck_rexx_send(app, doc, echo ? CK_REQ_ARGLIST_ECHO : CK_REQ_ARGLIST,
                      "ARGLIST %s", op) < 0)
-        return echo;   /* the user declined to start clamiga: done */
+        return echo;   /* the user declined to start amilisp: done */
     if (!echo)
         doc->arglist_inflight++;
     return 1;
@@ -337,7 +337,7 @@ static void ck_intro_mini_apply(ck_doc *doc, const char *text)
 }
 
 /* Whether the candidates on hand answer for TEXT: they were fetched for a
- * prefix of it, and the list was not cut short by clamiga's cap (past the
+ * prefix of it, and the list was not cut short by amilisp's cap (past the
  * cap a longer prefix may match symbols that were never sent). */
 static int32_t ck_intro_completions_cover(ck_doc *doc, const char *text)
 {
@@ -635,7 +635,7 @@ static void ck_intro_text_reply(ck_app *app, ck_doc *doc, const char *window,
         if (doc != NULL) {
             char line[CK_MSG_MAX];
             ck_first_line(text, line, (int32_t)sizeof line);
-            ck_message(doc, "%s", line[0] != '\0' ? line : "clamiga could not answer");
+            ck_message(doc, "%s", line[0] != '\0' ? line : "amilisp could not answer");
             ck_beep(doc);
         }
         return;

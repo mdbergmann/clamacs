@@ -1,6 +1,6 @@
 ;;;; verify-editor-image.lisp -- prove a clamacs.img starts the editor.
 ;;;;
-;;;;   clamiga --no-userinit --non-interactive --heap 8M --image bin/aos3/clamacs.img
+;;;;   amilisp --no-userinit --non-interactive --heap 8M --image bin/aos3/clamacs.img
 ;;;;       --load lib/clamacs/verify-editor-image.lisp
 ;;;;
 ;;;; Checks that the session came from an image and holds the editor, then
@@ -12,7 +12,7 @@
 ;;;; Counterpart of save-editor-image.lisp.
 ;;;;
 ;;;; The image tells which frontend it holds: the MUI one needs MUI (run in
-;;;; FS-UAE by cl-amiga's verify/realamiga/make-editor-image.sh, or on a
+;;;; FS-UAE by AmiLisp's verify/realamiga/make-editor-image.sh, or on a
 ;;;; machine) and is checked for the Amiga's paths and the shed binding
 ;;;; tables; the host one (specs/clamacs-host.md, H6; host/make-image.sh
 ;;;; runs this) needs a window server and is checked for re-deriving the
@@ -107,7 +107,7 @@
   ;; buffer is empty), and START returns when the last window is gone.
   ;; The quit is a SETF of a structure accessor, compiled here from the
   ;; symbol: whether a DEFSTRUCT accessor also has a (SETF name) FUNCTION
-  ;; is implementation-dependent (CLHS DEFSTRUCT), and clamiga has none,
+  ;; is implementation-dependent (CLHS DEFSTRUCT), and amilisp has none,
   ;; so FDEFINITION of it is an undefined function.
   (let ((quit (compile nil `(lambda (editor)
                               (setf (,(find-symbol "EDITOR-QUITTING" :clamacs) editor)

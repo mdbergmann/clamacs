@@ -1,17 +1,17 @@
 # Clamacs-in-Lisp spike, 68020 leg: clamacs verify.fs-uae unchanged (A1200, 68020, accuracy 2, no JIT).
 # baseline.  Three volumes:
 #
-#   Workbench  cl-amiga's aos3 system, which already has MUI and
+#   Workbench  AmiLisp's aos3 system, which already has MUI and
 #              TextEditor.mcc installed.  A local emulator asset (not tracked
 #              in git) under the superproject's verify/realamiga.
-#   CLAmiga    the cl-amiga checkout this repository is a submodule of -- the
-#              clamiga runtime the editor drives.  Required, not optional:
+#   AmiLisp    the AmiLisp checkout this repository is a submodule of -- the
+#              amilisp runtime the editor drives.  Required, not optional:
 #              that system's S/user-startup ends with
-#                  execute CLAmiga:verify/realamiga/call-on-ustartup
+#                  execute AmiLisp:verify/realamiga/call-on-ustartup
 #              and that script is what honours the boot-override this harness
-#              drops into CLAmiga:build/amiga/; boot-override then runs
-#              CLAmiga:build/cross/clamiga.
-#   Clamacs    this repository (cl-amiga/clamacs).
+#              drops into AmiLisp:build/amiga/; boot-override then runs
+#              AmiLisp:build/cross/amilisp.
+#   Clamacs    this repository (amilisp/clamacs).
 #
 # accuracy = 2 and no JIT: the point of the low-end config is that timing and
 # memory look like the machine the editor is meant to run on.
@@ -31,7 +31,7 @@ graphics_memory = 2048
 hard_drive_0 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/verify/realamiga/aos3
 hard_drive_0_label = Workbench
 hard_drive_1 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga
-hard_drive_1_label = CLAmiga
+hard_drive_1_label = AmiLisp
 hard_drive_2 = /Users/mbergmann/Development/MySources/amigasources/cl-amiga/clamacs
 hard_drive_2_label = Clamacs
 joystick_port_1_mode = nothing

@@ -2,7 +2,7 @@
 
 A `pre-commit` hook that (1) reviews your **staged** changes with a headless
 `claude` and auto-fixes any problems it finds, then (2) runs the host test
-suite. Problematic code never enters history. This is the same gate cl-amiga
+suite. Problematic code never enters history. This is the same gate AmiLisp
 uses, adapted to clamacs.
 
 ## Flow

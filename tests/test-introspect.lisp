@@ -1,4 +1,4 @@
-;;;; test-introspect.lisp -- what the editor asks clamiga about a symbol, on
+;;;; test-introspect.lisp -- what the editor asks amilisp about a symbol, on
 ;;;; the fake frontend and the fake transport: the phase-2 leg of
 ;;;; verify/realamiga/drive.rexx, request by request, plus what only a host
 ;;;; test can check (the cache, the idle timer's discipline, a lost port).
@@ -20,7 +20,7 @@
 
 (defun intro-doc (&key (point 0) (port "CLAMIGA"))
   "A wired fake showing intro.lisp, active, the cursor at POINT.  The
-editor has found clamiga's port already, as it has by the time the drive
+editor has found amilisp's port already, as it has by the time the drive
 reaches this leg (the idle timer scans for one only now and then)."
   (multiple-value-bind (doc tr wire) (make-wired-fake *intro-text* :port port)
     (setf (doc-path doc) "T:intro.lisp"
@@ -222,7 +222,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is-equal (fake-arglist doc) "(thrice a b)")))
 
 (deftest the-idle-timer-never-prompts-and-is-quiet-elsewhere
-  ;; No port: nothing goes out and nobody is asked to start clamiga.
+  ;; No port: nothing goes out and nobody is asked to start amilisp.
   (multiple-value-bind (doc tr wire) (intro-doc :port nil)
     (doc-set-point doc (inside-twice-call doc))
     (dotimes (i 20) (arglist-idle doc))
@@ -234,7 +234,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (dotimes (i 8) (arglist-idle doc))
     (is (sent-package-p tr))
     (is (wire-connected wire))
-    (is-equal (fake-last-message doc) "clamiga found on CLAMIGA"))
+    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA"))
   ;; A prompt open, another window active, a non-Lisp buffer: no lookup.
   (multiple-value-bind (doc tr wire) (intro-doc)
     (declare (ignore wire))
@@ -345,7 +345,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is (null (fake-prompt doc)))))
 
 (deftest candidates-that-only-contain-the-input-leave-it-as-typed
-  ;; No symbol starts with `foo-': clamiga answers the ones that contain
+  ;; No symbol starts with `foo-': amilisp answers the ones that contain
   ;; it.  The minibuffer opens on the input as typed, TAB lists them
   ;; without moving it, narrowing to one completes to that one, and the
   ;; candidates on hand cover what is typed after them.
@@ -386,7 +386,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is-equal (fake-last-message doc) "[Sole completion]")))
 
 (deftest tab-again-cycles-through-the-symbol-candidates
-  ;; The candidates clamiga sent are the minibuffer's to cycle through,
+  ;; The candidates amilisp sent are the minibuffer's to cycle through,
   ;; nothing more on the wire.
   (multiple-value-bind (doc tr wire) (make-wired-fake "twic|")
     (declare (ignore wire))
@@ -443,7 +443,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (is-equal (fake-prompt doc) "Complete: m")
     (is (intro-completions-capped (doc-intro doc)))
     (type-keys doc "TAB")
-    ;; Many: the first few are listed, in clamiga's order.
+    ;; Many: the first few are listed, in amilisp's order.
     (is-equal (fake-mini-label doc) "[200 completions: m0 m1 m2 m3 m4 m5 m6 m7 ...]")
     (type-text doc "1")
     (type-keys doc "TAB")
@@ -510,7 +510,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
       (run-command doc 'clamacs-edit-definition)
       (deliver-package tr)
       (is-equal (fake-last-sent tr) "SOURCE-LOCATION twice")
-      ;; The file is this one -- spelled as clamiga spells it.
+      ;; The file is this one -- spelled as amilisp spells it.
       (fake-deliver tr 0 "t:INTRO.lisp:3")
       (is-equal (doc-point doc) (line-start doc 2))
       (is-equal (editor-active-document (doc-editor doc)) doc)
@@ -693,7 +693,7 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
     (dolist (command '(clamacs-arglist complete-symbol clamacs-edit-definition
                        clamacs-macroexpand-1))
       (run-command doc command)
-      (is-equal (fake-last-message doc) "No connection to clamiga in this editor"))
+      (is-equal (fake-last-message doc) "No connection to amilisp in this editor"))
     ;; The idle tick without a wire is silent.
     (dotimes (i 3) (arglist-idle doc))
     (is (null (fake-asked doc)))))

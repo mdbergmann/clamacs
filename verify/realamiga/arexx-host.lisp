@@ -1,6 +1,6 @@
-;;; arexx-host.lisp -- the clamiga side of the clamacs integration test.
+;;; arexx-host.lisp -- the amilisp side of the clamacs integration test.
 ;;;
-;;; This is what a user's S:.clamigarc does, minus the interactive REPL: open
+;;; This is what a user's S:.amilisprc does, minus the interactive REPL: open
 ;;; the development port and stay alive so the editor has something to talk
 ;;; to.  Loaded with --non-interactive, so the wait below is what keeps the
 ;;; process (and the port) around for the duration of the run.
@@ -10,17 +10,17 @@
 ;; quit.rexx sets this through the port (`EVAL (setf cl-user::*clamacs-host-quit* t)')
 ;; once the editor has gone, and the main thread then takes the port down
 ;; and lets the process end.  Before this the host slept out its deadline,
-;; and every run-drive left a clamiga behind for the rest of it.
+;; and every run-drive left an amilisp behind for the rest of it.
 (defvar *clamacs-host-quit* nil)
 
 ;; quit.rexx reads this file for the exact port name to message instead of
 ;; scanning CLAMIGA/CLAMIGA.1-9: SHOW('P', name) only proves a port is still
 ;; registered, not that the task behind it is alive, and messaging a port
 ;; whose task has already died hangs the sender forever (see CLAUDE.md,
-;; "Never let a clamiga exit with its port thread alive").  Restricting the
+;; "Never let an amilisp exit with its port thread alive").  Restricting the
 ;; send to the one port this run itself opened keeps a stale port left by an
 ;; unrelated earlier run out of reach.
-(defparameter *clamacs-host-port-file* "T:clamacs-clamiga-port")
+(defparameter *clamacs-host-port-file* "T:clamacs-amilisp-port")
 
 (let ((port (amiga.arexx:start)))
   (format t "CLAMIGA-PORT ~a~%" port)

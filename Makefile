@@ -12,7 +12,7 @@
 #   make test        build and run the whole host suite (C and Lisp)
 #   make test-keymap run one test binary
 #   make test-lisp   the Lisp editor's pure modules (specs/clamacs-lisp.md)
-#                    under ../build/host/clamiga; CLAMACS_TEST=keymap for one
+#                    under ../build/host/amilisp; CLAMACS_TEST=keymap for one
 #   make test-lisp-gc-stress  the same, a compaction at every allocation
 #                    (needs the superproject's `make test-gc-stress' binary)
 #   make amiga       cross-compile the editor (delegates to Makefile.cross)
@@ -61,8 +61,8 @@ TESTS = keymap rawkey command bindings killring minihist locstack menudef winsto
 TEST_BINS = $(patsubst %,$(BUILDDIR)/test_%,$(TESTS))
 
 # The Lisp editor's tests run under the SUPERPROJECT's host build.
-CLAMIGA_HOST     ?= ../build/host/clamiga
-CLAMIGA_GCSTRESS ?= ../build/host-gcstress/clamiga
+CLAMIGA_HOST     ?= ../build/host/amilisp
+CLAMIGA_GCSTRESS ?= ../build/host-gcstress/amilisp
 
 .PHONY: all test test-lisp test-lisp-gc-stress clean amiga mos install-hooks $(patsubst %,test-%,$(TESTS)) \
         host host-image host-app host-check host-check-image host-check-app host-linux

@@ -106,7 +106,7 @@ int32_t ck_diag_parse_line(const char *line, int32_t len, ck_diag *out)
 
     memset(out, 0, sizeof(*out));
 
-    /* `SEVERITY: message' -- a diagnostic clamiga could not locate. */
+    /* `SEVERITY: message' -- a diagnostic amilisp could not locate. */
     wlen = sev_at(line, len, 0, &sev);
     if (wlen > 0) {
         prefix_end = -1;
@@ -271,10 +271,10 @@ int32_t ck_diag_parse(ck_diaglist *list, const char *text)
             len--;
 
         /* Everything after the `--- log ---' marker is what the command
-         * PRINTED, for a human to read -- and clamiga's own error reports in
+         * PRINTED, for a human to read -- and amilisp's own error reports in
          * there begin with `ERROR: ', which the line parser would otherwise
          * take for two more diagnostics on top of the two real ones.  The
-         * machine-readable rows all come before the marker; see cl-amiga's
+         * machine-readable rows all come before the marker; see AmiLisp's
          * lib/dev-commands.lisp, %REPLY. */
         if (len >= 11 && memcmp(p, "--- log ---", 11) == 0)
             in_log = 1;

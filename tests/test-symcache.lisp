@@ -8,7 +8,7 @@
     (is (null (symcache-get c "CL-USER|foo")))
     (is (symcache-put c "CL-USER|foo" "(a &optional b)"))
     (is-equal (symcache-get c "CL-USER|foo") "(a &optional b)")
-    ;; Asked, and clamiga had nothing: "" -- remembered so the cursor
+    ;; Asked, and amilisp had nothing: "" -- remembered so the cursor
     ;; entering a binding list does not ask about `x' every time.
     (is (symcache-put c "CL-USER|x" ""))
     (is-equal (symcache-get c "CL-USER|x") "")

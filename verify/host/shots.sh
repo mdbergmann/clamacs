@@ -5,7 +5,7 @@
 #
 # Starts the editor the way run-drive.sh does (a HOME and a TMPDIR of the
 # run's own, so nothing of yours is touched), then runs verify/host/shots.lisp
-# against its port: it starts a clamiga, loads verify/host/shots/accounts.lisp,
+# against its port: it starts an amilisp, loads verify/host/shots/accounts.lisp,
 # evaluates, breaks, inspects, loads report.lisp with its mistakes, picks a
 # theme, and photographs the window each time with `screencapture'.  The
 # terminal this runs in needs the Screen Recording permission (System
@@ -23,8 +23,8 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 super=$(cd "$root/.." && pwd)
-clamiga=${CLAMIGA:-"$super/build/host/clamiga"}
-[ -x "$clamiga" ] || { echo "no clamiga at $clamiga (make host in the superproject)"; exit 1; }
+clamiga=${CLAMIGA:-"$super/build/host/amilisp"}
+[ -x "$clamiga" ] || { echo "no amilisp at $clamiga (make host in the superproject)"; exit 1; }
 [ "$(uname -s)" = Darwin ] || { echo "shots.sh takes the Mac editor's pictures; this is $(uname -s)"; exit 1; }
 outdir=$(cd "${1:-$root/docs/screenshots}" && pwd) || exit 1
 

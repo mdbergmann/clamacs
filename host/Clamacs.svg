@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Clamacs.svg: the app icon of the macOS bundle (host/make-app.sh turns
      it into Clamacs.icns with rsvg-convert and iconutil).  The lambda card
-     of the Workbench icons (cl-amiga's scripts/make-icons.py), drawn for a
+     of the Workbench icons (AmiLisp's scripts/make-icons.py), drawn for a
      1024-pixel canvas with macOS's rounded-square inset. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>

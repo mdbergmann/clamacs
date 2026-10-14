@@ -462,7 +462,7 @@ it, two values; NIL for a table item's id."
 ;;; *EDITOR*, the running editor, is frontend.lisp's: START sets it.
 
 (defvar *wire-starter* nil
-  "Function of the editor that sets up the wire to clamiga and the editor's
+  "Function of the editor that sets up the wire to amilisp and the editor's
 own port, called by START once the first windows are open -- so the port
 never answers before there is a document.  transport-arexx.lisp sets it;
 without it the editor runs alone.")
@@ -544,7 +544,7 @@ init file may open what it likes.")
             (editor-mailbox editor)
             (make-mailbox :wake (lambda () (exec:signal task mask))
                           :on-error (lambda (e) (report-error editor e))
-                          ;; A reply from clamiga or a port verb moved the
+                          ;; A reply from amilisp or a port verb moved the
                           ;; state the menu shows (a port found, an error
                           ;; list filled, a DEBUGGER message).
                           :after-drain (lambda ()
@@ -2751,7 +2751,7 @@ on MUI 3.8)."
               (mui-editor-insp-title-buf editor) title-buf
               (mui-editor-insp-object-buf editor) object-buf)
         (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
-        ;; The close gadget only closes: the navigation stack in clamiga
+        ;; The close gadget only closes: the navigation stack in amilisp
         ;; stays, and the next C-c I starts it over.
         (mui:notify window m:+muia-window-close-request+ t
                     window m:+muim-set+ m:+muia-window-open+ nil)
@@ -2987,7 +2987,7 @@ it from running under the vertical one."
   "When true, each step of START's teardown is appended to
 T:clamacs-exit.log as it completes -- set from the running editor over the
 port when a window outlives the process.  A file, not standard output:
-what a `Run >log' clamiga prints never reaches the log on AmigaOS.")
+what a `Run >log' amilisp prints never reaches the log on AmigaOS.")
 
 (defun exit-note (step &optional always)
   (when (or *exit-trace* always)
@@ -3401,7 +3401,7 @@ function: an image is saved before it runs and restores into it."
 
 (defun run ()
   "The editor as a program: the user's init file (S:.clamacsrc), then
-START on the program's own arguments -- what follows `--' on clamiga's
+START on the program's own arguments -- what follows `--' on amilisp's
 command line, or the project icons of a Workbench start, both
 EXT:*COMMAND-LINE-ARGS*.  lisp/clamacs.lisp calls it after loading the
 editor from source; the image's start calls it the same way, so the

@@ -6,7 +6,7 @@
 ;;;;   - the PURE modules (keymap, rawkey, command, bindings, killring,
 ;;;;     minihist, locstack, token, sexp, indent) take no MUI and no OS
 ;;;;     types.  They load on the host and tests/test-*.lisp runs them there
-;;;;     under ../build/host/clamiga, again with CLAMIGA_GC_STRESS=1;
+;;;;     under ../build/host/amilisp, again with CLAMIGA_GC_STRESS=1;
 ;;;;   - the frontend (frontend-mui.lisp and what sits on it) is the only
 ;;;;     place that names AMIGA.MUI.
 ;;;;

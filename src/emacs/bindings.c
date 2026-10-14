@@ -101,7 +101,7 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     { "RET",     CK_CMD_NEWLINE_AND_INDENT },
     { "C-M-\\",  CK_CMD_INDENT_REGION },
 
-    /* talking to clamiga */
+    /* talking to amilisp */
     { "C-c C-k", CK_CMD_LOAD_BUFFER },
     { "C-c C-l", CK_CMD_LOAD_FILE },
     { "C-c C-c", CK_CMD_EVAL_DEFUN },
@@ -130,7 +130,7 @@ static const struct ck_binding_spec ck_lisp_bindings[] = {
     /* the REPL thread (phase 3): SLIME's interrupt key in a source buffer */
     { "C-c C-b",     CK_CMD_INTERRUPT },
 
-    /* the inspector (phase 4): SLIME's key, a form evaluated in clamiga */
+    /* the inspector (phase 4): SLIME's key, a form evaluated in amilisp */
     { "C-c I",       CK_CMD_INSPECT },
 
     { NULL,      CK_CMD_NONE }

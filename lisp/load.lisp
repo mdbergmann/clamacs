@@ -31,7 +31,7 @@
   #-amigaos '())
 
 ;;; True: every file is COMPILE-FILEd to the FASL beside it and the FASL
-;;; loaded -- how cl-amiga's release script builds lib/clamacs/*.fasl on
+;;; loaded -- how AmiLisp's release script builds lib/clamacs/*.fasl on
 ;;; the host (with CLAMIGA_FASL_PORTABLE=1 in the environment, so a string
 ;;; the Amiga could not load fails there), and how a developer refreshes
 ;;; them.  Bind it, do not set it: the tests load the sources.

@@ -98,7 +98,7 @@ TEST(completion_no_match)
 
 TEST(clamacs_commands_are_namespaced)
 {
-    /* The commands that talk to clamiga carry the editor's own prefix, so
+    /* The commands that talk to amilisp carry the editor's own prefix, so
      * `M-x' completion separates them from ordinary editing commands. */
     const char *hits[32];
     int32_t     n = ck_command_complete("clamacs-", hits, 32, NULL, 0);

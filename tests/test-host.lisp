@@ -937,7 +937,7 @@ each, with the KeyboardEvent fields a real key would carry."
 
 (defparameter *host-dbg-announce*
   (lines "DEBUGGER 1 CL-USER" "SIMPLE-ERROR: bad 12" "0: ABORT Return to the REPL")
-  "What clamiga sends when (dbg-fn 3 4) errs at the prompt (test-debugger.lisp has the same).")
+  "What amilisp sends when (dbg-fn 3 4) errs at the prompt (test-debugger.lisp has the same).")
 
 (defparameter *host-cons-reply*
   (lines "CONS 1 2" "(1 (2 3))" "0: Car = 1" "1: Cdr = (2 3)")
@@ -1054,7 +1054,7 @@ fake transport that finds CLAMIGA: (values editor doc tr wire)."
     (declare (ignore doc))
     (is-equal (host-panel-state :debugger editor)
               "closed level 0 restarts 0 continue no frames 0 frame none locals 0 condition ")
-    ;; (dbg-fn 3 4) RET at the prompt, then clamiga's DEBUGGER 1
+    ;; (dbg-fn 3 4) RET at the prompt, then amilisp's DEBUGGER 1
     (host-type-text editor "(dbg-fn 3 4)")
     (host-type editor "RET")
     (is-equal (fake-last-sent tr) "REPL-EVAL (dbg-fn 3 4)")

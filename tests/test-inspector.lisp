@@ -119,4 +119,4 @@
     (type-text doc "1")
     (type-keys doc "RET")
     (fake-deliver tr 0 "")
-    (is-equal (fake-last-message doc) "clamiga could not inspect that")))
+    (is-equal (fake-last-message doc) "amilisp could not inspect that")))

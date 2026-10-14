@@ -122,7 +122,7 @@
     (declare (ignore doc wire))
     (send-input repl tr "(read-line)")
     (fake-inbound (doc-editor repl) "READLINE")
-    (is-equal (fake-last-message repl) "clamiga is reading a line: type it and press RET")
+    (is-equal (fake-last-message repl) "amilisp is reading a line: type it and press RET")
     (is (repl-window-reading (doc-repl repl)))
     (is-equal (repl-window-input-start (doc-repl repl)) (doc-end repl))
     (type-text repl "abc")
@@ -361,7 +361,7 @@
 (deftest a-buffer-eval-is-noted-in-the-transcript
   ;; What the echo area shows for a moment, the transcript keeps: the
   ;; values, on a line of their own after output that ended without a
-  ;; newline; every value; clamiga's own note not doubled; a failure.
+  ;; newline; every value; amilisp's own note not doubled; a failure.
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
     (declare (ignore wire))
     (flet ((eval-from-buffer (values)
@@ -383,11 +383,11 @@
       (is-equal (transcript repl)
                 (lines "; REPL attached to CLAMIGA" "; Evaluated: FOO" "hello"
                        "; Evaluated: 1" ";   2" "CL-USER> |"))
-      ;; clamiga's `; No values'
+      ;; amilisp's `; No values'
       (eval-from-buffer (lines "RESULT 0 CL-USER" "; No values"))
       (is-equal (fake-last-message doc) "; No values")
       (is (search (lines ";   2" "; Evaluated: No values" "CL-USER> |") (transcript repl)))
-      ;; A failure: what clamiga said, the buffer beeped
+      ;; A failure: what amilisp said, the buffer beeped
       (eval-from-buffer (lines "RESULT 10 CL-USER" "ERROR: The variable X is unbound."))
       (is-equal (fake-last-message doc) "ERROR: The variable X is unbound.")
       (is (search (lines "; Evaluation failed: ERROR: The variable X is unbound." "CL-USER> |")
@@ -429,7 +429,7 @@
     (type-text repl "(+ 1 2)")
     (type-keys repl "RET")
     (is-equal (fake-last-sent tr) "REPL-EVAL (+ 1 2)")
-    ;; The reply is rc 10: clamiga was restarted and has no REPL thread now.
+    ;; The reply is rc 10: amilisp was restarted and has no REPL thread now.
     (fake-deliver tr 10 "")
     (is-equal (fake-last-sent tr) "LASTRESULT")
     (fake-deliver tr 0 "ERROR: no REPL attached (send REPL-ATTACH <port> first)")
@@ -438,7 +438,7 @@
     (is (search (format nil "CL-USER> |") (transcript repl)))))
 
 (deftest an-interrupt-that-finds-the-thread-gone-brings-the-prompt-back
-  ;; The heap exhausted under a form ends clamiga's REPL thread with no
+  ;; The heap exhausted under a form ends amilisp's REPL thread with no
   ;; RESULT sent: the editor learns it from the interrupt's refusal.
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
     (declare (ignore doc wire))
@@ -496,14 +496,14 @@
     (is (not (repl-session-attached (repl-session (doc-editor repl)))))
     (is-equal (transcript repl)
               (lines "; REPL attached to CLAMIGA" "CL-USER> (+ 1 2)"
-                     "; clamiga is gone (it is attached again when it comes back)" "CL-USER> |"))
+                     "; amilisp is gone (it is attached again when it comes back)" "CL-USER> |"))
     ;; Back: found by the next scan, and attached without being asked.
     (setf (fake-transport-port tr) "CLAMIGA.1")
     (wire-find-port wire)
     (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
     (fake-deliver tr 0 "CL-USER")
     (is (repl-session-attached (repl-session (doc-editor repl))))
-    (is (search (format nil "; clamiga is back on CLAMIGA.1~%; REPL attached to CLAMIGA.1~%CL-USER> |")
+    (is (search (format nil "; amilisp is back on CLAMIGA.1~%; REPL attached to CLAMIGA.1~%CL-USER> |")
                 (transcript repl)))))
 
 (deftest closing-the-repl-window-detaches
@@ -535,7 +535,7 @@
 
 ;;; --- what a LOAD printed ---------------------------------------------------
 ;;;
-;;; A LOAD or COMPILE-FILE runs on clamiga's handler thread, so what the
+;;; A LOAD or COMPILE-FILE runs on amilisp's handler thread, so what the
 ;;; file prints is not streamed: it comes back as the `--- log ---' section
 ;;; of the reply (diag.lisp), and the transcript is where it is shown.
 

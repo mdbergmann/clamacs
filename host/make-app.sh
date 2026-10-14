@@ -6,27 +6,27 @@
 #
 # What goes in, and where the editor finds it:
 #
-#   Contents/MacOS/Clamacs             the launcher: exec clamiga --image
+#   Contents/MacOS/Clamacs             the launcher: exec amilisp --image
 #                                      clamacs.img --eval "(clamacs::run)" -- files
-#   Contents/MacOS/clamiga             the superproject's build/host/clamiga
+#   Contents/MacOS/amilisp             the superproject's build/host/amilisp
 #   Contents/MacOS/clamacs.img         the editor's heap image, this binary's
 #                                      own (host/make-image.sh)
 #   Contents/MacOS/page.html, libwebview.dylib, libclamacs-host.dylib
 #                                      beside the binary: HOST-FRONTEND-DIR
 #                                      looks there when page.html is
-#   Contents/lib/clamiga/              the runtime library (../lib/clamiga
+#   Contents/lib/amilisp/              the runtime library (../lib/amilisp
 #                                      relative to the binary, the installed
-#                                      layout clamiga searches), with the
-#                                      bare-boot clamiga.img the superproject's
-#                                      `make image' saves -- for a clamiga the
-#                                      editor starts (Clamiga > Start clamiga
-#                                      runs Contents/MacOS/clamiga)
+#                                      layout amilisp searches), with the
+#                                      bare-boot amilisp.img the superproject's
+#                                      `make image' saves -- for an amilisp the
+#                                      editor starts (AmiLisp > Start amilisp
+#                                      runs Contents/MacOS/amilisp)
 #   Contents/Resources/Clamacs.icns    host/Clamacs.svg, via rsvg-convert and
 #                                      iconutil (skipped without them: the
 #                                      bundle gets the system's generic icon)
 #   Contents/Info.plist
 #
-# Cocoa takes the bundle from the running executable's path, so clamiga
+# Cocoa takes the bundle from the running executable's path, so amilisp
 # started by the launcher shows as "Clamacs" in the Dock with the icon.
 # Files dropped on the icon are not opened (a shell launcher gets no Apple
 # Events): start it with them as arguments, `open -a Clamacs.app --args
@@ -39,11 +39,11 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 super=$(cd "$root/.." && pwd)
 out="$root/build/host-frontend"
-clamiga="$super/build/host/clamiga"
+clamiga="$super/build/host/amilisp"
 app="$out/Clamacs.app"
 
 [ "$(uname -s)" = Darwin ] || { echo "make-app.sh: an application bundle is a macOS thing" >&2; exit 1; }
-[ -x "$clamiga" ] || { echo "make-app.sh: no clamiga at $clamiga (make host in the superproject)" >&2; exit 1; }
+[ -x "$clamiga" ] || { echo "make-app.sh: no amilisp at $clamiga (make host in the superproject)" >&2; exit 1; }
 
 "$here/build.sh" >/dev/null
 # The editor's image, this binary's own -- and the sources' own: an image
@@ -52,7 +52,7 @@ app="$out/Clamacs.app"
 if "$here/image-stale.sh" "$out/clamacs.img" "$clamiga"; then
     CLAMIGA="$clamiga" "$here/make-image.sh" >/dev/null
 fi
-# The runtime's bare-boot image, for a clamiga the editor starts.
+# The runtime's bare-boot image, for an amilisp the editor starts.
 make -C "$super" --no-print-directory image >/dev/null
 
 version=$("$clamiga" --no-userinit --non-interactive \
@@ -65,18 +65,18 @@ esac
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/lib"
 
-cp "$clamiga" "$app/Contents/MacOS/clamiga"
+cp "$clamiga" "$app/Contents/MacOS/amilisp"
 cp "$out/clamacs.img" "$out/page.html" "$out/libwebview.dylib" "$out/libclamacs-host.dylib" \
    "$app/Contents/MacOS/"
-cp -pR "$super/lib/" "$app/Contents/lib/clamiga"
-cp "$super/build/host/image/clamiga.img" "$app/Contents/lib/clamiga/clamiga.img"
+cp -pR "$super/lib/" "$app/Contents/lib/amilisp"
+cp "$super/build/host/image/amilisp.img" "$app/Contents/lib/amilisp/amilisp.img"
 
 cat > "$app/Contents/MacOS/Clamacs" <<'EOF'
 #!/bin/sh
 # Clamacs -- the launcher of the bundle (clamacs/host/make-app.sh): the
 # editor from its heap image, on the files given.
 here=$(cd "$(dirname "$0")" && pwd)
-exec "$here/clamiga" --heap 32M --non-interactive --image "$here/clamacs.img" --eval "(clamacs::run)" -- "$@"
+exec "$here/amilisp" --heap 32M --non-interactive --image "$here/clamacs.img" --eval "(clamacs::run)" -- "$@"
 EOF
 chmod +x "$app/Contents/MacOS/Clamacs"
 
@@ -97,7 +97,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>CFBundleVersion</key><string>$version</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Clamacs, the Common Lisp editor of CL-Amiga</string>
+  <key>NSHumanReadableCopyright</key><string>Clamacs, the Common Lisp editor of AmiLisp</string>
 </dict>
 </plist>
 EOF
@@ -118,4 +118,4 @@ else
     echo "make-app.sh: NOTE: no rsvg-convert or iconutil -- the bundle gets the generic icon" >&2
 fi
 
-echo "built $app ($(du -sh "$app" | cut -f1 | tr -d ' '), clamiga $version)"
+echo "built $app ($(du -sh "$app" | cut -f1 | tr -d ' '), amilisp $version)"

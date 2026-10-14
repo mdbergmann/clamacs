@@ -130,7 +130,7 @@ int32_t ck_indent_body_args(const char *name, int32_t namelen)
     /* An unknown `def...' is almost always a defining macro whose first two
      * arguments name the thing being defined.  Guessing 2 here is what makes
      * a project's own `define-foo' indent sensibly before phase 2 can ask
-     * clamiga for its real &body position. */
+     * amilisp for its real &body position. */
     if (namelen > 3 && ind_lower(name[0]) == 'd' && ind_lower(name[1]) == 'e' &&
         ind_lower(name[2]) == 'f')
         return 2;

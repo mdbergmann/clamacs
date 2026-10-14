@@ -1,14 +1,14 @@
-;;;; wire.lisp -- the client side of the wire to clamiga.
+;;;; wire.lisp -- the client side of the wire to amilisp.
 ;;;;
 ;;;; The rule this file exists to enforce is the C editor's (src/rexxclient.c,
 ;;;; src/rexx/queue.c): the editor NEVER waits for a reply.  A request is
 ;;;; queued, one is on the wire at a time, and the reply comes back later
 ;;;; through WIRE-REPLY -- so a long LOAD does not freeze the editor, and the
-;;;; port keeps answering while clamiga compiles.  Two protocol facts shape
+;;;; port keeps answering while amilisp compiles.  Two protocol facts shape
 ;;;; the queue: ARexx carries RESULT only with rc 0, so a failing command's
 ;;;; text has to be fetched with LASTRESULT, and that LASTRESULT must be the
 ;;;; very next thing on the wire or a queued command would overwrite
-;;;; clamiga's *LAST-RESULT* first; and one message is in flight per port.
+;;;; amilisp's *LAST-RESULT* first; and one message is in flight per port.
 ;;;;
 ;;;; Everything here is written against a TRANSPORT object, three generic
 ;;;; functions the frontend implements: on the Amiga they are AMIGA.AREXX
@@ -32,7 +32,7 @@
 ;;; ------------------------------------------------------------------
 
 (defgeneric transport-find-port (transport)
-  (:documentation "The name of a clamiga port that exists now -- CLAMIGA,
+  (:documentation "The name of an amilisp port that exists now -- CLAMIGA,
 CLAMIGA.1, ... -- or NIL."))
 
 (defgeneric transport-send (transport port command)
@@ -42,41 +42,41 @@ the frontend's event loop; a port that is gone by then is reported with
 :LOST."))
 
 (defgeneric transport-launch (transport)
-  (:documentation "Start a clamiga with its development port, and wait a
+  (:documentation "Start an amilisp with its development port, and wait a
 bounded time for the port to appear.  True when it did."))
 
 (defgeneric transport-own-port (transport)
-  (:documentation "The name of the editor's OWN port -- what clamiga's REPL
+  (:documentation "The name of the editor's OWN port -- what amilisp's REPL
 thread is told to send to (REPL-ATTACH) -- or NIL while there is none."))
 
 (defgeneric transport-launch-problem (transport)
   (:documentation "Why the last TRANSPORT-LAUNCH failed, as text for the
-echo area, or NIL when it has nothing to add to `Cannot start clamiga'.")
+echo area, or NIL when it has nothing to add to `Cannot start amilisp'.")
   (:method (transport) (declare (ignore transport)) nil))
 
 (defgeneric transport-log (transport)
-  (:documentation "The file the clamiga this transport started writes its
+  (:documentation "The file the amilisp this transport started writes its
 output to -- where an error that took a thread of it with it is found --
 or NIL when there is none.")
   (:method (transport) (declare (ignore transport)) nil))
 
-;;; How a clamiga the editor starts is started: the init file's to set.
+;;; How an amilisp the editor starts is started: the init file's to set.
 
 (defvar *clamiga-heap* :default
-  "The heap of a clamiga the editor starts, as its `--heap' takes it
+  "The heap of an amilisp the editor starts, as its `--heap' takes it
 (\"256M\", \"8M\"): what a loaded system and everything it depends on has
-to fit in.  :DEFAULT is 256M on macOS, Linux and Windows and clamiga's own
-default on an Amiga, where the memory is the machine's; NIL is clamiga's
+to fit in.  :DEFAULT is 256M on macOS, Linux and Windows and amilisp's own
+default on an Amiga, where the memory is the machine's; NIL is amilisp's
 own default everywhere.")
 
 (defvar *clamiga-options* '()
-  "More command line options for a clamiga the editor starts, a list of
+  "More command line options for an amilisp the editor starts, a list of
 strings: (\"--no-userinit\"), (\"--no-jit\").")
 
 (defparameter *host-clamiga-heap* "256M")
 
 (defun clamiga-heap ()
-  "The heap to ask for, a string, or NIL for clamiga's own default."
+  "The heap to ask for, a string, or NIL for amilisp's own default."
   (let ((heap *clamiga-heap*))
     (cond ((eq heap :default)
            ;; Asked at run time: the FASLs are compiled on the host.
@@ -88,13 +88,13 @@ strings: (\"--no-userinit\"), (\"--no-jit\").")
           (t nil))))
 
 (defun clamiga-launch-options (&optional (heap (clamiga-heap)))
-  "The options a started clamiga gets before the editor's own, a list of
+  "The options a started amilisp gets before the editor's own, a list of
 strings: the heap, then *CLAMIGA-OPTIONS*."
   (append (and heap (list "--heap" heap))
           (remove-if-not #'stringp *clamiga-options*)))
 
 (defun launch-failure-text (wire)
-  (format nil "Cannot start clamiga~@[: ~A~]"
+  (format nil "Cannot start amilisp~@[: ~A~]"
           (transport-launch-problem (wire-transport wire))))
 
 ;;; ------------------------------------------------------------------
@@ -124,16 +124,16 @@ LASTRESULT; else the command itself."
   (port-name nil)           ; the port last found
   (connected nil)
   (version nil)
-  ;; The package clamiga's port was last told (IN-PACKAGE), so a request
+  ;; The package amilisp's port was last told (IN-PACKAGE), so a request
   ;; from a buffer in the same package does not repeat it.  NIL when a port
-  ;; is (re)found: a fresh clamiga starts in CL-USER.
+  ;; is (re)found: a fresh amilisp starts in CL-USER.
   (package nil)
   (diags (make-diaglist))
   ;; The diagnostic `C-x `' last visited: -1 for a fresh list.
   (error-row -1)
   ;; What was sent, newest first: the tests read it.
   (sent '())
-  ;; The transport the wire was made with -- clamiga's -- and the one to
+  ;; The transport the wire was made with -- amilisp's -- and the one to
   ;; the editor's own Lisp once `clamacs-connect-self' has made it
   ;; (transport-self.lisp).  TRANSPORT is whichever of the two is in use;
   ;; SWITCH-TO the one WIRE-SWITCH is waiting to change to.
@@ -165,7 +165,7 @@ LASTRESULT; else the command itself."
 ;;; ------------------------------------------------------------------
 
 (defun wire-find-port (wire)
-  "Scan for a clamiga port.  Newly found -- at startup, or back after it was
+  "Scan for an amilisp port.  Newly found -- at startup, or back after it was
 gone -- it is announced, and the package is forgotten."
   (let ((name (transport-find-port (wire-transport wire)))
         (was (wire-connected wire)))
@@ -174,7 +174,7 @@ gone -- it is announced, and the package is forgotten."
                  (wire-connected wire) t)
            (unless was
              (setf (wire-package wire) nil)
-             (wire-message wire nil "clamiga found on ~A" name)
+             (wire-message wire nil "amilisp found on ~A" name)
              ;; A REPL window that lost its thread gets a new one.
              (repl-reconnected (wire-editor wire)))
            t)
@@ -187,7 +187,7 @@ gone -- it is announced, and the package is forgotten."
   (or (wire-connected wire) (wire-find-port wire)))
 
 (defun wire-launch (wire)
-  "A port is known afterwards: it was there, or a clamiga was started and
+  "A port is known afterwards: it was there, or an amilisp was started and
 its port came up."
   (or (wire-find-port wire)
       (and (transport-launch (wire-transport wire))
@@ -195,13 +195,13 @@ its port came up."
 
 (defun wire-connect (wire doc)
   "Make sure a port is known before queuing.  Without one, DOC is asked
-whether to start clamiga; a quiet caller (DOC NIL) just fails.  A
+whether to start amilisp; a quiet caller (DOC NIL) just fails.  A
 refusal answers :CANCELLED as second value; a launch that failed was
 reported to DOC."
   (cond ((wire-ready-p wire) t)
         ((null doc) nil)
         ((not (eq (doc-ask doc
-                           "No running clamiga was found. Start one?"
+                           "No running amilisp was found. Start one?"
                            '(:start :cancel))
                   :start))
          (values nil :cancelled))
@@ -248,7 +248,7 @@ thread."
              (setf (wire-connected wire) nil
                    (wire-queue wire) '())
              (wire-message wire (request-doc req)
-                           "clamiga is not running (port ~A is gone)"
+                           "amilisp is not running (port ~A is gone)"
                            (wire-port-name wire))
              (repl-disconnected (wire-editor wire)))
             ((and (/= rc +rc-ok+)
@@ -267,7 +267,7 @@ thread."
   (wire-pump wire))
 
 ;;; ------------------------------------------------------------------
-;;; Switching between clamiga and the editor's own Lisp
+;;; Switching between amilisp and the editor's own Lisp
 ;;; ------------------------------------------------------------------
 
 (defun wire-self-p (wire)
@@ -307,7 +307,7 @@ new one."
               (wire-connected wire) t))
       (let ((news (if name
                       (format nil "Now talking to ~A" name)
-                      "Now talking to clamiga, which is not running (Start clamiga)")))
+                      "Now talking to amilisp, which is not running (Start amilisp)")))
         (wire-message wire nil "~A" news)
         (repl-switched editor news)))))
 
@@ -329,7 +329,7 @@ new one."
             rc (request-origin-rc req)))
     (case kind
       (:ping
-       (when doc (message doc "clamiga answers on ~A" (wire-port-name wire))))
+       (when doc (message doc "amilisp answers on ~A" (wire-port-name wire))))
       (:version
        (when text (setf (wire-version wire) text))
        (when doc (doc-message doc (or (wire-version wire) ""))))
@@ -429,22 +429,22 @@ list and `C-x `' both come here."
 
 (defun require-wire (doc)
   "The wire, or NIL with a complaint: a frontend without one (the host
-tests' bare fake) cannot talk to clamiga."
+tests' bare fake) cannot talk to amilisp."
   (or (doc-wire doc)
-      (progn (doc-message doc "No connection to clamiga in this editor")
+      (progn (doc-message doc "No connection to amilisp in this editor")
              (doc-beep doc)
              nil)))
 
 (defun doc-current-package (doc)
   "The package the form at the cursor is in: the nearest (in-package ...)
-before it, else CL-USER -- where a fresh clamiga starts, but not where it
+before it, else CL-USER -- where a fresh amilisp starts, but not where it
 stays once another buffer has spoken, so it is always said."
   (multiple-value-bind (text base point) (doc-context-full doc)
     (declare (ignore base))
     (or (and text (sexp-current-package text point)) "CL-USER")))
 
 (defun wire-ensure-package (wire doc &optional package)
-  "Tell clamiga's port DOC's package (PACKAGE when the caller has it
+  "Tell amilisp's port DOC's package (PACKAGE when the caller has it
 already), unless it was told already."
   (let ((package (or package (doc-current-package doc))))
     (unless (and (wire-package wire) (string-equal package (wire-package wire)))
@@ -453,7 +453,7 @@ already), unless it was told already."
 
 (defun wire-eval (doc text &optional package)
   "Send TEXT, one or more forms, for evaluation in DOC's package (in
-PACKAGE when given) -- on clamiga's REPL thread (repl.lisp), so output
+PACKAGE when given) -- on amilisp's REPL thread (repl.lisp), so output
 streams into the transcript and an error opens the debugger; the first
 line of the values lands in DOC's echo area.  The handler thread's EVAL
 is for macros and the port, not for keys.  True when the text was sent
@@ -469,7 +469,7 @@ or waits for the REPL to attach."
       (wire-request wire doc :load (format nil "LOAD ~A" path)))))
 
 (define-command clamacs-load-buffer (doc arg)
-  "Save the buffer and LOAD its file in clamiga."
+  "Save the buffer and LOAD its file in amilisp."
   (declare (ignore arg))
   (cond ((null (doc-path doc))
          (doc-message doc "Save the buffer to a file first")
@@ -484,17 +484,17 @@ or waits for the REPL to attach."
     (message doc "Loading ~A ..." path)))
 
 (define-command clamacs-load-file (doc arg)
-  "LOAD a file in clamiga, asked for in the minibuffer."
+  "LOAD a file in amilisp, asked for in the minibuffer."
   (declare (ignore arg))
   (prompt-for-file doc "Load file: " #'load-file-into-lisp :title "Load File"))
 
 (define-command clamacs-load-file-requester (doc arg)
-  "Load a file chosen in the requester into clamiga: the menu's Load File..."
+  "Load a file chosen in the requester into amilisp: the menu's Load File..."
   (declare (ignore arg))
   (ask-file-then doc "Load File" nil (doc-directory doc) #'load-file-into-lisp))
 
 (define-command clamacs-compile-file (doc arg)
-  "COMPILE-FILE the buffer's file in clamiga and list the diagnostics."
+  "COMPILE-FILE the buffer's file in amilisp and list the diagnostics."
   (declare (ignore arg))
   (cond ((null (doc-path doc))
          (doc-message doc "Save the buffer to a file first")
@@ -514,7 +514,7 @@ or waits for the REPL to attach."
 
 ;;; A system is loaded by its definition file, the .asd: the one in the
 ;;; window, or the nearest one above the window's file -- a project's root
-;;; is where its .asd sits.  clamiga does the rest (EXT.DEV:LOAD-ASD-SYSTEM
+;;; is where its .asd sits.  amilisp does the rest (EXT.DEV:LOAD-ASD-SYSTEM
 ;;; loads ASDF on first use, the file, and the system named after it), on
 ;;; the REPL thread: a system is minutes of compiling on an Amiga, which
 ;;; wants its output as it happens, the interrupt and the debugger.
@@ -568,7 +568,7 @@ else the .asd files of the nearest directory above it that has any."
     (string-downcase (subseq base 0 (position #\. base :from-end t)))))
 
 (defun system-eval (doc function verb path)
-  "Have clamiga call EXT.DEV's FUNCTION on the system definition PATH."
+  "Have amilisp call EXT.DEV's FUNCTION on the system definition PATH."
   (cond ((not (system-path-p path))
          (message doc "Not a system definition (.asd): ~A" path)
          (doc-beep doc))
@@ -607,17 +607,17 @@ for in the minibuffer."
                               :initial (doc-directory doc)))))))
 
 (define-command clamacs-load-system (doc arg)
-  "Load the ASDF system the buffer belongs to (the nearest .asd) in clamiga."
+  "Load the ASDF system the buffer belongs to (the nearest .asd) in amilisp."
   (declare (ignore arg))
   (with-system-file doc "Load system (.asd): " #'load-system-file))
 
 (define-command clamacs-test-system (doc arg)
-  "Run the tests of the ASDF system the buffer belongs to in clamiga."
+  "Run the tests of the ASDF system the buffer belongs to in amilisp."
   (declare (ignore arg))
   (with-system-file doc "Test system (.asd): " #'test-system-file))
 
 (define-command clamacs-load-system-from (doc arg)
-  "Load an ASDF system in clamiga, its .asd asked for in the minibuffer."
+  "Load an ASDF system in amilisp, its .asd asked for in the minibuffer."
   (declare (ignore arg))
   (when (require-wire doc)
     (prompt-for-file doc "Load system (.asd): " #'load-system-file
@@ -630,7 +630,7 @@ for in the minibuffer."
     (ask-file-then doc "Load System" nil (doc-directory doc) #'load-system-file)))
 
 (define-command clamacs-eval-defun (doc arg)
-  "Evaluate the top-level form at the cursor in clamiga."
+  "Evaluate the top-level form at the cursor in amilisp."
   (declare (ignore arg))
   (multiple-value-bind (text base point) (doc-context-full doc)
     (let* ((start (or (sexp-defun-start text point) 0))
@@ -641,7 +641,7 @@ for in the minibuffer."
             (t (wire-eval doc (doc-text doc (+ base start) (+ base stop))))))))
 
 (define-command clamacs-eval-last-sexp (doc arg)
-  "Evaluate the expression before the cursor in clamiga."
+  "Evaluate the expression before the cursor in amilisp."
   (declare (ignore arg))
   (multiple-value-bind (text base point) (doc-context-full doc)
     (multiple-value-bind (start stop) (sexp-last-sexp text point)
@@ -651,7 +651,7 @@ for in the minibuffer."
             (t (wire-eval doc (doc-text doc (+ base start) (+ base stop))))))))
 
 (define-command clamacs-eval-region (doc arg)
-  "Evaluate the region in clamiga."
+  "Evaluate the region in amilisp."
   (declare (ignore arg))
   (multiple-value-bind (start stop) (region-bounds doc)
     (when start
@@ -661,7 +661,7 @@ for in the minibuffer."
             (doc-beep doc))))))
 
 (define-command clamacs-eval-expression (doc arg)
-  "Evaluate a form typed in the minibuffer in clamiga."
+  "Evaluate a form typed in the minibuffer in amilisp."
   (declare (ignore arg))
   (prompt-for-form doc "Eval: "
                    (lambda (doc answer)
@@ -669,12 +669,12 @@ for in the minibuffer."
                        (wire-eval doc answer)))))
 
 (define-command clamacs-connect (doc arg)
-  "Find clamiga's port and connect to it; without one, offer to start clamiga."
+  "Find amilisp's port and connect to it; without one, offer to start amilisp."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
-      ;; Connect is the user asking whether clamiga is there, so look,
-      ;; rather than trust WIRE-CONNECTED: a clamiga that quit leaves it
+      ;; Connect is the user asking whether amilisp is there, so look,
+      ;; rather than trust WIRE-CONNECTED: an amilisp that quit leaves it
       ;; set until a request fails on the vanished port, and with it set
       ;; WIRE-CONNECT would skip the scan, send VERSION into the void and
       ;; only report "port is gone" -- the offer to start one came on the
@@ -682,19 +682,19 @@ for in the minibuffer."
       ;; path's "newly found" announcement and REPL re-attach stay off).
       (unless (transport-find-port (wire-transport wire))
         (setf (wire-connected wire) nil))
-      ;; WIRE-CONNECT finds the port, or asks whether to start clamiga
+      ;; WIRE-CONNECT finds the port, or asks whether to start amilisp
       ;; and reports a launch that failed; a cancel is answered here.
       (multiple-value-bind (connected why) (wire-connect wire doc)
         (cond (connected (wire-request wire doc :version "VERSION"))
-              ((eq why :cancelled) (doc-message doc "No clamiga port found")))))))
+              ((eq why :cancelled) (doc-message doc "No amilisp port found")))))))
 
 (define-command run-lisp (doc arg)
-  "Start a clamiga of our own and connect to it."
+  "Start an amilisp of our own and connect to it."
   (declare (ignore arg))
   (let ((wire (require-wire doc)))
     (when wire
       (if (wire-launch wire)
-          (doc-message doc "Started clamiga")
+          (doc-message doc "Started amilisp")
           (doc-message doc (launch-failure-text wire))))))
 
 (define-command clamacs-show-errors (doc arg)

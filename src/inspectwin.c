@@ -1,12 +1,12 @@
 /*
  * inspectwin.c -- phase 4: the inspector window.
  *
- * `C-c I' asks for a form, clamiga evaluates it and answers INSPECT with
- * the object and its numbered parts (cl-amiga's lib/dev-commands.lisp:
+ * `C-c I' asks for a form, amilisp evaluates it and answers INSPECT with
+ * the object and its numbered parts (AmiLisp's lib/dev-commands.lisp:
  * a header `<TYPE> <depth> <count>', the object, then `<n>: <label> =
  * <value>' per part).  The window shows the object and the parts;
  * double-clicking a part sends PART <n> and the window shows that, Back
- * sends POP.  The navigation stack lives in clamiga, one per connection,
+ * sends POP.  The navigation stack lives in amilisp, one per connection,
  * so the editor only mirrors the depth it is told.  Synchronous replies,
  * unlike the debugger's: the object is evaluated on the port's handler
  * thread (with the REPL's `*' in scope, so `C-c I *' looks at the last
@@ -99,7 +99,7 @@ void ck_inspect_reply(ck_app *app, ck_doc *doc, int32_t rc, const char *text)
                                                  &depth, &count)) {
         p = text;
         if (!ck_dbg_line(&p, line, (int32_t)sizeof line) || line[0] == '\0')
-            strcpy(line, "clamiga could not inspect that");
+            strcpy(line, "amilisp could not inspect that");
         if (doc != NULL) {
             ck_message(doc, "%s", line);
             ck_beep(doc);

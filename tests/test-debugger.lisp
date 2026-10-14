@@ -12,7 +12,7 @@
          "0: ABORT Return to the REPL"))
 
 (defun dbg-fixture ()
-  "The REPL fixture with (dbg-fn 3 4) sent from the prompt and clamiga's
+  "The REPL fixture with (dbg-fn 3 4) sent from the prompt and amilisp's
 DEBUGGER 1 delivered, the BACKTRACE asked: (values source repl tr wire)."
   (multiple-value-bind (doc repl tr wire) (repl-fixture)
     (send-input repl tr "(dbg-fn 3 4)")

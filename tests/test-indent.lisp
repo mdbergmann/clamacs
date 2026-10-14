@@ -107,7 +107,7 @@
 
 (deftest unknown-def-form-is-treated-as-a-definer
   ;; A project's own `define-...' macro indents sensibly before phase 2 can
-  ;; ask clamiga where its &body starts.
+  ;; ask amilisp where its &body starts.
   (is-equal (indent-of-line-with
              (ind-text "(define-widget bar baz" "  body)" "")
              "body")

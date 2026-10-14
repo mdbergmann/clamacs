@@ -1,7 +1,7 @@
 /*
  * test_dbgmsg.c -- the lines of the debugger and inspector replies.
  *
- * The strings are what cl-amiga's tests/test_dev_commands.sh shows the
+ * The strings are what AmiLisp's tests/test_dev_commands.sh shows the
  * other end sending (`0: dbg-fn  <file>:27', `ARG0 = 3', `CONS 1 2'), so
  * the formats are pinned from both sides.
  */

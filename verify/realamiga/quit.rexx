@@ -1,14 +1,14 @@
 /* quit.rexx -- shut clamacs down through its own command namespace, then
-** the clamiga the run started.
+** the amilisp the run started.
 **
 ** Separate from drive.rexx so the boot script can take an `avail' reading
 ** with the editor still up.  Measuring after it has exited would record what
 ** it failed to give back, not what it uses.
 **
-** The editor goes first, and clamiga only once the editor's port is gone:
-** save-buffers-kill-emacs sends REPL-DETACH to an attached clamiga, which
-** must still be there to take it.  clamiga is told to stop by setting the
-** flag verify/realamiga/arexx-host.lisp waits on; a clamiga that is not
+** The editor goes first, and amilisp only once the editor's port is gone:
+** save-buffers-kill-emacs sends REPL-DETACH to an attached amilisp, which
+** must still be there to take it.  amilisp is told to stop by setting the
+** flag verify/realamiga/arexx-host.lisp waits on; an amilisp that is not
 ** running that host (a user's own, say) just gets a variable set in
 ** CL-USER and carries on.
 */
@@ -39,8 +39,8 @@ ELSE DO
     IF traced THEN CALL checkexit
 END
 
-/* Only the clamiga this run itself started: arexx-host.lisp records its
-** port name to T:clamacs-clamiga-port.  SHOW('P', name) only proves a port
+/* Only the amilisp this run itself started: arexx-host.lisp records its
+** port name to T:clamacs-amilisp-port.  SHOW('P', name) only proves a port
 ** is still registered, not that the task behind it is alive, so messaging
 ** a port found by scanning CLAMIGA/CLAMIGA.1-9 risks hitting one left by an
 ** unrelated, already-dead run -- exactly the stale-port hang CLAUDE.md
@@ -49,9 +49,9 @@ END
 ** come up ourselves.
 */
 told = 0
-name = readport('T:clamacs-clamiga-port')
+name = readport('T:clamacs-amilisp-port')
 IF name = '' THEN
-    SAY 'INFO no clamiga port file; nothing to quit'
+    SAY 'INFO no amilisp port file; nothing to quit'
 ELSE IF ~SHOW('P', name) THEN
     SAY 'INFO' name 'is already gone'
 ELSE DO
@@ -59,14 +59,14 @@ ELSE DO
     'EVAL (setf cl-user::*clamacs-host-quit* t)'
     IF RC = 0 THEN DO
         SAY 'OK asked' name 'to quit'
-        CALL waitgone name, 'clamiga'
+        CALL waitgone name, 'amilisp'
         told = told + 1
     END
     ELSE
         SAY 'FAIL' name 'refused the quit request, rc' RC
 END
 IF told = 0 THEN
-    SAY 'INFO no clamiga port to quit'
+    SAY 'INFO no amilisp port to quit'
 EXIT 0
 
 /* The port is what the process holds; once it is gone the process is on
@@ -143,7 +143,7 @@ findport: PROCEDURE
     RETURN ''
 
 /* The one line arexx-host.lisp wrote, or '' if the file is not there --
-** an earlier run's clamiga never started, or its host already cleaned up
+** an earlier run's amilisp never started, or its host already cleaned up
 ** after itself on a clean exit.
 */
 readport: PROCEDURE

@@ -4,8 +4,8 @@
 
 An Emacs-flavoured Common Lisp IDE for AmigaOS 3, MorphOS, macOS and
 Linux.  The editor is written in Common Lisp and runs as an instance of
-[CL-Amiga](https://github.com/mdbergmann/cl-amiga) (`clamiga`) of its own;
-the Lisp you work on lives in a *second* clamiga that the editor talks to
+[AmiLisp](https://github.com/mdbergmann/amilisp) (`amilisp`) of its own;
+the Lisp you work on lives in a *second* amilisp that the editor talks to
 over a wire -- its ARexx port on the Amiga, a TCP port on the host.  Over
 that wire it loads and compiles files, evaluates forms, feeds a REPL,
 opens a debugger when a form signals, an inspector on any value, and
@@ -26,14 +26,14 @@ plan.
 ### AmigaOS
 
 Taken on a Vampire V4 (AmigaOS 3.2, MUI 3.8, 1280x720) driving the
-clamiga from the binary release.
+amilisp from the binary release.
 
 A file loaded with `C-c C-k` and the `*clamacs-repl*` window (`C-c C-z`)
-talking to it, the clamiga console at the bottom:
+talking to it, the amilisp console at the bottom:
 
 ![The editor and the REPL window](docs/screenshots/editor-repl.png)
 
-An error signalled at the REPL prompt parks clamiga's REPL thread and opens
+An error signalled at the REPL prompt parks amilisp's REPL thread and opens
 the debugger window: condition, restarts, backtrace, the locals of the
 selected frame and an eval-in-frame line:
 
@@ -66,7 +66,7 @@ own port and photographs each one -- the file is
 `verify/host/shots/accounts.lisp`, a small ledger.
 
 The document window: the source with its colouring and the minimap, the
-`*clamacs-repl*` tab in the dock talking to the clamiga the editor
+`*clamacs-repl*` tab in the dock talking to the amilisp the editor
 started, a `; Evaluated:` note from `C-c C-c` and the arglist in the
 status line:
 
@@ -97,21 +97,21 @@ candidates listed above the status line:
 
 ### AmigaOS and MorphOS
 
-The binary release of cl-amiga ships the editor next to the `clamiga`
+The binary release of AmiLisp ships the editor next to the `amilisp`
 binaries: its `Clamacs` Workbench icon starts it from a heap image, which is
 
 ```
-clamiga --image clamacs.img --non-interactive --eval "(clamacs::run)" -- file.lisp ...
+amilisp --image clamacs.img --non-interactive --eval "(clamacs::run)" -- file.lisp ...
 ```
 
 From a checkout it starts from source instead:
 
 ```
-clamiga --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- file.lisp ...
+amilisp --heap 8M --non-interactive --load Clamacs:lisp/clamacs.lisp -- file.lisp ...
 ```
 
 The files come after `--` (a bare argument before it is something for
-clamiga to load); without any, one unnamed Lisp buffer opens.  The Amiga
+amilisp to load); without any, one unnamed Lisp buffer opens.  The Amiga
 needs MUI and `TextEditor.mcc`, see "Requirements on the Amiga" below.
 
 ### macOS and Linux
@@ -131,18 +131,18 @@ shell, WebView2) has its shim written and compiled against the API with
 mingw-w64, but has not been run on a Windows machine yet.  "The host
 frontend" below has the rest.
 
-## Talking to clamiga
+## Talking to amilisp
 
-The editor is a clamiga, but the Lisp you load into, evaluate in and
-debug is a separate one.  The **Clamiga** menu manages it: **Connect**
-(`M-x clamacs-connect`) looks for a clamiga's port and attaches to it --
-and offers to start one when there is none; **Start clamiga** (`M-x
+The editor is an amilisp, but the Lisp you load into, evaluate in and
+debug is a separate one.  The **AmiLisp** menu manages it: **Connect**
+(`M-x clamacs-connect`) looks for an amilisp's port and attaches to it --
+and offers to start one when there is none; **Start amilisp** (`M-x
 run-lisp`) starts one on the binary the editor runs on and connects to
-it, as the first `C-c C-c` offers to.  When clamiga was restarted, the
+it, as the first `C-c C-c` offers to.  When amilisp was restarted, the
 next evaluation finds the new one and attaches the REPL again by itself
 (the echo area says where it was found).
 
-**On AmigaOS and MorphOS the wire is ARexx.**  A clamiga you start
+**On AmigaOS and MorphOS the wire is ARexx.**  An amilisp you start
 yourself opens its port with
 
 ```lisp
@@ -150,13 +150,13 @@ yourself opens its port with
 (amiga.arexx:start)                  ; port CLAMIGA; a second instance takes CLAMIGA.1, ...
 ```
 
-(in `S:.clamigarc`, or at its prompt), and the editor finds it by
-scanning `CLAMIGA`, `CLAMIGA.1`, ... .  The clamiga the editor starts
+(in `S:.amilisprc`, or at its prompt), and the editor finds it by
+scanning `CLAMIGA`, `CLAMIGA.1`, ... .  The amilisp the editor starts
 itself gets a console window of its own and opens its port from a
 preamble the editor writes.
 
-**On the host the wire is TCP**, over cl-amiga's `dev-tcp` port.  A
-clamiga you start yourself opens it with
+**On the host the wire is TCP**, over AmiLisp's `dev-tcp` port.  An
+amilisp you start yourself opens it with
 
 ```lisp
 (require "dev-tcp")
@@ -168,32 +168,32 @@ clamiga you start yourself opens it with
 and `CLAMACS_CLAMIGA=host:port` (default `127.0.0.1:4005`) and
 `CLAMACS_CLAMIGA_TOKEN` in the editor's environment name it -- an Amiga
 on the LAN included, when its port was started with `:host` and the
-editor with `--bind` (see "The editor's own port").  The clamiga the
+editor with `--bind` (see "The editor's own port").  The amilisp the
 editor starts gets its token through its environment, writes its port
 number to a file in the editor's private directory and its output to
-`clamacs-clamiga.log` there; the editor stops only a clamiga it started.
+`clamacs-amilisp.log` there; the editor stops only an amilisp it started.
 The token authenticates; nothing is encrypted.
 
-**The clamiga the editor starts** takes its heap and any further command
+**The amilisp the editor starts** takes its heap and any further command
 line options from the init file:
 
 ```lisp
-(setq *clamiga-heap* "512M")               ; as clamiga's --heap takes it
+(setq *clamiga-heap* "512M")               ; as amilisp's --heap takes it
 (setq *clamiga-options* '("--no-userinit"))
 ```
 
 The heap is what a loaded system and everything it depends on has to fit
 in.  Without a setting it is 256M on macOS, Linux and Windows, and
-clamiga's own default on an Amiga or MorphOS, where a size is yours to
-choose for the machine; `(setq *clamiga-heap* nil)` asks for clamiga's
+amilisp's own default on an Amiga or MorphOS, where a size is yours to
+choose for the machine; `(setq *clamiga-heap* nil)` asks for amilisp's
 default everywhere.  On the host `CLAMACS_CLAMIGA_HEAP` in the editor's
 environment goes before the init file.  When a form runs out of heap all
-the same, clamiga's REPL thread ends with it: `C-c C-c` then says so and
-names the log of the started clamiga, and `C-c C-z` attaches a new REPL.
+the same, amilisp's REPL thread ends with it: `C-c C-c` then says so and
+names the log of the started amilisp, and `C-c C-z` attaches a new REPL.
 
 ### Talking to the editor itself
 
-**Clamiga > Talk to the Editor Itself** (`M-x clamacs-connect-self`)
+**AmiLisp > Talk to the Editor Itself** (`M-x clamacs-connect-self`)
 points all of it -- the REPL window, the debugger and inspector, arglist,
 completion, describe, apropos, `M-.` and loading -- at the editor's own
 image instead.  Redefine one of the editor's functions at that prompt,
@@ -206,7 +206,7 @@ opens the debugger; wrap anything that touches a window or a buffer in
 (clamacs:in-editor (clamacs::doc-name (clamacs::editor-active-document clamacs::*editor*)))
 ```
 
-**Clamiga > Talk to clamiga** switches back.  **Windows > Editor Memory**
+**AmiLisp > Talk to amilisp** switches back.  **Windows > Editor Memory**
 (`M-x clamacs-room`) shows the editor's heap next to the system's free
 memory.  See `tests/test-self.lisp`.
 
@@ -245,12 +245,12 @@ reply:    "<rc> <n>\n" then n characters: the text
 
 `<n>` counts characters, not bytes: the text is UTF-8 on the wire (the
 editor's own text is 8-bit, so `é` is one character and two bytes), and a
-client that is not clamiga decodes before it counts.
+client that is not amilisp decodes before it counts.
 `verify/host/drive.lisp` is such a script -- the acceptance run -- and
 `CLAMACS_PORT=4010` picks a fixed port (0, the default, lets the OS
 choose).  `host/run.sh file.lisp -- --bind 192.168.1.5` makes the port
-listen on that one address of the Mac instead of loopback: what a
-clamiga on another machine needs to reach the editor for the REPL (a
+listen on that one address of the Mac instead of loopback: what an
+amilisp on another machine needs to reach the editor for the REPL (a
 wildcard is refused).
 
 ## Files and evaluation
@@ -276,13 +276,13 @@ it, and typing on takes the list down.  With no candidates on offer the
 arrows walk the prompt's history like `M-p` and `M-n`.
 
 `C-c C-c` (Eval Defun), `C-x C-e` (Eval Last Sexp), `C-c C-r` (Eval
-Region) and `C-c C-e` (Eval Expression...) run the form on clamiga's REPL
+Region) and `C-c C-e` (Eval Expression...) run the form on amilisp's REPL
 thread: what it prints goes to the `*clamacs-repl*` transcript, its
 values to the buffer's echo area and, as a `; Evaluated: ...` line above
 the prompt, into the transcript, and an error opens the debugger window
 with the erring stack still there.  The REPL window is opened and
 attached the first time you evaluate; `C-c C-b` interrupts.
-Loading (`C-c C-k`, `C-c C-l`) runs on clamiga's handler thread instead:
+Loading (`C-c C-k`, `C-c C-l`) runs on amilisp's handler thread instead:
 every error in the file becomes a row in the diagnostics window, and
 whatever the file printed while loading lands in the `*clamacs-repl*`
 transcript afterwards, under a `; loading ...` line (the window opens
@@ -293,7 +293,7 @@ behind the buffer if it was not open yet).
 The **ASDF** menu loads whole systems.  **Load System**
 (`M-x clamacs-load-system`) takes the `.asd` in the window, or the
 nearest one in the directories above the window's file -- a project's
-root is where its `.asd` sits -- and has clamiga load ASDF (the first
+root is where its `.asd` sits -- and has amilisp load ASDF (the first
 time), the definition and the system named after the file, with what it
 depends on.  **Test System** runs `asdf:test-system` on it, and **Load
 System From...** asks for the `.asd`.  A window with no system above it
@@ -463,7 +463,7 @@ again cycles through them, and RET takes the one in the line.  TAB on an
 empty line says how many commands there are and names the first of them.
 When no command starts with what was typed, the ones that contain it are
 offered instead (`eval-` finds `clamacs-eval-defun` and its kin), the
-line left as typed; `M-TAB` on a symbol does the same, clamiga's
+line left as typed; `M-TAB` on a symbol does the same, amilisp's
 `COMPLETE` falling back to the names that contain the text.
 **Help > List Commands** (`M-x clamacs-list-commands`) opens a window
 listing every command with its keys and what it does -- the ones from
@@ -475,7 +475,7 @@ earlier binding.
 The settings the menus remember -- `load-theme`, `font-size`,
 `show-minimap`, `block-cursor`, `syntax-colouring`, `paren-matching` --
 and the started
-clamiga's `*clamiga-heap*` / `*clamiga-options*` live here too, see the
+amilisp's `*clamiga-heap*` / `*clamiga-options*` live here too, see the
 sections above.
 
 The heap image keeps only the Amiga OS names the editor uses itself (it is
@@ -495,8 +495,8 @@ select all and undo, the rest stay the system's.  The document window
 has files, editing, colouring, search, the minibuffer and the status
 line with the arglist, and the minimap at its right edge; the Lisp
 behind it -- the REPL, the debugger, the inspector, introspection and
-LOAD -- is a separate clamiga reached over TCP, as described under
-"Talking to clamiga".
+LOAD -- is a separate amilisp reached over TCP, as described under
+"Talking to amilisp".
 
 **The menu bar** is the Amiga's menu strip: on macOS it is the screen's
 menu bar (with the usual application menu, Cmd-Q asking the editor to
@@ -531,11 +531,11 @@ host-image`) saves the editor as `build/host-frontend/clamacs.img` beside
 the page and the libraries and proves it starts -- the host twin of the
 release's `bin/aos3/clamacs.img` -- and `IMAGE=1 host/run.sh` starts from
 it, which skips the load.  Images are per-build: one older than the
-clamiga binary or any `lisp/*.lisp` is remade.  On the Mac,
+amilisp binary or any `lisp/*.lisp` is remade.  On the Mac,
 `host/make-app.sh` (`make host-app`) wraps it all into
-`build/host-frontend/Clamacs.app` -- clamiga, the image, the page, the
+`build/host-frontend/Clamacs.app` -- amilisp, the image, the page, the
 two libraries and the runtime library with its own boot image, so
-**Clamiga > Start clamiga** works from inside the bundle -- with an icon
+**AmiLisp > Start amilisp** works from inside the bundle -- with an icon
 and an Info.plist; it runs from the Dock or with `open -a
 build/host-frontend/Clamacs.app --args file.lisp` (a shell launcher gets
 no Apple Events, so files dropped on the icon are not opened; open them
@@ -565,19 +565,19 @@ address in a requester instead.
 
 ## Building
 
-Clamacs is a git submodule of [cl-amiga](https://github.com/mdbergmann/cl-amiga)
-(checked out at `cl-amiga/clamacs`) and ships in its binary release next to
-the `clamiga` binaries. The runtime it drives is the superproject: build
-`clamiga` there, and make runtime changes (new `EXT.DEV` commands, compiler
+Clamacs is a git submodule of [AmiLisp](https://github.com/mdbergmann/amilisp)
+(checked out at `amilisp/clamacs`) and ships in its binary release next to
+the `amilisp` binaries. The runtime it drives is the superproject: build
+`amilisp` there, and make runtime changes (new `EXT.DEV` commands, compiler
 fixes) as commits there under its gates.
 
 Clamacs carries no cross toolchain of its own; it builds with the one
-cl-amiga installs (`tools/setup-toolchain.sh` there, one level up from this
+AmiLisp installs (`tools/setup-toolchain.sh` there, one level up from this
 directory):
 
 ```
-git clone --recursive https://github.com/mdbergmann/cl-amiga.git
-cd cl-amiga && tools/setup-toolchain.sh        # once, for both projects
+git clone --recursive https://github.com/mdbergmann/amilisp.git
+cd amilisp && tools/setup-toolchain.sh        # once, for both projects
 cd clamacs && make -f Makefile.cross amiga
 ```
 
@@ -585,7 +585,7 @@ A standalone clone (`git clone --recursive https://github.com/mdbergmann/clamacs
 points the build at an existing install instead:
 
 ```
-make -f Makefile.cross amiga TOOLCHAIN=/path/to/cl-amiga/tools/m68k-amigaos-gcc/prefix
+make -f Makefile.cross amiga TOOLCHAIN=/path/to/amilisp/tools/m68k-amigaos-gcc/prefix
 ```
 
 The MorphOS build is native: `make -f Makefile.mos` in a checkout on a
@@ -611,7 +611,7 @@ make -f Makefile.mos             # MorphOS: native build on the box, see the fil
 verify/host/run-smoke.sh         # the host frontend's ground: window, page, shim, wake
 verify/host/host-keys.sh         # the host editor typed into through its page, unattended
 verify/host/run-drive.sh         # the host editor's acceptance run over its own port
-MEMTRACK=1 verify/host/run-drive.sh # the same under a leak-tracking clamiga: nothing may outlive exit
+MEMTRACK=1 verify/host/run-drive.sh # the same under a leak-tracking amilisp: nothing may outlive exit
 IMAGE=1 verify/host/run-drive.sh # the same with both editors started from the heap image (make host-image)
 APP=1 verify/host/run-drive.sh   # the same through Clamacs.app's launcher (make host-app; macOS)
 verify/host/shots.sh             # the README's host screenshots, taken from the running editor (macOS)
@@ -619,25 +619,25 @@ make host-linux                  # the smoke run and the drive on Linux, in a co
 ```
 
 The Lisp editor's tests run everything but `frontend-mui.lisp` on the host
-under cl-amiga's `build/host/clamiga`: the commands, the minibuffer, the
+under AmiLisp's `build/host/amilisp`: the commands, the minibuffer, the
 wire, the REPL, the debugger, the menu and the window positions all work
 against a fake frontend and a fake transport, so a failing assertion costs
 a second instead of an emulator boot.  The FS-UAE run then drives the real
 thing through its ARexx port with the same script that gated the C editor,
 and the host drive does the same over the TCP port.
 
-The FS-UAE run uses the clamiga runtime from the superproject (the
-`CLAmiga:` volume; the integration leg reads its `build/cross/clamiga`, so
-run `make -f Makefile.cross amiga` in `cl-amiga` first). The Workbench image
+The FS-UAE run uses the amilisp runtime from the superproject (the
+`AmiLisp:` volume; the integration leg reads its `build/cross/amilisp`, so
+run `make -f Makefile.cross amiga` in `amilisp` first). The Workbench image
 (with MUI and TextEditor.mcc) and `FS-UAE.app` are not tracked in git; the
 run takes them from the superproject's `verify/realamiga/` too. A standalone
-clone falls back to a `cl-amiga` checkout next to it. Override with
-`EMU_DIR` (the emulator assets) and `CLAMIGA_DIR` (the clamiga runtime).
+clone falls back to an `amilisp` checkout next to it. Override with
+`EMU_DIR` (the emulator assets) and `CLAMIGA_DIR` (the amilisp runtime).
 
 ## Layout
 
 ```
-lisp/                      the editor: the Emacs layer, Lisp mode, the wire to clamiga
+lisp/                      the editor: the Emacs layer, Lisp mode, the wire to amilisp
                            (transport-arexx / transport-tcp / transport-self), the
                            REPL/debugger/inspector, the menu table and window positions
                            -- all pure Lisp over a frontend protocol -- and the two

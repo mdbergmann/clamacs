@@ -4,7 +4,7 @@
 ;;;; written against the frontend protocol (frontend.lisp) and nothing else,
 ;;;; so tests/test-commands.lisp runs every one of them on the host against
 ;;;; a string.  This file holds the commands that need neither a prompt nor
-;;;; clamiga: motion, killing and yanking, the mark, the sexp commands,
+;;;; amilisp: motion, killing and yanking, the mark, the sexp commands,
 ;;;; indentation, and the two things that follow the cursor and the text --
 ;;;; the paren highlight and the colouring.
 ;;;;
@@ -112,7 +112,7 @@ of its first character in the document, and the cursor as an offset into it
 
 (defun doc-context-full (doc)
   "The whole buffer, for the structural commands -- end-of-defun, the sexp
-motions, and everything that hands a form to clamiga.  A window is wrong for
+motions, and everything that hands a form to amilisp.  A window is wrong for
 these: a defun whose closing paren falls outside it reads as unbalanced.
 They are single user actions, not per-keystroke work."
   (doc-context-range doc 0 (1- (doc-line-count doc))))

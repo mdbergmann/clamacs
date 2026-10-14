@@ -4,7 +4,7 @@
 ;;;; to be per PROMPT KIND (file names, commands, search patterns) rather
 ;;;; than per object -- hence a plain struct the caller keeps one of per
 ;;;; kind.  Completion is generic over a candidate list so `M-x', file names
-;;;; and symbol names from clamiga all share one implementation.
+;;;; and symbol names from amilisp all share one implementation.
 ;;;;
 ;;;; Pure: no MUI, no OS types.
 
@@ -101,7 +101,7 @@ many matches as it likes and says how many there are."
 (defun complete-within (candidates text)
   "COMPLETE, and when no candidate starts with TEXT the candidates that
 contain it -- `eval-' finds clamacs-eval-defun, `foo-' the make-foo-thing
-clamiga sent back the same way: as the second value the line as typed
+amilisp sent back the same way: as the second value the line as typed
 (TEXT), so TAB lists and cycles without moving the input, unless one
 candidate alone contains it, which is what it completes to.  Nothing
 starts with an empty TEXT only when there are no candidates."
@@ -133,7 +133,7 @@ ellipsis stands for the rest."
 
 (defun split-lines (text)
   "The non-empty lines of TEXT, trailing CR and spaces stripped.  A candidate
-list that came from clamiga: COMPLETE answers one symbol per line, and this
+list that came from amilisp: COMPLETE answers one symbol per line, and this
 turns that reply into the list COMPLETE takes.  TEXT may be NIL."
   (let ((lines '())
         (start 0)

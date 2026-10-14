@@ -1,4 +1,4 @@
-;;;; test-diag.lisp -- parsing clamiga's replies: the cases of
+;;;; test-diag.lisp -- parsing amilisp's replies: the cases of
 ;;;; tests/test_diag.c, plus what C did not ask.
 
 (in-package :clamacs)
@@ -98,7 +98,7 @@
     (is (null (diaglist-log list)))))
 
 (deftest the-log-section-is-not-parsed
-  ;; The log holds clamiga's own error reports, which begin with `ERROR: '
+  ;; The log holds amilisp's own error reports, which begin with `ERROR: '
   ;; -- reading those doubles the list, so `C-x `' walks into rows that are
   ;; not real.  Found on the Amiga.
   (let ((list (make-diaglist)))

@@ -1,11 +1,11 @@
 /*
- * replmsg.h -- the commands clamiga's REPL thread sends TO the editor.
+ * replmsg.h -- the commands amilisp's REPL thread sends TO the editor.
  *
  * Phase 3 turns the ARexx conversation two-way.  The editor still asks
  * (REPL-EVAL, REPL-INPUT, REPL-INTERRUPT), but everything it has to WAIT
  * for comes back as a command at its own port, because MUI answers an
  * application's ARexx command the moment the hook returns and the editor
- * can hold no reply until the user has typed (cl-amiga's lib/dev-repl.lisp
+ * can hold no reply until the user has typed (AmiLisp's lib/dev-repl.lisp
  * is the other end).  Three commands arrive that way:
  *
  *   OUTPUT <text>          a chunk of output, verbatim: leading blanks and a
@@ -16,7 +16,7 @@
  *                          the first newline; PKG is for the prompt
  *
  * Phase 4 adds a fourth, from the same thread parked on an erring stack
- * (REPL-ATTACH ... DEBUG; cl-amiga's lib/dev-repl.lisp has the protocol):
+ * (REPL-ATTACH ... DEBUG; AmiLisp's lib/dev-repl.lisp has the protocol):
  *
  *   DEBUGGER <level> <pkg> the REPL is in the debugger at LEVEL (1, 2, ...
  *     <type>: <report>     for nested ones); the condition and one restart

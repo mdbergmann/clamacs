@@ -105,7 +105,7 @@
     (let ((with (make-menu-table :systems t))
           (without (make-menu-table :systems nil)))
       (is-equal (titles with)
-                '("Project" "Edit" "Lisp" "ASDF" "Clamiga" "Windows" "View"
+                '("Project" "Edit" "Lisp" "ASDF" "AmiLisp" "Windows" "View"
                   "Buffers" "Help"))
       (is-equal (titles without) (remove "ASDF" (titles with) :test #'equal))
       (is-equal (set-difference (commands with) (commands without))
@@ -395,7 +395,7 @@
       (is-equal (port editor "MENU clamacs-eval-defun STATE") '(0 "disabled"))
       (is-equal (port editor "MENU run-lisp STATE") '(0 "enabled"))
       (is-equal (port editor "MENU clamacs-next-error STATE") '(0 "disabled"))
-      ;; The port is found: the Clamiga menu wakes up, Start clamiga dims.
+      ;; The port is found: the AmiLisp menu wakes up, Start amilisp dims.
       (setf (fake-transport-port tr) "CLAMIGA")
       (wire-find-port wire)
       (is-equal (port editor "MENU clamacs-eval-defun STATE") '(0 "enabled"))
@@ -607,19 +607,19 @@
       (let ((text (about-text editor)))
         (is (search (format nil "clamacs ~A" *clamacs-version*) text))
         (is (search "fake frontend 1.0" text))
-        (is (search "clamiga: not connected" text)))
+        (is (search "amilisp: not connected" text)))
       ;; Connected but the version not asked yet: the port's name.
       (setf (fake-transport-port tr) "CLAMIGA.1")
       (wire-find-port wire)
-      (is (search "clamiga: CLAMIGA.1" (about-text editor)))
-      (setf (wire-version wire) "clamiga 0.11")
-      (is (search "clamiga: clamiga 0.11" (about-text editor)))
+      (is (search "amilisp: CLAMIGA.1" (about-text editor)))
+      (setf (wire-version wire) "amilisp 0.11")
+      (is (search "amilisp: amilisp 0.11" (about-text editor)))
       ;; The command puts it in a requester with one button.
       (setf (fake-answers doc) '(:ok))
       (run-command doc 'clamacs-about)
       (let ((asked (first (fake-asked doc))))
         (is-equal (second asked) '(:ok))
-        (is (search "clamiga 0.11" (first asked))))))
+        (is (search "amilisp 0.11" (first asked))))))
   ;; Without a wire (the bare fake): not connected, no error.
   (is (search "not connected" (about-text (make-fake-editor)))))
 
@@ -710,7 +710,7 @@
            ;; business: it reports the file and line and goes on with the
            ;; forms after it, but only with no handler above it, so nothing
            ;; can show it from inside this runner's HANDLER-CASE.  No test
-           ;; here covers it -- it would take a clamiga subprocess on a
+           ;; here covers it -- it would take an amilisp subprocess on a
            ;; broken rc file -- which is why the README does not promise it.)
            (is (null (load-init-file (temp-path "no-such-rc"))))
            ;; What cannot be bound is refused at once, not when the next

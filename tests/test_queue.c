@@ -2,7 +2,7 @@
  * test_queue.c -- the ARexx request queue.
  *
  * The rules under test are the ones that make the editor stay responsive
- * while clamiga compiles: one request on the wire at a time, everything else
+ * while amilisp compiles: one request on the wire at a time, everything else
  * in order behind it, and an automatic LASTRESULT that jumps the queue.
  */
 

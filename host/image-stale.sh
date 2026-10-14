@@ -5,7 +5,7 @@
 #   host/image-stale.sh --selftest        run this script's own regression test
 #
 # An image holds the editor as it was when it was saved, so it is out of
-# date when it is missing, older than the clamiga binary it was saved by,
+# date when it is missing, older than the amilisp binary it was saved by,
 # or older than any of the editor's Lisp sources (lisp/*.lisp and the
 # image scripts).  The binary alone was the test once, and a Clamacs.app
 # built after a lisp/ change shipped the previous editor.
@@ -22,7 +22,7 @@ selftest() {
     trap 'rm -rf "$tmp"' EXIT INT TERM
     mkdir -p "$tmp/lisp" "$tmp/scripts"
     img="$tmp/clamacs.img"
-    bin="$tmp/clamiga"
+    bin="$tmp/amilisp"
     lispfile="$tmp/lisp/foo.lisp"
     fail=0
 

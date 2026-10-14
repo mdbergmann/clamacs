@@ -1,6 +1,6 @@
 # The Linux leg of the host frontend (specs/clamacs-host.md, H6): Ubuntu
 # with what host/build.sh needs (gcc, g++, pkg-config, GTK 3, WebKitGTK
-# 4.1, node) plus Xvfb for a display and libffi for clamiga's FFI.
+# 4.1, node) plus Xvfb for a display and libffi for amilisp's FFI.
 # verify/host/run-linux.sh builds it and runs the smoke and the drive in it.
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive

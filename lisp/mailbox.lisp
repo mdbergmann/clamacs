@@ -5,7 +5,7 @@
 ;;;; frontend method.  They post a closure here and the event loop runs it
 ;;;; between two inputs: a waiting caller (a port verb that needs the
 ;;;; answer) blocks until the loop has run its closure and takes its
-;;;; values; a fire-and-forget one (a reply arriving from clamiga) just
+;;;; values; a fire-and-forget one (a reply arriving from amilisp) just
 ;;;; posts.  Extracted from frontend-mui.lisp so the host frontend
 ;;;; (specs/clamacs-host.md) drains the same box from its own loop.
 ;;;;

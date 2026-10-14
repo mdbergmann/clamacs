@@ -5,7 +5,7 @@
  * history has to be per PROMPT KIND (file names, commands, search patterns)
  * rather than per object -- hence a plain struct the caller keeps one of per
  * kind.  Completion is generic over a candidate list so `M-x', file names and,
- * from phase 2, symbol names from clamiga all share one implementation.
+ * from phase 2, symbol names from amilisp all share one implementation.
  *
  * Pure C: no MUI, no OS types.
  */
@@ -55,7 +55,7 @@ int32_t ck_complete(const char *const *cands, int32_t ncands,
                     const char *prefix, const char **out, int32_t max,
                     char *common, int32_t common_size);
 
-/* A candidate list that came from clamiga: COMPLETE answers one symbol per
+/* A candidate list that came from amilisp: COMPLETE answers one symbol per
  * line, and this turns that reply into the array ck_complete() takes. */
 typedef struct {
     char   **items;

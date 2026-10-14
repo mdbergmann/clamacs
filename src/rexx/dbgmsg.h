@@ -2,8 +2,8 @@
  * dbgmsg.h -- the lines of the debugger and inspector replies.
  *
  * Phase 4's windows are lists: the restarts and the frames of a debugger
- * level, a frame's locals, an object's parts.  clamiga answers each as
- * text with one row per line (cl-amiga's lib/dev-repl.lisp and the
+ * level, a frame's locals, an object's parts.  amilisp answers each as
+ * text with one row per line (AmiLisp's lib/dev-repl.lisp and the
  * INSPECT command in lib/dev-commands.lisp print them), and the MUI layer
  * puts the lines into MUI Lists as they are.  What it has to READ out of a
  * line is small and is here, pure, so tests/test_dbgmsg.c can pin the

@@ -1,6 +1,6 @@
 ;;;; test-wire.lisp -- the client side of the wire, on the fake transport:
 ;;;; the queue discipline of tests/test_queue.c, the continuations, the
-;;;; error list, and the commands that talk to clamiga.
+;;;; error list, and the commands that talk to amilisp.
 
 (in-package :clamacs)
 
@@ -24,11 +24,11 @@
     (is-equal (fake-sent-commands tr) '("PING"))
     (is-equal (length (wire-queue wire)) 1)
     (fake-deliver tr 0 "PONG")
-    (is-equal (fake-last-message doc) "clamiga answers on CLAMIGA")
+    (is-equal (fake-last-message doc) "amilisp answers on CLAMIGA")
     (is-equal (fake-sent-commands tr) '("PING" "VERSION"))
-    (fake-deliver tr 0 "CL-Amiga 0.10 on AmigaOS/m68k")
-    (is-equal (fake-last-message doc) "CL-Amiga 0.10 on AmigaOS/m68k")
-    (is-equal (wire-version wire) "CL-Amiga 0.10 on AmigaOS/m68k")
+    (fake-deliver tr 0 "AmiLisp 0.10 on AmigaOS/m68k")
+    (is-equal (fake-last-message doc) "AmiLisp 0.10 on AmigaOS/m68k")
+    (is-equal (wire-version wire) "AmiLisp 0.10 on AmigaOS/m68k")
     (is (null (wire-inflight wire)))
     (is (null (wire-queue wire)))))
 
@@ -47,7 +47,7 @@
     (wire-request wire doc :eval "EVAL (+ 1 2)")
     (is-equal (fake-last-sent tr) "LOAD foo.lisp")
     ;; rc 10 means ARexx dropped the text, so LASTRESULT has to be the very
-    ;; next thing on the wire -- if the queued EVAL ran first, clamiga's
+    ;; next thing on the wire -- if the queued EVAL ran first, amilisp's
     ;; *LAST-RESULT* would already hold ITS output.
     (fake-deliver tr 10 "")
     (is-equal (fake-last-sent tr) "LASTRESULT")
@@ -92,15 +92,15 @@
     (fake-deliver tr 0 "stray")
     (is (null (wire-inflight wire)))))
 
-;;; --- finding, losing and starting clamiga -----------------------------------
+;;; --- finding, losing and starting amilisp -----------------------------------
 
 (deftest a-newly-found-port-is-announced-once
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
     (setf (wire-package wire) "FOO")
     (wire-request wire doc :ping "PING")
-    (is-equal (fake-last-message doc) "clamiga found on CLAMIGA")
+    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA")
     (is-equal (wire-port-name wire) "CLAMIGA")
-    ;; A fresh clamiga starts in CL-USER, whatever the old one was told.
+    ;; A fresh amilisp starts in CL-USER, whatever the old one was told.
     (is (null (wire-package wire)))
     (fake-deliver tr 0 "PONG")
     (setf (fake-messages doc) '())
@@ -112,20 +112,20 @@
     (wire-request wire doc :load "LOAD a.lisp")
     (wire-request wire doc :load "LOAD b.lisp")
     (fake-deliver tr 20 "no such port" :lost t)
-    (is-equal (fake-last-message doc) "clamiga is not running (port CLAMIGA is gone)")
+    (is-equal (fake-last-message doc) "amilisp is not running (port CLAMIGA is gone)")
     (is (not (wire-connected wire)))
     (is (null (wire-queue wire)))
     (is-equal (fake-sent-commands tr) '("LOAD a.lisp"))
     ;; Back again: found afresh, announced afresh.
     (wire-request wire doc :ping "PING")
-    (is-equal (fake-last-message doc) "clamiga found on CLAMIGA")))
+    (is-equal (fake-last-message doc) "amilisp found on CLAMIGA")))
 
 (deftest without-a-port-the-user-is-asked-and-may-cancel
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (push :cancel (fake-answers doc))
     (is (null (wire-request wire doc :ping "PING")))
     (is-equal (first (fake-asked doc))
-              '("No running clamiga was found. Start one?"
+              '("No running amilisp was found. Start one?"
                 (:start :cancel)))
     (is-equal (fake-transport-launched tr) 0)
     (is (null (fake-transport-sent tr)))))
@@ -145,7 +145,7 @@
     (push :start (fake-answers doc))
     (is (null (wire-request wire doc :ping "PING")))
     (is-equal (fake-transport-launched tr) 1)
-    (is-equal (fake-last-message doc) "Cannot start clamiga")))
+    (is-equal (fake-last-message doc) "Cannot start amilisp")))
 
 (deftest a-quiet-request-never-asks
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
@@ -155,7 +155,7 @@
 
 ;;; --- the commands ------------------------------------------------------------
 
-;;; A buffer eval runs on clamiga's REPL thread (repl.lisp, SLIME's model):
+;;; A buffer eval runs on amilisp's REPL thread (repl.lisp, SLIME's model):
 ;;; the first one attaches the REPL -- its window opens, the buffer keeps
 ;;; the focus -- and the values come back as a RESULT command at the
 ;;; editor's port, not as the reply.  tests/test-repl.lisp has the REPL
@@ -254,7 +254,7 @@
     (is-equal (fake-last-message doc) "42")))
 
 (deftest an-eval-error-comes-back-as-a-failed-result
-  ;; Without the debugger (a phase-3 clamiga, or a form that is refused
+  ;; Without the debugger (a phase-3 amilisp, or a form that is refused
   ;; before it runs) the form ends with RESULT 10: the error text is the
   ;; buffer's message, with a beep.
   (multiple-value-bind (doc tr wire) (make-wired-fake "(boom)|")
@@ -296,7 +296,7 @@
       (load-file doc path)
       (doc-insert doc ";; edited")
       (run-command doc 'clamacs-load-buffer)
-      ;; Saved first, so clamiga loads what is on screen.
+      ;; Saved first, so amilisp loads what is on screen.
       (is (not (doc-modified-p doc)))
       (is (starts-with-p ";; edited;;; errors.lisp" (read-file-text path)))
       (is-equal (fake-last-sent tr) (format nil "LOAD ~A" path))
@@ -434,18 +434,18 @@
 
 (deftest connect-and-run-lisp
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
-    ;; Connect without a port offers to start clamiga: refused, it says
+    ;; Connect without a port offers to start amilisp: refused, it says
     ;; there is none; taken, the launch that failed is reported ...
     (push :cancel (fake-answers doc))
     (run-command doc 'clamacs-connect)
     (is-equal (first (fake-asked doc))
-              '("No running clamiga was found. Start one?" (:start :cancel)))
-    (is-equal (fake-last-message doc) "No clamiga port found")
+              '("No running amilisp was found. Start one?" (:start :cancel)))
+    (is-equal (fake-last-message doc) "No amilisp port found")
     (is (null (fake-transport-sent tr)))
     (is-equal (fake-transport-launched tr) 0)
     (push :start (fake-answers doc))
     (run-command doc 'clamacs-connect)
-    (is-equal (fake-last-message doc) "Cannot start clamiga")
+    (is-equal (fake-last-message doc) "Cannot start amilisp")
     (is-equal (fake-transport-launched tr) 1)
     (is (null (fake-transport-sent tr)))
     ;; ... and one that worked is connected to, VERSION asked as after a find
@@ -455,17 +455,17 @@
     (is-equal (fake-transport-launched tr) 2)
     (is-equal (wire-port-name wire) "CLAMIGA")
     (is-equal (fake-last-sent tr) "VERSION")
-    (fake-deliver tr 0 "CL-Amiga 0.11")
-    (is-equal (fake-last-message doc) "CL-Amiga 0.11")
+    (fake-deliver tr 0 "AmiLisp 0.11")
+    (is-equal (fake-last-message doc) "AmiLisp 0.11")
     (is (null (fake-answers doc))))
-  ;; clamiga quit (QUIT, console closed) while the editor thought it was
+  ;; amilisp quit (QUIT, console closed) while the editor thought it was
   ;; connected: Connect notices the port is gone and offers to start one
   ;; at ONCE -- not after a VERSION sent into the void (2026-10-06: the
   ;; requester came on the second Connect, the first only flipped the
-  ;; menu to "Start clamiga").
+  ;; menu to "Start amilisp").
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
     (run-command doc 'clamacs-connect)
-    (fake-deliver tr 0 "CL-Amiga 0.11")
+    (fake-deliver tr 0 "AmiLisp 0.11")
     (is (wire-connected wire))
     (setf (fake-transport-port tr) nil
           (fake-transport-sent tr) '()
@@ -473,28 +473,28 @@
     (push :start (fake-answers doc))
     (run-command doc 'clamacs-connect)
     (is-equal (first (fake-asked doc))
-              '("No running clamiga was found. Start one?" (:start :cancel)))
+              '("No running amilisp was found. Start one?" (:start :cancel)))
     (is-equal (fake-transport-launched tr) 1)
     (is (wire-connected wire))
     (is-equal (fake-sent-commands tr) '("VERSION"))
     (is (null (fake-answers doc))))
   ;; A port still there: Connect asks nothing and does not treat it as
-  ;; newly found (no "clamiga found" message, no REPL re-attach).
+  ;; newly found (no "amilisp found" message, no REPL re-attach).
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "CLAMIGA")
     (run-command doc 'clamacs-connect)
-    (fake-deliver tr 0 "CL-Amiga 0.11")
+    (fake-deliver tr 0 "AmiLisp 0.11")
     (setf (fake-messages doc) '())
     (run-command doc 'clamacs-connect)
     (is (null (fake-asked doc)))
     (is (wire-connected wire))
     (is-equal (fake-last-sent tr) "VERSION")
-    (is (notany (lambda (m) (search "clamiga found" m)) (fake-messages doc))))
+    (is (notany (lambda (m) (search "amilisp found" m)) (fake-messages doc))))
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (run-command doc 'run-lisp)
-    (is-equal (fake-last-message doc) "Cannot start clamiga")
+    (is-equal (fake-last-message doc) "Cannot start amilisp")
     (setf (fake-transport-launch-port tr) "CLAMIGA")
     (run-command doc 'run-lisp)
-    (is-equal (fake-last-message doc) "Started clamiga")
+    (is-equal (fake-last-message doc) "Started amilisp")
     (is-equal (wire-port-name wire) "CLAMIGA")
     (setf (fake-messages doc) '())
     ;; Connected already: no second launch, and Connect asks nothing.
@@ -503,8 +503,8 @@
     (run-command doc 'clamacs-connect)
     (is (null (fake-asked doc)))
     (is-equal (fake-last-sent tr) "VERSION")
-    (fake-deliver tr 0 "CL-Amiga 0.10")
-    (is-equal (fake-last-message doc) "CL-Amiga 0.10")))
+    (fake-deliver tr 0 "AmiLisp 0.10")
+    (is-equal (fake-last-message doc) "AmiLisp 0.10")))
 
 (deftest show-errors-opens-the-list-even-when-empty
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
@@ -518,7 +518,7 @@
     (dolist (command '(clamacs-eval-last-sexp clamacs-connect run-lisp
                        clamacs-show-errors clamacs-next-error))
       (run-command doc command)
-      (is-equal (fake-last-message doc) "No connection to clamiga in this editor"))))
+      (is-equal (fake-last-message doc) "No connection to amilisp in this editor"))))
 
 ;;; --- systems ---------------------------------------------------------------
 
@@ -624,7 +624,7 @@ values: the .asd, the source file, and everything to delete."
                 "REPL-EVAL (ext.dev:load-asd-system \"Work:src/foo/foo.asd\")")
       (is-equal (fake-last-message doc) "Loading system foo ..."))))
 
-;;; --- how clamiga is started ----------------------------------------------------
+;;; --- how amilisp is started ----------------------------------------------------
 
 (deftest the-started-clamiga-s-heap-and-options-are-the-init-file-s
   (let ((*clamiga-options* '()))
@@ -632,7 +632,7 @@ values: the .asd, the source file, and everything to delete."
     (let ((*clamiga-heap* :default)
           (*features* (remove :morphos (remove :amigaos *features*))))
       (is-equal (clamiga-launch-options) '("--heap" "256M")))
-    ;; An Amiga keeps clamiga's own default: the memory is the machine's.
+    ;; An Amiga keeps amilisp's own default: the memory is the machine's.
     (let ((*clamiga-heap* :default)
           (*features* (cons :amigaos *features*)))
       (is-equal (clamiga-heap) nil)
@@ -646,7 +646,7 @@ values: the .asd, the source file, and everything to delete."
       (is-equal (clamiga-launch-options) '("--heap" "24M")))
     (let ((*clamiga-heap* 8388608))
       (is-equal (clamiga-launch-options) '("--heap" "8388608")))
-    ;; NIL, and anything that is no size, is clamiga's own default.
+    ;; NIL, and anything that is no size, is amilisp's own default.
     (dolist (none '(nil "" 0 -1 :big))
       (let ((*clamiga-heap* none))
         (is-equal (clamiga-launch-options) '())))

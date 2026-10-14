@@ -55,11 +55,11 @@ static void ck_menu_about(ck_app *app, ck_doc *doc)
 
     snprintf(text, sizeof text,
              "clamacs 0.1 (" __DATE__ ")\n"
-             "An Emacs-flavoured Common Lisp IDE for clamiga\n"
+             "An Emacs-flavoured Common Lisp IDE for AmiLisp\n"
              "\n"
              "muimaster.library %ld.%ld\n"
              "TextEditor.mcc %ld.%ld\n"
-             "clamiga: %s",
+             "amilisp: %s",
              (long)MUIMasterBase->lib_Version, (long)MUIMasterBase->lib_Revision,
              (long)app->te_version, (long)app->te_revision,
              app->connected

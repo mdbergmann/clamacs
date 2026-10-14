@@ -2,16 +2,16 @@
 # run-spike.sh [020|040]
 #
 # Phase 0 of specs/clamacs-lisp.md: boot AmigaOS 3 in FS-UAE, start the Lisp
-# spike (spike.lisp) in the superproject's cross-built clamiga, type a Lisp
+# spike (spike.lisp) in the superproject's cross-built amilisp, type a Lisp
 # form into it with sendkey, quit it with C-x C-c and collect the report.
 # Modelled on verify/realamiga/run-fs-uae.sh (boot-override hook, watchdog).
 #
 # Result: build/amiga/spike-run.log (the run), build/amiga/spike.log (the
 # spike's own report), build/amiga/spike-buffer.txt (what arrived in the
-# buffer), build/amiga/spike-clamiga.log (clamiga's stdout/stderr).
+# buffer), build/amiga/spike-amilisp.log (amilisp's stdout/stderr).
 #
 # Environment (as run-vamp.py): SPIKE_CLAMIGA_ARGS adds arguments to the
-# clamiga command line (e.g. --no-jit); SPIKE_SETENV=NAME=VALUE sets one
+# amilisp command line (e.g. --no-jit); SPIKE_SETENV=NAME=VALUE sets one
 # AmigaDOS environment variable before the launch (e.g.
 # CLAMIGA_HDR_INDEX=0 to A/B the GC's block-start index).
 set -u
@@ -31,12 +31,12 @@ HARD_TIMEOUT="${HARD_TIMEOUT:-2400}"
 
 [ -f "$CONFIG" ] || { echo "no config $CONFIG"; exit 1; }
 [ -x "$FSUAE" ] || { echo "FS-UAE not found at $FSUAE"; exit 1; }
-[ -f "$SUPER/build/cross/clamiga" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
+[ -f "$SUPER/build/cross/amilisp" ] || { echo "build the runtime first: make -C $SUPER -f Makefile.cross amiga"; exit 1; }
 [ -f "$ROOT/build/cross/sendkey" ] || { echo "sendkey missing: make -C $ROOT -f Makefile.cross amiga"; exit 1; }
 
 mkdir -p "$ROOT/build/amiga" "$SUPER/build/amiga"
 rm -f "$RUNLOG" "$ROOT/build/amiga/spike.log" "$ROOT/build/amiga/spike-buffer.txt" \
-      "$ROOT/build/amiga/spike-ready" "$ROOT/build/amiga/spike-clamiga.log" "$HERE"/*.uaem \
+      "$ROOT/build/amiga/spike-ready" "$ROOT/build/amiga/spike-amilisp.log" "$HERE"/*.uaem \
       "$ROOT/build/amiga"/spike*.uaem
 cp "$ROOT/build/cross/sendkey" "$ROOT/build/amiga/sendkey"
 
@@ -44,7 +44,7 @@ cp "$ROOT/build/cross/sendkey" "$ROOT/build/amiga/sendkey"
 TYPING=$(sh "$HERE/typing.sh" build/amiga/sendkey)
 
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
-; spike boot-override -- consumed by CLAmiga:verify/realamiga/call-on-ustartup
+; spike boot-override -- consumed by AmiLisp:verify/realamiga/call-on-ustartup
 failat 21
 cd Clamacs:
 echo "=== run start ===" >build/amiga/spike-run.log
@@ -54,8 +54,8 @@ avail >>build/amiga/spike-run.log
 stack 128000
 setenv CLAMIGA_MEM_DIAG 1
 ${SPIKE_SETENV:+setenv ${SPIKE_SETENV%%=*} ${SPIKE_SETENV#*=}}
-cd CLAmiga:
-run >Clamacs:build/amiga/spike-clamiga.log build/cross/clamiga --no-userinit --heap 8M --non-interactive ${SPIKE_CLAMIGA_ARGS:-} --load Clamacs:spike/spike.lisp
+cd AmiLisp:
+run >Clamacs:build/amiga/spike-amilisp.log build/cross/amilisp --no-userinit --heap 8M --non-interactive ${SPIKE_CLAMIGA_ARGS:-} --load Clamacs:spike/spike.lisp
 cd Clamacs:
 set n 0
 LAB waitready
@@ -99,9 +99,9 @@ echo "=== spike.log ===" >>build/amiga/spike-run.log
 IF EXISTS build/amiga/spike.log
   type build/amiga/spike.log >>build/amiga/spike-run.log
 ENDIF
-echo "=== spike-clamiga.log ===" >>build/amiga/spike-run.log
-IF EXISTS build/amiga/spike-clamiga.log
-  type build/amiga/spike-clamiga.log >>build/amiga/spike-run.log
+echo "=== spike-amilisp.log ===" >>build/amiga/spike-run.log
+IF EXISTS build/amiga/spike-amilisp.log
+  type build/amiga/spike-amilisp.log >>build/amiga/spike-run.log
 ENDIF
 echo "=== spike-buffer.txt ===" >>build/amiga/spike-run.log
 IF EXISTS build/amiga/spike-buffer.txt
@@ -133,7 +133,7 @@ while kill -0 "$FSUAE_PID" 2>/dev/null; do
 	size=0; [ -f "$RUNLOG" ] && size=$(wc -c < "$RUNLOG" | tr -d ' ')
 	# the spike's own log counts as progress too (the long cold compile)
 	[ -f "$ROOT/build/amiga/spike.log" ] && size=$((size + $(wc -c < "$ROOT/build/amiga/spike.log" | tr -d ' ')))
-	[ -f "$ROOT/build/amiga/spike-clamiga.log" ] && size=$((size + $(wc -c < "$ROOT/build/amiga/spike-clamiga.log" | tr -d ' ')))
+	[ -f "$ROOT/build/amiga/spike-amilisp.log" ] && size=$((size + $(wc -c < "$ROOT/build/amiga/spike-amilisp.log" | tr -d ' ')))
 	if [ "$size" != "$last_size" ]; then last_size=$size; last_change=$now; fi
 	if [ "$end_seen" -eq 0 ] && [ -f "$RUNLOG" ] && grep -q '=== run end ===' "$RUNLOG"; then end_seen=$now; fi
 	if [ "$end_seen" -ne 0 ] && [ $((now - end_seen)) -ge "$SENTINEL_GRACE" ]; then echo "=== run finished; quitting FS-UAE ==="; kill_fsuae; break; fi

@@ -40,13 +40,13 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
   (file-history (make-history))
   (symbol-history (make-history))
   (documents '())
-  ;; The connection to clamiga (wire.lisp), or NIL before it is set up.
+  ;; The connection to amilisp (wire.lisp), or NIL before it is set up.
   (wire nil)
-  ;; What clamiga said about a symbol's arglist, and where `M-.' came
+  ;; What amilisp said about a symbol's arglist, and where `M-.' came
   ;; from (introspect.lisp).
   (arglists (make-symcache))
   (locations (make-locstack))
-  ;; The REPL window and clamiga's REPL thread (repl.lisp), the debugger
+  ;; The REPL window and amilisp's REPL thread (repl.lisp), the debugger
   ;; window (debugger.lisp) and the inspector window (inspector.lisp):
   ;; their state, made on first use; and the input history of the prompt.
   (repl nil)
@@ -91,7 +91,7 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    ;; Counts the edits (NOTE-TEXT-CHANGED), so that what was worked out
    ;; from the text can tell whether it still holds.
    (edit-serial :initform 0 :accessor doc-edit-serial)
-   ;; What the editor asked clamiga about this text (introspect.lisp),
+   ;; What the editor asked amilisp about this text (introspect.lisp),
    ;; made on first use.
    (intro :initform nil :accessor %doc-intro)
    ;; The listener state when this window is the REPL (repl.lisp), else
