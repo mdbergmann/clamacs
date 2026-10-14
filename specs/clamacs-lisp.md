@@ -957,8 +957,11 @@ phases 0-5 plan, and why:
   application disposed, and `run-lisp-editor.sh` closes its one buffer
   with `C-x k` (the keyboard path; the last window's close is the exit)
   and reads the same log.
-- The MorphOS run of phases 2 and 3.
-- The MorphOS column of the spike (box unreachable on 2026-09-16).
+- The MorphOS column of the spike (box unreachable on 2026-09-16).  The
+  editor itself has run there since: `run-lisp-drive` at `PHASE 5` passed
+  on the box (129 `OK`, no `FAIL`, the snapshot leg's second editor
+  included), so the MorphOS runs of phases 2 to 5 are done; only the
+  spike's numbers are missing.
 - Whether the client thread or an asynchronous platform send is the
   better shape; the spike did not exercise the wire.
 - The runtime items the spike raised (character-scan cost, GC pause vs

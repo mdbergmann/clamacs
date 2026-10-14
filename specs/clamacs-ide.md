@@ -890,48 +890,44 @@ not have saved; CLAUDE.md carries the short list.
   TAB RET`, `M-x` inside the prompt, `C-g`, and `C-s ... C-s C-g` in
   isearch -- six `OK` lines, all green on the Vampire the same day (76
   `OK`, 0 `FAIL` for the whole run).
-
-## Still open
-
-- **Raw typing into the minibuffer under FS-UAE**: driving the `String`
-  gadget with *synthetic* key events there is a harness limit -- MUI holds a
-  programmatically-activated string for a single injected key and then
-  deactivates it, so `sendkey` can prove raw `M-x` opens the minibuffer and
-  raw `C-g` aborts it, but not `M-x <name> RET`.  On the Vampire the same
-  events type the whole name (above), so `drive.rexx` keeps its raw leg
-  short of the minibuffer to stay green under emulation; the minibuffer's
-  command loop, prompt, completion and history are covered by the `KEY`
-  leg (which types into an open minibuffer and accepts it with `RET`: the
-  phase-2 describe, apropos and completion prompts are answered that way),
-  the host tests, and the hardware run.
-- **The phase-2 leg of `drive.rexx`** (intro.lisp: arglist from the idle
-  timer, `M-.`/`M-,`, `C-c RET`/`C-c M-m`, `C-c C-d d`, `C-c C-d a`,
-  `M-TAB`/`C-M-i` with the minibuffer hand-off) passes on FS-UAE
-  (2026-09-10, amilisp at 04a2a41: the idle timer had `(twice n)` cached,
-  the jump landed in the open window, the description carried the
-  docstring).  Its `OK` lines are in `verify-amiga`'s list.  Not yet run on
-  hardware; `run-drive` is the step there.
-- **The phase-3 leg of `drive.rexx`** (the REPL window against amilisp at
-  b7aeca5) passes on FS-UAE and on the Vampire (2026-09-11, 70 `OK`, no
-  `FAIL`, via `run-drive`); its `OK` lines are in `verify-amiga`'s list.
-  Two things it does not cover: output
-  arriving while a prompt is showing (only a thread other than the REPL's
-  can print then) and a transcript long enough to matter on a 68020 --
-  every insert costs a few cursor moves and each move a paren-match scan
-  over the context window, which is fine for a session and unmeasured for
-  a long one.  And one edge on the quit path: `ck_rexx_close()` waits for
-  the `REPL-DETACH` reply without serving the editor's own port, so a REPL
-  thread caught mid-`OUTPUT` at that moment waits for a reply that comes
-  only when MUI disposes of the port; amilisp's `REPL-DETACH` gives up on
-  the thread after five seconds and answers rc 10, and the editor exits.
-- **The phase-4 leg of `drive.rexx`** (the debugger and inspector windows)
-  passes on FS-UAE and on the Vampire (2026-09-11, `run-drive`: 93 `OK`,
-  no `FAIL`, amilisp at the submodule's JIT-fix commit); its `OK` lines
-  are in `verify-amiga`'s list.  What it does not cover: the mouse paths
-  (double-click on a restart, a frame or a part, the buttons), which are
-  the same functions the commands call; and a `RESTART` whose interactive
-  function reads a line (host-tested in AmiLisp: it goes through
-  `READLINE`, which the REPL window answers as in phase 3).
+- **Raw typing into the minibuffer under FS-UAE is a harness limit, not
+  an editor bug.**  MUI holds a programmatically-activated `String` for a
+  single injected key and then deactivates it, so `sendkey` can prove raw
+  `M-x` opens the minibuffer and raw `C-g` aborts it, but not `M-x <name>
+  RET`.  On the Vampire the same events type the whole name (above), so
+  `drive.rexx` keeps its raw leg short of the minibuffer under emulation
+  and runs the rest under `HARDWARE`; the minibuffer's command loop,
+  prompt, completion and history are covered by the `KEY` leg (which
+  types into an open minibuffer and accepts it with `RET`: the phase-2
+  describe, apropos and completion prompts are answered that way), the
+  host tests, and the hardware run.  The Lisp editor's smoke run
+  (`run-lisp-editor.sh`) types no minibuffer for the same reason.
+- **The phase-2, -3 and -4 legs of `drive.rexx` pass on every target.**
+  Phase 2 (intro.lisp: arglist from the idle timer, `M-.`/`M-,`, `C-c
+  RET`/`C-c M-m`, `C-c C-d d`, `C-c C-d a`, `M-TAB`/`C-M-i` with the
+  minibuffer hand-off) on FS-UAE 2026-09-10 (amilisp at 04a2a41); phase
+  3 (the REPL window) on FS-UAE and the Vampire 2026-09-11 (70 `OK`);
+  phase 4 (the debugger and inspector windows) on FS-UAE and the Vampire
+  the same day (93 `OK`, amilisp at the submodule's JIT-fix commit); all
+  of them on the MorphOS box the same day (93 `OK`, below).  The Lisp
+  editor's `run-lisp-drive` passed at `PHASE 5` on FS-UAE (124 `OK`,
+  2026-09-20) and on the MorphOS box (129 `OK`, the snapshot leg's second
+  editor included).  The `OK` lines are in `verify-amiga`'s list.
+- **Output arriving while a prompt is showing** (only a thread other than
+  the REPL's can print then, or a `FRAME-EVAL`'s values while a
+  `READLINE` is armed) goes above the prompt, which moves down with its
+  input intact: `output-arriving-at-the-prompt-goes-above-it` in
+  `tests/test-repl.lisp` pins it for the Lisp editor.
+- **The quit path and a REPL thread caught mid-`OUTPUT`.**  The C
+  editor's `ck_rexx_close()` waits for the `REPL-DETACH` reply without
+  serving the editor's own port, so a REPL thread sending `OUTPUT` at
+  that moment waits for a reply that comes only when MUI disposes of the
+  port; amilisp's `REPL-DETACH` gives up on the thread after five seconds
+  and answers rc 10, and the editor exits.  The Lisp editor's `stop-wire`
+  (`transport-arexx.lisp`) stops its own port FIRST, then lets the queued
+  `REPL-DETACH` go out and waits at most five seconds for the client
+  thread, so a thread caught sending finds no port instead of waiting;
+  `quit.rexx` checks the teardown through `T:clamacs-exit.log`.
 - **MorphOS**: `Makefile.mos` built on the box for the first time on
   2026-09-11 (MorphOS 3.20, the SDK's gcc 9.5.0, muimaster.library 22.4,
   TextEditor.mcc from `SYS:Classes/MUI`) after one source fix -- the
@@ -944,7 +940,11 @@ not have saved; CLAUDE.md carries the short list.
   (93 `OK`, MUI 3.8 unaffected) and on the box (`run-drive` with the
   amilisp built there from the phase-4 branch: 93 `OK`, no `FAIL`, the
   integration, REPL and debugger legs included, `sendkey`'s Alt-as-Meta
-  through MorphOS's 68k emulation too):
+  through MorphOS's 68k emulation too).  The Lisp port carries both
+  answers in `frontend-mui.lisp`: the three-second activation guard
+  (`+activate-pending-ticks+`, `active-document`) and the second-visit
+  test in the mini class's handler, beside the native string hook MUI 3.8
+  needs.
     - **Window activation is reported late.**  `MUIA_Window_Activate`
       read back after `OPEN` of a file already open still named the
       previous window two seconds later, so `ck_doc_active()`, which asked
@@ -980,5 +980,28 @@ not have saved; CLAUDE.md carries the short list.
   Also found there: `IF EXISTS MOSSYS:` in a DOS script raises AmigaOS
   3's "please insert volume" requester and parks the script under it, so
   `run-drive` tests `SYS:MorphOS` for its MorphOS stack size instead.
+
+## Still open
+
+Reviewed 2026-10-14 against the tree; what was answered since moved to
+the list above.
+
 - **Encoding beyond ISO-8859-1** is out of scope until amilisp's wide
-  strings are in a release build.
+  strings are in a release build.  The editor is 8-bit throughout: files
+  are read and written as ISO-8859-1 byte for byte (`files.lisp`), the
+  keymap's character codes are Latin-1 (`keymap.lisp`), and the host
+  page is kept pure ASCII.
+- **The debugger's and inspector's mouse paths are driven by no
+  harness.**  A double-click on a restart, a frame or a part and the
+  window's buttons reach the same functions the `M-x` commands call
+  (`drive.rexx` drives those by name; the host page wires `dblclick` and
+  the buttons to the same callbacks, and `drive.lisp` drives the
+  commands too), so a regression there would be in the wiring only.  Nor
+  is a `RESTART` whose interactive function reads a line tested on the
+  editor side (host-tested in AmiLisp: it goes through `READLINE`, which
+  the REPL window answers as in phase 3).
+- **A transcript long enough to matter on a 68020 is unmeasured.**  The
+  cost the phase-3 run worried about is mostly gone -- since 2026-10-04
+  the paren match and the colours wait for the keys to rest, the scan
+  starts at the cursor's defun, and `repl-insert` colours its own lines
+  -- but no long REPL session has been timed on a stock 68020.
