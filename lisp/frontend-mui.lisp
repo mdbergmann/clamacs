@@ -32,6 +32,11 @@
 ;;;;     HasChanged is saved around everything that only paints.
 ;;;;   - A window is never disposed from inside its own notification: the
 ;;;;     document is retired and the event loop reaps it.
+;;;;   - A window a perspective hides (perspective.lisp) is a CLOSED window,
+;;;;     its object, text, undo and colours kept: DOC-SET-SHOWN only marks
+;;;;     the document, and the loop's housekeeping (SHOWN-SYNC) closes and
+;;;;     opens the windows -- never a hook, since CLOSE-DOCUMENT may switch
+;;;;     perspectives from inside a window's own event handling.
 ;;;;
 ;;;; Per-object state lives in Lisp: the document is found from the object
 ;;;; through a hash table keyed by the object's address, and the few bytes
@@ -409,6 +414,11 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; Set when the windows must be repainted for the theme (THEME-REPAINT,
   ;; from the event loop)
   (theme-dirty nil)
+  ;; Set when a document's window must be closed or opened for the
+  ;; perspectives (SHOWN-SYNC, from the event loop); and what the status
+  ;; lines were last brought in step with (how many perspectives, the
+  ;; name of the one in front: REDISPLAY-DOCUMENTS)
+  (shown-dirty nil) (status-persp nil)
   ;; Counted up by everything that ran editor code -- a command, a hook,
   ;; a port verb.  What follows such a wake but is not the edit itself --
   ;; the colours, the paren highlight, the status line, the menus -- is
@@ -514,7 +524,14 @@ init file may open what it likes.")
    (dirty-y1 :initform nil :accessor mdoc-dirty-y1)
    (cursor-dirty :initform nil :accessor mdoc-cursor-dirty)
    ;; Set while WITH-CHANGED-FLAG holds the class's changed flag
-   (flag-held :initform nil :accessor mdoc-flag-held)))
+   (flag-held :initform nil :accessor mdoc-flag-held)
+   ;; The perspectives' part (SHOWN-SYNC): whether the window is wanted
+   ;; on the screen (DOC-SET-SHOWN), where it was when it was closed for
+   ;; a perspective (left top width height), and the recolouring a theme
+   ;; that came while it was closed owes the next open (:COLOUR / :CLEAR)
+   (shown :initform t :accessor mdoc-shown)
+   (hidden-geometry :initform nil :accessor mdoc-hidden-geometry)
+   (repaint-owed :initform nil :accessor mdoc-repaint-owed)))
 
 (defun object-document (editor object)
   (gethash (object-address object) (mui-editor-objects editor)))
@@ -1108,25 +1125,40 @@ still be inside the window that asked."
           (let* ((window (mdoc-window doc))
                  (object (mdoc-text doc))
                  (data (and object (text-instance-data editor object)))
-                 (painted (and data (text-background-owned-p data))))
-            (when (and object (window-open-p window)
+                 (painted (and data (text-background-owned-p data)))
+                 (open (window-open-p window))
+                 ;; A window a perspective hides is closed already
+                 ;; (SHOWN-SYNC): its object is not set up, so the
+                 ;; background and the font take as at creation, and the
+                 ;; colours are owed to the open that shows it again.
+                 (hidden (and window object (not open) (not (mdoc-shown doc)))))
+            (when (and object (or open hidden)
                        (or all (not (eq (text-background-wanted editor doc) painted))))
-              ;; Where the window is and how big the user made it, read
-              ;; while it is open, and given back to the closed window
-              ;; before it opens: a reopen alone brings the window up at
-              ;; its creation size (MUI 4 on MorphOS), the resize lost.
-              (multiple-value-bind (left top width height) (window-geometry window)
-                (mui:set-attrs window m:+muia-window-open+ nil)
-                (apply-text-background editor data object doc)
-                ;; The font, taken by the class at the Setup the open runs
-                (when font-changed
-                  (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))
-                (mui:set-attrs window
-                               m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
-                               m:+muia-window-width+ width m:+muia-window-height+ height)
-                (mui:set-attrs window m:+muia-window-open+ t))
-              (cond ((doc-lisp-mode doc) (colour-all doc))
-                    (painted (clear-text-colours doc))))))
+              (cond (open
+                     ;; Where the window is and how big the user made it,
+                     ;; read while it is open, and given back to the closed
+                     ;; window before it opens: a reopen alone brings the
+                     ;; window up at its creation size (MUI 4 on MorphOS),
+                     ;; the resize lost.
+                     (multiple-value-bind (left top width height) (window-geometry window)
+                       (mui:set-attrs window m:+muia-window-open+ nil)
+                       (apply-text-background editor data object doc)
+                       ;; The font, taken by the class at the Setup the open runs
+                       (when font-changed
+                         (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))
+                       (mui:set-attrs window
+                                      m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
+                                      m:+muia-window-width+ width m:+muia-window-height+ height)
+                       (mui:set-attrs window m:+muia-window-open+ t)))
+                    (t
+                     (apply-text-background editor data object doc)
+                     (when font-changed
+                       (mui:set-attrs object m:+muia-font+ (text-font-wanted editor)))))
+              (let ((repaint (cond ((doc-lisp-mode doc) :colour)
+                                   (painted :clear))))
+                (if open
+                    (repaint-text-colours doc repaint)
+                    (setf (mdoc-repaint-owed doc) (or repaint (mdoc-repaint-owed doc))))))))
         (when (and active (not (doc-closing active)))
           (doc-activate active)))
         ;; The font the windows drew with before: no object is set up on it
@@ -1134,6 +1166,93 @@ still be inside the window that asked."
         (when (and font-changed old-font)
           (gfx:close-font old-font))))
     (show-theme-note editor (active-document editor))))
+
+(defun repaint-text-colours (doc what)
+  "DOC's colours after a theme change, WHAT being :COLOUR (a Lisp-mode
+document: the colouring in the theme's pens), :CLEAR (one that left Lisp
+mode with the theme's background, which the colouring no longer runs on:
+the colours it was painted in taken off) or NIL (nothing)."
+  (case what
+    (:colour (colour-all doc))
+    (:clear (clear-text-colours doc))))
+
+;;; ------------------------------------------------------------------
+;;; Perspectives (perspective.lisp): a window hidden is a closed window
+;;; ------------------------------------------------------------------
+;;;
+;;; A perspective switch hides the documents of the perspective left and
+;;; shows the ones of the perspective entered; the pure layer decides
+;;; which (DOC-SHOWN-P), and this frontend closes or opens a window when
+;;; told.  The window object stays, and with it the text, the undo and
+;;; the colours (the class keeps them across a close and an open -- the
+;;; theme switch relies on that already).  DOC-SET-SHOWN only MARKS the
+;;; document: CLOSE-DOCUMENT may switch perspectives from inside a
+;;; window's own event handling (the last window of a perspective closed
+;;; with `C-x k'), and MUI may still be inside the window that asked, so
+;;; the windows are opened and closed from the loop's housekeeping
+;;; (SHOWN-SYNC), as THEME-REPAINT is -- never from a hook.  On hide the
+;;; window's geometry is read first and set on the closed window before
+;;; it is opened again (the theme-repaint rule: MUI 4 brings a reopened
+;;; window up at its creation size otherwise), and the snapshot records a
+;;; hidden window where it was (DOC-GEOMETRY).
+
+(defmethod doc-set-shown ((doc mui-document) flag)
+  (let ((flag (and flag t)))
+    (unless (eq flag (mdoc-shown doc))
+      (setf (mdoc-shown doc) flag
+            (mui-editor-shown-dirty (doc-editor doc)) t))))
+
+(defun shown-sync (editor)
+  "The document windows in step with what the perspectives want on the
+screen (DOC-SET-SHOWN): a window to hide is closed, its place remembered;
+a window to show is opened at the place it had, recoloured when a theme
+came while it was closed (THEME-REPAINT), and the active document made
+active again: MUI opens a window with no active object, and the window
+Intuition activated itself when the old one closed is not the pure
+layer's choice.  (The status lines follow in REDISPLAY-DOCUMENTS, which
+the loop runs after this.)  Only from the event loop (HOUSEKEEPING,
+START), never from a hook."
+  (when (and (mui-editor-shown-dirty editor) (mui-editor-app editor)
+             (not (editor-quitting editor)))
+    (setf (mui-editor-shown-dirty editor) nil)
+    (let ((active (active-document editor))
+          (reactivate nil))
+      (dolist (doc (live-documents editor))
+        (let ((window (mdoc-window doc)))
+          (when window
+            (cond ((and (not (mdoc-shown doc)) (window-open-p window))
+                   (setf (mdoc-hidden-geometry doc) (multiple-value-list (window-geometry window)))
+                   (mui:set-attrs window m:+muia-window-open+ nil))
+                  ((and (mdoc-shown doc) (not (window-open-p window)))
+                   (let ((place (mdoc-hidden-geometry doc)))
+                     (when (first place)
+                       (destructuring-bind (left top width height) place
+                         (mui:set-attrs window
+                                        m:+muia-window-left-edge+ left m:+muia-window-top-edge+ top
+                                        m:+muia-window-width+ width m:+muia-window-height+ height))))
+                   (setf (mdoc-hidden-geometry doc) nil)
+                   (mui:set-attrs window m:+muia-window-open+ t)
+                   (let ((owed (mdoc-repaint-owed doc)))
+                     (setf (mdoc-repaint-owed doc) nil)
+                     (repaint-text-colours doc owed))
+                   (when (eq doc active)
+                     (setq reactivate t)))))))
+      (when (and reactivate active (not (doc-closing active)))
+        (doc-activate active)))))
+
+(defun shown-report (editor)
+  "The windows as MUI has them, for a drive to read: `current NAME of
+\(a|b) open (names) closed (names)' -- the open documents whose window
+is on the screen, and those whose window a perspective closed, oldest
+first.  The frontend's account, read off the windows, beside the pure
+layer's (SHOWN-DOCUMENTS)."
+  (flet ((open-p (doc) (window-open-p (mdoc-window doc))))
+    (let ((docs (live-documents editor)))
+      (format nil "current ~A of (~{~A~^|~}) open (~{~A~^ ~}) closed (~{~A~^ ~})"
+              (perspective-name (current-perspective editor))
+              (perspective-names editor)
+              (mapcar #'doc-name (remove-if-not #'open-p docs))
+              (mapcar #'doc-name (remove-if #'open-p docs))))))
 
 (defun wake-loop (editor)
   "Hand the event loop a return ID, so that it runs its housekeeping --
@@ -1806,21 +1925,27 @@ text would stay on the standard background."
   (unwind-protect (funcall function)
     (mui:set-attrs (mdoc-text doc) +tea-quiet+ nil)))
 
-(defun update-status (doc)
-  "`*name  PACKAGE  line:column  (arglist)' in the status line.  The
-arglist of the operator at point rides at the end, where a long one is
-cut off rather than pushing the rest out of view."
+(defun status-text (doc)
+  "`*name [perspective]  PACKAGE  line:column  (arglist)', the status
+line's text: the perspective's name only when there is more than one
+\(STATUS-PERSPECTIVE, perspective.lisp); the arglist of the operator at
+point rides at the end, where a long one is cut off rather than pushing
+the rest out of view."
   (let ((arglist (mdoc-arglist doc)))
-    (mui:set-attrs (mdoc-status doc) m:+muia-text-contents+
-                   (store-string (mdoc-status-buf doc)
-                                 (format nil "~A~A  ~A  ~D:~D~A~A"
-                                         (if (doc-modified-p doc) "*" " ")
-                                         (doc-name doc)
-                                         (mdoc-package doc)
-                                         (1+ (te-get doc +tea-cursor-y+))
-                                         (1+ (te-get doc +tea-cursor-x+))
-                                         (if (string= arglist "") "" "  ")
-                                         arglist)))))
+    (format nil "~A~A~A  ~A  ~D:~D~A~A"
+            (if (doc-modified-p doc) "*" " ")
+            (doc-name doc)
+            (status-perspective doc)
+            (mdoc-package doc)
+            (1+ (te-get doc +tea-cursor-y+))
+            (1+ (te-get doc +tea-cursor-x+))
+            (if (string= arglist "") "" "  ")
+            arglist)))
+
+(defun update-status (doc)
+  "STATUS-TEXT into the status line."
+  (mui:set-attrs (mdoc-status doc) m:+muia-text-contents+
+                 (store-string (mdoc-status-buf doc) (status-text doc))))
 
 (defmethod doc-show-arglist ((doc mui-document) text)
   (setf (mdoc-arglist doc) text)
@@ -2054,12 +2179,17 @@ the rightmost, the cancel position."
 (defconstant +activate-pending-ticks+ 150)
 
 (defmethod doc-activate ((doc mui-document))
-  (let ((editor (doc-editor doc)))
+  (let ((editor (doc-editor doc))
+        (window (mdoc-window doc)))
     (setf (mui-editor-active-doc editor) doc
           (mui-editor-activate-pending editor) doc
           (mui-editor-activate-stamp editor) (ticks-now))
-    (mui:set-attrs (mdoc-window doc) m:+muia-window-activate+ t)
-    (mui:set-attrs (mdoc-window doc) m:+muia-window-active-object+ (mdoc-text doc))))
+    ;; A window a perspective hides is closed, and MUI ignores the two
+    ;; attributes on a closed window: SHOWN-SYNC activates it once it is
+    ;; open again (the pure layer activates before the loop opens).
+    (when (window-open-p window)
+      (mui:set-attrs window m:+muia-window-activate+ t)
+      (mui:set-attrs window m:+muia-window-active-object+ (mdoc-text doc)))))
 
 (defmethod doc-close-window ((doc mui-document))
   "Retire the window now, dispose of it later: this is reached from a
@@ -2075,14 +2205,15 @@ text object that is about to be freed."
 
 (defun active-document (editor)
   "The document the messages mean: the last activated, else the window
-Intuition says is active, else any."
-  (let ((docs (live-documents editor)))
-    (or (let ((doc (mui-editor-active-doc editor)))
-          (and doc (not (doc-closing doc)) doc))
-        (find-if (lambda (doc)
-                   (/= 0 (or (mui:get-attr m:+muia-window-activate+ (mdoc-window doc)) 0)))
-                 docs)
-        (first docs))))
+Intuition says is active, else the oldest SHOWN one -- a window a
+perspective hides is never the fallback (perspective.lisp)."
+  (or (let ((doc (mui-editor-active-doc editor)))
+        (and doc (not (doc-closing doc)) (doc-shown-p doc) doc))
+      (let ((docs (shown-documents editor)))
+        (or (find-if (lambda (doc)
+                       (/= 0 (or (mui:get-attr m:+muia-window-activate+ (mdoc-window doc)) 0)))
+                     docs)
+            (first docs)))))
 
 (defmethod editor-active-document ((editor mui-editor))
   (active-document editor))
@@ -2118,7 +2249,12 @@ window; NIL when it is NIL or not open."
               (attr m:+muia-window-width+) (attr m:+muia-window-height+)))))
 
 (defmethod doc-geometry ((doc mui-document))
-  (window-geometry (mdoc-window doc)))
+  "Where DOC's window is -- or was, for a window a perspective hides
+\(SHOWN-SYNC keeps its place), so the snapshot records it there."
+  (let ((window (mdoc-window doc)))
+    (if (window-open-p window)
+        (window-geometry window)
+        (values-list (mdoc-hidden-geometry doc)))))
 
 (defmethod editor-aux-windows ((editor mui-editor))
   (loop for (role window) in (list (list "errors" (mui-editor-errors-window editor))
@@ -3209,6 +3345,18 @@ step; nothing when no editor code ran since the last time, unless FORCE."
     (incf (loop-stats-menu-syncs *loop-stats*))
     (dolist (doc (editor-documents editor))
       (redisplay-document doc))
+    ;; Every status line on the screen says ` [name]' after the buffer's
+    ;; name once there are two perspectives (STATUS-PERSPECTIVE): a
+    ;; perspective made, closed, renamed or brought in front changes what
+    ;; each one says, and no document of its own is dirty for that.
+    (let ((key (list (length (editor-perspectives editor))
+                     (and (editor-perspective editor)
+                          (perspective-name (editor-perspective editor))))))
+      (unless (equal key (mui-editor-status-persp editor))
+        (setf (mui-editor-status-persp editor) key)
+        (dolist (doc (shown-documents editor))
+          (when (and (mdoc-text doc) (window-open-p (mdoc-window doc)))
+            (update-status doc)))))
     ;; Read after the work: its own notifications are not a new reason.
     (setf (mui-editor-shown-activity editor) (mui-editor-activity editor))))
 
@@ -3240,6 +3388,9 @@ quit.  True when the last window is gone and the loop must leave."
     (reap editor))
   (when (editor-quitting editor)
     (quit-requested editor))
+  ;; The perspectives' windows first: a window to hide is not reopened
+  ;; for a theme, and one to show takes the theme at its open.
+  (shown-sync editor)
   (theme-repaint editor)
   ;; The display follows a wake that ran editor code -- a return id, a
   ;; mailbox drain, a key or a hook (AFTER-COMMAND counts them) -- at once
@@ -3361,8 +3512,10 @@ function: an image is saved before it runs and restores into it."
                       (funcall hook editor))
                     (menu-update editor)
                     (dynamic-menus-sync editor)
-                    ;; A theme a start hook or the wire's first reply
+                    ;; The windows a restored perspective hides, and a
+                    ;; theme a start hook or the wire's first reply
                     ;; picked, before the first key.
+                    (shown-sync editor)
                     (theme-repaint editor)
                     (run-loop editor)))
              ;; Order: no more calls from the other threads (waiters are

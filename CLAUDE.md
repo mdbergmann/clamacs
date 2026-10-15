@@ -367,7 +367,29 @@ once there is more than one perspective, `host-panel-state
 perspective over, as `find-file` does.  `drive.lisp` has the
 PERSPECTIVES leg (the prompt, the page's tabs read back, the native
 pick, the directory told to amilisp read back at the REPL prompt, the
-file saved) and its second editor restores the file.
+file saved) and its second editor restores the file.  Phase P3
+(2026-10-15) is the MUI frontend: a hidden window is a CLOSED window
+(its object, text, undo and colours kept, as the theme switch relies
+on), `doc-set-shown` on an `mui-document` only marks the document, and
+`shown-sync` -- from the loop's housekeeping before `theme-repaint`,
+and once in `start` after the restore, never from a hook, since
+`close-document` may switch perspectives from inside a window's own
+event handling -- closes and opens the windows, giving a reopened
+window the geometry it had (kept on the document; `doc-geometry`
+answers it, so the snapshot records a hidden window where it was),
+recolouring one a theme change found closed (`repaint-owed`) and
+activating the active document again -- `doc-activate` on a closed
+window records the request only, MUI ignores the attributes there.
+The status lines follow in `redisplay-documents`: every one on the
+screen is rewritten when the number of perspectives or the name of the
+one in front changed (` [name]` after the buffer's name once there are
+two; `status-perspective` lives in `perspective.lisp`, both frontends'
+`status-text` call it), since a perspective closed or renamed dirties
+no document.  `active-document`'s fallbacks read `shown-documents`; `shown-report`
+reads the windows' open state off MUI for a drive.  `drive.rexx` has
+the PERSPECTIVES leg at its end and its second editor restores a
+hand-written file; `PERSPECTIVE=1 verify/realamiga/run-lisp-editor.sh`
+is the hide/show cycle on a real MUI.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

@@ -34,6 +34,16 @@
 # height of the font the text area draws with (TEXT-FONT-SIZE-SHOWN),
 # which must be the size asked for, and the screenshot shows it.
 #
+# PERSPECTIVE=1 is the perspectives' MUI leg (specs/clamacs-perspectives.md,
+# P3): before the typing, the start hook makes a second perspective and
+# switches to it -- the file's window must be CLOSED by the loop's
+# housekeeping (SHOWN-SYNC, run by the hook as START runs it) and an
+# unnamed buffer's opened -- switches back, which must open the file's
+# window again and close the other, and closes the second perspective.
+# The ready marker carries `persp closed-then-open' for that, the typing
+# then goes into the reopened window, and the exit must be as clean as
+# ever (the hidden buffer's window reaped).
+#
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
@@ -48,6 +58,7 @@ LEG="${1:-040}"
 THEME="${THEME:-}"
 SWITCH="${SWITCH:-}"
 FONT_SIZE="${FONT_SIZE:-}"
+PERSPECTIVE="${PERSPECTIVE:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
 SHOTS="$OUT/shots-$LEG"
@@ -114,24 +125,51 @@ if [ -n "$FONT_SIZE" ]; then
 else
 	FONT_FORM=""
 fi
+# PERSPECTIVE=1: a second perspective entered and left, the windows
+# closed and opened by SHOWN-SYNC in between (the hook runs it as START
+# does, outside any MUI hook), the second perspective closed again.  The
+# marker's `persp' says what the file's window did.
+if [ -n "$PERSPECTIVE" ]; then
+	PERSP_FORM='(let* ((main (clamacs::current-perspective editor))
+                (other (clamacs::make-perspective editor "other"))
+                (doc (first (clamacs::live-documents editor)))
+                (window (clamacs::mdoc-window doc)))
+           (clamacs::perspective-switch editor other :say nil)
+           (clamacs::shown-sync editor)
+           (let ((closed (not (clamacs::window-open-p window)))
+                 (unnamed (clamacs::editor-active-document editor)))
+             (clamacs::perspective-switch editor main :say nil)
+             (clamacs::shown-sync editor)
+             (let ((open (clamacs::window-open-p window))
+                   (unnamed-closed (not (clamacs::window-open-p (clamacs::mdoc-window unnamed)))))
+               (clamacs::perspective-close editor other)
+               (setq cl-user::*persp*
+                     (cond ((and closed open unnamed-closed) "closed-then-open")
+                           (t (format nil "closed=~A open=~A unnamed-closed=~A" closed open unnamed-closed)))))))'
+else
+	PERSP_FORM=""
+fi
 cat > "$OUT/lisp-editor-driver.lisp" <<PRE
 (load "Clamacs:lisp/load.lisp")
 (setf clamacs::*exit-trace* t)
+(defvar cl-user::*persp* "none")
 $THEME_FORM
 $FONT_FORM
 (push (lambda (editor)
         $SWITCH_FORM
+        $PERSP_FORM
         (clamacs::theme-repaint editor)
         (with-open-file (s "Clamacs:build/amiga/lisp-editor-ready"
                            :direction :output :if-exists :supersede)
-          (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A~%"
+          (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A persp ~A~%"
                   (clamacs::theme-name (clamacs::mui-theme editor))
                   (clamacs::mui-editor-screen-depth editor)
                   (clamacs::mui-editor-text-pen-p editor)
                   (clamacs::mui-editor-bg-spec editor)
                   (clamacs::mui-editor-font-name editor)
                   (clamacs::mui-editor-font-default-size editor)
-                  (clamacs::text-font-size-shown (first (clamacs::live-documents editor))))))
+                  (clamacs::text-font-size-shown (first (clamacs::live-documents editor)))
+                  cl-user::*persp*)))
       clamacs::*after-start-hooks*)
 (clamacs::start :files ext:*command-line-args*)
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
@@ -295,8 +333,15 @@ fi
 if [ -n "$FONT_SIZE" ]; then
 	ready=$(grep '^ready ' "$RUNLOG" | head -1)
 	case "$ready" in
-	*" shown $FONT_SIZE"*) echo "=== PASS: the text area draws in MUI's fixed font at $FONT_SIZE pixels ($ready) ===" ;;
+	*" shown $FONT_SIZE "*) echo "=== PASS: the text area draws in MUI's fixed font at $FONT_SIZE pixels ($ready) ===" ;;
 	*) echo "=== FAIL: FONT_SIZE=$FONT_SIZE, but the marker says: $ready ==="; exit 1 ;;
+	esac
+fi
+if [ -n "$PERSPECTIVE" ]; then
+	ready=$(grep '^ready ' "$RUNLOG" | head -1)
+	case "$ready" in
+	*" persp closed-then-open") echo "=== PASS: a perspective switch closed the file's window and the switch back opened it again ($ready) ===" ;;
+	*) echo "=== FAIL: PERSPECTIVE=1, but the marker says: $ready ==="; exit 1 ;;
 	esac
 fi
 echo "=== PASS: the saved file equals the host frontend's text; the teardown disposed the application and nothing signalled ==="

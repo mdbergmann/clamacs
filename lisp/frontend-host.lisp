@@ -734,18 +734,10 @@ anything else, as the class answers FALSE."
     (when (host-editor-shim editor)
       (shim editor "clamacs_host_beep" :void '()))))
 
-(defun status-perspective (doc)
-  "` [NAME]' after the buffer's name while the editor has more than one
-perspective (perspective.lisp): the one in front, which is the one DOC
-is shown in -- a hidden document's status line is never on the screen."
-  (let ((editor (doc-editor doc)))
-    (if (rest (editor-perspectives editor))
-        (format nil " [~A]" (perspective-name (current-perspective editor)))
-        "")))
-
 (defun status-text (doc)
   "`*name [perspective]  PACKAGE  line:column  arglist', the MUI status
-line's, the perspective's name only when there is more than one."
+line's, the perspective's name only when there is more than one
+\(STATUS-PERSPECTIVE, perspective.lisp)."
   (multiple-value-bind (y x) (doc-index-line doc (doc-point doc))
     (let ((arglist (hdoc-arglist doc)))
       (format nil "~A~A~A  ~A  ~D:~D~A~A"

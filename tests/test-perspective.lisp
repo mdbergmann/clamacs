@@ -729,3 +729,20 @@ editor a b)."
       (is-equal (port editor "PERSPECTIVES main") '(0 ""))
       (is (not (equal (port editor "GETNAME") '(0 "sample.lisp"))))
       (is (not (fake-shown doc))))))
+
+;;; --- the status line's part ---------------------------------------------------
+
+(deftest the-status-line-names-the-perspective-once-there-are-two
+  ;; What both frontends put after the buffer's name: nothing while there
+  ;; is one perspective, ` [NAME]' of the one in front from the second on
+  ;; -- the one DOC is shown in, so a hidden document's never shows.
+  (multiple-value-bind (editor a b) (persp-fixture)
+    (declare (ignore b))
+    (is-equal (status-perspective a) "")
+    (let ((work (make-perspective editor "work")))
+      (is-equal (status-perspective a) " [main]")
+      (perspective-switch editor work :say nil)
+      (is-equal (status-perspective a) " [work]")
+      (is-equal (status-perspective (editor-active-document editor)) " [work]")
+      (perspective-close editor work)
+      (is-equal (status-perspective a) ""))))

@@ -394,9 +394,11 @@ macro reads the menu with `PERSPECTIVES` and switches with
 front is a tab the page does not draw -- its text and its undo stay --
 and the status line shows the perspective's name in brackets after the
 buffer's once there is more than one; a window shown separately keeps
-its hidden tabs and comes back to life when they are shown again.  The
-MUI frontend does not hide the windows of a perspective that is not in
-front yet (see `specs/clamacs-perspectives.md`, phase P3).  See
+its hidden tabs and comes back to life when they are shown again.  On
+the Amiga a hidden buffer's window is closed -- its text, its undo and
+its colours stay -- and opened again where it was when its perspective
+comes back in front; the window positions snapshot records a hidden
+window at that place too.  See `specs/clamacs-perspectives.md` and
 `tests/test-perspective.lisp`.
 
 ## Appearance

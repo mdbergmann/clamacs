@@ -310,7 +310,16 @@ OK ENVARC: holds the same line
 OK the file holds the error list
 OK a second editor is at
 OK a second editor came up where the file said
+OK wrote a perspectives file of our own
+OK Restore Perspectives read the file
+OK the second editor has main and work, main in front
+OK sample2.lisp moved into work and its window is closed
+OK main'"'"'s file has the keyboard after the restore
+OK switching to work brought sample2.lisp back
+OK the switch opened work'"'"'s window and closed main'"'"'s
+OK the window a perspective hid came back where it was
 OK the second editor quit
+OK the perspectives files are gone again
 OK the snapshot files are gone again
 OK the AmiLisp menu woke up with the port
 OK Start amilisp is dimmed while connected
@@ -322,7 +331,28 @@ OK Talk to the Editor Itself is live while talking to amilisp
 OK the REPL moved to the editor itself
 OK (room) at the self REPL reported the editor heap
 OK IN-EDITOR ran on the MUI task and named the active window
-OK Talk to amilisp moved the REPL back'
+OK Talk to amilisp moved the REPL back
+OK the Perspectives menu lists main, ticked
+OK PERSPECTIVES refused an unknown perspective
+OK with one perspective the status line names none
+OK C-x x s work made a perspective and entered it
+OK the Perspectives menu ticks work
+OK the new perspective came up with an unnamed buffer
+OK the switch closed main'"'"'s windows and left the REPL open
+OK the Buffers menu lists work'"'"'s buffers, not main'"'"'s
+OK the status line names the perspective
+OK OPEN brought sample2.lisp over from main into work
+OK PERSPECTIVES main switched back, sample.lisp has the keyboard again
+OK the switch back opened main'"'"'s windows and closed work'"'"'s
+OK the status line says main again
+OK picking work in the Perspectives menu brought sample2.lisp back
+OK the REPL window is shown in work too
+OK the transcript notes the directory told to amilisp
+OK amilisp'"'"'s default directory is the project'"'"'s
+OK Save Perspectives wrote the file
+OK the perspectives file is in ENV: and ENVARC:
+OK the file holds both perspectives, work'"'"'s root and file, main current
+OK back in main with sample.lisp, as before the leg'
 
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then

@@ -297,7 +297,44 @@ and the standalone checkout has no superproject beside it).
 ### P3 -- the MUI frontend
 
 As above.  `run-lisp-editor.sh 040`, `run-lisp-drive.sh` with the leg,
-a MorphOS run.
+a MorphOS run.  Landed 2026-10-15: `doc-set-shown` on an `mui-document`
+marks the document and sets the editor's `shown-dirty`; `shown-sync`,
+run by the loop's housekeeping before `theme-repaint` and once by
+`start` after the restore, closes the windows to hide (their geometry
+kept on the document, `doc-geometry` answering it so the snapshot
+records a hidden window where it was) and opens the ones to show at
+that place, recolours a window a theme change found closed
+(`theme-repaint` applies the background and the font to the closed
+object and leaves the colours owed, `repaint-owed`) and activates the
+active document again
+-- MUI opens a window with no active object, and `doc-activate` on a
+closed window records the request only, since MUI ignores the two
+attributes there.  The status lines follow in `redisplay-documents`:
+every one on the screen is rewritten when the number of perspectives
+or the name of the one in front changed since it last looked (` [name]`
+after the buffer's name once there are two; `status-perspective` lives
+in `perspective.lisp` now, both frontends' `status-text` call it) --
+the first smoke run's screenshot showed a `[main]` left over from a
+perspective closed since.  `active-document`'s fallbacks read
+`shown-documents`.  `shown-report` reads the windows' open state back
+off MUI for the drive, beside the pure layer's account.  `drive.rexx` has the leg at
+the end (the prompt through `KEY`, the windows closed and opened, the
+file brought over, the hidden window back at its `GETWINDOW` place, the
+status line, the menu's pick, the directory told to amilisp read back
+at the REPL prompt, the file saved and deleted) and its second editor
+restores a hand-written file (the file it started on moved into a
+perspective not in front and its window closed, the switch bringing it
+back where the layout file put it); `PERSPECTIVE=1 run-lisp-editor.sh`
+is the hide/show cycle on a real MUI before the typing, with the exit
+checked as ever.  Gates on 2026-10-15: `make test-lisp` (791),
+`run-smoke.sh`, `host-keys.sh` and `run-drive.sh` (326 OK) on macOS for
+the moved status helper, `run-lisp-drive.sh 040` (185 OK, PHASE 5, the
+two legs included) and `PERSPECTIVE=1 run-lisp-editor.sh 040` green in
+FS-UAE; `run-lisp-drive PHASE 5` on the real MorphOS box the same day
+(189 OK, both perspective legs green, the hidden window back at its
+place under MUI 4 too -- the one FAIL was the themes leg's assumption
+that the editor starts in Light against that box's own init file,
+which loads One Dark).
 
 ## Risks and what decides them
 

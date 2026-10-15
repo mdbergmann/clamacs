@@ -121,6 +121,16 @@ since leaves its documents nowhere.)"
     (when doc
       (doc-message doc (apply #'format nil control args)))))
 
+(defun status-perspective (doc)
+  "` [NAME]' after the buffer's name in a status line while the editor
+has more than one perspective: the one in front, which is the one DOC is
+shown in -- a hidden document's status line is never on the screen.
+Both frontends' status lines call it."
+  (let ((editor (doc-editor doc)))
+    (if (rest (editor-perspectives editor))
+        (format nil " [~A]" (perspective-name (current-perspective editor)))
+        "")))
+
 ;;; ------------------------------------------------------------------
 ;;; Switching
 ;;; ------------------------------------------------------------------
