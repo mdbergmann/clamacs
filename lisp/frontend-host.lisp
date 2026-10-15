@@ -1264,10 +1264,13 @@ hides; a detached window left with nothing in it goes with it
 ;;; --- the requesters
 
 (defun choice-label (choice)
-  (case choice
-    (:save "Save") (:discard "Discard") (:cancel "Cancel")
-    (:yes "Yes") (:no "No") (:ok "OK") (:start "Start")
-    (t (string-capitalize (symbol-name choice)))))
+  "A keyword's button label; a string (a system's name) is its own."
+  (if (stringp choice)
+      choice
+      (case choice
+        (:save "Save") (:discard "Discard") (:cancel "Cancel")
+        (:yes "Yes") (:no "No") (:ok "OK") (:start "Start")
+        (t (string-capitalize (symbol-name choice))))))
 
 (defmacro with-modal ((editor) &body body)
   "BODY with the page brought up to date first and the mailbox left alone
@@ -1285,7 +1288,7 @@ while a native dialog runs its own loop."
     (cond ((null (host-editor-shim editor))
            ;; Scripted: the next answer, or the cancel position.
            (let ((answer (pop (host-editor-answers editor))))
-             (if (member answer choices) answer (car (last choices)))))
+             (if (member answer choices :test #'equal) answer (car (last choices)))))
           (t
            (let ((n (with-modal (editor)
                       (ffi:with-foreign-string (text question)

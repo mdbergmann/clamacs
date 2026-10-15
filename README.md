@@ -301,7 +301,10 @@ The **ASDF** menu loads whole systems.  **Load System**
 nearest one in the directories above the window's file -- a project's
 root is where its `.asd` sits -- and has amilisp load ASDF (the first
 time), the definition and the system named after the file, with what it
-depends on.  **Test System** runs `asdf:test-system` on it, and **Load
+depends on.  A file that defines several systems (`foo` and
+`foo/tests`, say) is asked about in a requester with a button per
+system; one that defines a single system of another name loads that
+one.  **Test System** runs `asdf:test-system` on it, and **Load
 System From...** asks for the `.asd`.  A window with no system above it
 (the REPL's) takes the last one loaded.  This runs on the REPL thread,
 like an evaluation: the compiler's output streams into the transcript,

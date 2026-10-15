@@ -624,6 +624,86 @@ values: the .asd, the source file, and everything to delete."
                 "REPL-EVAL (ext.dev:load-asd-system \"Work:src/foo/foo.asd\")")
       (is-equal (fake-last-message doc) "Loading system foo ..."))))
 
+(deftest the-systems-a-definition-file-names
+  ;; What ASDF takes as the name: a string as it is, a symbol downcased.
+  (is-equal (text-systems "(asdf:defsystem \"foo\" :components ())") '("foo"))
+  (is-equal (text-systems "(defsystem foo)") '("foo"))
+  (is-equal (text-systems "(ASDF::DEFSYSTEM :Foo-Bar)") '("foo-bar"))
+  (is-equal (text-systems "(defsystem #:foo)") '("foo"))
+  ;; Several, in the file's order -- and a defsystem in a comment, a
+  ;; string or a component's name is none.
+  (is-equal (text-systems (lines "(in-package :asdf-user)"
+                                 ";; (defsystem \"old\")"
+                                 "(defsystem \"foo\""
+                                 "  :description \"(defsystem \\\"no\\\")\""
+                                 "  :components ((:file \"defsystem\")))"
+                                 "#+sbcl (defsystem \"foo/sbcl\")"
+                                 "(defsystem \"foo/tests\" :depends-on (\"foo\"))"))
+            '("foo" "foo/sbcl" "foo/tests"))
+  ;; Nothing, and nothing readable, name nothing; an unfinished file
+  ;; names what it has.
+  (is (null (text-systems "")))
+  (is (null (text-systems "(defpackage :foo)")))
+  (is (null (text-systems "(defsystem)")))
+  (is (null (text-systems "(defsystem (\"foo\"))")))
+  (is-equal (text-systems "(defsystem \"foo\" :components (") '("foo"))
+  (is (null (text-systems "(defsystem \"fo")))
+  (is (null (file-systems "Nowhere:x/y.asd"))))
+
+(deftest a-file-with-several-systems-asks-which
+  (let* ((root (concatenate 'string (temp-path "systems") "/"))
+         (asd (concatenate 'string root "foo.asd"))
+         (bar (concatenate 'string root "other/bar.asd")))
+    (ensure-directories-exist bar)
+    (is (write-file-text asd (lines "(asdf:defsystem \"foo\")"
+                                    "(asdf:defsystem \"foo/tests\" :depends-on (\"foo\"))")))
+    ;; One system, not named after its file: that one, by name.
+    (is (write-file-text bar "(asdf:defsystem \"baz\")"))
+    (unwind-protect
+         (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+           (declare (ignore wire))
+           (let ((*last-system-file* nil))
+             ;; A source beside the .asd: the system above it is foo.asd.
+             (setf (doc-path doc) (concatenate 'string root "a.lisp")
+                   (doc-name doc) "a.lisp")
+             ;; The requester: one button per system, Cancel last.
+             (push "foo/tests" (fake-answers doc))
+             (run-command doc 'clamacs-load-system)
+             (is-equal (first (fake-asked doc))
+                       (list "Load which system of foo.asd?" '("foo" "foo/tests" :cancel)))
+             (fake-answer-attach tr)
+             (is-equal (fake-last-sent tr)
+                       (format nil "REPL-EVAL (ext.dev:load-asd-system ~S \"foo/tests\")" asd))
+             (is-equal (fake-last-message doc) "Loading system foo/tests ...")
+             (is-equal *last-system-file* asd)
+             (fake-deliver tr 0 "")
+             (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "\"foo/tests\""))
+             ;; The file's own system goes without a name, as before.
+             (push "foo" (fake-answers doc))
+             (run-command doc 'clamacs-test-system)
+             (is-equal (first (first (fake-asked doc))) "Test which system of foo.asd?")
+             (is-equal (fake-last-sent tr)
+                       (format nil "REPL-EVAL (ext.dev:test-asd-system ~S)" asd))
+             (is-equal (fake-last-message doc) "Testing system foo ...")
+             (fake-deliver tr 0 "")
+             (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "\"foo\""))
+             ;; Cancel: nothing is sent, and the last system stays.
+             (setq *last-system-file* nil)
+             (let ((before (length (fake-sent-commands tr))))
+               (push :cancel (fake-answers doc))
+               (run-command doc 'clamacs-load-system)
+               (is-equal (length (fake-sent-commands tr)) before)
+               (is (null *last-system-file*)))
+             ;; One system of another name: no question, that name.
+             (let ((asked (length (fake-asked doc))))
+               (load-system-file doc bar)
+               (is-equal (length (fake-asked doc)) asked)
+               (is-equal (fake-last-sent tr)
+                         (format nil "REPL-EVAL (ext.dev:load-asd-system ~S \"baz\")" bar))
+               (is-equal (fake-last-message doc) "Loading system baz ..."))))
+      (delete-quietly asd)
+      (delete-quietly bar))))
+
 ;;; --- how amilisp is started ----------------------------------------------------
 
 (deftest the-started-amilisp-s-heap-and-options-are-the-init-file-s

@@ -327,7 +327,7 @@ each coloured run, left to right, as a painter's algorithm gives it."
 (defmethod doc-ask ((doc fake-document) question choices)
   (push (list question choices) (fake-asked doc))
   (let ((answer (pop (fake-answers doc))))
-    (unless (member answer choices)
+    (unless (member answer choices :test #'equal)
       (error "The test scripted ~S for a requester offering ~S."
              answer choices))
     answer))

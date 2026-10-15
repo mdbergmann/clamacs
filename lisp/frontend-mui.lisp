@@ -2145,10 +2145,15 @@ gadget."
         (t (concatenate 'string drawer "/" file))))
 
 (defun choice-label (choice)
-  (case choice
-    (:save "_Save") (:discard "_Discard") (:cancel "_Cancel")
-    (:yes "_Yes") (:no "_No") (:ok "_OK") (:start "_Start")
-    (t (string-capitalize (symbol-name choice)))))
+  "A keyword's button label, `_' marking its key; a string (a system's
+name) is its own, with no key -- and an `_' in it would mark one, so it
+is shown as a `-'."
+  (if (stringp choice)
+      (substitute #\- #\_ choice)
+      (case choice
+        (:save "_Save") (:discard "_Discard") (:cancel "_Cancel")
+        (:yes "_Yes") (:no "_No") (:ok "_OK") (:start "_Start")
+        (t (string-capitalize (symbol-name choice))))))
 
 (defmethod doc-ask ((doc mui-document) question choices)
   "MUI_Request answers 1 for the first gadget, 2 for the second and 0 for

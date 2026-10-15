@@ -2054,6 +2054,18 @@ requester asked.  Then wait for the port to go."
   (leg-menu)
   (leg-buffers)
   (leg-themes)
+    ;; A definition file with several systems is what the requester asks
+    ;; about (one button per system; the fake frontend's tests drive the
+    ;; question itself): the names the editor reads off such a file, through
+    ;; the running editor.  In a directory of its own, or the source's
+    ;; Load System above would have found two .asd files and asked for one.
+    (let ((multi (scratch "drivemulti/multi.asd")))
+      (ensure-directories-exist multi)
+      (write-file multi (format nil "(asdf:defsystem \"multi\" :components ())~%(asdf:defsystem \"multi/tests\" :depends-on (\"multi\"))~%"))
+      (cmd (format nil "EVAL (clamacs::file-systems ~S)" multi))
+      (if (result-has "(\"multi\" \"multi/tests\")")
+          (ok "the editor reads a file's several systems for the requester: ~A" *result*)
+          (fail "the systems of a two-system .asd read as ~A" *result*)))
   (leg-minimap)
   (leg-cursor)
   (leg-keys)

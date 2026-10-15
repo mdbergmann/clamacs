@@ -37,9 +37,10 @@ a directory, or a file whose directory it shows and whose name it offers
 (what Save As seeds it with); \"\" leaves that to the toolkit."))
 
 (defgeneric doc-ask (doc question choices)
-  (:documentation "A requester with QUESTION and one button per keyword in
-CHOICES, the last of which is the cancel position.  Returns the keyword
-chosen."))
+  (:documentation "A requester with QUESTION and one button per entry in
+CHOICES -- a keyword with a label of its own, or a string shown as it is
+(a system's name) -- the last of which is the cancel position.  Returns
+the entry chosen (compare with EQUAL)."))
 
 (defgeneric doc-activate (doc)
   (:documentation "Bring the window to the front and give its text the

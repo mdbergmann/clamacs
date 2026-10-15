@@ -538,9 +538,17 @@ or waits for the REPL to attach."
 ;;; A system is loaded by its definition file, the .asd: the one in the
 ;;; window, or the nearest one above the window's file -- a project's root
 ;;; is where its .asd sits.  amilisp does the rest (EXT.DEV:LOAD-ASD-SYSTEM
-;;; loads ASDF on first use, the file, and the system named after it), on
-;;; the REPL thread: a system is minutes of compiling on an Amiga, which
-;;; wants its output as it happens, the interrupt and the debugger.
+;;; loads ASDF on first use, the file, and the system named after it -- or
+;;; the one named as its second argument), on the REPL thread: a system is
+;;; minutes of compiling on an Amiga, which wants its output as it
+;;; happens, the interrupt and the debugger.
+;;;
+;;; A file that defines several systems (foo and foo/tests, as a rule) is
+;;; asked about in a requester, one button per system: the editor reads
+;;; the file's DEFSYSTEM names off the sexp walker (TEXT-SYSTEMS), never
+;;; through the reader, since a .asd names packages the editor's image
+;;; does not have.  A file that defines one system loads that one, even
+;;; when it is not named after the file.
 ;;;
 ;;; The ASDF menu is left out on a 68k machine (menu.lisp), where ASDF
 ;;; is more than most can carry; the commands are there all the same.
@@ -590,22 +598,104 @@ else the .asd files of the nearest directory above it that has any."
   (let ((base (path-basename path)))
     (string-downcase (subseq base 0 (position #\. base :from-end t)))))
 
-(defun system-eval (doc function verb path)
-  "Have amilisp call EXT.DEV's FUNCTION on the system definition PATH."
+(defun sx-defsystem-p (buf start end)
+  "Whether the atom at START..END of BUF is DEFSYSTEM, with or without a
+package prefix (asdf:defsystem, asdf::defsystem), in any case."
+  (declare (simple-string buf) (fixnum start end))
+  (let ((tail (- end 9)))
+    (declare (fixnum tail))
+    (and (>= tail start)
+         (string-equal "defsystem" buf :start2 tail :end2 end)
+         (or (= tail start)
+             (char= (schar buf (1- tail)) #\:)))))
+
+(defun sx-system-name (buf len pos)
+  "The name a DEFSYSTEM at POS of BUF gives its system, as ASDF takes it:
+a string as it is, a symbol (foo, :foo, #:foo) downcased without its
+package marker.  NIL when what follows is neither."
+  (declare (simple-string buf) (fixnum len pos))
+  (loop
+    (multiple-value-bind (kind start end) (sx-next buf len pos)
+      (declare (fixnum start end))
+      (case kind
+        (:quote (setq pos end))                ; the # of #:foo, a '
+        (:string
+         (return (and (>= (- end start) 2)
+                      (char= (schar buf (1- end)) #\")
+                      (subseq buf (1+ start) (1- end)))))
+        (:atom
+         (loop while (and (< start end) (char= (schar buf start) #\:))
+               do (incf start))
+         (return (and (< start end) (string-downcase (subseq buf start end)))))
+        (t (return nil))))))
+
+(defun text-systems (text)
+  "The names of the systems TEXT, a system definition file's contents,
+defines: what every DEFSYSTEM form names, in the file's order -- a
+walk over the tokens, so a file the editor's reader could not take (its
+packages are amilisp's) still names its systems."
+  (let* ((buf (sx-simple text))
+         (len (length buf))
+         (names '()))
+    (declare (simple-string buf) (fixnum len))
+    (do-sx-tokens (kind start end buf len)
+      (when (eq kind :open)
+        (multiple-value-bind (hkind hstart hend) (sx-next buf len end)
+          (declare (fixnum hstart hend))
+          (when (and (eq hkind :atom) (sx-defsystem-p buf hstart hend))
+            (let ((name (sx-system-name buf len hend)))
+              (when name
+                (push name names)))))))
+    (nreverse names)))
+
+(defun file-systems (path)
+  "The systems the definition file PATH defines, by name; NIL when it
+cannot be read."
+  (let ((text (read-file-text path)))
+    (and text (text-systems text))))
+
+(defun choose-system (doc verb path continuation)
+  "Call CONTINUATION with the name of the system of PATH that VERB (Load,
+Test) is to act on: the one the file defines, or the one the user picks
+in a requester when it defines several -- not at all when the user
+cancels.  NIL when the file names none, for the one named after the file."
+  (let ((systems (file-systems path)))
+    (if (null (rest systems))
+        (funcall continuation (first systems))
+        (let ((choice (doc-ask doc (format nil "~A which system of ~A?"
+                                           verb (path-basename path))
+                               (append systems (list :cancel)))))
+          (unless (eq choice :cancel)
+            (funcall continuation choice))))))
+
+(defun system-eval (doc function verb path &optional name)
+  "Have amilisp call EXT.DEV's FUNCTION on the system definition PATH --
+on its system NAME when that is not the one the file is named after."
+  (setq *last-system-file* path)
+  (let ((own (system-name path)))
+    ;; In CL-USER: the buffer's package may be one the system makes.
+    (when (wire-eval doc (if (and name (string/= name own))
+                             (format nil "(ext.dev:~A ~S ~S)" function path name)
+                             (format nil "(ext.dev:~A ~S)" function path))
+                     "CL-USER")
+      (message doc "~A system ~A ..." verb (or name own)))))
+
+(defun system-command (doc function verb question path)
+  "Load or test (FUNCTION, VERB as in `Loading', QUESTION as in `Load')
+a system of the definition file PATH, asked about when it has several."
   (cond ((not (system-path-p path))
          (message doc "Not a system definition (.asd): ~A" path)
          (doc-beep doc))
         (t
-         (setq *last-system-file* path)
-         ;; In CL-USER: the buffer's package may be one the system makes.
-         (when (wire-eval doc (format nil "(ext.dev:~A ~S)" function path) "CL-USER")
-           (message doc "~A system ~A ..." verb (system-name path))))))
+         (choose-system doc question path
+                        (lambda (name)
+                          (system-eval doc function verb path name))))))
 
 (defun load-system-file (doc path)
-  (system-eval doc "load-asd-system" "Loading" path))
+  (system-command doc "load-asd-system" "Loading" "Load" path))
 
 (defun test-system-file (doc path)
-  (system-eval doc "test-asd-system" "Testing" path))
+  (system-command doc "test-asd-system" "Testing" "Test" path))
 
 (defun with-system-file (doc label continuation)
   "Call CONTINUATION with DOC and the system definition DOC belongs to.
