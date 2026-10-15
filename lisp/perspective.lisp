@@ -466,7 +466,14 @@ is no file."
                           (first (editor-perspectives editor)))))
           (when target
             (perspective-sync-shown editor)
-            (perspective-switch editor target :say nil)))
+            (if (eq target (editor-perspective editor))
+                ;; In front already (a switch to it would do nothing): the
+                ;; recorded document activated all the same, since the
+                ;; files opened each took the keyboard as they came.
+                (let ((active (perspective-active target)))
+                  (when (and active (member active (perspective-live-documents target)))
+                    (doc-activate active)))
+                (perspective-switch editor target :say nil))))
         (values made opened skipped)))))
 
 (defun perspective-restore-at-start (editor)

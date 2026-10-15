@@ -28,6 +28,10 @@
 // setting Lisp keeps).  The cursor's shape is another such setting
 // (View > Block Cursor): CK.setBlockCursor sets data-cursor, and the
 // page's one rule makes CodeMirror's bar a block.
+// Perspectives (specs/clamacs-perspectives.md, phase P2): a tab Lisp
+// hides (CK.showDoc) is a document record with `hidden' set -- its view
+// kept, its tab not drawn, never activated by the page's own fallbacks,
+// listed under `hidden' in the report instead of `tabs'.
 
 (() => {
   const {EditorView, EditorState, Decoration, StateField, StateEffect,
@@ -109,24 +113,33 @@
   // holds the keyboard (`active') is one of the two.  The dock is collapsed
   // while it displays nothing.
 
-  const docs = new Map();      // id -> {id, name, kind, dock, tab, holder, view, applying}
+  const docs = new Map();      // id -> {id, name, kind, dock, hidden, tab, holder, view, applying}
   const dockItems = new Map(); // name -> {name, tab, el, kind: "doc" | "panel", open, label}
   let activeId = null;         // the document with the keyboard
   let shownSource = null;      // the source document displayed on top
   let dockShown = null;        // the dock item displayed, or null: collapsed
   let detached = false;        // this page is a detached window's (CK.setDetached)
 
+  // The source document the page would display on its own: the first
+  // one that is not hidden, or null.
+  function firstSource() {
+    for (const d of docs.values()) if (!d.dock && !d.hidden) return d.id;
+    return null;
+  }
+
   function refreshTabs() {
     let sources = 0;
     for (const d of docs.values()) {
       if (d.dock) continue;
-      sources++;
+      // A hidden tab (a perspective not in front) is not drawn
+      d.tab.style.display = d.hidden ? "none" : "";
+      if (!d.hidden) sources++;
       d.holder.classList.toggle("active", d.id === shownSource);
       d.tab.classList.toggle("shown", d.id === shownSource);
       d.tab.classList.toggle("active", d.id === activeId);
     }
-    // No source tabs (a window holding the REPL or a panel alone): the
-    // dock fills the window.
+    // No source tabs (a window holding the REPL or a panel alone, or
+    // every tab hidden): the dock fills the window.
     wrap.classList.toggle("no-sources", sources === 0);
     for (const item of dockItems.values()) {
       item.el.classList.toggle("active", item.name === dockShown);
@@ -810,8 +823,8 @@
   // script checks through the port.
   let reportPending = false;
   function panelState() {
-    const source = [], dock = [];
-    for (const d of docs.values()) (d.dock ? dock : source).push(d.id);
+    const source = [], dock = [], hidden = [];
+    for (const d of docs.values()) (d.hidden ? hidden : d.dock ? dock : source).push(d.id);
     const shown = docs.get(activeId);
     const sel = shown ? shown.view.state.selection.main : null;
     return {
@@ -834,9 +847,10 @@
       minimap: minimapState(),
       // The cursor's shape, as set here
       cursor: cursorState(),
-      // Which documents this page holds, and whether it is a detached
+      // Which documents this page draws -- the ones a perspective hides
+      // (phase P2) under `hidden' -- and whether it is a detached
       // window's: what a script checks after a move (phase H7)
-      tabs: {source, dock, active: activeId},
+      tabs: {source, dock, hidden, active: activeId},
       detached,
       // Whether the page is on screen: a covered window gets no animation
       // frames, so its minimap stays unpainted -- a check that fails with
@@ -879,7 +893,7 @@
   const CK = {
     makeDoc(id, name, kind) {
       if (docs.has(id)) return;
-      const doc = {id, name, kind, dock: kind === "tool", applying: false};
+      const doc = {id, name, kind, dock: kind === "tool", hidden: false, applying: false};
       doc.holder = document.createElement("div");
       doc.holder.className = "view";
       (doc.dock ? dockViews : views).appendChild(doc.holder);
@@ -906,10 +920,36 @@
         dockHide(id);
         dockItems.delete(id);
       } else if (shownSource === id) {
-        shownSource = null;
-        for (const d of docs.values()) if (!d.dock) { shownSource = d.id; break; }
+        shownSource = firstSource();
       }
       if (activeId === id) {
+        activeId = null;
+        const next = shownSource || dockShown;
+        if (next && docs.has(next)) CK.activateDoc(next);
+      }
+      refreshTabs();
+      reportPanels();
+    },
+    // The tab drawn (FLAG true) or not: a perspective not in front hides
+    // its documents (perspective.lisp).  The view, its text and its undo
+    // stay; a hidden tab that was displayed gives way to the next shown
+    // one, and the page never activates a hidden document on its own --
+    // Lisp activates the one it wants after every switch.
+    showDoc(id, flag) {
+      const doc = docs.get(id);
+      if (!doc || doc.hidden === !flag) return;
+      doc.hidden = !flag;
+      if (doc.dock) {
+        // A tool buffer that a save made a file: a dock tab in a perspective
+        const item = dockItems.get(id);
+        if (doc.hidden) dockHide(id);
+        else if (item) { item.open = true; if (dockShown === null) dockShown = id; }
+      } else if (doc.hidden && shownSource === id) {
+        shownSource = firstSource();
+      } else if (!doc.hidden && shownSource === null) {
+        shownSource = id;
+      }
+      if (doc.hidden && activeId === id) {
         activeId = null;
         const next = shownSource || dockShown;
         if (next && docs.has(next)) CK.activateDoc(next);

@@ -49,6 +49,12 @@
 ;;;;     was moved to, the editor to the main window.  The move itself is
 ;;;;     what the mirror makes cheap: the tab is taken out of one page and
 ;;;;     made in the other from the text Lisp holds (see "Detached windows").
+;;;;   - A perspective (perspective.lisp) hides tabs: DOC-SET-SHOWN is one
+;;;;     CK.showDoc call, and the page keeps a hidden document's view off
+;;;;     the tab bar, its text and undo intact.  What falls back on "the
+;;;;     active document" -- ACTIVE-DOCUMENT, DOC-CLOSE-WINDOW's choice of
+;;;;     the next tab -- reads SHOWN-DOCUMENTS, so a hidden tab is never
+;;;;     brought to the keyboard by the frontend (see "Perspectives").
 ;;;;
 ;;;; The page may be absent: an editor made without a window (the tests)
 ;;;; keeps its flushed batches in the window's EVALS instead, and the
@@ -238,7 +244,10 @@ a window a tab was shown in separately (see \"Detached windows\")."
    ;; when the tab was made (EDITOR-MAKE-DOCUMENT), because the page fixes it
    ;; there: TOOL-DOCUMENT-P asked later says no once a save gave the buffer
    ;; a file, while the page still holds it in the dock.
-   (dock-p :initform nil :accessor hdoc-dock-p)))
+   (dock-p :initform nil :accessor hdoc-dock-p)
+   ;; Whether the page draws this document's tab (DOC-SET-SHOWN; a
+   ;; perspective not in front hides its documents, perspective.lisp)
+   (shown :initform t :accessor hdoc-shown)))
 
 ;;; *EDITOR*, the running editor, is frontend.lisp's: START sets it.
 
@@ -267,9 +276,11 @@ writes no exit log.")
   (eq (host-editor-active-doc (doc-editor doc)) doc))
 
 (defun active-document (editor)
+  "The document with the keyboard, else the oldest SHOWN one: a tab a
+perspective hides is never the fallback (perspective.lisp)."
   (let ((doc (host-editor-active-doc editor)))
     (or (and doc (not (doc-closing doc)) doc)
-        (first (live-documents editor)))))
+        (first (shown-documents editor)))))
 
 (defmethod editor-active-document ((editor host-editor))
   (active-document editor))
@@ -723,13 +734,24 @@ anything else, as the class answers FALSE."
     (when (host-editor-shim editor)
       (shim editor "clamacs_host_beep" :void '()))))
 
+(defun status-perspective (doc)
+  "` [NAME]' after the buffer's name while the editor has more than one
+perspective (perspective.lisp): the one in front, which is the one DOC
+is shown in -- a hidden document's status line is never on the screen."
+  (let ((editor (doc-editor doc)))
+    (if (rest (editor-perspectives editor))
+        (format nil " [~A]" (perspective-name (current-perspective editor)))
+        "")))
+
 (defun status-text (doc)
-  "`*name  PACKAGE  line:column  arglist', the MUI status line's."
+  "`*name [perspective]  PACKAGE  line:column  arglist', the MUI status
+line's, the perspective's name only when there is more than one."
   (multiple-value-bind (y x) (doc-index-line doc (doc-point doc))
     (let ((arglist (hdoc-arglist doc)))
-      (format nil "~A~A  ~A  ~D:~D~A~A"
+      (format nil "~A~A~A  ~A  ~D:~D~A~A"
               (if (doc-modified-p doc) "*" " ")
               (doc-name doc)
+              (status-perspective doc)
               (hdoc-package doc)
               (1+ y) (1+ x)
               (if (string= arglist "") "" "  ")
@@ -1194,9 +1216,10 @@ keyboard was in another one, its echo row and status line rendered."
     (show-echo-state doc)))
 
 (defmethod doc-close-window ((doc host-document))
-  "DOC's tab taken down; the next document of the same window takes
-the keyboard, else the oldest open one; a detached window left with
-nothing in it goes with it (HOUSEKEEPING)."
+  "DOC's tab taken down; the next SHOWN document of the same window takes
+the keyboard, else the oldest shown one -- never a tab a perspective
+hides; a detached window left with nothing in it goes with it
+\(HOUSEKEEPING)."
   (let ((editor (doc-editor doc))
         (window (hdoc-window doc)))
     (remhash (hdoc-id doc) (host-editor-docs editor))
@@ -1205,13 +1228,41 @@ nothing in it goes with it (HOUSEKEEPING)."
       (dock-note-hidden window (hdoc-id doc)))
     (when (eq (host-editor-active-doc editor) doc)
       (setf (host-editor-active-doc editor) nil)
-      (let ((next (or (first (window-documents window))
-                      (first (live-documents editor)))))
+      (let ((next (or (find-if #'doc-shown-p (window-documents window))
+                      (first (shown-documents editor)))))
         (when next
           (doc-activate next)
           (unless (eq (hdoc-window next) window)
             (raise-window (hdoc-window next))))))
     (note-window-emptied window)))
+
+;;; ------------------------------------------------------------------
+;;; Perspectives: a tab the page does not draw
+;;; ------------------------------------------------------------------
+;;;
+;;; A perspective switch (perspective.lisp) hides the documents of the
+;;; perspective left and shows the ones of the perspective entered; the
+;;; pure layer decides which, and this frontend only draws or does not
+;;; draw a tab when told.  CK.showDoc(id, flag) sets a flag on the page's
+;;; document record: refreshTabs leaves a hidden tab out, the page never
+;;; activates a hidden document on its own (its own fallbacks skip it),
+;;; and its report's `tabs' lists the shown ones only, the hidden ones
+;;; under `hidden'.  The view, its text and its undo stay as they are.
+;;; A hidden document keeps its window: a detached window whose tabs are
+;;; all hidden stays up, empty, until they are shown again -- or its
+;;; close button attaches them, hidden.  Only a change goes to the page
+;;; (a restore syncs every document once), and a document made in
+;;; another window from the mirror (MOVE-DOCUMENT) is hidden again there.
+
+(defmethod doc-set-shown ((doc host-document) flag)
+  (let ((flag (and flag t)))
+    (unless (eq flag (hdoc-shown doc))
+      (setf (hdoc-shown doc) flag)
+      (ck doc "showDoc" (hdoc-id doc) flag))))
+
+(defun hidden-documents (editor)
+  "The open documents whose tabs the pages do not draw, oldest first."
+  (remove-if #'hdoc-shown (live-documents editor)))
 
 (defun reap (editor)
   "Forget the closed documents; the page took their tabs down already."
@@ -2021,10 +2072,10 @@ verbatim."
 
 (defun host-panel-state (panel &optional (editor *editor*))
   "What the editor told the page to show for PANEL -- :MENU, :THEME,
-:MINIMAP, :CURSOR, :DOCK (the main window's), :WINDOWS, :DIAGNOSTICS,
-:DEBUGGER or :INSPECTOR -- as one line of words, for a script's `EVAL
-\(clamacs::host-panel-state :debugger)' over the port.  A panel shown in
-a window of its own says `window N' at the end."
+:MINIMAP, :CURSOR, :DOCK (the main window's), :WINDOWS, :PERSPECTIVES,
+:DIAGNOSTICS, :DEBUGGER or :INSPECTOR -- as one line of words, for a
+script's `EVAL (clamacs::host-panel-state :debugger)' over the port.  A
+panel shown in a window of its own says `window N' at the end."
   (unless editor
     (return-from host-panel-state "no editor"))
   (flet ((open-word (flag) (if flag "open" "closed"))
@@ -2038,6 +2089,15 @@ a window of its own says `window N' at the end."
                  (loop for w in (live-windows editor)
                        append (list (host-window-number w) (window-contents-words w)))
                  (if active (hdoc-id active) "none"))))
+      (:perspectives
+       ;; `current main of (main|work) hidden (doc2 doc3)': the perspective
+       ;; in front, every name in the order made, and the tabs the pages
+       ;; were told not to draw (the page's report lists them under
+       ;; `hidden')
+       (format nil "current ~A of (~{~A~^|~}) hidden (~{~A~^ ~})"
+               (perspective-name (current-perspective editor))
+               (perspective-names editor)
+               (mapcar #'hdoc-id (hidden-documents editor))))
       (:menu
        (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~}) perspectives (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
@@ -2230,6 +2290,9 @@ and steals focus from wherever it really belongs."
         (dock-note-hidden old (hdoc-id doc)))
       (ck doc "makeDoc" (hdoc-id doc) (doc-name doc) (doc-kind-string doc))
       (ck doc "setTitle" (hdoc-id doc) (hdoc-title doc))
+      ;; A tab made is drawn: a hidden document is hidden again here.
+      (unless (hdoc-shown doc)
+        (ck doc "showDoc" (hdoc-id doc) nil))
       ;; The new view is empty: what it shows is pushed from the mirror whole.
       (setf (hdoc-shown-text doc) ""
             (hdoc-shown-head doc) 0
@@ -2239,7 +2302,9 @@ and steals focus from wherever it really belongs."
       (setf (doc-paren-shown doc) nil)
       (colour-all doc)
       (show-paren doc)
-      (when activate (doc-activate doc))
+      ;; A hidden document is never brought to the keyboard
+      (when (and activate (hdoc-shown doc))
+        (doc-activate doc))
       (note-window-emptied old))))
 
 (defun replay-panel (editor name window)

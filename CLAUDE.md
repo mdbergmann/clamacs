@@ -348,7 +348,26 @@ once it exists, and read at a start without files
 (`perspective-restore-at-start`, in both frontends' `start`) or by
 Restore Perspectives; a restore opens each perspective's files with
 that perspective made current raw, then `perspective-sync-shown` and
-one `perspective-switch`.
+one `perspective-switch` -- or, when the recorded perspective is the one
+in front already (a switch to it does nothing), the recorded document
+activated by hand, since the files opened each took the keyboard as
+they came (the drive's second editor found it, 2026-10-15).  Phase P2
+(2026-10-15) is the host frontend:
+`doc-set-shown` on a `host-document` is one `CK.showDoc(id, flag)` --
+sent on a change only -- and the page keeps a hidden document's view
+off the tab bar (`refreshTabs`), never activates it on its own, and
+reports it under `tabs.hidden`; `active-document`'s fallback and
+`doc-close-window`'s choice of the next tab read `shown-documents`,
+`move-document` never activates a hidden document (so a detached window
+whose tabs are all hidden stays up, empty, and its close button attaches
+them hidden), the status line shows ` [name]` after the buffer's name
+once there is more than one perspective, `host-panel-state
+:perspectives` is the editor's account (`current NAME of (a|b) hidden
+(doc2)`), and the port's `OPEN` brings a file hidden in another
+perspective over, as `find-file` does.  `drive.lisp` has the
+PERSPECTIVES leg (the prompt, the page's tabs read back, the native
+pick, the directory told to amilisp read back at the REPL prompt, the
+file saved) and its second editor restores the file.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

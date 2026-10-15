@@ -388,7 +388,7 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsPanelClose` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab closed (the debugger's is `debug-window-closed`: the REPL stays parked) |
 | `clamacsDockShown` | `"diagnostics"\|"debugger"\|"inspector"` | a panel's tab clicked, the page now displays it (a tool buffer's tab is `clamacsActivate`): the dock's mirror follows, so a later hide of the displayed item picks the same successor on both sides |
 | `clamacsDockResized` | `height` | for the snapshot; the sending window's dock |
-| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the minimap (`minimap`: `on`, and for the shown source view's map its `lines`, the boxed `top` and `bottom` lines and the row `pitch`; sent again when the box moves, at most a few times a second), the dock and the panels show, plus the page's tabs (`tabs`: the source and dock document ids, the active one) and whether it is a detached window's (`detached`), after every change (one report per batch): kept verbatim per window for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
+| `clamacsPanels` | `json` | what the menu bar (`menu`: the item count, the dimmed indices, each dynamic group's lines under its name, spelled as the `BUFFERS` / `THEMES` verbs spell them), the theme (`theme`: `--bg` and `--c-keyword` as the page computes them, and `data-theme`), the minimap (`minimap`: `on`, and for the shown source view's map its `lines`, the boxed `top` and `bottom` lines and the row `pitch`; sent again when the box moves, at most a few times a second), the dock and the panels show, plus the page's tabs (`tabs`: the source and dock document ids it draws, the ones a perspective hides under `hidden`, the active one) and whether it is a detached window's (`detached`), after every change (one report per batch): kept verbatim per window for `host-page-panels`, which the drive reads through `EVAL` beside `host-panel-state`, the editor's own account -- so the run proves the page did what it was told, not only that Lisp said it |
 | `clamacsTick` | -- | every 300 ms: `arglist-idle` on the active document (the main window's page's; a detached page's is bound to nothing) |
 | `clamacsDetach` / `clamacsAttach` | `name` | a tab's context menu (H7): the document id or panel name shown in a window of its own / moved back into the main window |
 
@@ -402,7 +402,11 @@ report) goes to that page's window.
 ### Calls (Lisp → page, `webview_eval` of `CK.<name>(...)`)
 
 `makeDoc(id, name, kind)` (`kind` "source" or "tool"), `removeDoc(id)`,
-`activateDoc(id)`, `setText(id, text)`, `applyEdit(id, from, to, text,
+`activateDoc(id)`, `showDoc(id, flag)` (the tab drawn or not: a
+perspective not in front hides its documents,
+`specs/clamacs-perspectives.md`; the view, its text and its undo stay,
+and the page never activates a hidden document on its own),
+`setText(id, text)`, `applyEdit(id, from, to, text,
 head)`, `setPoint(id, head, anchor)`, `colour(id, records)` (a record
 `[y, [[x0, x1, kind], ...]]` replaces line `y`'s runs, `[y, x0, x1,
 kind]` paints one run over what is there, `kind` false clears),

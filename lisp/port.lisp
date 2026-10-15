@@ -158,6 +158,10 @@ is 1-based."
                (cond ((null doc)
                       (values +rc-error+ (format nil "ERROR: cannot open ~A" file)))
                      (t
+                      ;; A file open in another perspective is brought
+                      ;; over, as find-file brings it (perspective.lisp).
+                      (unless (doc-shown-p doc)
+                        (perspective-bring-over editor doc))
                       (doc-activate doc)
                       (goto-line-1 doc line)
                       (values +rc-ok+ "")))))))))

@@ -649,6 +649,29 @@ editor a b)."
                (is (null (live-documents editor)))))
         (delete-quietly file)))))
 
+(deftest a-restore-into-the-perspective-in-front-activates-the-recorded-document
+  (let* ((one (temp-file "persp-front-one.lisp" "(one)"))
+         (two (temp-file "persp-front-two.lisp" "(two)"))
+         (file (temp-file "persp-front.cfg"
+                          (lines "perspective main" (format nil "file ~A" one) (format nil "file ~A" two)
+                                 (format nil "active ~A" one) "current main"))))
+    (let ((*perspective-files* (list file)))
+      (unwind-protect
+           (let ((editor (make-fake-editor)))
+             ;; main is in front from the start, so the restore's switch
+             ;; would do nothing -- and the files opened each took the
+             ;; keyboard as they came, the last of them last.  The recorded
+             ;; one must have it afterwards all the same (the drive's
+             ;; second editor found this, 2026-10-15).
+             (make-fake "|" :editor editor)
+             (is (perspective-restore editor))
+             (is-equal (doc-path (editor-active-document editor)) one)
+             (is-equal (perspective-name (current-perspective editor)) "main")
+             (is (every #'fake-shown (live-documents editor))))
+        (delete-quietly file)
+        (delete-quietly one)
+        (delete-quietly two)))))
+
 ;;; --- the menu and the port -----------------------------------------------------
 
 (deftest the-perspectives-group-lists-and-picks
@@ -692,4 +715,17 @@ editor a b)."
       (is-equal (port editor "PERSPECTIVES main") '(0 ""))
       (is-equal (port editor "GETNAME") '(0 "sample.lisp"))
       ;; The label is matched exactly.
-      (is-equal (port editor "PERSPECTIVES MAIN") '(0 "no such perspective")))))
+      (is-equal (port editor "PERSPECTIVES MAIN") '(0 "no such perspective"))
+      ;; A file open in a perspective not in front: OPEN brings it over,
+      ;; as find-file does -- a window cannot be in two places.
+      (is-equal (port editor "PERSPECTIVES work") '(0 ""))
+      (is (not (fake-shown doc)))
+      (is-equal (port editor "OPEN FILE Clamacs:verify/realamiga/sample.lisp") '(0 ""))
+      (is (fake-shown doc))
+      (is (eq (doc-perspective doc) (find-perspective editor "work")))
+      (is-equal (port editor "GETNAME") '(0 "sample.lisp"))
+      (is (member "> sample.lisp" (split-lines (second (port editor "BUFFERS"))) :test #'string=))
+      ;; Main is empty now: the switch back opens an unnamed buffer there.
+      (is-equal (port editor "PERSPECTIVES main") '(0 ""))
+      (is (not (equal (port editor "GETNAME") '(0 "sample.lisp"))))
+      (is (not (fake-shown doc))))))

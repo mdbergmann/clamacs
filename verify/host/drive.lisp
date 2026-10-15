@@ -27,6 +27,9 @@
 ;;;;                       (~/.clamacs-windows.cfg of the run's own HOME)
 ;;;;   CLAMACS_DRIVE_RC    the init file a theme pick writes (~/.clamacsrc
 ;;;;                       of that HOME), which the second editor loads
+;;;;   CLAMACS_DRIVE_PERSP the perspectives file Save Perspectives writes
+;;;;                       (~/.clamacs-perspectives.cfg of that HOME),
+;;;;                       which the second editor restores
 ;;;;
 ;;;; Every line printed lands in the run's log; run-drive.sh greps it for
 ;;;; FAIL and DRIVE-DONE.  This is a client of its own -- forty lines of
@@ -42,6 +45,7 @@
 (defvar *tmp* (or (ext:getenv "CLAMACS_DRIVE_TMP") (error "CLAMACS_DRIVE_TMP is not set")))
 (defvar *cfg* (or (ext:getenv "CLAMACS_DRIVE_CFG") (error "CLAMACS_DRIVE_CFG is not set")))
 (defvar *rc-file* (or (ext:getenv "CLAMACS_DRIVE_RC") (error "CLAMACS_DRIVE_RC is not set")))
+(defvar *persp-file* (or (ext:getenv "CLAMACS_DRIVE_PERSP") (error "CLAMACS_DRIVE_PERSP is not set")))
 
 (defun fixture (name)
   (concatenate 'string *root* "verify/realamiga/" name))
@@ -1781,6 +1785,200 @@ follows a change by a turn); \"\" after TICKS half-seconds."
       (ok "the panel's window went with it: ~A" *result*)
       (fail "after the panel's return the windows are ~A" *result*)))
 
+;;; Perspectives (specs/clamacs-perspectives.md, phase P2): a second
+;;; perspective made at the prompt and entered, the page's tabs read back
+;;; beside the editor's account -- the tabs hidden listed as such -- the
+;;; Buffers menu and the status line following, a file brought over from
+;;; the other perspective, the switch back through the verb and through
+;;; the host's own bar, the project directory told to amilisp (the REPL's
+;;; default directory follows), and the file written -- which the second
+;;; editor restores.
+
+(defun perspectives-lines ()
+  "PERSPECTIVES as a list of lines."
+  (cmd "PERSPECTIVES")
+  (result-lines))
+
+(defun active-id ()
+  "The page id of the active document."
+  (cmd "EVAL (clamacs::hdoc-id (clamacs::editor-active-document clamacs::*editor*))")
+  (string-trim "\"" *result*))
+
+(defun page-tabs (which)
+  "What the page's last report lists under WHICH (`source', `hidden'), as
+EVAL prints it: `\\\"doc1\\\",\\\"doc2\\\"'; \"\" without a report."
+  (cmd "EVAL (clamacs::host-page-panels)")
+  (let* ((key (format nil "\\\"~A\\\":[" which))
+         (at (and (= *rc* 0) (search key *result*))))
+    (if at
+        (let ((start (+ at (length key))))
+          (subseq *result* start (position #\] *result* :start start)))
+        "")))
+
+(defun wait-page-tabs (which id present ticks)
+  "Until the page's report lists ID under WHICH (PRESENT T) or does not
+\(NIL); NIL after TICKS half-seconds."
+  (dotimes (i ticks nil)
+    (let ((has (and (search (format nil "\\\"~A\\\"" id) (page-tabs which)) t)))
+      (when (eq has present) (return t)))
+    (pause 25)))
+
+(defun status-line ()
+  "The active document's status line, as the editor renders it."
+  (cmd "EVAL (clamacs::status-text (clamacs::editor-active-document clamacs::*editor*))")
+  *result*)
+
+(defun leg-perspectives ()
+  (if (equal (perspectives-lines) '("> main"))
+      (ok "the Perspectives menu lists main, ticked")
+      (fail "PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+  (cmd "PERSPECTIVES nobody")
+  (if (result-is "no such perspective")
+      (ok "PERSPECTIVES refused an unknown perspective")
+      (fail "PERSPECTIVES nobody gave ~A" *result*))
+  (if (not (search "[main]" (status-line)))
+      (ok "with one perspective the status line names none: ~A" *result*)
+      (fail "the status line with one perspective: ~A" *result*))
+  (let ((home-name (cmd "GETNAME"))
+        (home-id (active-id)))
+    ;; A new perspective at the prompt (C-x x s): made and entered, an
+    ;; unnamed buffer opened in it
+    (cmd "EVAL clamacs-perspective-switch")
+    (cmd "KEY w o r k RET")
+    (if (string/= (wait-echo "New perspective: work" 20) "")
+        (ok "C-x x s work made a perspective and entered it")
+        (fail "after C-x x s work the echo area says ~A" *result*))
+    (if (equal (perspectives-lines) '("  main" "> work"))
+        (ok "the Perspectives menu ticks work")
+        (fail "PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+    (cmd "GETNAME")
+    (if (result-is "(unnamed)")
+        (ok "the new perspective came up with an unnamed buffer")
+        (fail "in work the active buffer is ~A" *result*))
+    (let ((new-id (active-id)))
+      ;; The editor's account: main's tabs hidden
+      (let ((state (panel-state :perspectives "current work of (main|work) hidden (")))
+        (if (and (string/= state "") (search home-id state))
+            (ok "the editor hides main's tabs: ~A" state)
+            (fail "host-panel-state :perspectives says ~A" *result*)))
+      ;; The page's: the unnamed buffer its one source tab, HOME-ID hidden
+      (if (and (wait-page-tabs "source" new-id t 20) (wait-page-tabs "source" home-id nil 20)
+               (wait-page-tabs "hidden" home-id t 20))
+          (ok "the page draws ~A alone and lists ~A hidden" new-id home-id)
+          (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+      ;; The Buffers menu sees work's buffers and the tool buffers only
+      (let ((b (buffers-lines)))
+        (if (and (member "> (unnamed)" b :test #'string=)
+                 (not (find home-name b :test #'search)))
+            (ok "the Buffers menu lists work's buffers, not ~A" home-name)
+            (fail "in work BUFFERS gave ~{~A~^|~}" b)))
+      (if (search "(unnamed) [work]  " (status-line))
+          (ok "the status line names the perspective: ~A" *result*)
+          (fail "the status line in work: ~A" *result*))
+      (if (string/= (menu-report "\"> work\"") "")
+          (ok "the menu bar's Perspectives menu ticks work")
+          (fail "the menu bar's Perspectives menu: ~A" *result*))
+      ;; A file open in main, opened here: brought over -- a window cannot
+      ;; be in two perspectives
+      (cmd (format nil "OPEN FILE ~A" (fixture "sample2.lisp")))
+      (cmd "EVAL (clamacs::perspective-name (clamacs::doc-perspective (clamacs::editor-active-document clamacs::*editor*)))")
+      (if (result-is "\"work\"")
+          (ok "OPEN brought sample2.lisp over from main into work")
+          (fail "after OPEN sample2.lisp's perspective is ~A" *result*))
+      (let ((second-id (active-id)))
+        ;; Back to main through the verb: main's tabs drawn again, work's
+        ;; hidden, the buffer that had the keyboard when main was left
+        ;; active again
+        (cmd "PERSPECTIVES main")
+        (if (result-is "")
+            (ok "PERSPECTIVES main switched back")
+            (fail "PERSPECTIVES main gave ~A" *result*))
+        (cmd "GETNAME")
+        (if (result-is home-name)
+            (ok "~A has the keyboard again, as when main was left" home-name)
+            (fail "back in main the active buffer is ~A (wanted ~A)" *result* home-name))
+        (let ((state (panel-state :perspectives "current main of (main|work) hidden (")))
+          (if (and (string/= state "") (search new-id state) (search second-id state))
+              (ok "the editor hides work's tabs: ~A" state)
+              (fail "host-panel-state :perspectives says ~A" *result*)))
+        (if (and (wait-page-tabs "source" home-id t 20) (wait-page-tabs "source" new-id nil 20)
+                 (wait-page-tabs "hidden" new-id t 20) (wait-page-tabs "hidden" second-id t 20))
+            (ok "the page draws ~A again and lists ~A and ~A hidden" home-id new-id second-id)
+            (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+        (if (search "[main]  " (status-line))
+            (ok "the status line says main again")
+            (fail "the status line back in main: ~A" *result*))
+        ;; The host's own bar (macOS): the item itself performs its action;
+        ;; elsewhere the page draws the menu and the verb is the pick
+        (let ((work (position "  work" (perspectives-lines) :test #'string=)))
+          (cmd (format nil "EVAL (clamacs::host-menu-click :perspectives ~D)" work))
+          (cond ((result-is "\"no native menu\"")
+                 (ok "the page draws the Perspectives menu here; the verb is the pick")
+                 (cmd "PERSPECTIVES work"))
+                ((not (result-is "\"picked\""))
+                 (fail "picking work on the host's menu bar gave ~A" *result*))
+                (t (ok "the host's Perspectives menu pick (item ~D) switched" work))))
+        (if (equal (perspectives-lines) '("  main" "> work"))
+            (ok "work is in front again")
+            (fail "after the pick PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+        (cmd "GETNAME")
+        (if (result-has "sample2.lisp")
+            (ok "sample2.lisp, the buffer left active in work, has the keyboard")
+            (fail "in work the active buffer is ~A" *result*))
+        (if (wait-page-tabs "hidden" home-id t 20)
+            (ok "the page hides ~A again" home-id)
+            (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+        ;; The project directory: set on work, told to amilisp at the next
+        ;; switch into it -- the REPL transcript gets a note, and a relative
+        ;; path at the prompt means the project's (SLIME's ,cd, done by the
+        ;; perspective).  The REPL is a tool buffer, shown in every
+        ;; perspective.
+        (let ((root (scratch "drivesys/")))
+          (cmd (format nil "EVAL (setf (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\")) ~S)" root))
+          (cmd "PERSPECTIVES main")
+          (cmd "PERSPECTIVES work")
+          (cmd "EVAL clamacs-repl")
+          (cmd "GETNAME")
+          (if (result-has "*clamacs-repl*")
+              (ok "the REPL window is shown in work too")
+              (fail "clamacs-repl in work activated ~A" *result*))
+          (cmd "EVAL end-of-buffer")
+          (let ((note (format nil "; default directory ~A (perspective work)" root)))
+            (if (string/= (wait-eval (format nil "(let ((d (clamacs::repl-doc clamacs::*editor*))) (and (search ~S (clamacs::doc-text d 0 (clamacs::doc-end d))) t))" note)
+                                     "T" 20)
+                          "")
+                (ok "the transcript notes the directory told: ~A" note)
+                (fail "no note ~S in the transcript" note)))
+          (let ((p (cursor-line)))
+            (cmd "INSERT (namestring *default-pathname-defaults*)")
+            (cmd "KEY RET")
+            (let ((y (wait-cursor-at (+ p 2) 40)))
+              (cmd (format nil "GOTOLINE ~D" (+ p 2)))
+              (let ((l (get-line)))
+                (if (and y (search "drivesys/" l))
+                    (ok "amilisp's default directory is the project's: ~A" l)
+                    (fail "*default-pathname-defaults* at the prompt gave ~A (cursor ~A)" l y)))))
+          (cmd "EVAL end-of-buffer")
+          ;; Save Perspectives: the file, for the second editor
+          (cmd "PERSPECTIVES main")
+          (cmd "EVAL clamacs-perspective-save")
+          (cmd "STATUS")
+          (if (result-has "Saved 2 perspective(s) to ")
+              (ok "Save Perspectives wrote the file: ~A" *result*)
+              (fail "clamacs-perspective-save said ~A" *result*))
+          (if (probe-file *persp-file*)
+              (ok "the perspectives file is ~A" *persp-file*)
+              (fail "no perspectives file at ~A" *persp-file*))
+          (dolist (want (list "perspective main" "perspective work" (format nil "root ~A" root)
+                              (format nil "file ~A" (fixture "sample2.lisp")) "current main"))
+            (if (file-has-line *persp-file* want)
+                (ok "the file holds ~A" want)
+                (fail "no line ~A in ~A" want *persp-file*)))
+          (cmd "GETNAME")
+          (if (result-is home-name)
+              (ok "back in main with ~A, as before the leg" home-name)
+              (fail "the leg ends with ~A active" *result*)))))))
+
 (defun quit-editor ()
   "kill-emacs: what the run typed into the fixtures is discarded, no
 requester asked.  Then wait for the port to go."
@@ -1870,6 +2068,7 @@ requester asked.  Then wait for the port to go."
   (leg-systems)
   (leg-own-lisp)
   (leg-detach)
+  (leg-perspectives)
   ;; Leave the errors file active, as the Amiga run does.
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (pause 25)
@@ -1913,6 +2112,48 @@ wrote: it must come up where the file said, then quit."
       (ok "the second editor came up with a bar: the init file's form took")
       (fail "the second editor's CURSOR gave ~{~A~^|~}" (cursor-lines)))
   (check-cursor "the second editor" nil)
+  ;; ... and Restore Perspectives reads the file the first editor saved
+  ;; (and kept in step at its quit): work made with its root, its file
+  ;; moved out of main and hidden, main in front
+  (if (equal (perspectives-lines) '("> main"))
+      (ok "the second editor started on a file: main alone, no restore")
+      (fail "the second editor's PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+  (let ((before (active-id)))
+    (cmd "EVAL clamacs-perspective-restore")
+    (cmd "STATUS")
+    (if (result-has "Restored: 1 perspective(s) made, ")
+        (ok "Restore Perspectives: ~A" *result*)
+        (fail "clamacs-perspective-restore said ~A" *result*))
+    (if (equal (perspectives-lines) '("> main" "  work"))
+        (ok "the second editor has main and work, main in front")
+        (fail "after the restore PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+    (cmd "EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\"))")
+    (if (result-has "drivesys/")
+        (ok "work came back with its project directory: ~A" *result*)
+        (fail "work's root after the restore is ~A" *result*))
+    ;; sample2.lisp, the file it was started on, is work's: hidden now
+    (let ((state (panel-state :perspectives "current main of (main|work) hidden (")))
+      (if (and (string/= state "") (search before state))
+          (ok "sample2.lisp moved into work and is hidden: ~A" state)
+          (fail "host-panel-state :perspectives says ~A" *result*)))
+    (if (and (wait-page-tabs "hidden" before t 20) (wait-page-tabs "source" before nil 20))
+        (ok "the second editor's page hides ~A" before)
+        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+    ;; The first editor quit with errors.lisp active (MAIN's last OPEN),
+    ;; and its quit kept the file in step: that is main's recorded
+    ;; document, activated although main was in front all along
+    (cmd "GETNAME")
+    (if (result-has "errors.lisp")
+        (ok "main's recorded document is open and active: ~A" *result*)
+        (fail "after the restore the active buffer is ~A (wanted errors.lisp, the first editor's last)" *result*))
+    (cmd "PERSPECTIVES work")
+    (cmd "GETNAME")
+    (if (result-has "sample2.lisp")
+        (ok "switching to work brings sample2.lisp back")
+        (fail "in work the active buffer is ~A" *result*))
+    (if (wait-page-tabs "source" before t 20)
+        (ok "the second editor's page draws ~A again" before)
+        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden"))))
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)

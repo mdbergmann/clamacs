@@ -390,9 +390,13 @@ front.  **Restore Perspectives** (`C-x x C-l`) reads it into a running
 editor.  The file is plain text, one `perspective NAME` line followed by
 its `root` and `file` lines; edit it or delete it to start over.  A
 macro reads the menu with `PERSPECTIVES` and switches with
-`PERSPECTIVES <name>`.  The pure part is in; the host and MUI frontends
-do not hide the windows of a perspective that is not in front yet (see
-`specs/clamacs-perspectives.md`, phases P2 and P3).  See
+`PERSPECTIVES <name>`.  On the host a buffer of a perspective not in
+front is a tab the page does not draw -- its text and its undo stay --
+and the status line shows the perspective's name in brackets after the
+buffer's once there is more than one; a window shown separately keeps
+its hidden tabs and comes back to life when they are shown again.  The
+MUI frontend does not hide the windows of a perspective that is not in
+front yet (see `specs/clamacs-perspectives.md`, phase P3).  See
 `tests/test-perspective.lisp`.
 
 ## Appearance

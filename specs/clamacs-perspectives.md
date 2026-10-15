@@ -275,7 +275,24 @@ situation, where the editor looked the same until T2.
 ### P2 -- the host frontend
 
 As above.  `run-smoke.sh`, `host-keys.sh`, `run-drive.sh` with the new
-leg, `MEMTRACK=1`, `make host-linux`.
+leg, `MEMTRACK=1`, `make host-linux`.  Landed 2026-10-15: `CK.showDoc`
+and the page's `hidden` list, `doc-set-shown` on `host-document` (a
+change only; a document made in another window from the mirror is
+hidden there again), the fallbacks on `shown-documents`, the status
+line's `[name]`, `host-panel-state :perspectives`, the port's `OPEN`
+bringing a hidden file over as `find-file` does, the drive's leg and the
+second editor's restore.  One rule found on the way: a hidden document
+is never brought to the keyboard by the frontend -- `move-document`
+skips its activation, and the page's own fallbacks skip hidden tabs --
+so the pure layer's "show, activate, then hide" order is the only thing
+that decides what has the keyboard.  And one P1 gap the second editor
+found: a restore whose recorded perspective is the one in front already
+left the last file opened active, since a switch to the current
+perspective does nothing -- `perspective-restore` activates the recorded
+document by hand then.  Gates: `run-smoke.sh`, `host-keys.sh`,
+`MEMTRACK=1 run-drive.sh` (329 OK, both editors and the started amilisp
+leak-free) green on macOS; `make host-linux` not run (no docker daemon,
+and the standalone checkout has no superproject beside it).
 
 ### P3 -- the MUI frontend
 

@@ -2493,3 +2493,116 @@ settled and the tab moved.  The message HOST-DETACH answered."
         (is (search (format nil "~%doc2 10 20 300 200~%") text))
         (is (search (format nil "~%debugger 5 6 400 300~%") text))))
     (delete-file cfg)))
+
+;;; --- perspectives: a tab the page does not draw (phase P2) -----------------
+
+(deftest host-a-perspective-switch-hides-the-tabs-left-and-shows-the-ones-entered
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (work nil))
+    (host-take-evals editor)
+    (is (hdoc-shown d1))
+    (is (hdoc-shown d2))
+    (is-equal (host-panel-state :perspectives editor) "current main of (main) hidden ()")
+    ;; One perspective: the status line names none
+    (is (not (search "[" (status-text d2))))
+    (with-entry (editor)
+      (setq work (make-perspective editor "work"))
+      (perspective-switch editor work))
+    (let ((js (host-take-evals editor))
+          (d3 (host-document-by-id editor "doc3")))
+      ;; Entered empty: an unnamed buffer made and activated, and only
+      ;; THEN the tabs left hidden -- the page never has a moment without
+      ;; a shown active document
+      (is d3)
+      (is (not (hdoc-shown d1)))
+      (is (not (hdoc-shown d2)))
+      (is (hdoc-shown d3))
+      (is (search "CK.showDoc(\"doc1\",false);" js))
+      (is (search "CK.showDoc(\"doc2\",false);" js))
+      (is (< (search "CK.activateDoc(\"doc3\");" js) (search "CK.showDoc(\"doc1\",false);" js)))
+      (is (eq (editor-active-document editor) d3))
+      (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden (doc1 doc2)")
+      ;; The status line names the perspective now that there are two
+      (is (search "[work]  CL-USER  " (status-text d3)))
+      (is (search "[work]  CL-USER  " js))
+      ;; The fallback for the active document skips the hidden tabs
+      (setf (host-editor-active-doc editor) nil)
+      (is (eq (active-document editor) d3))
+      (is (eq (editor-active-document editor) d3))
+      ;; Back: the two drawn again, the one that had the keyboard when
+      ;; main was left (d2) activated before d3 is hidden
+      (with-entry (editor) (perspective-switch editor (find-perspective editor "main")))
+      (let ((js (host-take-evals editor)))
+        (is (search "CK.showDoc(\"doc1\",true);" js))
+        (is (search "CK.showDoc(\"doc2\",true);" js))
+        (is (search "CK.showDoc(\"doc3\",false);" js))
+        (is (< (search "CK.activateDoc(\"doc2\");" js) (search "CK.showDoc(\"doc3\",false);" js)))
+        (is (search "[main]  CL-USER  " js)))
+      (is (eq (editor-active-document editor) d2))
+      (is-equal (host-panel-state :perspectives editor) "current main of (main|work) hidden (doc3)")
+      ;; Told what it shows already (a restore syncs every document):
+      ;; nothing sent
+      (with-entry (editor) (doc-set-shown d1 t) (doc-set-shown d3 nil))
+      (is (not (search "showDoc" (host-take-evals editor))))
+      ;; Closing the active tab: the next SHOWN tab of the window takes
+      ;; the keyboard, never the hidden d3
+      (with-entry (editor) (run-command d2 'kill-buffer))
+      (is (eq (editor-active-document editor) d1))
+      (is (search "CK.activateDoc(\"doc1\");" (host-take-evals editor)))
+      ;; The last tab of main closed: work comes in front, d3 drawn and
+      ;; active (perspective.lisp's rule), the editor never without a tab
+      (with-entry (editor) (run-command d1 'kill-buffer))
+      (is (eq (editor-perspective editor) work))
+      (is (hdoc-shown d3))
+      (is (eq (editor-active-document editor) d3))
+      (let ((js (host-take-evals editor)))
+        (is (search "CK.showDoc(\"doc3\",true);" js))
+        (is (< (search "CK.showDoc(\"doc3\",true);" js) (search "CK.activateDoc(\"doc3\");" js))))
+      (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden ()")
+      (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc3) active doc3"))))
+
+(deftest host-a-hidden-tab-keeps-its-window-and-is-hidden-wherever-it-is-made
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two")))
+    (declare (ignore d1))
+    (with-entry (editor) (perspective-switch editor (make-perspective editor "work")))
+    (host-take-evals editor)
+    (let ((d3 (host-document-by-id editor "doc3")))
+      ;; The hidden d2 shown in a window of its own (a script's ask: there
+      ;; is no tab to ask from): made there, hidden again at once, never
+      ;; activated; the window stays up although it draws nothing
+      (is-equal (host-detach-now editor "doc2") "doc2 detached")
+      (let ((w2 (host-window editor 2)))
+        (is (eq (hdoc-window d2) w2))
+        (let ((js (host-take-evals w2)))
+          (is (search "CK.makeDoc(\"doc2\",\"(unnamed)\",\"source\");" js))
+          (is (< (search "CK.makeDoc(\"doc2\"" js) (search "CK.showDoc(\"doc2\",false);" js)))
+          (is (not (search "CK.activateDoc(" js))))
+        (is (null (host-window-closing w2)))
+        (with-entry (editor) (housekeeping editor))
+        (is (host-window editor 2))
+        (is (eq (editor-active-document editor) d3))
+        (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1 doc3) 2 (doc2) active doc3")
+        ;; Shown again by a switch, in its own window, and active there
+        ;; (it had the keyboard when main was left)
+        (with-entry (editor) (perspective-switch editor (find-perspective editor "main")))
+        (is (search "CK.showDoc(\"doc2\",true);" (host-take-evals w2)))
+        (is (search "CK.showDoc(\"doc1\",true);" (host-take-evals editor)))
+        (is (eq (editor-active-document editor) d2))
+        ;; Hidden again, then the window's close button: back into the
+        ;; main window, hidden there too, the keyboard left with d3
+        (with-entry (editor) (perspective-switch editor (find-perspective editor "work")))
+        (host-take-evals editor)
+        (setf (host-window-closing w2) :attach)
+        (with-entry (editor) (housekeeping editor))
+        (is (null (host-window editor 2)))
+        (is (main-window-p (hdoc-window d2)))
+        (let ((js (host-take-evals editor)))
+          (is (search "CK.makeDoc(\"doc2\"" js))
+          (is (< (search "CK.makeDoc(\"doc2\"" js) (search "CK.showDoc(\"doc2\",false);" js))))
+        (is (eq (editor-active-document editor) d3))
+        (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden (doc1 doc2)")
+        (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2 doc3) active doc3")))))
