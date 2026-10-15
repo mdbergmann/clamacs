@@ -47,6 +47,14 @@
     ;; unshifted `C-x C-+' of a US keyboard)
     ("C-x C-+" clamacs-increase-font-size) ("C-x C-=" clamacs-increase-font-size)
     ("C-x C--" clamacs-decrease-font-size) ("C-x C-0" clamacs-reset-font-size)
+    ;; perspectives, on perspective.el's prefix with its letters
+    ("C-x x s" clamacs-perspective-switch)
+    ("C-x x n" clamacs-perspective-next) ("C-x x p" clamacs-perspective-previous)
+    ("C-x x r" clamacs-perspective-rename) ("C-x x c" clamacs-perspective-close)
+    ("C-x x a" clamacs-perspective-move-buffer)
+    ("C-x x d" clamacs-perspective-set-directory)
+    ("C-x x o" clamacs-perspective-open-project)
+    ("C-x x C-s" clamacs-perspective-save) ("C-x x C-l" clamacs-perspective-restore)
     ;; the command loop itself
     ("M-x" execute-extended-command) ("C-g" keyboard-quit)
     ;; the REPL window, reachable from any document as in SLIME

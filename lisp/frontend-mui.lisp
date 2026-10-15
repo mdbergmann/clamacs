@@ -2149,10 +2149,10 @@ window; NIL when it is NIL or not open."
 (defconstant +nm-barlabel+ #xFFFFFFFF)
 
 ;;; The dynamic groups this frontend makes items for: the open buffers,
-;;; the themes (phase T3 of specs/clamacs-themes.md) and the cursor's
-;;; shape, one mechanism below.
+;;; the themes (phase T3 of specs/clamacs-themes.md), the cursor's
+;;; shape and the perspectives, one mechanism below.
 (defmethod editor-dynamic-groups ((editor mui-editor))
-  '(:buffers :themes :cursor))
+  '(:buffers :themes :cursor :perspectives))
 
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --
@@ -3347,7 +3347,10 @@ function: an image is saved before it runs and restores into it."
                       (dolist (path files)
                         (unless (open-document editor path)
                           (format *error-output* "clamacs: cannot open ~A~%" path)))
-                      (open-document editor nil))
+                      ;; The saved perspectives, when there are any
+                      ;; (perspective.lisp), else the unnamed buffer.
+                      (unless (perspective-restore-at-start editor)
+                        (open-document editor nil)))
                   (when (live-documents editor)
                     ;; The wire and the editor's own port, once there is a
                     ;; document for the first command to act on.

@@ -1335,7 +1335,9 @@ batch of both taken."
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
     ;; -- the View menu's text-size items first, then its groups
-    (is (search "[\"title\",\"View\",\"\"],[\"item\",\"Bigger Text\",\"C-x C-+\"],[\"item\",\"Smaller Text\",\"C-x C--\"],[\"item\",\"Normal Text Size\",\"C-x C-0\"],[\"bar\",\"\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"cursor\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    (is (search "[\"title\",\"View\",\"\"],[\"item\",\"Bigger Text\",\"C-x C-+\"],[\"item\",\"Smaller Text\",\"C-x C--\"],[\"item\",\"Normal Text Size\",\"C-x C-0\"],[\"bar\",\"\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"cursor\",\"\",\"\"],[\"title\",\"Perspectives\",\"\"],[\"item\",\"Switch Perspective...\",\"C-x x s\"]" js))
+    ;; The perspectives' own group at the tail of their menu, before Buffers
+    (is (search "[\"item\",\"Restore Perspectives\",\"C-x x C-l\"],[\"bar\",\"\",\"\"],[\"perspectives\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1743,6 +1745,11 @@ batch of both taken."
                          (tabbed "themes" "Themes" "")
                          (tabbed "minimap" "" "")
                          (tabbed "cursor" "" "")
+                         (tabbed "title" "Perspectives" "")
+                         (tabbed "item" "Switch Perspective..." "C-x x s"))
+                  text))
+      (is (search (lines (tabbed "item" "Restore Perspectives" "C-x x C-l") (tabbed "bar" "" "")
+                         (tabbed "perspectives" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))

@@ -29,6 +29,8 @@
    ;; either way.
    (lists-completions :initform nil :accessor fake-lists-completions)
    (title :initform nil :accessor fake-title)
+   ;; Whether the window is shown (DOC-SET-SHOWN, perspective.lisp)
+   (shown :initform t :accessor fake-shown)
    ;; The status line's arglist field
    (arglist :initform "" :accessor fake-arglist)
    (active :initform 0 :accessor fake-activations)
@@ -160,7 +162,10 @@
 (defmethod editor-active-document ((editor fake-editor))
   (let ((active (fake-editor-active editor)))
     (or (and active (not (doc-closing active)) active)
-        (first (live-documents editor)))))
+        (first (shown-documents editor)))))
+
+(defmethod doc-set-shown ((doc fake-document) flag)
+  (setf (fake-shown doc) (and flag t)))
 
 (defmethod editor-show-diagnostics ((editor fake-editor) rows &key open)
   (setf (fake-editor-diag-rows editor) rows

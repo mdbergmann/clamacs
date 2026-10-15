@@ -348,6 +348,53 @@ name, each entry also shows its directory. A macro can read the menu with
 `BUFFERS` and pick from it with `BUFFERS <name>`. See
 `tests/test-menu.lisp`.
 
+### Perspectives
+
+A perspective is a named set of buffers with their windows -- a project
+-- of which one is in front, as in Emacs's `perspective.el`.  Every
+file you open belongs to the perspective in front (the first is called
+`main`), the **Buffers** menu and `C-x o` see only its buffers, and
+switching to another perspective hides this one's windows and shows the
+other's; the tool buffers -- the REPL, `*clamacs-description*`, the
+error list -- are shown in every perspective.  The keys are
+`perspective.el`'s, on `C-x x`: `C-x x s` switches by name, with
+completion, and a new name makes a new perspective (empty, so an unnamed
+buffer opens in it); `C-x x n` and `C-x x p` go to the next and the
+previous one; `C-x x r` renames; `C-x x c` closes the perspective in
+front after closing its buffers, each unsaved one asking; `C-x x a`
+moves the current buffer into another perspective.  The **Perspectives**
+menu has the same, and lists the perspectives below, the one in front
+ticked.  Closing the last buffer of a perspective brings another one
+with buffers in front, so a window is always on the screen; when no
+other has any, the last window's close ends the editor as before.  A
+file already open in another perspective is brought over by `C-x C-f`
+rather than opened twice, and the echo area says from where.
+
+A perspective may have a **project directory**: `C-x x d` sets it, and
+`C-x x o` opens a project -- a directory asked for at the prompt
+becomes a perspective named after it, with that directory as its
+project directory.  In a buffer without a file the `Find file` prompt
+and the requester start there, the ASDF commands look for the `.asd`
+there, and a switch to the perspective makes it amilisp's default
+directory (an open REPL notes it), so a relative path typed at the
+REPL means the project's -- SLIME's `,cd`, done by the perspective.
+There is one amilisp and one REPL, shown in every perspective, as
+`perspective.el` shows the one SLIME REPL everywhere.
+
+**Save Perspectives** (`C-x x C-s`) writes every perspective with its
+directory and its files to `ENVARC:Clamacs/perspectives.cfg` (and
+`ENV:`) on the Amiga, `~/.clamacs-perspectives.cfg` on the host; from
+then on every quit keeps the file in step, and a start without files on
+the command line opens the perspectives it holds, the recorded one in
+front.  **Restore Perspectives** (`C-x x C-l`) reads it into a running
+editor.  The file is plain text, one `perspective NAME` line followed by
+its `root` and `file` lines; edit it or delete it to start over.  A
+macro reads the menu with `PERSPECTIVES` and switches with
+`PERSPECTIVES <name>`.  The pure part is in; the host and MUI frontends
+do not hide the windows of a perspective that is not in front yet (see
+`specs/clamacs-perspectives.md`, phases P2 and P3).  See
+`tests/test-perspective.lisp`.
+
 ## Appearance
 
 ### Themes
@@ -609,7 +656,7 @@ against it without the MUI developer kit.
 ```
 make test                        # host tests: the C core and the Lisp editor's pure modules
 make test-lisp                   # the Lisp editor's tests alone (CLAMACS_TEST=menu for one file)
-make test-lisp-gc-stress         # the same with a compaction at every allocation
+make test-lisp-gc-stress         # the same with a compaction at every allocation (AmiLisp's gate, run by its make test-gc-stress)
 make -f Makefile.cross amiga     # cross-compile build/cross/clamacs (and sendkey)
 make -f Makefile.cross test-lisp-amiga # the Lisp editor through drive.rexx in FS-UAE
 make -f Makefile.cross test-amiga # the C editor's unattended FS-UAE run

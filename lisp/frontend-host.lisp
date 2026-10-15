@@ -1429,7 +1429,7 @@ behind the page."
 ;;; group by its entry's table index).
 
 (defmethod editor-dynamic-groups ((editor host-editor))
-  '(:buffers :themes :minimap :cursor))
+  '(:buffers :themes :minimap :cursor :perspectives))
 
 (defun dynamic-group-named (editor name)
   "The dynamic group this frontend draws under NAME -- a keyword, or its
@@ -2039,7 +2039,7 @@ a window of its own says `window N' at the end."
                        append (list (host-window-number w) (window-contents-words w)))
                  (if active (hdoc-id active) "none"))))
       (:menu
-       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~})"
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~}) perspectives (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
@@ -2048,7 +2048,8 @@ a window of its own says `window N' at the end."
                (editor-dynamic-menu-lines editor :buffers)
                (editor-dynamic-menu-lines editor :themes)
                (editor-dynamic-menu-lines editor :minimap)
-               (editor-dynamic-menu-lines editor :cursor)))
+               (editor-dynamic-menu-lines editor :cursor)
+               (editor-dynamic-menu-lines editor :perspectives)))
       (:minimap
        ;; The setting, as the page was told it; the page's report says
        ;; what it drew (`minimap' in clamacsPanels)
@@ -2693,7 +2694,10 @@ last tab closes."
                         (dolist (path files)
                           (unless (open-document editor path)
                             (format *error-output* "clamacs: cannot open ~A~%" path)))
-                        (open-document editor nil)))
+                        ;; The saved perspectives, when there are any
+                        ;; (perspective.lisp), else the unnamed buffer.
+                        (unless (perspective-restore-at-start editor)
+                          (open-document editor nil))))
                   (when (live-documents editor)
                     (when *wire-starter*
                       (handler-case (funcall *wire-starter* editor)

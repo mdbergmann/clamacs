@@ -66,20 +66,28 @@
                             (:buffers "Buffers")
                             (:themes "View")
                             (:minimap "View")
-                            (:cursor "View")))
+                            (:cursor "View")
+                            (:perspectives "Perspectives")))
                 (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
-    (is-equal (count :dynamic entries :key #'menu-entry-kind) 4)
+    (is-equal (count :dynamic entries :key #'menu-entry-kind) 5)
     (is-equal (menu-count) (length entries))
-    (is-equal titles 9)
+    (is-equal titles 10)
     (is (> items 30))
-    ;; View sits between Windows and Buffers; its text-size items come
-    ;; before its groups.
+    ;; View sits between Windows and Perspectives, Perspectives before
+    ;; Buffers; View's text-size items come before its groups, and the
+    ;; perspectives' commands before their group.
     (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
            (menu-find 'clamacs-increase-font-size)
            (menu-find 'clamacs-decrease-font-size)
            (menu-find 'clamacs-reset-font-size)
            (menu-find-dynamic :themes)
+           (menu-find 'clamacs-perspective-switch)
+           (menu-find 'clamacs-perspective-close)
+           (menu-find-dynamic :perspectives)
            (menu-find-dynamic :buffers)))
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :perspectives)))))
+    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-perspective-close))) :perspectives)
+    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-perspective-next))) :perspectives)
     (is-equal (menu-entry-dynamic (menu-entry (menu-find-dynamic :themes))) :themes)
     (is (null (menu-entry-dynamic (menu-entry 0))))
     (is (null (menu-find-dynamic :nothing)))
@@ -106,7 +114,7 @@
           (without (make-menu-table :systems nil)))
       (is-equal (titles with)
                 '("Project" "Edit" "Lisp" "ASDF" "AmiLisp" "Windows" "View"
-                  "Buffers" "Help"))
+                  "Perspectives" "Buffers" "Help"))
       (is-equal (titles without) (remove "ASDF" (titles with) :test #'equal))
       (is-equal (set-difference (commands with) (commands without))
                 '(clamacs-load-system clamacs-load-system-from clamacs-test-system))
@@ -128,7 +136,7 @@
   ;; drawn for its themes and its cursor item.
   (let ((editor (make-fake-editor))
         (minimap (menu-find-dynamic :minimap)))
-    (is-equal (editor-dynamic-groups editor) '(:buffers :themes :cursor))
+    (is-equal (editor-dynamic-groups editor) '(:buffers :themes :cursor :perspectives))
     (dotimes (i (menu-count))
       (cond ((= i minimap)
              (is (not (menu-entry-drawn-p editor i)))
@@ -141,6 +149,7 @@
     (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :cursor)) :cursor)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :perspectives)) :perspectives)
     (is (menu-entry-drawn-p editor (1- (menu-find-dynamic :themes))))))
 
 (deftest the-minimap-item-is-a-setting-every-frontend-keeps
@@ -271,10 +280,12 @@
     (is (not (menu-rule-holds-p :debugging s)))
     (is (not (menu-rule-holds-p :diagnostics s)))
     (is (not (menu-rule-holds-p :can-pop s)))
+    (is (not (menu-rule-holds-p :perspectives s)))
     (setf (menu-state-doc-changed s) t (menu-state-doc-has-path s) t
           (menu-state-connected s) t (menu-state-repl-window s) t
           (menu-state-debugging s) t (menu-state-diagnostics s) t
-          (menu-state-can-pop s) t)
+          (menu-state-can-pop s) t (menu-state-perspectives s) t)
+    (is (menu-rule-holds-p :perspectives s))
     (is (menu-rule-holds-p :doc-changed s))
     (is (menu-rule-holds-p :doc-has-path s))
     (is (menu-rule-holds-p :connected s))

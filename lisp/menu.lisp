@@ -66,7 +66,8 @@
     :diagnostics            ; the error list is not empty
     :can-pop                ; `M-.' has been used: there is a place to go back to
     :self                   ; the wire talks to the editor's own Lisp
-    :not-self))
+    :not-self
+    :perspectives))         ; there are two or more perspectives
 
 ;;; The ASDF menu -- systems, loaded and tested by their .asd
 ;;; (wire.lisp) -- is for a machine that can carry ASDF, which a 68k Amiga
@@ -203,6 +204,24 @@
      (make-menu-entry :dynamic :always :minimap nil nil nil)
      (make-menu-entry :dynamic :always :cursor nil nil nil)
 
+     ;; The perspectives (perspective.lisp): the commands, then one item
+     ;; per perspective at the tail, the one in front ticked.
+     (title "Perspectives")
+     (item 'clamacs-perspective-switch   :always        "Switch Perspective..."  "C-x x s" :global)
+     (item 'clamacs-perspective-next     :perspectives  "Next Perspective"       "C-x x n" :global)
+     (item 'clamacs-perspective-previous :perspectives  "Previous Perspective"   "C-x x p" :global)
+     (bar)
+     (item 'clamacs-perspective-open-project  :always   "Open Project Directory..." "C-x x o" :global)
+     (item 'clamacs-perspective-set-directory :always   "Set Project Directory..."  "C-x x d" :global)
+     (item 'clamacs-perspective-move-buffer   :always   "Move Buffer to Perspective..." "C-x x a" :global)
+     (item 'clamacs-perspective-rename   :always        "Rename Perspective..."  "C-x x r" :global)
+     (item 'clamacs-perspective-close    :perspectives  "Close Perspective"      "C-x x c" :global)
+     (bar)
+     (item 'clamacs-perspective-save     :always        "Save Perspectives"      "C-x x C-s" :global)
+     (item 'clamacs-perspective-restore  :always        "Restore Perspectives"   "C-x x C-l" :global)
+     (bar)
+     (make-menu-entry :dynamic :always :perspectives nil nil nil)
+
      ;; One item per open buffer, made and remade as windows come and go,
      ;; filling the menu.
      (title "Buffers")
@@ -249,7 +268,8 @@ kind of entry."
 
 (defstruct (menu-state (:constructor make-menu-state ()))
   (doc-changed nil) (doc-has-path nil) (connected nil) (repl-window nil)
-  (debugging nil) (diagnostics nil) (can-pop nil) (self nil))
+  (debugging nil) (diagnostics nil) (can-pop nil) (self nil)
+  (perspectives nil))
 
 (defun menu-rule-holds-p (rule state)
   (ecase rule
@@ -263,7 +283,8 @@ kind of entry."
     (:diagnostics (menu-state-diagnostics state))
     (:can-pop (menu-state-can-pop state))
     (:self (menu-state-self state))
-    (:not-self (not (menu-state-self state)))))
+    (:not-self (not (menu-state-self state)))
+    (:perspectives (menu-state-perspectives state))))
 
 (defun menu-state (editor)
   "The flags the rules are evaluated against, read off EDITOR now."
@@ -278,7 +299,8 @@ kind of entry."
           (menu-state-diagnostics state) (and wire (> (diaglist-count (wire-diags wire)) 0))
           (menu-state-debugging state) (debugger-active-p editor)
           (menu-state-can-pop state) (> (locstack-depth (editor-locations editor)) 0)
-          (menu-state-self state) (wire-self-p wire))
+          (menu-state-self state) (wire-self-p wire)
+          (menu-state-perspectives state) (and (rest (editor-perspectives editor)) t))
     state))
 
 (defun menu-enabled-items (editor)
@@ -336,13 +358,15 @@ True when it ran."
 ;;; The Buffers menu
 ;;; ------------------------------------------------------------------
 
-;;; Every open buffer, to switch to with the mouse: the source buffers
-;;; first -- files and unnamed buffers, in the order they were opened --
-;;; then a bar, then the tool buffers the editor makes for itself (the REPL,
-;;; *clamacs-description*, *clamacs-apropos*, ...).  One document is one
-;;; window, so picking a buffer activates its window, as `C-x o' would.
-;;; A frontend remakes the menu's items whenever BUFFER-MENU answers
-;;; something else than what it shows, and ticks the active document's.
+;;; Every shown buffer, to switch to with the mouse: the source buffers
+;;; first -- the files and unnamed buffers of the perspective in front
+;;; (perspective.lisp), in the order they were opened -- then a bar, then
+;;; the tool buffers the editor makes for itself (the REPL,
+;;; *clamacs-description*, *clamacs-apropos*, ...), which every
+;;; perspective shows.  One document is one window, so picking a buffer
+;;; activates its window, as `C-x o' would.  A frontend remakes the
+;;; menu's items whenever BUFFER-MENU answers something else than what it
+;;; shows, and ticks the active document's.
 
 (defun tool-document-p (doc)
   "A buffer the editor made for itself: no file behind it and a name in
@@ -377,9 +401,9 @@ Emacs's `<2>', `<3>' ... from the second on."
 
 (defun buffer-menu (editor)
   "The Buffers menu as it should be now: a list of (LABEL . DOC) for each
-open buffer and :BAR between the sources and the tools -- only when there
-are both."
-  (let* ((docs (live-documents editor))
+shown buffer and :BAR between the sources and the tools -- only when
+there are both."
+  (let* ((docs (shown-documents editor))
          (sources (remove-if #'tool-document-p docs))
          (tools (remove-if-not #'tool-document-p docs))
          (all (append sources tools))
@@ -392,8 +416,8 @@ are both."
 
 (defun buffer-menu-pick (editor doc)
   "Switch to DOC's window, as its item in the Buffers menu does.  True
-when DOC is still open."
-  (when (and doc (member doc (live-documents editor)))
+when DOC is still open and shown."
+  (when (and doc (member doc (shown-documents editor)))
     (doc-activate doc)
     t))
 
@@ -419,7 +443,8 @@ one item, ticked while the cursor is a block (theme.lisp)."
     (:buffers (values (buffer-menu editor) (editor-active-document editor)))
     (:themes (values (theme-menu) (active-theme)))
     (:minimap (values (list (cons "Minimap" :minimap)) (and *minimap* :minimap)))
-    (:cursor (values (list (cons "Block Cursor" :cursor)) (and *block-cursor* :cursor)))))
+    (:cursor (values (list (cons "Block Cursor" :cursor)) (and *block-cursor* :cursor)))
+    (:perspectives (values (perspective-menu editor) (current-perspective editor)))))
 
 (defun dynamic-menu-pick (editor which object)
   "Pick OBJECT's item in the group WHICH as the mouse would: a buffer's
@@ -430,7 +455,8 @@ SHOW-MINIMAP and BLOCK-CURSOR do).  True when it was done."
     (:buffers (buffer-menu-pick editor object))
     (:themes (and (find-theme object) (load-theme object) t))
     (:minimap (and (eq object :minimap) (progn (show-minimap (not *minimap*)) t)))
-    (:cursor (and (eq object :cursor) (progn (block-cursor (not *block-cursor*)) t)))))
+    (:cursor (and (eq object :cursor) (progn (block-cursor (not *block-cursor*)) t)))
+    (:perspectives (perspective-menu-pick editor object))))
 
 (defun dynamic-menu-equal (a b)
   "Whether the groups A and B show the same items for the same objects
@@ -456,9 +482,10 @@ and `-' for a bar."
   (:documentation "The dynamic groups the frontend makes items for.  A
 title whose menu holds nothing but a group the frontend does not draw
 is left out of its bar (MENU-ENTRY-DRAWN-P), so a frontend that has not
-caught up with a group shows no empty menu.  The buffers, the themes and
-the cursor's shape are every frontend's; the minimap is the host's.")
-  (:method ((editor editor)) '(:buffers :themes :cursor)))
+caught up with a group shows no empty menu.  The buffers, the themes,
+the cursor's shape and the perspectives are every frontend's; the
+minimap is the host's.")
+  (:method ((editor editor)) '(:buffers :themes :cursor :perspectives)))
 
 (defun menu-entry-drawn-p (editor index)
   "Whether the frontend draws the entry at INDEX: a dynamic group when
@@ -527,6 +554,12 @@ a pick of the item with that label, answering \"\" or MISSING."
 ;;; line, ticked while the cursor is a block, or a pick, which toggles it.
 (define-port-verb "CURSOR" (editor arg)
   (dynamic-menu-verb editor :cursor arg "no such item"))
+
+;;; PERSPECTIVES [name]: the Perspectives menu from a macro -- the twin
+;;; of BUFFERS: the perspectives, the one in front ticked, or a pick,
+;;; which switches (perspective.lisp).
+(define-port-verb "PERSPECTIVES" (editor arg)
+  (dynamic-menu-verb editor :perspectives arg "no such perspective"))
 
 ;;; ------------------------------------------------------------------
 ;;; About

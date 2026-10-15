@@ -71,9 +71,20 @@ NAME; the caller loads PATH into it."))
   (subseq path 0 (- (length path) (length (path-basename path)))))
 
 (defun doc-directory (doc)
-  "Where a file prompt of DOC starts: its file's directory, or nowhere in
-particular (\"\") for a buffer without one."
-  (path-directory (or (doc-path doc) "")))
+  "Where a file prompt of DOC starts: its file's directory, else its
+perspective's project directory (perspective.lisp), else nowhere in
+particular (\"\")."
+  (let ((path (doc-path doc)))
+    (cond (path (path-directory path))
+          (t (let ((p (doc-perspective doc)))
+               (or (and p (perspective-root p)) ""))))))
+
+(defun doc-prompt-directory (doc)
+  "What `find-file' seeds its line with: the project directory in a
+buffer without a file, nothing otherwise -- a file-backed buffer's
+prompt stays empty, so a macro that types a whole path there is
+unaffected."
+  (if (doc-path doc) "" (doc-directory doc)))
 
 (defun lisp-path-p (path)
   (let ((dot (position #\. path :from-end t)))
@@ -105,7 +116,10 @@ belonged to the old text."
         (doc-mark doc) nil
         (doc-paren-shown doc) nil)
   (doc-set-title doc (doc-name doc))
-  (set-lisp-mode doc (lisp-path-p path)))
+  (set-lisp-mode doc (lisp-path-p path))
+  ;; A tool buffer that became a file is a source now: it joins the
+  ;; perspective in front (perspective.lisp).
+  (perspective-adopt doc))
 
 ;;; ------------------------------------------------------------------
 ;;; Reading and writing
@@ -244,8 +258,13 @@ file is there but cannot be read."
          (open (and (not other-window) (find-document-by-path editor path))))
     (cond
       ;; A file that is open already has a window: go there, as Emacs
-      ;; switches to the buffer it already has.
-      (open (doc-activate open))
+      ;; switches to the buffer it already has -- brought over from
+      ;; another perspective first, since a window cannot be in two.
+      (open
+       (let ((from (and (not (doc-shown-p open)) (perspective-bring-over editor open))))
+         (doc-activate open)
+         (when from
+           (message open "~A brought over from ~A" (doc-name open) (perspective-name from)))))
       ((and (not other-window) (doc-holds-file-p doc))
        (when (release-text doc)
          (cond ((load-file doc path))
@@ -354,6 +373,7 @@ cancelled."
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
                    (lambda (doc path) (find-file-named doc path nil))
+                   :initial (doc-prompt-directory doc)
                    :title "Open"))
 
 (define-command find-file-other-window (doc arg)
@@ -361,6 +381,7 @@ cancelled."
   (declare (ignore arg))
   (prompt-for-file doc "Find file: "
                    (lambda (doc path) (find-file-named doc path t))
+                   :initial (doc-prompt-directory doc)
                    :title "Open in New Window"))
 
 ;;; The menu's entrances: Open... and friends carry an ellipsis, so they
@@ -423,6 +444,11 @@ requester already) and the window stays."
       (repl-closed doc)
       (setq ask nil))
     (when (and ask (doc-modified-p doc))
+      ;; A question about a hidden buffer (a quit, Close Perspective) is
+      ;; asked in front of it (perspective.lisp).
+      (unless (doc-shown-p doc)
+        (let ((p (perspective-of-document (doc-editor doc) doc)))
+          (when p (perspective-switch (doc-editor doc) p :say nil))))
       (case (doc-ask doc (format nil "~A has unsaved changes." (doc-name doc))
                      '(:save :discard :cancel))
         (:save
@@ -437,6 +463,9 @@ requester already) and the window stays."
         (t (return-from close-document nil))))
     (setf (doc-closing doc) t)
     (doc-close-window doc)
+    ;; Out of its perspective; when that emptied the one in front, another
+    ;; with buffers comes in front (perspective.lisp).
+    (perspective-forget doc)
     t))
 
 (define-command kill-buffer (doc arg)
@@ -445,7 +474,9 @@ requester already) and the window stays."
   (close-document doc))
 
 (defun next-document (doc)
-  (let* ((docs (live-documents (doc-editor doc)))
+  "The document after DOC among the shown ones -- the perspective in
+front's and the tool buffers -- cyclically."
+  (let* ((docs (shown-documents (doc-editor doc)))
          (rest (rest (member doc docs))))
     (or (first rest) (first docs))))
 
@@ -517,6 +548,9 @@ unsaved text unless the quit was KILL-EMACS.  A Cancel keeps the editor
 running.  True when every window closed."
   (let ((ask (not (eq (editor-quitting editor) :discard))))
     (setf (editor-quitting editor) nil)
+    ;; The perspectives file kept in step, once the user saved it once
+    ;; (perspective.lisp) -- while the documents are still open.
+    (perspective-autosave editor)
     (dolist (doc (live-documents editor) t)
       (unless (close-document doc ask)
         (return nil)))))

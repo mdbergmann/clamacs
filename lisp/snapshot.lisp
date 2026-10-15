@@ -42,14 +42,15 @@
 \(the second when the first is missing).")
 
 (defun refresh-user-paths ()
-  "*INIT-FILE* and *SNAPSHOT-FILES* as this user on this machine has them.
-Both are settled when their files load, so a heap image holds the values
-of the machine it was saved on: a host image saved under one HOME would
-look for another user's ~/.clamacsrc and never find it.  RUN calls this
-before anything reads them; on an Amiga the paths are constants and
-nothing changes."
+  "*INIT-FILE*, *SNAPSHOT-FILES* and *PERSPECTIVE-FILES* as this user on
+this machine has them.  All are settled when their files load, so a heap
+image holds the values of the machine it was saved on: a host image saved
+under one HOME would look for another user's ~/.clamacsrc and never find
+it.  RUN calls this before anything reads them; on an Amiga the paths are
+constants and nothing changes."
   (setf *init-file* (default-init-file)
-        *snapshot-files* (default-snapshot-files)))
+        *snapshot-files* (default-snapshot-files)
+        *perspective-files* (default-perspective-files)))
 
 ;;; ------------------------------------------------------------------
 ;;; The frontend's part

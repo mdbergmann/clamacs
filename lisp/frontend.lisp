@@ -58,7 +58,11 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
   (layout (make-winstore))
   ;; What the other threads post for the editor's task (mailbox.lisp);
   ;; NIL until the frontend's loop is about to run.
-  (mailbox nil))
+  (mailbox nil)
+  ;; The perspectives (perspective.lisp), in the order made, and the one
+  ;; in front; NIL until the first source document needs one.
+  (perspectives '())
+  (perspective nil))
 
 ;;; ------------------------------------------------------------------
 ;;; The document: one text in one window.  A frontend subclasses it.
@@ -100,7 +104,11 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    ;; The role its window's position is stored under (snapshot.lisp):
    ;; `doc1', `doc2', ... for a file window, `repl', `description', ... for
    ;; a scratch window, NIL for one that stores no place.
-   (role :initform nil :accessor doc-role)))
+   (role :initform nil :accessor doc-role)
+   ;; The perspective this document belongs to (perspective.lisp): the
+   ;; one in front when a source document was made, NIL for a tool
+   ;; buffer, which every perspective shows.
+   (perspective :initform nil :accessor doc-perspective)))
 
 (defmethod initialize-instance :after ((doc document) &key)
   (setf (doc-keys doc)
@@ -109,7 +117,10 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
   ;; The role is chosen among the documents there are BEFORE this one.
   (setf (doc-role doc)
         (next-document-role (doc-editor doc) (doc-path doc) (doc-name doc)))
-  (push doc (editor-documents (doc-editor doc))))
+  (push doc (editor-documents (doc-editor doc)))
+  ;; A source document joins the perspective in front (perspective.lisp,
+  ;; loaded after this file, as snapshot.lisp is).
+  (perspective-adopt doc))
 
 (defun doc-kill-ring (doc)
   (editor-kill-ring (doc-editor doc)))
@@ -280,6 +291,18 @@ it, the part on screen marked -- when FLAG, hide it otherwise
 a frontend itself when it comes up.  A frontend without a minimap does
 nothing: the MUI editor.")
   (:method ((editor editor) flag)
+    (declare (ignore flag))
+    nil))
+
+(defgeneric doc-set-shown (doc flag)
+  (:documentation "Show DOC's window or tab when FLAG, hide it otherwise
+\(perspective.lisp: a perspective switch hides the windows of the one
+left and shows the windows of the one entered).  A hidden document keeps
+its text, its cursor and its undo; its window comes back where it was.
+A frontend may be told the state it shows already (a restore syncs
+every document once), never a document being closed.  The default does
+nothing: a frontend that cannot hide shows every perspective's windows.")
+  (:method ((doc document) flag)
     (declare (ignore flag))
     nil))
 

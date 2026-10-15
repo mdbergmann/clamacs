@@ -11,7 +11,10 @@ amilisp change needed for clamacs (an `EXT.DEV` command, a compiler or JIT
 fix) is a commit *in AmiLisp* under its gates, then the superproject's
 pin of this submodule is bumped when the editor side lands.  Work here
 never gates on AmiLisp's suites, and AmiLisp's `make test` never runs
-ours.  (The FS-UAE emulator assets -- the aos3 Workbench image and
+ours -- its `make test-gc-stress` does, as the last leg, with the
+editor's `lisp/` as the collector's corpus (since 2026-10-15; that gate
+is AmiLisp's, a clamacs commit never waits for it).  (The FS-UAE
+emulator assets -- the aos3 Workbench image and
 FS-UAE.app -- are not tracked in git; they live in the superproject's
 `verify/realamiga`, see Testing.)
 
@@ -310,6 +313,42 @@ dynamic groups in one menu (View's minimap and cursor items) made the
 Cocoa shim anchor a titleless group on the one before it, by name: both
 anchored on the menu's last item at build time and their order depended
 on which was filled last.
+**Perspectives** (`specs/clamacs-perspectives.md`; phase P1, the pure
+part, 2026-10-14): `lisp/perspective.lisp` -- a named set of source
+documents with a project root, of which one is in front
+(`editor-perspective`; the first is `main`, made when the first source
+document needs one).  A source document joins the perspective in front
+when it is made (`perspective-adopt`, from the document's
+`initialize-instance`, like its role) and leaves it when its window
+closes (`perspective-forget`, from `close-document`); a tool buffer
+belongs to none and is shown everywhere -- there is ONE amilisp and
+one REPL, as `perspective.el` shows the one SLIME REPL in every
+perspective (an amilisp per perspective was designed on 2026-10-15 and
+set aside as SLIME's multiple connections, another feature; the spec's
+"Not done" section), and a switch to a perspective with a root tells
+that amilisp the directory (`perspective-tell-root`: one `EVAL` of
+kind `:tell-root`, the reply dropped, an open REPL noted).  `doc-shown-p` /
+`shown-documents` is what the Buffers menu, `other-window` and the
+frontends' active-document fallbacks read; `live-documents` stays
+everything.  The one frontend generic is `doc-set-shown` (default
+nothing; the fake records it), so until phases P2/P3 both real
+frontends show every perspective's windows.  Three rules: a switch
+shows the new perspective's windows and activates its remembered
+document BEFORE hiding the old one's; a perspective entered empty gets
+an unnamed buffer, and closing the last buffer in front switches to a
+perspective that has buffers (only when none has does the last window's
+close end the editor); a question about an unsaved HIDDEN buffer is
+asked in front of it (`close-document` switches first).  The keys are
+`perspective.el`'s on `C-x x`, the Perspectives menu sits between View
+and Buffers with a titleless `:perspectives` dynamic group at its tail
+(every frontend lists it), and `PERSPECTIVES [name]` is the verb.  The
+file (`*perspective-files*`, the layout file's sibling, settled by
+`refresh-user-paths`) is written by Save Perspectives and at every quit
+once it exists, and read at a start without files
+(`perspective-restore-at-start`, in both frontends' `start`) or by
+Restore Perspectives; a restore opens each perspective's files with
+that perspective made current raw, then `perspective-sync-shown` and
+one `perspective-switch`.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 
@@ -413,10 +452,14 @@ behaviour spec.  New editor work goes into `lisp/`:
   `tests/framework.lisp` the `deftest`/`is`/`is-equal` framework.
   `make test-lisp` runs them under the superproject's
   `../build/host/amilisp` (skipped with a NOTE when it is not built) and
-  `make test` includes it; `make test-lisp-gc-stress` runs them with a
-  compaction at every allocation (`../build/host-gcstress/amilisp`, built
-  by the superproject's `make test-gc-stress`).  `CLAMACS_TEST=keymap`
-  runs one file.  Both must pass before a commit that touches `lisp/`.
+  `make test` includes it; `CLAMACS_TEST=keymap` runs one file.  It
+  must pass before a commit that touches `lisp/`.  `make
+  test-lisp-gc-stress` runs the same suite with a compaction at every
+  allocation (`../build/host-gcstress/amilisp`), but **that is AmiLisp's
+  gate, not ours** (decided 2026-10-15): pure Lisp cannot fail it on its
+  own, what it finds are collector bugs with the editor as the corpus,
+  and with the Immix build it takes near two hours.  AmiLisp runs it
+  when the runtime changes; a clamacs commit never waits for it.
 - The verdict is the LAST LINE (`CLAMACS-LISP-TESTS: PASS`), never the
   exit code: amilisp's `LOAD` recovers form by form and a script exits 0
   after a reader error, so `tests/run-lisp-tests.sh` also fails on any
@@ -433,9 +476,9 @@ behaviour spec.  New editor work goes into `lisp/`:
   mtime plus, since FASL v35, the layouts of the `DEFSTRUCT`s it inlined
   (a changed struct recompiles the dependents) -- but a changed macro or
   inline function in another file still leaves cached dependents stale.
-  It also means the GC-stress leg COMPILES everything under stress (about
-  7 minutes), which is how it found the runtime's pre-scan GC bug on
-  2026-09-17.  A test that fails only in the suite, or only outside it,
+  It also means the GC-stress leg COMPILES everything under stress,
+  which is how it found the runtime's pre-scan GC bug on 2026-09-17.  A
+  test that fails only in the suite, or only outside it,
   after a macro or inline function changed in another file: suspect a
   cache first (`--no-fasl-cache` to confirm).
 - A wrong answer from conforming CL code is an amilisp bug: reduce it,

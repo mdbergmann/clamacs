@@ -123,7 +123,7 @@ strings: the heap, then *AMILISP-OPTIONS*."
 (defstruct (request (:constructor make-request (command kind doc)))
   command
   kind                      ; :ping :version :in-package :load :compile-file
-                            ; :eval :lastresult, and introspect.lisp's
+                            ; :eval :lastresult :tell-root, and introspect.lisp's
   doc                       ; the document the reply is about, or NIL
   (auto nil)                ; an automatic LASTRESULT
   (origin nil)              ; ... standing in for a request of this kind
@@ -375,6 +375,10 @@ new one."
        (debug-reply wire kind doc rc text))
       (:inspect
        (inspect-reply wire doc rc text))
+      (:tell-root
+       ;; A perspective's project directory told to amilisp
+       ;; (perspective.lisp): nobody waits for the answer.
+       nil)
       (t
        (when (and doc text) (doc-message doc text))))))
 
@@ -613,7 +617,11 @@ for in the minibuffer."
       (unless (save-file doc (doc-path doc))
         (doc-beep doc)
         (return-from with-system-file nil)))
-    (let ((found (find-system-files (doc-path doc))))
+    ;; A buffer without a file looks from its perspective's project
+    ;; directory (perspective.lisp), when it has one.
+    (let ((found (find-system-files (or (doc-path doc)
+                                        (let ((dir (doc-directory doc)))
+                                          (and (string/= dir "") dir))))))
       (cond ((and found (null (rest found)))
              (funcall continuation doc (first found)))
             (found

@@ -162,6 +162,20 @@
   (check-table '(("C-x C-+" "clamacs-increase-font-size") ("C-x C--" "clamacs-decrease-font-size"))
                nil))
 
+(deftest the-perspective-keys-are-perspective-el-s
+  ;; `C-x x' with perspective.el's letters (specs/clamacs-perspectives.md).
+  (check-table '(("C-x x s" "clamacs-perspective-switch")
+                 ("C-x x n" "clamacs-perspective-next") ("C-x x p" "clamacs-perspective-previous")
+                 ("C-x x r" "clamacs-perspective-rename") ("C-x x c" "clamacs-perspective-close")
+                 ("C-x x a" "clamacs-perspective-move-buffer")
+                 ("C-x x d" "clamacs-perspective-set-directory")
+                 ("C-x x o" "clamacs-perspective-open-project")
+                 ("C-x x C-s" "clamacs-perspective-save") ("C-x x C-l" "clamacs-perspective-restore"))
+               nil)
+  ;; The prefix does not hide `C-x C-x', and is there in Lisp mode too.
+  (check-table '(("C-x C-x" "exchange-point-and-mark") ("C-x x s" "clamacs-perspective-switch"))
+               (lisp-keymap)))
+
 (deftest unbound-keys-reach-the-superclass
   ;; The keys TextEditor.mcc handles itself must NOT be claimed here, or the
   ;; class's own navigation, selection and self-insert stop working.
