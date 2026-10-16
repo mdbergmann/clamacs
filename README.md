@@ -387,9 +387,11 @@ There is one amilisp and one REPL, shown in every perspective, as
 **Save Perspectives** (`C-x x C-s`) writes every perspective with its
 directory and its files to `ENVARC:Clamacs/perspectives.cfg` (and
 `ENV:`) on the Amiga, `~/.clamacs-perspectives.cfg` on the host; from
-then on every quit keeps the file in step, and a start without files on
-the command line opens the perspectives it holds, the recorded one in
-front.  **Restore Perspectives** (`C-x x C-l`) reads it into a running
+then on every quit keeps the file in step -- and writes the window
+positions beside it, as Snapshot Windows does, so the next start comes
+up where this one was left -- and a start without files on the command
+line opens the perspectives it holds, the recorded one in front.
+**Restore Perspectives** (`C-x x C-l`) reads it into a running
 editor.  The file is plain text, one `perspective NAME` line followed by
 its `root` and `file` lines; edit it or delete it to start over.  A
 macro reads the menu with `PERSPECTIVES` and switches with

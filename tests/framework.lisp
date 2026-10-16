@@ -95,3 +95,15 @@
     (when contents
       (is (write-file-text path contents)))
     path))
+
+;;; The user's files, out of the suite's reach.  A quit (QUIT-REQUESTED,
+;;; which several tests reach) writes the perspectives file and the layout
+;;; file when the perspectives file exists -- and the defaults are THIS
+;;; user's ~/.clamacs-perspectives.cfg and ~/.clamacs-windows.cfg, which a
+;;; test editor's quit would overwrite with its own two buffers.  A test
+;;; that wants files of its own binds the variables over these.
+(setf *perspective-files* (list (temp-path "suite-perspectives.cfg"))
+      *snapshot-files* (list (temp-path "suite-windows.cfg")))
+(dolist (path (append *perspective-files* *snapshot-files*))
+  (when (probe-file path)
+    (delete-file path)))

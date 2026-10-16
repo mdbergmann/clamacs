@@ -436,7 +436,8 @@ line that does not parse, or names a perspective nothing, is skipped."
 
 (defun perspective-autosave (editor)
   "At a quit: the file kept in step once it exists -- saving once opts
-in.  True when it was written."
+in, for this file and for the layout file (QUIT-REQUESTED writes that
+one next, through SNAPSHOT-AUTOSAVE).  True when it was written."
   (when (some (lambda (path) (ignore-errors (probe-file path))) *perspective-files*)
     (null (perspective-save editor))))
 
@@ -689,7 +690,7 @@ and the editor switches to it.  A perspective of that name is switched to."
 (define-command clamacs-perspective-save (doc arg)
   "Save the perspectives -- each with its project directory and its
 files -- to the perspectives file, which a start without files restores
-and every later quit keeps in step."
+and every later quit keeps in step, the windows' places with it."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (failed (perspective-save editor)))

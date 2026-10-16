@@ -16,8 +16,9 @@
 ;;;;
 ;;;; MAIN drives the editor verify/host/run-drive.sh started on sample.lisp
 ;;;; and quits it; SECOND talks to the second editor the script starts
-;;;; against the layout file MAIN wrote, checks where it came up and quits
-;;;; it.  The environment says where things are:
+;;;; against the layout file that editor's QUIT wrote (its window moved
+;;;; to a place of the drive's choosing first), checks where it came up
+;;;; and quits it.  The environment says where things are:
 ;;;;
 ;;;;   CLAMACS_DRIVE_DIR   the editor's private directory (its clamacs-port
 ;;;;                       and clamacs-token files)
@@ -1004,8 +1005,12 @@ cursor's line marked only when nothing is selected."
         (ok "Backspace deleted the selection")
         (fail "Backspace on the selection gave ~A" *result*))))
 
-(defvar *want* "doc1 100 120 640 400"
-  "Where the second editor's first window must come up.")
+(defvar *want-frame* "100 120 640 400"
+  "Where the first editor's window is moved before its quit.")
+
+(defvar *want* (concatenate 'string "doc1 " *want-frame*)
+  "The layout file's line that quit writes for it, and where the second
+editor's first window must come up.")
 
 (defun leg-snapshot ()
   (cmd "EVAL clamacs-show-errors")
@@ -1046,9 +1051,11 @@ cursor's line marked only when nothing is selected."
         (fail "no dock line in ~A" *cfg*))
     (check-panels '(:diagnostics "clamacs-show-errors") "open rows 0" "\"diagnostics\":{\"open\":true,\"rows\":0")
     ;; The file the second editor (run-drive.sh, the SECOND mode below)
-    ;; comes up against.
-    (if (write-file *cfg* (format nil "; written by drive.lisp~%~%~A~%" *want*))
-        (ok "wrote a file of our own: ~A" *want*)
+    ;; comes up against is written by this editor's QUIT (the perspectives
+    ;; leg saves its file, which opts the layout file in too): QUIT-EDITOR
+    ;; moves the window where *WANT* says first.
+    (if (write-file *cfg* (format nil "; written by drive.lisp~%~%doc1 1 2 3 4~%"))
+        (ok "wrote a file of our own, for the quit to overwrite")
         (fail "could not write ~A" *cfg*))))
 
 (defun leg-integration ()
@@ -1980,8 +1987,29 @@ EVAL prints it: `\\\"doc1\\\",\\\"doc2\\\"'; \"\" without a report."
               (fail "the leg ends with ~A active" *result*)))))))
 
 (defun quit-editor ()
-  "kill-emacs: what the run typed into the fixtures is discarded, no
-requester asked.  Then wait for the port to go."
+  "The window moved where *WANT-FRAME* says -- the quit writes the layout
+file beside the perspectives file the run saved, and the second editor
+must come up there -- then kill-emacs: what the run typed into the
+fixtures is discarded, no requester asked.  Then wait for the port to
+go."
+  (cmd (format nil "EVAL (clamacs::set-window-frame (clamacs::host-editor-main clamacs::*editor*) ~A)"
+               *want-frame*))
+  ;; A GTK resize is asynchronous: ask until the frame took.  GETWINDOW
+  ;; names the active window's role (errors.lisp's, not doc1): the frame
+  ;; after the role is what must match.
+  (flet ((frame-of (place)
+           (let ((blank (position #\Space place)))
+             (if blank (subseq place (1+ blank)) ""))))
+    (let ((got ""))
+      (dotimes (i 40)
+        (cmd "GETWINDOW")
+        (setq got *result*)
+        (when (and (= *rc* 0) (string= (frame-of got) *want-frame*))
+          (return))
+        (pause 25))
+      (if (string= (frame-of got) *want-frame*)
+          (ok "the window moved to ~A for the quit to record" got)
+          (fail "the window is at ~A (wanted ~A) before the quit" got *want-frame*))))
   (cmd "EVAL kill-emacs")
   (ok "asked clamacs to quit")
   (ignore-errors (close *port*))
@@ -2026,6 +2054,18 @@ requester asked.  Then wait for the port to go."
     (if (result-has "; loading system drivesys from")
         (ok "the system's load streamed into the REPL transcript")
         (fail "the REPL transcript after Load System is ~A" *result*))
+    ;; A definition file with several systems is what the requester asks
+    ;; about (one button per system; the fake frontend's tests drive the
+    ;; question itself): the names the editor reads off such a file, through
+    ;; the running editor.  In a directory of its own, or the source's
+    ;; Load System above would have found two .asd files and asked for one.
+    (let ((multi (scratch "drivemulti/multi.asd")))
+      (ensure-directories-exist multi)
+      (write-file multi (format nil "(asdf:defsystem \"multi\" :components ())~%(asdf:defsystem \"multi/tests\" :depends-on (\"multi\"))~%"))
+      (cmd (format nil "EVAL (clamacs::file-systems ~S)" multi))
+      (if (result-has "(\"multi\" \"multi/tests\")")
+          (ok "the editor reads a file's several systems for the requester: ~A" *result*)
+          (fail "the systems of a two-system .asd read as ~A" *result*)))
     ;; The buffer's package exists now: an eval in it works.
     (cmd "GOTOLINE 3")
     (cmd "TE POSITION EOL")
@@ -2054,18 +2094,6 @@ requester asked.  Then wait for the port to go."
   (leg-menu)
   (leg-buffers)
   (leg-themes)
-    ;; A definition file with several systems is what the requester asks
-    ;; about (one button per system; the fake frontend's tests drive the
-    ;; question itself): the names the editor reads off such a file, through
-    ;; the running editor.  In a directory of its own, or the source's
-    ;; Load System above would have found two .asd files and asked for one.
-    (let ((multi (scratch "drivemulti/multi.asd")))
-      (ensure-directories-exist multi)
-      (write-file multi (format nil "(asdf:defsystem \"multi\" :components ())~%(asdf:defsystem \"multi/tests\" :depends-on (\"multi\"))~%"))
-      (cmd (format nil "EVAL (clamacs::file-systems ~S)" multi))
-      (if (result-has "(\"multi\" \"multi/tests\")")
-          (ok "the editor reads a file's several systems for the requester: ~A" *result*)
-          (fail "the systems of a two-system .asd read as ~A" *result*)))
   (leg-minimap)
   (leg-cursor)
   (leg-keys)
@@ -2095,6 +2123,21 @@ wrote: it must come up where the file said, then quit."
          (fail "no second editor port appeared under ~A" *dir*)
          (return-from second nil))
         (t (ok "a second editor is at 127.0.0.1:~A" (file-line (concatenate 'string *dir* "clamacs-port")))))
+  ;; The layout file is the first editor's quit's, not the drive's: the
+  ;; perspectives file it saved opted the layout in, and its window was
+  ;; moved to *WANT-FRAME* before the quit (QUIT-EDITOR).  The drive's
+  ;; own line is gone, the editor's header and the dock's line are there.
+  (if (and (file-has-prefix *cfg* "; clamacs window positions")
+           (not (file-has-prefix *cfg* "; written by drive.lisp"))
+           (not (file-has-line *cfg* "doc1 1 2 3 4")))
+      (ok "the first editor's quit wrote the layout file")
+      (fail "the layout file is not the quit's: ~A" (file-line *cfg*)))
+  (if (file-has-prefix *cfg* "dock ")
+      (ok "the quit recorded the dock, where the REPL was left")
+      (fail "no dock line in ~A" *cfg*))
+  (if (file-has-line *cfg* *want*)
+      (ok "the quit recorded the window where it was left: ~A" *want*)
+      (fail "no line ~A in ~A" *want* *cfg*))
   (let ((got ""))
     (dotimes (i 40)
       (cmd "GETWINDOW")

@@ -185,9 +185,18 @@ are pure string work with tests on fixtures.
 
 **When it is written.**  By `clamacs-perspective-save`, and at every
 quit once the file exists -- saving once opts in, and from then on the
-editor keeps the file in step without being asked; the layout file
-stays as it is, written on command only.  The write goes to every path
-of `*perspective-files*` through `snapshot-write-file`.
+editor keeps the file in step without being asked.  The write goes to
+every path of `*perspective-files*` through `snapshot-write-file`.
+**The layout file goes with it** (decided 2026-10-15): a quit that
+writes the perspectives file also records every window's place in the
+layout file (`snapshot-autosave`, the command's path without the
+message, from `quit-requested` right after `perspective-autosave`), so
+a saved session comes back where it was left -- a session is its
+buffers and its windows.  The perspectives file's existence is the one
+opt-in; a layout file without a perspectives file stays as it is,
+written on command only (the first design had it that way for both,
+and the first restart on the host came up with the right perspective in
+a window of the default size).
 
 **When it is read.**  By `clamacs-perspective-restore`, and at a start
 without files on the command line when the file is there (a start with
@@ -249,7 +258,8 @@ lisp/menu.lisp             the Perspectives title and group; the rule;
 lisp/bindings.lisp         the C-x x keys
 lisp/wire.lisp             with-system-file from the root; the switch's
                            directory EVAL (perspective-tell-root)
-lisp/snapshot.lisp         refresh-user-paths settles *perspective-files*
+lisp/snapshot.lisp         refresh-user-paths settles *perspective-files*;
+                           snapshot-autosave, the quit's layout write
 lisp/load.lisp             perspective.lisp after menu.lisp
 lisp/frontend-host.lisp    P1: :perspectives in editor-dynamic-groups, the
                            restore at start; P2: doc-set-shown, the page

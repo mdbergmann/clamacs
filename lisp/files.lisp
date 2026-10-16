@@ -550,8 +550,11 @@ running.  True when every window closed."
   (let ((ask (not (eq (editor-quitting editor) :discard))))
     (setf (editor-quitting editor) nil)
     ;; The perspectives file kept in step, once the user saved it once
-    ;; (perspective.lisp) -- while the documents are still open.
-    (perspective-autosave editor)
+    ;; (perspective.lisp), and with it the windows' places (snapshot.lisp):
+    ;; the session comes back as it was left, where it was left -- while
+    ;; the documents are still open.
+    (when (perspective-autosave editor)
+      (snapshot-autosave editor))
     (dolist (doc (live-documents editor) t)
       (unless (close-document doc ask)
         (return nil)))))

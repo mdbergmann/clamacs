@@ -194,8 +194,11 @@
   ;; A heap image holds *INIT-FILE* and *SNAPSHOT-FILES* as the saving
   ;; machine had them; RUN calls REFRESH-USER-PATHS first, which answers
   ;; what a fresh load of the two files would.
+  ;; (*PERSPECTIVE-FILES* bound too: REFRESH-USER-PATHS sets all three, and
+  ;; the suite keeps them off the user's files -- tests/framework.lisp.)
   (let ((*init-file* "/some/other/machine/.clamacsrc")
-        (*snapshot-files* (list "/some/other/machine/.clamacs-windows.cfg")))
+        (*snapshot-files* (list "/some/other/machine/.clamacs-windows.cfg"))
+        (*perspective-files* *perspective-files*))
     (refresh-user-paths)
     (is-equal *init-file* (default-init-file))
     (is-equal *snapshot-files* (default-snapshot-files))

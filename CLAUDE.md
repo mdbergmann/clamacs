@@ -344,7 +344,11 @@ and Buffers with a titleless `:perspectives` dynamic group at its tail
 (every frontend lists it), and `PERSPECTIVES [name]` is the verb.  The
 file (`*perspective-files*`, the layout file's sibling, settled by
 `refresh-user-paths`) is written by Save Perspectives and at every quit
-once it exists, and read at a start without files
+once it exists -- and that quit writes the layout file too
+(`snapshot-autosave` after `perspective-autosave` in `quit-requested`,
+2026-10-15: a restored session came up in a default-sized window; the
+perspectives file is the one opt-in, a layout file alone stays written
+on command) -- and read at a start without files
 (`perspective-restore-at-start`, in both frontends' `start`) or by
 Restore Perspectives; a restore opens each perspective's files with
 that perspective made current raw, then `perspective-sync-shown` and
@@ -494,7 +498,11 @@ behaviour spec.  New editor work goes into `lisp/`:
   `make test-lisp` runs them under the superproject's
   `../build/host/amilisp` (skipped with a NOTE when it is not built) and
   `make test` includes it; `CLAMACS_TEST=keymap` runs one file.  It
-  must pass before a commit that touches `lisp/`.  `make
+  must pass before a commit that touches `lisp/`.  `tests/framework.lisp`
+  points `*perspective-files*` and `*snapshot-files*` at temp paths for
+  the whole suite (since 2026-10-15: a test's quit wrote the developer's
+  real `~/.clamacs-perspectives.cfg`); a test that lets `refresh-user-paths`
+  run binds all three path variables first.  `make
   test-lisp-gc-stress` runs the same suite with a compaction at every
   allocation (`../build/host-gcstress/amilisp`), but **that is AmiLisp's
   gate, not ours** (decided 2026-10-15): pure Lisp cannot fail it on its

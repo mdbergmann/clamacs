@@ -931,9 +931,20 @@ ELSE DO
     ELSE
         SAY 'OK the second editor quit'
     ADDRESS VALUE PORT
-    /* The quit keeps a perspectives file that exists in step (ENVARC:
-    ** too): both go, as the snapshot files do. */
+    /* The quit keeps a perspectives file that exists in step, and with
+    ** it the layout file: the hand-written one above is the editor's own
+    ** now (its header, no comment of ours), holding the window where it
+    ** was left -- doc1, sample2.lisp's, at WANT.  Then both pairs go, as
+    ** the snapshot files do. */
     IF AMILISP ~= '' THEN DO
+        IF FileHasPrefix(CFG, '; clamacs window positions') & ~FileHasPrefix(CFG, '; written by drive.rexx') THEN
+            SAY 'OK the second editor''s quit wrote the layout file'
+        ELSE
+            SAY 'FAIL after the quit the layout file is not the editor''s'
+        IF FileHasLine(CFG, WANT) & FileHasLine(ARCHIVE, WANT) THEN
+            SAY 'OK the quit recorded the window where it was left:' WANT
+        ELSE
+            SAY 'FAIL no line' WANT 'in' CFG 'and' ARCHIVE 'after the quit'
         ADDRESS COMMAND 'Delete >NIL: QUIET' PCFG PARCHIVE
         IF EXISTS(PCFG) | EXISTS(PARCHIVE) THEN
             SAY 'FAIL the perspectives files could not be deleted'

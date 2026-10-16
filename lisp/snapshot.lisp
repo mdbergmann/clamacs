@@ -12,7 +12,9 @@
 ;;;;     when it creates the window -- the one place a position comes from;
 ;;;;   - `clamacs-snapshot-windows' reads every open window's geometry
 ;;;;     through DOC-GEOMETRY and EDITOR-AUX-WINDOWS, puts it in the store
-;;;;     and writes the file to ENV: and ENVARC:;
+;;;;     and writes the file to ENV: and ENVARC:; a quit that keeps the
+;;;;     perspectives file in step does the same (SNAPSHOT-AUTOSAVE, from
+;;;;     QUIT-REQUESTED), so a saved session comes back where it was left;
 ;;;;   - the port's GETWINDOW says where the active window is and under
 ;;;;     which role, so drive.rexx can check the file against the window.
 ;;;;
@@ -134,16 +136,31 @@ zero and below): such a hand-edited entry counts as none."
       1
       0))
 
-(defun snapshot-take (doc)
-  "Every open window into the store, and the store into the files."
-  (let ((editor (doc-editor doc))
-        (count 0))
+(defun snapshot-record-windows (editor)
+  "Every open window into the store: the number recorded."
+  (let ((count 0))
     (dolist (d (live-documents editor))
       (multiple-value-bind (left top width height) (doc-geometry d)
         (when left
           (incf count (snapshot-record editor (doc-role d) left top width height)))))
     (dolist (entry (editor-aux-windows editor))
       (incf count (apply #'snapshot-record editor entry)))
+    count))
+
+(defun snapshot-autosave (editor)
+  "At a quit that keeps the perspectives file in step (QUIT-REQUESTED):
+the windows into the layout file too, so the next start comes up where
+this one was left -- a session is its buffers AND its windows.  The
+perspectives file's existence is the one opt-in; the layout file alone,
+written on command, stays as it is.  No message: the windows are about
+to close.  True when every file was written."
+  (snapshot-record-windows editor)
+  (null (snapshot-save editor)))
+
+(defun snapshot-take (doc)
+  "Every open window into the store, and the store into the files."
+  (let* ((editor (doc-editor doc))
+         (count (snapshot-record-windows editor)))
     (let ((failed (snapshot-save editor)))
       (cond (failed
              (message doc "Cannot write ~{~A~^ or ~}" failed)

@@ -552,8 +552,10 @@ editor a b)."
          (envarc (concatenate 'string dir "/envarc/perspectives.cfg"))
          (one (temp-file "persp-one.lisp" "(one)"))
          (two (temp-file "persp-two.lisp" "(two)"))
-         (gone (temp-path "persp-gone.lisp")))
-    (let ((*perspective-files* (list env envarc)))
+         (gone (temp-path "persp-gone.lisp"))
+         (layout (concatenate 'string dir "/env/windows.cfg")))
+    (let ((*perspective-files* (list env envarc))
+          (*snapshot-files* (list layout)))
       (unwind-protect
            (progn
              ;; Nothing to restore yet.
@@ -610,25 +612,39 @@ editor a b)."
                (is (eq (editor-active-document editor) d2))
                (is-equal (fake-last-message d2) "Restored: 1 perspective(s) made, 1 file(s) opened, 1 missing"))
              ;; The quit keeps the file in step once it exists: a third
-             ;; perspective made after the save is in it afterwards.
+             ;; perspective made after the save is in it afterwards -- and
+             ;; the windows' places go to the layout file beside it, the
+             ;; hidden window's (main's, closed on MUI) with the kept
+             ;; geometry, so the next start comes up where this one was
+             ;; left (snapshot-autosave).
+             (is (null (probe-file layout)))
              (let ((editor (make-fake-editor)))
                (perspective-restore editor)
                (make-perspective editor "later")
                (let ((doc (editor-active-document editor)))
+                 (setf (fake-geometry doc) (list 30 40 500 300))
                  (run-command doc 'kill-emacs)
                  (is (quit-requested editor)))
                (is (search "perspective later" (read-file-text env)))
-               (is (search "perspective later" (read-file-text envarc))))
-             ;; Without a file nothing is written at a quit.
+               (is (search "perspective later" (read-file-text envarc)))
+               (let ((text (read-file-text layout)))
+                 (is (search *winstore-header* text))
+                 (is (search (format nil "doc1 0 11 640 200~%") text))
+                 (is (search (format nil "doc2 30 40 500 300~%") text))))
+             ;; Without a file nothing is written at a quit: not the
+             ;; perspectives, not the layout.
              (delete-file env)
              (delete-file envarc)
+             (delete-file layout)
              (let ((editor (make-fake-editor)))
                (make-fake "|" :editor editor)
                (run-command (editor-active-document editor) 'kill-emacs)
                (is (quit-requested editor))
-               (is (null (probe-file env)))))
+               (is (null (probe-file env)))
+               (is (null (probe-file layout)))))
         (delete-quietly env)
         (delete-quietly envarc)
+        (delete-quietly layout)
         (delete-quietly one)
         (delete-quietly two)))))
 
