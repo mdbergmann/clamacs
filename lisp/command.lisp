@@ -143,4 +143,8 @@ Emacs's names has not learnt yet."
  clamacs-theme
  ;; Every command with its keys and its docstring's first line, in a
  ;; window (menu.lisp; the text is COMMAND-LISTING-TEXT in bindings.lisp).
- clamacs-list-commands)
+ clamacs-list-commands
+ ;; Editing every occurrence of a symbol at once (iedit.lisp): the
+ ;; session's toggle, and its own keys while it is on.
+ clamacs-iedit clamacs-iedit-next clamacs-iedit-previous
+ clamacs-iedit-toggle-occurrence)

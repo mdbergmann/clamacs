@@ -31,7 +31,9 @@
            (setf (doc-last-command doc) command)
            nil)
           (function
-           (funcall function doc arg)
+           ;; Inside an iedit session (iedit.lisp) the edit the command
+           ;; makes is mirrored into the other occurrences.
+           (iedit-around doc command (lambda () (funcall function doc arg)))
            (setf (doc-last-command doc) command)
            t)
           (t
@@ -63,10 +65,14 @@ class's own arrows, selection and self-insert keep working."
          t)
         (t
          ;; Not ours, and ordinary typing ends a run of kills or yanks.
-         ;; In the REPL window a key that would edit the transcript is
-         ;; redirected or swallowed (repl.lisp).
+         ;; While an iedit session is on, its own keys and the edits the
+         ;; widget would make on its own are taken here, through the
+         ;; protocol, so the session sees them (iedit.lisp).  In the REPL
+         ;; window a key that would edit the transcript is redirected or
+         ;; swallowed (repl.lisp).
          (setf (doc-last-command doc) nil)
-         (and (doc-repl doc) (repl-unbound-key doc key)))))))
+         (cond ((and (doc-iedit doc) (iedit-handle-key doc key)) t)
+               (t (and (doc-repl doc) (repl-unbound-key doc key)))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The context: text the sexp scanner can trust
@@ -331,7 +337,10 @@ What the widget shows selected on its own stands in for a mark."
   (setf (doc-mark doc) nil
         (doc-mark-active doc) nil)
   (doc-edit doc :select-none)
-  (doc-message doc "Quit"))
+  (doc-message doc "Quit")
+  ;; ... and end an iedit session, which says so itself.
+  (when (doc-iedit doc)
+    (iedit-end doc)))
 
 ;;; ------------------------------------------------------------------
 ;;; Killing and yanking
@@ -655,7 +664,8 @@ its newline); a trailing newline does not open another line."
       (with-quiet-display (doc)
         (do-text-lines (line text)
           (colour-one-line doc y line state)
-          (incf y))))))
+          (incf y)))
+      (iedit-after-recolour-all doc))))
 
 (defun colour-lines (doc y0 y1)
   "Recolour lines Y0 to Y1.  The context starts at the lines' defun, where
@@ -682,7 +692,9 @@ lines are painted plain, and nothing above them is read."
                    (incf y))))
           (if (> y1 y0)
               (with-quiet-display (doc) (paint))
-              (paint)))))))
+              (paint))
+          ;; The lines were painted whole, over any iedit marks on them.
+          (iedit-after-recolour doc y0 y1))))))
 
 (defun colour-line (doc line-number)
   "Recolour one line."
@@ -728,7 +740,10 @@ cursor sits after typing a `)' -- Emacs's rule."
                 (setf (doc-paren-shown doc) (cons y x))))))))))
 
 (defun note-cursor-moved (doc)
-  (show-paren doc))
+  (show-paren doc)
+  ;; An iedit session marks the occurrence under the cursor distinctly.
+  (when (doc-iedit doc)
+    (iedit-note-point doc)))
 
 (defun note-text-changed (doc &optional y0 y1)
   "The text changed on lines Y0 to Y1 -- the cursor's line when not said:

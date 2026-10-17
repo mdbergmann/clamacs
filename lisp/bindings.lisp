@@ -38,6 +38,9 @@
     ("C-/" undo) ("C-_" undo) ("C-x u" undo) ("C-x r" redo)
     ;; search
     ("C-s" isearch-forward) ("C-r" isearch-backward)
+    ;; every occurrence of the symbol at point at once, on iedit's key;
+    ;; M-n, M-p and M-; are the session's own while it is on (iedit.lisp)
+    ("C-;" clamacs-iedit)
     ;; files, buffers, windows, quit
     ("C-x C-f" find-file) ("C-x C-s" save-buffer) ("C-x C-w" write-file)
     ("C-x b" switch-to-buffer) ("C-x k" kill-buffer)

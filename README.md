@@ -326,6 +326,20 @@ reaches the kills before it.  On the host, typing replaces what the mouse
 or Shift selected, and Option or Control with the left and right arrows
 moves by the word.
 
+### Editing every occurrence at once
+
+`C-;` on a symbol (Edit > Edit Occurrences) marks every occurrence of it
+in the current defun -- with `C-u`, in the whole buffer -- and from then
+on whatever you do inside the one under the cursor happens in all of
+them: typing, Backspace, Delete, `M-d`, `C-y`.  That is how a parameter
+or a local is renamed.  Only symbols in code count: `foo` in a string or
+a comment is left alone, `foobar` never matches, and `FOO` is `foo`, as
+it is to the reader.  `M-n` and `M-p` move between the occurrences,
+`M-;` drops the one at point out of the set, undo takes an edit back in
+all of them, and `C-g` or `C-;` again ends the session -- as does an
+edit that adds or removes a line.  Outside Lisp mode the same keys edit
+every whole word.  This is Emacs's iedit; see `tests/test-iedit.lisp`.
+
 ### Syntax colouring and paren matching
 
 Lisp text is coloured by its tokens and the partner of the paren before

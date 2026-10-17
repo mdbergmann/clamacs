@@ -282,6 +282,11 @@ POSITIONs.  NIL for anything else, as the class answers FALSE."
 (defmethod doc-colour ((doc fake-document) y x0 x1 colour)
   (push (list y x0 x1 colour) (fake-colours doc)))
 
+;;; An iedit mark is recorded like a colour, so FAKE-LINE-COLOURS shows
+;;; it (and shows it wiped by a recolour, as the host's runs are).
+(defmethod doc-style ((doc fake-document) y x0 x1 style)
+  (push (list y x0 x1 style) (fake-colours doc)))
+
 (defmethod doc-call-quietly ((doc fake-document) function)
   (incf (fake-quiet-calls doc))
   (funcall function))

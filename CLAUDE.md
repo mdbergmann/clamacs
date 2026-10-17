@@ -394,6 +394,36 @@ reads the windows' open state off MUI for a drive.  `drive.rexx` has
 the PERSPECTIVES leg at its end and its second editor restores a
 hand-written file; `PERSPECTIVE=1 verify/realamiga/run-lisp-editor.sh`
 is the hide/show cycle on a real MUI.
+**iedit** (2026-10-17, `lisp/iedit.lisp`, pure): `C-;` marks every
+occurrence of the symbol at point -- symbol TOKENS of the cursor's
+defun, case-insensitively; the buffer with `C-u`; whole words outside
+Lisp mode -- and an edit made inside the one under the cursor is
+repeated in the others.  The model is iedit's, not multiple-cursors':
+one cursor, the set of occurrences, and the edit found by DIFFING the
+cursor's line before and after the key (`iedit-around`, which
+`run-command` and `handle-key` run inside; the host's selection path
+too), so no command knows about it; an edit that changes the line
+count, or lands off the cursor's line, ends the session with a message.
+Four rules: while a session is on, the keys the widget would edit with
+on its own (typing, BS, DEL, RET, TAB) are taken by `handle-key` and
+done through the protocol, since the widget's own edit would be
+invisible to the diff; the marks are one new generic, `doc-style`
+(`:occurrence`, `:occurrence-current`, NIL), which the host turns into
+colour runs of their own kind (`.ck-occurrence`, an underline on the
+page) and MUI into SetBlock's underline and bold STYLES -- a recolour
+wipes the host's and `iedit-after-recolour` (from `colour-lines`) puts
+them back, while MUI's survive it; `undo` and `redo` inside the session
+are the session's own (a log of the widget's steps per mirrored edit,
+so one `C-/` takes the edit back everywhere), and past the log's start
+the session ends; and an edit the session did not make (the page's own
+change, `host-update`) is accounted for as an edit outside the set, an
+occurrence it touches leaving the set, while each mirror checks that
+its occurrence still reads as the set's text and drops it otherwise.
+`M-n` / `M-p` / `M-;` are the session's keys over every keymap
+(`iedit-handle-key`, for an UNBOUND key only: inside a prefix or a
+`C-u` argument the state machine's reading stands), `C-g` ends it with
+the mark, the `IEDIT` verb answers the set for a drive, and
+`drive.lisp` / `drive.rexx` have an iedit leg after the keys.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

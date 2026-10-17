@@ -583,6 +583,76 @@ IF RC = 0 & RESULT = 4 THEN
 ELSE
     SAY 'FAIL TAB put the cursor at column' RESULT
 
+/* Editing every occurrence of a symbol at once (lisp/iedit.lisp, the
+** Lisp editor's): the `y' of frobnicate's LET occurs four times in the
+** defun.  C-; on it starts the session, a typed character reaches every
+** occurrence, M-n walks them, undo takes the edit back everywhere, C-g
+** ends it -- so the buffer is as the legs below expect it. */
+IF PHASE >= 5 THEN DO
+    'GOTOLINE 5'
+    'TE POSITION SOL'
+    'KEY C-u 9 C-f'
+    YLINE = GetLine()
+    'KEY C-;'
+    'IEDIT'
+    IF RC = 0 & LEFT(RESULT, 5) = '4 y *' THEN
+        SAY 'OK C-; found the four y of the defun, the cursor''s first:' RESULT
+    ELSE
+        SAY 'FAIL IEDIT after C-; gave rc=' RC RESULT
+    'STATUS'
+    IF RESULT = 'iedit: 4 occurrences of y in the defun' THEN
+        SAY 'OK the echo area says so'
+    ELSE
+        SAY 'FAIL STATUS gave' RESULT
+    'KEY z'
+    IF GetLine() = '  (let ((zy (* x 2)))' THEN
+        SAY 'OK typing z went into the cursor''s y'
+    ELSE
+        SAY 'FAIL after z the line is' GetLine()
+    'GOTOLINE 8'
+    IF GetLine() = '    zy))' THEN
+        SAY 'OK ... and into the last y of the defun'
+    ELSE
+        SAY 'FAIL after z line 8 is' GetLine()
+    /* From the start of line 5, outside the set: M-n reaches the y on
+    ** that line first, then the one on the line below. */
+    'GOTOLINE 5'
+    'KEY M-n'
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = 4 THEN
+        SAY 'OK M-n moved to the first occurrence after the cursor, on CursorY' RESULT
+    ELSE
+        SAY 'FAIL M-n put the cursor on CursorY' RESULT
+    'KEY M-n'
+    'TE GETCURSOR LINE'
+    IF RC = 0 & RESULT = 5 THEN
+        SAY 'OK M-n again moved to the next one, on CursorY' RESULT
+    ELSE
+        SAY 'FAIL the second M-n put the cursor on CursorY' RESULT
+    'KEY C-/'
+    'GOTOLINE 5'
+    IF GetLine() = YLINE THEN
+        SAY 'OK undo took the z back everywhere'
+    ELSE
+        SAY 'FAIL after undo the line is' GetLine()
+    'IEDIT'
+    IF RC = 0 & LEFT(RESULT, 3) = '4 y' THEN
+        SAY 'OK the session is still on after the undo'
+    ELSE
+        SAY 'FAIL IEDIT after undo gave' RESULT
+    'KEY C-g'
+    'IEDIT'
+    IF RC = 0 & RESULT = 'off' THEN
+        SAY 'OK C-g ended the session'
+    ELSE
+        SAY 'FAIL IEDIT after C-g gave' RESULT
+    'GOTOLINE 8'
+    IF GetLine() = '    y))' THEN
+        SAY 'OK the buffer reads as before'
+    ELSE
+        SAY 'FAIL line 8 is' GetLine()
+END /* PHASE >= 5: iedit */
+
 /* ------------------------------------------------------------------ *
 ** Raw keys.  Everything above handed ck_keys to the layer BELOW the
 ** decoder.  These are real IECLASS_RAWKEY events, written to input.device

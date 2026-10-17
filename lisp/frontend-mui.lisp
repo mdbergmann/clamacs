@@ -108,6 +108,12 @@
 (defconstant +tef-export-block-full-lines+ 1)
 (defconstant +tef-export-block-take-block+ 2)
 (defconstant +tef-set-block-color+ 1)
+;;; SetBlock's style operations: the value is TRUE to add the style to
+;;; the block, FALSE to take it off; several flags in one call share the
+;;; value.  An iedit occurrence (iedit.lisp) is underlined, the one under
+;;; the cursor bold as well (DOC-STYLE).
+(defconstant +tef-set-block-style-bold+ 2)
+(defconstant +tef-set-block-style-underline+ 8)
 ;;; The class's prefs items (mcp/TextEditor_mcp.h) it asks its object for
 ;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec, the marked
 ;;; block's and the text's, which the theme answers, and the cursor's
@@ -1904,6 +1910,31 @@ presentation, not content, so the flag is put back afterwards."
   (with-changed-flag (doc)
     (set-block-colour doc y x0 x1
                       (colour-value colour (mui-editor-text-pen-p (doc-editor doc))))))
+
+(defun set-block-style (doc y x0 x1 flags on)
+  "SetBlock's style FLAGS (bold, underline) added to columns X0 to X1 of
+line Y when ON, taken off otherwise."
+  (mui:do-method (mdoc-text doc) +tem-set-block+ x0 y x1 y flags (if on 1 0)))
+
+;;; An iedit mark is a STYLE of the class's, apart from the colours: the
+;;; occurrence underlined, the one under the cursor bold as well.  A
+;;; recolour (SetBlock's colour operation) leaves the styles alone, so
+;;; the marks outlive the repaints the typing causes; the session's end
+;;; takes them off with the NIL style.
+(defmethod doc-style ((doc mui-document) y x0 x1 style)
+  (with-changed-flag (doc)
+    (case style
+      (:occurrence
+       (set-block-style doc y x0 x1 +tef-set-block-style-underline+ t)
+       (set-block-style doc y x0 x1 +tef-set-block-style-bold+ nil))
+      (:occurrence-current
+       (set-block-style doc y x0 x1
+                        (logior +tef-set-block-style-underline+ +tef-set-block-style-bold+)
+                        t))
+      (t
+       (set-block-style doc y x0 x1
+                        (logior +tef-set-block-style-underline+ +tef-set-block-style-bold+)
+                        nil)))))
 
 (defun clear-text-colours (doc)
   "Every line of DOC back to the class's own text pen and no token colours:

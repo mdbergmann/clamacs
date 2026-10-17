@@ -108,7 +108,9 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    ;; The perspective this document belongs to (perspective.lisp): the
    ;; one in front when a source document was made, NIL for a tool
    ;; buffer, which every perspective shows.
-   (perspective :initform nil :accessor doc-perspective)))
+   (perspective :initform nil :accessor doc-perspective)
+   ;; The iedit session on this text (iedit.lisp), or NIL
+   (iedit :initform nil :accessor doc-iedit)))
 
 (defmethod initialize-instance :after ((doc document) &key)
   (setf (doc-keys doc)
@@ -249,6 +251,18 @@ the diagnostics window, without jumping to it."))
 kind (:COMMENT :STRING :CHAR :KEYWORD :NUMBER :DEFINING), :PAREN-MATCH, or
 NIL for the normal pen.  Colour is presentation, not content: it must not
 mark the text modified."))
+
+(defgeneric doc-style (doc y x0 x1 style)
+  (:documentation "Mark columns X0 to X1 of line Y as an iedit occurrence
+\(iedit.lisp): STYLE is :OCCURRENCE, :OCCURRENCE-CURRENT for the one under
+the cursor, or NIL to take the mark off.  A mark is drawn beside the token
+colours -- an underline, a tint -- and, like them, is presentation: it
+must not mark the text modified.  A frontend that recolours a line whole
+\(DOC-COLOUR with NIL) may wipe the marks on it; IEDIT-AFTER-RECOLOUR puts
+them back.  The default shows nothing.")
+  (:method ((doc document) y x0 x1 style)
+    (declare (ignore y x0 x1 style))
+    nil))
 
 (defgeneric editor-apply-theme (editor theme)
   (:documentation "Show THEME (theme.lisp): the frontend takes what it

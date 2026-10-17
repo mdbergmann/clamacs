@@ -204,9 +204,50 @@ each, with the KeyboardEvent fields a real key would carry."
   (let ((css (read-file-text *host-page-head*)))
     (is (stringp css))
     (dolist (kind '("comment" "string" "char" "keyword" "number" "defining"
-                    "symbol" "paren-match" "paren-bad"))
+                    "symbol" "paren-match" "paren-bad"
+                    "occurrence" "occurrence-current"))
       (when (stringp css)
         (is (search (format nil ".ck-~A {" kind) css))))))
+
+(deftest host-iedit-marks-are-colour-runs-and-typing-reaches-every-occurrence
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "(defun f (foo) (+ foo foo))")))
+    (host-take-evals editor)
+    (host-type editor "C-u 1 0 C-f C-;")
+    (is (iedit-active-p doc))
+    ;; The marks went to the page as runs of their own kind, the cursor's
+    ;; one distinct
+    (let ((js (host-take-evals editor)))
+      (is (search "[0,10,13,\"occurrence-current\"]" js))
+      (is (search "[0,18,21,\"occurrence\"]" js))
+      (is (search "[0,22,25,\"occurrence\"]" js)))
+    (host-type editor "x")
+    (is-equal (host-text doc) "(defun f (xfoo) (+ xfoo xfoo))")
+    (is-equal (doc-point doc) 11)
+    ;; The edited span was recoloured whole, and the marks put back on
+    ;; the line record with the tokens
+    (let ((js (host-take-evals editor)))
+      (is (search "[10,14,\"occurrence-current\"]" js))
+      (is (search "[19,23,\"occurrence\"]" js))
+      (is (search "[24,28,\"occurrence\"]" js)))
+    ;; A selection typed over inside the occurrence is one edit, mirrored
+    (host-type editor "S-<left> y")
+    (is-equal (host-text doc) "(defun f (yfoo) (+ yfoo yfoo))")
+    ;; The page's own change outside the set moves it
+    (with-entry (editor)
+      (host-update editor "doc1" '((0 0 "  ")) 2))
+    (is-equal (iedit-starts (doc-iedit doc)) '(12 21 26))
+    ;; ... and the marks the page got stand on the shifted columns
+    (let ((js (host-take-evals editor)))
+      (is (search "[21,25,\"occurrence\"]" js))
+      (is (search "[26,30,\"occurrence\"]" js)))
+    (host-type editor "C-g")
+    (is (not (iedit-active-p doc)))
+    ;; The marks are gone from the page: the end's entry clears them and
+    ;; repaints the line with its tokens only
+    (let ((js (host-take-evals editor)))
+      (is (search "[0,12,16,false]" js))
+      (is (not (search "occurrence" js))))))
 
 ;;; --- a document through the bindings ------------------------------------------
 

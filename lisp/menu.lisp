@@ -119,6 +119,7 @@
      (item 'isearch-forward             :always        "Search Forward..."      "C-s"     :global)
      (item 'isearch-backward            :always        "Search Backward..."     "C-r"     :global)
      (item 'goto-line                   :always        "Go to Line..."          "M-g g"   :global)
+     (item 'clamacs-iedit               :always        "Edit Occurrences"       "C-;"     :global)
      (bar)
      (item 'execute-extended-command    :always        "Run Command..."         "M-x"     :global)
 

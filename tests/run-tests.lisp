@@ -13,7 +13,7 @@
     "killring" "minihist" "locstack" "symcache"
     "token" "sexp" "indent" "json" "textmirror"
     "commands" "minibuffer" "files"
-    "diag" "wire" "port" "mailbox" "introspect"
+    "diag" "wire" "port" "mailbox" "introspect" "iedit"
     "replmsg" "repl" "debugger" "inspector"
     "winstore" "snapshot" "theme" "menu" "perspective" "self" "host" "transport-host" "transport-tcp"))
 

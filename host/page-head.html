@@ -94,6 +94,13 @@
   .ck-symbol { color: var(--c-symbol); }
   .ck-paren-match { background: var(--c-paren-match); }
   .ck-paren-bad { background: var(--c-paren-bad); }
+  /* An iedit session's occurrences (lisp/iedit.lisp): underlined, the
+     one under the cursor on the selection's tint as well.  Colour runs
+     like the tokens', painted by Lisp through DOC-STYLE. */
+  .ck-occurrence { text-decoration: underline; text-decoration-color: var(--cursor);
+                   text-underline-offset: 2px; }
+  .ck-occurrence-current { text-decoration: underline; text-decoration-color: var(--cursor);
+                           text-underline-offset: 2px; background: var(--selection); }
   /* The dock: the tool buffers and the three panels as tabs below a
      splitter, collapsed until something is shown in it.  A tab that is
      displayed in its region but does not hold the keyboard is `shown';

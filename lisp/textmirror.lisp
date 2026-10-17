@@ -309,3 +309,27 @@ when found."
     (when found
       (setf (mirror-point m) (if backwards found (+ found n)))
       t)))
+
+;;; ------------------------------------------------------------------
+;;; Placing an edit
+;;; ------------------------------------------------------------------
+
+(defun text-diff (old new)
+  "The one replacement that turns OLD into NEW: three values, the start,
+the end in OLD, and the text that goes in between.  How the host frontend
+tells the page what changed, and how iedit.lisp places what a key did."
+  (declare (simple-string old new))
+  (let* ((len-old (length old))
+         (len-new (length new))
+         (prefix 0)
+         (suffix 0))
+    (declare (fixnum len-old len-new prefix suffix))
+    (loop while (and (< prefix len-old) (< prefix len-new)
+                     (char= (schar old prefix) (schar new prefix)))
+          do (incf prefix))
+    (loop while (and (< (+ prefix suffix) len-old)
+                     (< (+ prefix suffix) len-new)
+                     (char= (schar old (- len-old suffix 1))
+                            (schar new (- len-new suffix 1))))
+          do (incf suffix))
+    (values prefix (- len-old suffix) (subseq new prefix (- len-new suffix)))))

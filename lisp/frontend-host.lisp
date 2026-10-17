@@ -528,6 +528,13 @@ wiping any earlier run on it."
             (t
              (push (list y x0 x1 colour) (host-editor-colour-runs editor)))))))
 
+;;; An iedit mark (iedit.lisp) is a colour run of its own kind -- the
+;;; page's `ck-occurrence' / `ck-occurrence-current' classes, an underline
+;;; and a tint -- in place of the token's colour under it, which the
+;;; recolour that ends the session gives back.
+(defmethod doc-style ((doc host-document) y x0 x1 style)
+  (doc-colour doc y x0 x1 style))
+
 (defun mirror-line-length (m y)
   (let ((start (mirror-line-index m y)))
     (- (mirror-line-end m start) start)))
@@ -536,24 +543,8 @@ wiping any earlier run on it."
 ;;; The text: the mirror, and the page brought in step with it
 ;;; ------------------------------------------------------------------
 
-(defun text-diff (old new)
-  "The one replacement that turns OLD into NEW: three values, the start,
-the end in OLD, and the text that goes in between."
-  (declare (simple-string old new))
-  (let* ((len-old (length old))
-         (len-new (length new))
-         (prefix 0)
-         (suffix 0))
-    (declare (fixnum len-old len-new prefix suffix))
-    (loop while (and (< prefix len-old) (< prefix len-new)
-                     (char= (schar old prefix) (schar new prefix)))
-          do (incf prefix))
-    (loop while (and (< (+ prefix suffix) len-old)
-                     (< (+ prefix suffix) len-new)
-                     (char= (schar old (- len-old suffix 1))
-                            (schar new (- len-new suffix 1))))
-          do (incf suffix))
-    (values prefix (- len-old suffix) (subseq new prefix (- len-new suffix)))))
+;;; TEXT-DIFF, the one replacement that turns a text into another, lives
+;;; in textmirror.lisp since iedit.lisp places a key's edit with it too.
 
 (defun shown-selection (doc)
   "Head and anchor as the page should show them: the point, with the
@@ -1069,17 +1060,21 @@ Backspace and Delete, and the next key that is no such motion drops it."
         (setf (doc-mark doc) (doc-point doc)
               (doc-mark-active doc) :selection))
       (setq key motion))
+    ;; What the widget does on its own runs inside IEDIT-AROUND too, so
+    ;; an iedit session sees a selection typed over (iedit.lisp).
     (cond ((and (selection-shown-p doc)
                 (not (keystate-in-prefix (doc-keys doc)))
                 (or (printable-key-p key)
                     (eql key +key-backspace+)
                     (eql key +key-delete+)))
-           (delete-selection doc)
-           (when (printable-key-p key)
-             (setf (doc-last-command doc) nil)
-             (widget-default-key doc key)))
+           (iedit-around doc nil
+                         (lambda ()
+                           (delete-selection doc)
+                           (when (printable-key-p key)
+                             (setf (doc-last-command doc) nil)
+                             (widget-default-key doc key)))))
           ((handle-key doc key))
-          (t (widget-default-key doc key)))
+          (t (iedit-around doc nil (lambda () (widget-default-key doc key)))))
     (cond ((not (eq before (mirror-text (hdoc-mirror doc))))
            ;; An edit ends what is shown; the mark stays for `C-w'.
            (setf (doc-mark-active doc) nil))
@@ -1137,7 +1132,14 @@ page holds the result already."
               (hi 0))
           (dolist (change changes)
             (destructuring-bind (from to inserted) change
+              ;; An iedit session (iedit.lisp) hears of the change as of
+              ;; an edit made outside its occurrences: the ones after it
+              ;; move, one it touches leaves the set.  Told AFTER the
+              ;; mirror holds the change, so the marks it paints (or
+              ;; takes down) are placed against the new text and point.
               (mirror-replace m (+ from delta) (+ to delta) inserted)
+              (when (doc-iedit doc)
+                (iedit-apply-change doc (doc-iedit doc) (+ from delta) (+ to delta) inserted nil))
               (setq lo (if lo (min lo (+ from delta)) (+ from delta))
                     hi (max hi (+ from delta (length inserted))))
               (incf delta (- (length inserted) (- to from)))))

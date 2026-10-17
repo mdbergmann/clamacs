@@ -15,7 +15,7 @@
     "killring" "locstack" "symcache" "winstore"
     "token" "sexp" "indent" "json" "textmirror"
     "frontend" "commands" "minibuffer" "files"
-    "diag" "wire" "port" "mailbox" "introspect"
+    "diag" "wire" "port" "mailbox" "introspect" "iedit"
     "replmsg" "repl" "debugger" "inspector"
     "theme" "menu" "perspective" "snapshot" "transport-self"))
 

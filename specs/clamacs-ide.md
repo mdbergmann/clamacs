@@ -210,6 +210,7 @@ Phase-1 key table (the bindings a user can rely on):
 | `C-SPC C-x h` | mark, select all |
 | `C-/ C-_ C-x u` | undo |
 | `C-s C-r` | isearch |
+| `C-;` | edit every occurrence of the symbol at point at once (iedit; `M-n M-p M-;` inside it) |
 | `C-x C-f C-x C-s C-x C-w C-x b C-x k C-x C-c` | files, buffers, quit |
 | `C-x o C-x 2 (new window on another file)` | windows |
 | `M-x` | command by name |
