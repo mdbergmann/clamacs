@@ -337,10 +337,14 @@ them: typing, Backspace, Delete, `M-d`, `C-y`.  That is how a parameter
 or a local is renamed.  Only symbols in code count: `foo` in a string or
 a comment is left alone, `foobar` never matches, and `FOO` is `foo`, as
 it is to the reader.  `M-n` and `M-p` move between the occurrences,
-`M-;` drops the one at point out of the set, undo takes an edit back in
-all of them, and `C-g` or `C-;` again ends the session -- as does an
-edit that adds or removes a line.  Outside Lisp mode the same keys edit
-every whole word.  This is Emacs's iedit; see `tests/test-iedit.lisp`.
+`M-;` drops the one at point out of the set, `M-{` and `M-}` widen the
+scope by one line at the top and at the bottom (the occurrences on it
+join), `M-H` narrows it to the cursor's defun again, undo takes an edit
+back in all of them, and `C-g` or `C-;` again ends the session -- as
+does an edit that adds or removes a line.  Outside Lisp mode the same
+keys edit every whole word.  This is Emacs's iedit; see
+`tests/test-iedit.lisp`.  Help > List Commands shows the session's keys
+marked `[iedit]`.
 
 ### Syntax colouring and paren matching
 

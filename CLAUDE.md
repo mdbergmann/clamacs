@@ -434,9 +434,16 @@ occurrence it touches leaving the set, while each mirror checks that
 its occurrence still reads as the set's text and drops it otherwise.
 `M-n` / `M-p` / `M-;` are the session's keys over every keymap
 (`iedit-handle-key`, for an UNBOUND key only: inside a prefix or a
-`C-u` argument the state machine's reading stands), `C-g` ends it with
-the mark, the `IEDIT` verb answers the set for a drive, and
-`drive.lisp` / `drive.rexx` have an iedit leg after the keys.
+`C-u` argument the state machine's reading stands), and so are `M-{` /
+`M-}` / `M-H` since 2026-10-18 (widen the scope by a line at the top or
+the bottom, narrow it to the cursor's defun; the scope is kept as LINES,
+`iedit-region`, which hold because an edit that changes the line count
+ends the session; a widened scope takes in only the new line's
+occurrences, so one dropped with `M-;` stays dropped).  The keys are
+the table `*iedit-bindings*` in `bindings.lisp`, which the command
+listing shows marked `[iedit]` and `iedit-key-command` reads.  `C-g`
+ends it with the mark, the `IEDIT` verb answers the set for a drive,
+and `drive.lisp` / `drive.rexx` have an iedit leg after the keys.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

@@ -8,7 +8,11 @@
 ;;;; `C-y', anything that changes the text within the symbol.  An edit
 ;;;; outside it (the cursor moved away first) is nobody else's.  `M-n' and
 ;;;; `M-p' go to the next and previous occurrence, `M-;' drops the one at
-;;;; point out of the set, `C-g' or `C-;' end it.
+;;;; point out of the set, `M-{' and `M-}' widen the scope by a line at the
+;;;; top and at the bottom (the occurrences on it join the set), `M-H'
+;;;; narrows it to the cursor's defun again, `C-g' or `C-;' end it.  The
+;;;; scope is kept as LINES, since an edit that changes the line count
+;;;; ends the session: so the line numbers hold for as long as it is on.
 ;;;;
 ;;;; This is iedit's model, not multiple-cursors': there is ONE cursor and
 ;;;; the other positions follow from it, so the state is the occurrence
@@ -38,14 +42,17 @@
 
 (in-package :clamacs)
 
-(defstruct (iedit (:constructor %make-iedit (starts length text scope)))
+(defstruct (iedit (:constructor %make-iedit (starts length text scope region)))
   ;; The occurrences' start indices, ascending; every one has LENGTH
   ;; characters and reads as TEXT (case aside)
   (starts '())
   (length 0)
   (text "")
-  ;; :DEFUN or :BUFFER, for the messages
+  ;; :DEFUN, :BUFFER or :LINES (widened or narrowed since), for the messages
   scope
+  ;; The lines the scope covers, (FROM . TO) inclusive, or NIL for the
+  ;; whole buffer: what `M-{' and `M-}' widen
+  region
   ;; The position in STARTS of the occurrence under the cursor, or NIL
   (current nil)
   ;; The undo log, newest first: (steps starts length text) per mirrored
@@ -105,9 +112,10 @@ indices.  For a buffer that is not Lisp."
             (t (incf i))))))
 
 (defun iedit-scope-text (doc point scope)
-  "The text the occurrences are looked for in and its base index: the
-defun around POINT for :DEFUN (the whole buffer when POINT is in none),
-else the whole buffer."
+  "The text the occurrences are looked for in, its base index, and the
+lines it covers as (FROM . TO) -- NIL for the whole buffer: the defun
+around POINT for :DEFUN (the whole buffer when POINT is in none), else
+the whole buffer."
   (multiple-value-bind (text base) (doc-context-full doc)
     (declare (ignore base))
     (let ((text (or text (doc-text doc 0 (doc-end doc)))))
@@ -115,19 +123,21 @@ else the whole buffer."
           (let* ((start (sexp-defun-start text point))
                  (end (and start (sexp-defun-end text point))))
             (if (and start end (<= start point end))
-                (values (subseq text start end) start)
-                (values text 0)))
-          (values text 0)))))
+                (values (subseq text start end) start
+                        (cons (doc-index-line doc start)
+                              (doc-index-line doc (max start (1- end)))))
+                (values text 0 nil)))
+          (values text 0 nil)))))
 
 (defun iedit-find (doc scope)
   "The occurrences of the symbol at point within SCOPE: the symbol's
-text and the sorted list of starts, or NIL and a reason when there is
-nothing to edit."
+text, the sorted list of starts and the lines of the scope (NIL for the
+whole buffer), or NIL and a reason when there is nothing to edit."
   (multiple-value-bind (symbol s0) (symbol-at-point doc)
     (cond ((null symbol)
            (values nil "No symbol at point"))
           (t
-           (multiple-value-bind (text base) (iedit-scope-text doc s0 scope)
+           (multiple-value-bind (text base region) (iedit-scope-text doc s0 scope)
              (let ((starts (if (doc-lisp-mode doc)
                                (iedit-token-occurrences text base symbol)
                                (iedit-word-occurrences text base symbol))))
@@ -137,7 +147,21 @@ nothing to edit."
                       (values nil (format nil "~A here is not code" symbol)))
                      ((null (rest starts))
                       (values nil (format nil "~A occurs once in the ~(~A~)" symbol scope)))
-                     (t (values symbol starts)))))))))
+                     (t (values symbol starts region)))))))))
+
+(defun iedit-occurrences-between (doc st from to)
+  "The starts of the set's text between the indices FROM and TO: the
+occurrences a widened scope takes in.  In Lisp mode the scan begins at
+the defun start above FROM -- a line on its own may begin inside a
+string or a comment, and the tokenizer's offset 0 is outside both --
+and keeps what lies at FROM or after."
+  (let* ((text (doc-text doc 0 (doc-end doc)))
+         (lisp (doc-lisp-mode doc))
+         (base (if lisp (or (sexp-defun-start text from) 0) from))
+         (starts (if lisp
+                     (iedit-token-occurrences (subseq text base to) base (iedit-text st))
+                     (iedit-word-occurrences (subseq text base to) base (iedit-text st)))))
+    (remove-if (lambda (start) (< start from)) starts)))
 
 ;;; ------------------------------------------------------------------
 ;;; The state
@@ -153,21 +177,27 @@ included, as an insertion at either end extends the symbol -- or NIL."
                (iedit-starts st)))
 
 (defun iedit-scope-name (st)
-  (if (eq (iedit-scope st) :defun) "defun" "buffer"))
+  "`the defun', `the buffer', or `lines 3-9' for a scope widened or
+narrowed by hand (the lines counted from 1, as `M-g g' does)."
+  (case (iedit-scope st)
+    (:defun "the defun")
+    (:buffer "the buffer")
+    (t (format nil "lines ~D-~D"
+               (1+ (car (iedit-region st))) (1+ (cdr (iedit-region st)))))))
 
 (defun iedit-describe (doc st)
-  (message doc "iedit: ~D occurrences of ~A in the ~A"
+  (message doc "iedit: ~D occurrences of ~A in ~A"
            (length (iedit-starts st)) (iedit-text st) (iedit-scope-name st)))
 
 (defun iedit-start (doc scope)
   "Begin on the symbol at point.  True when it began."
-  (multiple-value-bind (symbol starts) (iedit-find doc scope)
+  (multiple-value-bind (symbol starts region) (iedit-find doc scope)
     (cond ((null symbol)
            (doc-message doc starts)
            (doc-beep doc)
            nil)
           (t
-           (let ((st (%make-iedit starts (length symbol) symbol scope)))
+           (let ((st (%make-iedit starts (length symbol) symbol scope region)))
              (setf (iedit-current st) (iedit-index-at st (doc-point doc))
                    (doc-iedit doc) st)
              (iedit-paint doc st)
@@ -285,6 +315,78 @@ edit the session did not see -- and end when fewer than two remain."
       (colour-lines doc y y))
     (when (null (rest (iedit-starts st)))
       (iedit-end doc "one occurrence left"))))
+
+;;; ------------------------------------------------------------------
+;;; Widening and narrowing the scope
+;;; ------------------------------------------------------------------
+
+(defun iedit-line-end (doc y)
+  "The index just past line Y's text (its newline excluded)."
+  (if (< (1+ y) (doc-line-count doc))
+      (1- (doc-line-index doc (1+ y)))
+      (doc-end doc)))
+
+(defun iedit-expand (doc st step)
+  "Widen the scope by one line, above it (STEP -1) or below it (1): the
+set's text on that line joins the set.  An occurrence dropped with
+`M-;' stays dropped -- only the new line is looked at.  Nothing to widen
+for the whole buffer, or at its top or end."
+  (let ((region (iedit-region st)))
+    (cond ((null region)
+           (doc-message doc "iedit: the whole buffer already")
+           (doc-beep doc))
+          (t
+           (let ((y (if (< step 0) (1- (car region)) (1+ (cdr region)))))
+             (cond ((or (< y 0) (>= y (doc-line-count doc)))
+                    (message doc "iedit: at the ~:[end~;top~] of the buffer" (< step 0))
+                    (doc-beep doc))
+                   (t
+                    (let ((new (iedit-occurrences-between
+                                doc st (doc-line-index doc y) (iedit-line-end doc y))))
+                      (setf (iedit-region st) (if (< step 0)
+                                                  (cons y (cdr region))
+                                                  (cons (car region) y))
+                            (iedit-scope st) :lines
+                            (iedit-starts st) (merge 'list (copy-list (iedit-starts st))
+                                                     new #'<)
+                            (iedit-current st) (iedit-index-at st (doc-point doc)))
+                      ;; The whole set repainted: the new ones' marks,
+                      ;; and the current one may have changed position
+                      (iedit-paint doc st)
+                      (iedit-describe doc st)))))))))
+
+(defun iedit-restrict-defun (doc st)
+  "Narrow the scope to the defun the cursor is in: the occurrences
+outside it leave the set.  The session ends when fewer than two remain."
+  (let* ((text (doc-text doc 0 (doc-end doc)))
+         (point (doc-point doc))
+         (start (and (doc-lisp-mode doc) (sexp-defun-start text point)))
+         (end (and start (sexp-defun-end text point))))
+    (cond ((not (and start end (<= start point end)))
+           (doc-message doc (if (doc-lisp-mode doc)
+                                "The cursor is in no defun"
+                                "No defuns outside Lisp mode"))
+           (doc-beep doc))
+          (t
+           (let* ((inside-p (lambda (s) (and (<= start s) (< s end))))
+                  (outside (remove-if inside-p (iedit-starts st))))
+             ;; Out of the set first (order kept): the recolour below
+             ;; puts the marks of the set back on the line
+             (setf (iedit-starts st) (remove-if-not inside-p (iedit-starts st))
+                   (iedit-region st) (cons (doc-index-line doc start)
+                                           (doc-index-line doc (max start (1- end))))
+                   (iedit-scope st) :defun
+                   (iedit-current st) (iedit-index-at st point))
+             (dolist (s outside)
+               (multiple-value-bind (y x) (doc-index-line doc s)
+                 (doc-style doc y x (+ x (iedit-length st)) nil)
+                 (colour-lines doc y y)))
+             (cond ((null (iedit-starts st))
+                    (iedit-end doc "no occurrence in the defun"))
+                   ((null (rest (iedit-starts st)))
+                    (iedit-end doc "one occurrence left"))
+                   (t
+                    (iedit-describe doc st))))))))
 
 ;;; ------------------------------------------------------------------
 ;;; Mirroring an edit
@@ -469,13 +571,16 @@ after TO."
 ;;; The keys the session binds, over every keymap
 ;;; ------------------------------------------------------------------
 
+(defparameter *iedit-key-table*
+  (mapcar (lambda (spec) (cons (key-from-string (first spec)) (second spec)))
+          *iedit-bindings*)
+  "*IEDIT-BINDINGS* (bindings.lisp, where the listing reads it) with its
+keys parsed once, for the per-key lookup.")
+
 (defun iedit-key-command (key)
-  "The session's own command for KEY, or NIL: M-n, M-p and M-; while a
-session is on."
-  (cond ((eql key (make-key (char-code #\n) +mod-meta+)) 'clamacs-iedit-next)
-        ((eql key (make-key (char-code #\p) +mod-meta+)) 'clamacs-iedit-previous)
-        ((eql key (make-key (char-code #\;) +mod-meta+)) 'clamacs-iedit-toggle-occurrence)
-        (t nil)))
+  "The session's own command for KEY, or NIL: the keys of *IEDIT-BINDINGS*
+-- M-n, M-p and M-; -- while a session is on."
+  (cdr (assoc key *iedit-key-table*)))
 
 (defun iedit-self-insert (doc key)
   "A key the widget would edit with on its own, done through the protocol
@@ -510,10 +615,12 @@ itself.  True when the key was taken."
 ;;; ------------------------------------------------------------------
 
 (define-command clamacs-iedit (doc arg)
-  "Edit every occurrence of the symbol at point at once, or stop: with a
-session on, end it.  The occurrences are those in the current defun;
-with `C-u' those in the whole buffer.  M-n and M-p move between them,
-M-; drops the one at point, C-g ends the session."
+  "Edit every occurrence of the symbol at point at once (C-u: in the whole buffer); again, or C-g, ends it.
+The occurrences are those in the current defun; with `C-u' those in the
+whole buffer.  While the session is on, M-n and M-p move between them,
+M-; drops the one at point out of the set, M-{ and M-} widen the scope
+by a line at the top and at the bottom, M-H narrows it to the cursor's
+defun again; `C-;' again or C-g ends the session."
   (cond ((doc-iedit doc)
          (iedit-end doc))
         ((doc-repl doc)
@@ -555,8 +662,7 @@ M-; drops the one at point, C-g ends the session."
   (iedit-move doc -1))
 
 (define-command clamacs-iedit-toggle-occurrence (doc arg)
-  "Drop the occurrence at point out of the iedit session: edits no longer
-reach it."
+  "Drop the occurrence at point out of the iedit session, so edits no longer reach it."
   (declare (ignore arg))
   (let* ((st (doc-iedit doc))
          (k (and st (iedit-current st))))
@@ -571,6 +677,28 @@ reach it."
            (let ((st (doc-iedit doc)))
              (when st
                (message doc "iedit: ~D occurrences left" (length (iedit-starts st)))))))))
+
+(defun iedit-scope-command (doc function)
+  (let ((st (doc-iedit doc)))
+    (cond ((null st)
+           (doc-message doc "No iedit session")
+           (doc-beep doc))
+          (t (funcall function doc st)))))
+
+(define-command clamacs-iedit-expand-up (doc arg)
+  "Widen the iedit session's scope by the line above it; its occurrences join the set."
+  (declare (ignore arg))
+  (iedit-scope-command doc (lambda (doc st) (iedit-expand doc st -1))))
+
+(define-command clamacs-iedit-expand-down (doc arg)
+  "Widen the iedit session's scope by the line below it; its occurrences join the set."
+  (declare (ignore arg))
+  (iedit-scope-command doc (lambda (doc st) (iedit-expand doc st 1))))
+
+(define-command clamacs-iedit-restrict-defun (doc arg)
+  "Narrow the iedit session's scope to the cursor's defun; the occurrences outside it leave the set."
+  (declare (ignore arg))
+  (iedit-scope-command doc #'iedit-restrict-defun))
 
 ;;; ------------------------------------------------------------------
 ;;; The port: IEDIT answers the session's state for a macro

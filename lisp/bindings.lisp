@@ -105,6 +105,17 @@
     ("C-c C-c" clamacs-interrupt) ("C-c C-b" clamacs-interrupt)
     ("C-c M-o" clamacs-repl-clear)))
 
+;;; The iedit session's own keys, over every keymap while a session is on
+;;; (iedit.lisp's IEDIT-KEY-COMMAND reads them; the state machine never
+;;; sees them, so they live in no keymap).  Here so that the listing shows
+;;; them, as `M-n [iedit]'.
+(defparameter *iedit-bindings*
+  '(("M-n" clamacs-iedit-next) ("M-p" clamacs-iedit-previous)
+    ("M-;" clamacs-iedit-toggle-occurrence)
+    ;; the scope, on iedit's keys for it
+    ("M-{" clamacs-iedit-expand-up) ("M-}" clamacs-iedit-expand-down)
+    ("M-H" clamacs-iedit-restrict-defun)))
+
 (defun add-bindings (map specs)
   (dolist (spec specs map)
     (unless (keymap-bind-seq map (first spec) (second spec))
@@ -166,11 +177,11 @@ that prefix's whole map away."
 
 (defun command-keys (command)
   "The key sequences bound to COMMAND (a symbol), each with the map it is
-in: (\"C-f\" . :global), global ones first, then the Lisp map's and the
-REPL window's -- what the user bound in the init file included.  NIL for
-a command with no key."
+in: (\"C-f\" . :global), global ones first, then the Lisp map's, the
+REPL window's and the iedit session's -- what the user bound in the init
+file included.  NIL for a command with no key."
   (let ((keys '()))
-    (dolist (map '(:global :lisp :repl))
+    (dolist (map '(:global :lisp :repl :iedit))
       (dolist (spec (binding-specs-own map))
         (when (eq (second spec) command)
           (push (cons (first spec) map) keys))))
@@ -178,19 +189,21 @@ a command with no key."
 
 (defun binding-specs-own (map)
   "The specs of MAP alone (BINDING-SPECS lays the REPL's over the Lisp
-map's)."
+map's); :IEDIT is the session's table, which no keymap holds."
   (ecase map
     (:global *global-bindings*)
     (:lisp *lisp-bindings*)
-    (:repl *repl-bindings*)))
+    (:repl *repl-bindings*)
+    (:iedit *iedit-bindings*)))
 
 (defun command-keys-text (command)
   "COMMAND's keys for the listing's column: `C-/, C-_, C-x u', the Lisp
-map's and the REPL's each marked once -- `M-TAB, C-M-i [Lisp]'.  \"\"
-for a command with no key."
+map's, the REPL's and the iedit session's each marked once -- `M-TAB,
+C-M-i [Lisp]', `M-n [iedit]'.  \"\" for a command with no key."
   (let ((keys (command-keys command))
         (parts '()))
-    (dolist (map '((:global . "") (:lisp . " [Lisp]") (:repl . " [REPL]")))
+    (dolist (map '((:global . "") (:lisp . " [Lisp]") (:repl . " [REPL]")
+                   (:iedit . " [iedit]")))
       (let ((own (remove (car map) keys :key #'cdr :test-not #'eq)))
         (when own
           (push (format nil "~{~A~^, ~}~A" (mapcar #'car own) (cdr map)) parts))))

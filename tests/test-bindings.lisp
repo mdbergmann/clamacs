@@ -234,7 +234,13 @@
   (is-equal (command-keys-text 'complete-symbol) "M-TAB, C-M-i [Lisp]")
   (is-equal (command-keys-text 'clamacs-interrupt) "C-c C-b [Lisp], C-c C-c, C-c C-b [REPL]")
   (is-equal (command-keys-text 'clamacs-repl-clear) "C-c M-o [REPL]")
-  (is-equal (command-keys-text 'clamacs-about) ""))
+  (is-equal (command-keys-text 'clamacs-about) "")
+  ;; The iedit session's keys are in no keymap, but they are in the column.
+  (is-equal (command-keys 'clamacs-iedit-next) '(("M-n" . :iedit)))
+  (is-equal (command-keys-text 'clamacs-iedit-previous) "M-p [iedit]")
+  (is-equal (command-keys-text 'clamacs-iedit-toggle-occurrence) "M-; [iedit]")
+  ;; The REPL's M-n is the REPL's, the session's the session's.
+  (is-equal (command-keys-text 'clamacs-repl-next-input) "M-n [REPL]"))
 
 (deftest command-doc-line-is-the-first-line
   (is-equal (command-doc-line 'forward-char)
@@ -285,6 +291,14 @@
     ;; A key column wider than its width pushes the description right.
     (let ((row (find-if (lambda (l) (string= "clamacs-describe-symbol" l :end2 (min 23 (length l)))) lines)))
       (is (search "C-c C-d d, C-c C-d C-d [Lisp] Describe" row)))
+    ;; The iedit session's keys, and a first line that says the whole of
+    ;; it: the scope argument and how the session ends.
+    (let ((row (find-if (lambda (l) (string= "clamacs-iedit " l :end2 (min 14 (length l)))) lines)))
+      (is (search "C-;" row))
+      (is (search "(C-u: in the whole buffer); again, or C-g, ends it." row)))
+    (let ((row (find-if (lambda (l) (string= "clamacs-iedit-next" l :end2 (min 18 (length l)))) lines)))
+      (is (search "M-n [iedit]" row))
+      (is (search "around to the first." row)))
     ;; What the user binds counts too.
     (let ((*global-bindings* (append *global-bindings* '(("C-c z" clamacs-about)))))
       (is-equal (command-keys-text 'clamacs-about) "C-c z")

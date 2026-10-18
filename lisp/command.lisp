@@ -145,6 +145,8 @@ Emacs's names has not learnt yet."
  ;; window (menu.lisp; the text is COMMAND-LISTING-TEXT in bindings.lisp).
  clamacs-list-commands
  ;; Editing every occurrence of a symbol at once (iedit.lisp): the
- ;; session's toggle, and its own keys while it is on.
+ ;; session's toggle, and its own keys while it is on -- moving, dropping
+ ;; an occurrence, widening and narrowing the scope.
  clamacs-iedit clamacs-iedit-next clamacs-iedit-previous
- clamacs-iedit-toggle-occurrence)
+ clamacs-iedit-toggle-occurrence
+ clamacs-iedit-expand-up clamacs-iedit-expand-down clamacs-iedit-restrict-defun)
