@@ -586,8 +586,9 @@ values: the .asd, the source file, and everything to delete."
              ;; On the REPL thread, and in CL-USER: the buffer's package
              ;; is one the system has yet to make.
              (let ((sent (fake-last-sent tr)))
-               (is (eql (search "REPL-EVAL (ext.dev:load-asd-system \"" sent) 0))
-               (is (search "foo.asd\")" sent)))
+               (is (eql (search "REPL-EVAL (progn (require \"asdf\")" sent) 0))
+               (is (search "foo.asd\"" sent))
+               (is (search "(asdf \"LOAD-SYSTEM\" \"foo\")" sent)))
              (is (notany (lambda (line) (search "IN-PACKAGE" line))
                          (fake-sent-commands tr)))
              (is-equal (path-basename *last-system-file*) "foo.asd")
@@ -596,7 +597,7 @@ values: the .asd, the source file, and everything to delete."
              (is-equal (fake-last-message doc) "\"foo\"")
              ;; Test System, of the same file.
              (run-command doc 'clamacs-test-system)
-             (is (eql (search "REPL-EVAL (ext.dev:test-asd-system \"" (fake-last-sent tr)) 0))
+             (is (search "(asdf \"TEST-SYSTEM\" \"foo\")" (fake-last-sent tr)))
              (is-equal (fake-last-message doc) "Testing system foo ...")))
       (mapc #'delete-quietly files)
       (ignore-errors (delete-quietly asd)))))
@@ -621,8 +622,29 @@ values: the .asd, the source file, and everything to delete."
       (is (not (minibuffer-open-p doc)))
       (fake-answer-attach tr)
       (is-equal (fake-last-sent tr)
-                "REPL-EVAL (ext.dev:load-asd-system \"Work:src/foo/foo.asd\")")
+                (concatenate 'string "REPL-EVAL "
+                             (system-form "LOAD-SYSTEM" "Loading" "Work:src/foo/foo.asd" "foo")))
       (is-equal (fake-last-message doc) "Loading system foo ..."))))
+
+(deftest the-system-form-is-plain-cl-and-loads-the-asd-once
+  ;; What amilisp evaluates: no ASDF symbol read before ASDF is loaded,
+  ;; the .asd loaded only when ASDF has no system of that name from it,
+  ;; the transcript's line, the operation and the name as the value.
+  (let ((form (system-form "LOAD-SYSTEM" "Loading" "Work:src/foo/foo.asd" "foo/tests")))
+    (is (eql (search "(progn (require \"asdf\") " form) 0))
+    (is (null (search "asdf:" form)))
+    (is (null (search "ASDF:" form)))
+    (is (search "(asdf \"REGISTERED-SYSTEM\" \"foo/tests\")" form))
+    (is (search "(probe-file \"Work:src/foo/foo.asd\")" form))
+    (is (search "(asdf \"LOAD-ASD\" \"Work:src/foo/foo.asd\")" form))
+    (is (search "(format t \"~&; loading system ~a from ~a~%\" \"foo/tests\" \"Work:src/foo/foo.asd\")" form))
+    (is (search "(asdf \"LOAD-SYSTEM\" \"foo/tests\") \"foo/tests\"))" form))
+    (is (null (find #\Newline form)))
+    ;; The editor's own reader takes it as one form.
+    (is (= (length (read-from-string (concatenate 'string "(" form ")"))) 1)))
+  (let ((form (system-form "TEST-SYSTEM" "Testing" "Work:src/foo/foo.asd" "foo")))
+    (is (search "; testing system ~a from ~a~%\" \"foo\" " form))
+    (is (search "(asdf \"TEST-SYSTEM\" \"foo\") \"foo\"))" form))))
 
 (deftest the-systems-a-definition-file-names
   ;; What ASDF takes as the name: a string as it is, a symbol downcased.
@@ -673,17 +695,19 @@ values: the .asd, the source file, and everything to delete."
                        (list "Load which system of foo.asd?" '("foo" "foo/tests" :cancel)))
              (fake-answer-attach tr)
              (is-equal (fake-last-sent tr)
-                       (format nil "REPL-EVAL (ext.dev:load-asd-system ~S \"foo/tests\")" asd))
+                       (concatenate 'string "REPL-EVAL "
+                                    (system-form "LOAD-SYSTEM" "Loading" asd "foo/tests")))
              (is-equal (fake-last-message doc) "Loading system foo/tests ...")
              (is-equal *last-system-file* asd)
              (fake-deliver tr 0 "")
              (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "\"foo/tests\""))
-             ;; The file's own system goes without a name, as before.
+             ;; The file's own system, picked, is tested.
              (push "foo" (fake-answers doc))
              (run-command doc 'clamacs-test-system)
              (is-equal (first (first (fake-asked doc))) "Test which system of foo.asd?")
              (is-equal (fake-last-sent tr)
-                       (format nil "REPL-EVAL (ext.dev:test-asd-system ~S)" asd))
+                       (concatenate 'string "REPL-EVAL "
+                                    (system-form "TEST-SYSTEM" "Testing" asd "foo")))
              (is-equal (fake-last-message doc) "Testing system foo ...")
              (fake-deliver tr 0 "")
              (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "\"foo\""))
@@ -699,7 +723,8 @@ values: the .asd, the source file, and everything to delete."
                (load-system-file doc bar)
                (is-equal (length (fake-asked doc)) asked)
                (is-equal (fake-last-sent tr)
-                         (format nil "REPL-EVAL (ext.dev:load-asd-system ~S \"baz\")" bar))
+                         (concatenate 'string "REPL-EVAL "
+                                      (system-form "LOAD-SYSTEM" "Loading" bar "baz")))
                (is-equal (fake-last-message doc) "Loading system baz ..."))))
       (delete-quietly asd)
       (delete-quietly bar))))

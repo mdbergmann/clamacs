@@ -537,11 +537,19 @@ or waits for the REPL to attach."
 
 ;;; A system is loaded by its definition file, the .asd: the one in the
 ;;; window, or the nearest one above the window's file -- a project's root
-;;; is where its .asd sits.  amilisp does the rest (EXT.DEV:LOAD-ASD-SYSTEM
-;;; loads ASDF on first use, the file, and the system named after it -- or
-;;; the one named as its second argument), on the REPL thread: a system is
-;;; minutes of compiling on an Amiga, which wants its output as it
-;;; happens, the interrupt and the debugger.
+;;; is where its .asd sits.  The editor builds the form amilisp evaluates
+;;; (SYSTEM-FORM: ASDF required on first use, the .asd loaded when ASDF
+;;; has no system of that name from it, then ASDF:LOAD-SYSTEM or
+;;; ASDF:TEST-SYSTEM on the system named after the file -- or the one the
+;;; user picked), on the REPL thread: a system is minutes of compiling on
+;;; an Amiga, which wants its output as it happens, the interrupt and the
+;;; debugger.  The .asd is not reloaded on every call: that redefined the
+;;; systems and made ASDF reload every file of the system each time, and a
+;;; Test System reloaded the system before it ran a test (2026-10-18).  A
+;;; .asd that changed on disk ASDF reloads by itself (FIND-SYSTEM compares
+;;; the file's date), so a second Load System compiles what changed and
+;;; nothing else.  amilisp's EXT.DEV:LOAD-ASD-SYSTEM / TEST-ASD-SYSTEM
+;;; are not used: the logic is the editor's, the runtime is left alone.
 ;;;
 ;;; A file that defines several systems (foo and foo/tests, as a rule) is
 ;;; asked about in a requester, one button per system: the editor reads
@@ -668,34 +676,44 @@ cancels.  NIL when the file names none, for the one named after the file."
           (unless (eq choice :cancel)
             (funcall continuation choice))))))
 
-(defun system-eval (doc function verb path &optional name)
-  "Have amilisp call EXT.DEV's FUNCTION on the system definition PATH --
-on its system NAME when that is not the one the file is named after."
-  (setq *last-system-file* path)
-  (let ((own (system-name path)))
-    ;; In CL-USER: the buffer's package may be one the system makes.
-    (when (wire-eval doc (if (and name (string/= name own))
-                             (format nil "(ext.dev:~A ~S ~S)" function path name)
-                             (format nil "(ext.dev:~A ~S)" function path))
-                     "CL-USER")
-      (message doc "~A system ~A ..." verb (or name own)))))
+(defun system-form (op verb path name)
+  "The form amilisp evaluates for OP (`LOAD-SYSTEM', `TEST-SYSTEM') on
+the system NAME of the definition file PATH, as one line of text.  It
+names no ASDF symbol at read time -- the package is not there before the
+first system is asked for -- so ASDF is required first and its functions
+are found by name.  The .asd is loaded only when ASDF has no system NAME
+from that file: ASDF reloads a changed one itself, and loading it on
+every call made ASDF reload the whole system each time.  The line
+printed is what the REPL transcript shows (drive.lisp reads it); the
+value is the name, which the echo area shows."
+  (format nil "(progn (require \"asdf\") (flet ((asdf (name &rest args) (apply (find-symbol name \"ASDF\") args))) (let* ((system (asdf \"REGISTERED-SYSTEM\" ~S)) (source (and system (asdf \"SYSTEM-SOURCE-FILE\" system)))) (unless (and source (equal (probe-file source) (probe-file ~S))) (asdf \"LOAD-ASD\" ~S))) (format t \"~~&; ~A system ~~a from ~~a~~%\" ~S ~S) (asdf ~S ~S) ~S))"
+          name path path (string-downcase verb) name path op name name))
 
-(defun system-command (doc function verb question path)
-  "Load or test (FUNCTION, VERB as in `Loading', QUESTION as in `Load')
-a system of the definition file PATH, asked about when it has several."
+(defun system-eval (doc op verb path &optional name)
+  "Have amilisp load or test (OP, VERB as in `Loading') the system
+definition PATH's system NAME, or the one the file is named after."
+  (setq *last-system-file* path)
+  (let ((name (or name (system-name path))))
+    ;; In CL-USER: the buffer's package may be one the system makes.
+    (when (wire-eval doc (system-form op verb path name) "CL-USER")
+      (message doc "~A system ~A ..." verb name))))
+
+(defun system-command (doc op verb question path)
+  "Load or test (OP, VERB as in `Loading', QUESTION as in `Load') a
+system of the definition file PATH, asked about when it has several."
   (cond ((not (system-path-p path))
          (message doc "Not a system definition (.asd): ~A" path)
          (doc-beep doc))
         (t
          (choose-system doc question path
                         (lambda (name)
-                          (system-eval doc function verb path name))))))
+                          (system-eval doc op verb path name))))))
 
 (defun load-system-file (doc path)
-  (system-command doc "load-asd-system" "Loading" "Load" path))
+  (system-command doc "LOAD-SYSTEM" "Loading" "Load" path))
 
 (defun test-system-file (doc path)
-  (system-command doc "test-asd-system" "Testing" "Test" path))
+  (system-command doc "TEST-SYSTEM" "Testing" "Test" path))
 
 (defun with-system-file (doc label continuation)
   "Call CONTINUATION with DOC and the system definition DOC belongs to.
