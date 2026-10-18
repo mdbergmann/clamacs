@@ -198,17 +198,45 @@ written on command only (the first design had it that way for both,
 and the first restart on the host came up with the right perspective in
 a window of the default size).
 
-**When it is read.**  By `clamacs-perspective-restore`, and at a start
-without files on the command line when the file is there (a start with
-files is that start, as before).  A restore makes each perspective
-that is missing, sets its root, opens its files into it (a file already
-open elsewhere is moved, one that cannot be read is skipped and
-counted), makes the recorded document active, then brings the recorded
-perspective -- or the first -- in front with `perspective-switch` after
-syncing every document's shown state, so a frontend that showed the
-restored windows as they opened hides the ones not in front.  A
-restore that opened nothing leaves the editor as it was, and a start
-whose restore opened nothing opens the unnamed buffer it always did.
+**When it is read.**  By `clamacs-perspective-restore`, and at every
+start when the file is there -- but a start LISTS, it does not restore
+(decided 2026-10-18; until then a start without files restored the
+file, the recorded perspective in front, and the windows came up
+unasked).  `perspective-list-at-start`, from both frontends' `start`
+before the first window, makes each perspective of the file by name
+with its root and keeps its files and its recorded document WAITING on
+it (`pending-files`, `pending-active`); the editor then opens the
+window it always did -- the files named on the command line, else the
+unnamed buffer -- which joins the first perspective listed, and the
+file's `current` line is not honoured.  The user picks the perspective
+to reopen: the first `perspective-switch` into a waiting perspective
+opens its files (`perspective-open-pending`, with the perspective in
+front so they join it; a file open elsewhere is brought over), makes
+the recorded document its active one and says `Perspective: NAME, N
+file(s) opened[, M missing]` -- also when it is the one in front
+already, which a switch otherwise leaves alone (`C-x x s` refuses the
+name in front only once nothing waits).  Until then the quit's write
+keeps the waiting files, so a session that never entered a perspective
+loses none of it.  A restore (`C-x x C-l`) makes each perspective
+that is missing, sets its root, opens its files into it at once (a file
+already open elsewhere is moved, one that cannot be read is skipped and
+counted; nothing waits on it afterwards), makes the recorded document
+active, then brings the recorded perspective -- or the first -- in
+front with `perspective-switch` after syncing every document's shown
+state, so a frontend that showed the restored windows as they opened
+hides the ones not in front.  A restore that opened nothing leaves the
+editor as it was.
+
+**The REPL's title** (2026-10-18) names the perspective in front once
+there are two -- `*clamacs-repl* [work]`, the status line's rule
+(`status-perspective`) -- since the one REPL is shown in every
+perspective and its default directory follows the one in front; its
+NAME stays `*clamacs-repl*` (the Buffers menu, the window's role).
+`repl-title` / `repl-sync-title` in `repl.lisp`, called by
+`perspective.lisp` when a perspective is made, closed, renamed or
+brought in front, and by `repl-open`.  The host's `update-status` sets
+the window's title to the document's last `doc-set-title`, not its
+name, for that.
 
 ## The frontends
 
@@ -354,9 +382,9 @@ which loads One Dark).
   a hidden window turned out to lose something, the fallback is
   `MUIA_Window_Open` kept and the window iconified instead.
 - **The restore at start opens windows the user did not ask for.**
-  Mitigated by the opt-in: the file exists only after a Save
-  Perspectives.  If it still grates, `(restore-perspectives nil)` in
-  the init file is one flag away.
+  It did grate (2026-10-18): a start lists the perspectives now and
+  opens nothing of theirs, the first switch into one does ("When it is
+  read" above).
 - **Moving a file's window between perspectives** (rather than sharing
   the buffer) may surprise a `perspective.el` user who expects
   `persp-add-buffer`'s sharing.  A window cannot be in two

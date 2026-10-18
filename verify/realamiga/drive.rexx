@@ -904,6 +904,21 @@ IF WriteFile(CFG, '; written by drive.rexx' || '0A'x || '0A'x || WANT || '0A'x) 
     SAY 'OK wrote a file of our own:' WANT
 ELSE
     SAY 'FAIL could not write' CFG
+/* And a perspectives file of our own for the Lisp editor to find at its
+** start (specs/clamacs-perspectives.md): LISTED there, not restored --
+** the editor must come up on sample2.lisp alone, in main, with work
+** beside it by name and both perspectives' files waiting for the first
+** switch into them. */
+IF AMILISP ~= '' THEN DO
+    NL = '0A'x
+    PCFG = 'ENV:Clamacs/perspectives.cfg'
+    PARCHIVE = 'ENVARC:Clamacs/perspectives.cfg'
+    PTEXT = '; written by drive.rexx' || NL || 'perspective main' || NL || 'file Clamacs:verify/realamiga/sample.lisp' || NL || 'perspective work' || NL || 'root Clamacs:verify/' || NL || 'file Clamacs:verify/realamiga/sample2.lisp' || NL || 'current work' || NL
+    IF WriteFile(PCFG, PTEXT) THEN
+        SAY 'OK wrote a perspectives file of our own'
+    ELSE
+        SAY 'FAIL could not write' PCFG
+END
 ADDRESS COMMAND 'Run >NIL:' SECOND
 PORT2 = ''
 DO i = 1 TO 120 WHILE PORT2 = ''
@@ -934,52 +949,81 @@ ELSE DO
         SAY 'OK a second editor came up where the file said:' GOT
     ELSE
         SAY 'FAIL the second editor came up at' GOT '(wanted' WANT')'
-    /* Restore Perspectives (specs/clamacs-perspectives.md, phase P3; the
-    ** Lisp editor only): a perspectives file of our own, read into this
-    ** editor, which was started on sample2.lisp in main.  main's file
-    ** opens, work's -- sample2.lisp, open here already -- is MOVED into
-    ** work, and work is not in front: on MUI its window is CLOSED, from
-    ** the loop's housekeeping, and the pure layer's account and the
-    ** windows' must agree.  A switch to work opens it again where it
-    ** was -- the place the layout file gave it -- and closes main's. */
+    /* The perspectives file written before the start (specs/clamacs-
+    ** perspectives.md; the Lisp editor only) was LISTED, not restored:
+    ** main and work by name, work with its root, nothing opened but
+    ** sample2.lisp, the file the editor was started on, in main; the
+    ** file's `current work' not honoured.  The first switch into work
+    ** brings sample2.lisp over (open already), the first into main opens
+    ** sample.lisp and, work not in front now, CLOSES sample2.lisp's
+    ** window from the loop's housekeeping -- the pure layer's account
+    ** and the windows' must agree -- and the switch back to work opens
+    ** it again where it was, the place the layout file gave it. */
     IF AMILISP ~= '' THEN DO
-        NL = '0A'x
-        PCFG = 'ENV:Clamacs/perspectives.cfg'
-        PARCHIVE = 'ENVARC:Clamacs/perspectives.cfg'
-        PTEXT = '; written by drive.rexx' || NL || 'perspective main' || NL || 'file Clamacs:verify/realamiga/sample.lisp' || NL || 'perspective work' || NL || 'root Clamacs:verify/' || NL || 'file Clamacs:verify/realamiga/sample2.lisp' || NL || 'current main' || NL
-        IF WriteFile(PCFG, PTEXT) THEN
-            SAY 'OK wrote a perspectives file of our own'
-        ELSE
-            SAY 'FAIL could not write' PCFG
-        'EVAL clamacs-perspective-restore'
-        'STATUS'
-        IF POS('Restored: 1 perspective(s) made, 1 file(s) opened', RESULT) > 0 THEN
-            SAY 'OK Restore Perspectives read the file:' RESULT
-        ELSE
-            SAY 'FAIL clamacs-perspective-restore said' RESULT
         'PERSPECTIVES'
         IF RESULT = '> main' || NL || '  work' THEN
-            SAY 'OK the second editor has main and work, main in front'
+            SAY 'OK the start listed main and work, main in front, nothing restored'
         ELSE
-            SAY 'FAIL after the restore PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
+            SAY 'FAIL at the start PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
+        'EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* "work"))'
+        IF POS('Clamacs:verify/', RESULT) > 0 THEN
+            SAY 'OK work is listed with its project directory:' RESULT
+        ELSE
+            SAY 'FAIL work''s root at the start is' RESULT
+        'EVAL (clamacs::perspective-pending-p (clamacs::find-perspective clamacs::*editor* "main"))'
+        IF RESULT = 'T' THEN
+            SAY 'OK main''s file waits: nothing was opened at the start'
+        ELSE
+            SAY 'FAIL main waits' RESULT
+        'EVAL (clamacs::shown-report clamacs::*editor*)'
+        R = RESULT
+        IF POS('current main of (main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
+            SAY 'OK the started file alone is on the screen:' R
+        ELSE
+            SAY 'FAIL at the start the windows are' R
+        'PERSPECTIVES work'
+        R = RESULT
+        'STATUS'
+        IF R = '' & POS('Perspective: work, 1 file(s) opened', RESULT) > 0 THEN
+            SAY 'OK the first switch into work brought sample2.lisp over:' RESULT
+        ELSE
+            SAY 'FAIL PERSPECTIVES work gave' R', status' RESULT
+        'EVAL (clamacs::shown-report clamacs::*editor*)'
+        R = RESULT
+        IF POS('current work of (main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
+            SAY 'OK sample2.lisp is work''s, its window open, main empty:' R
+        ELSE
+            SAY 'FAIL after the switch into work the windows are' R
+        'PERSPECTIVES main'
+        R = RESULT
+        'STATUS'
+        IF R = '' & POS('Perspective: main, 1 file(s) opened', RESULT) > 0 THEN
+            SAY 'OK the first switch into main opened sample.lisp:' RESULT
+        ELSE
+            SAY 'FAIL PERSPECTIVES main gave' R', status' RESULT
+        'GETFILE'
+        IF POS('sample.lisp', RESULT) > 0 & POS('sample2.lisp', RESULT) = 0 THEN
+            SAY 'OK main''s file has the keyboard'
+        ELSE
+            SAY 'FAIL in main the active file is' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
         IF POS('current main of (main|work)', R) > 0 & POS('closed (sample2.lisp)', R) > 0 & POS('open (sample.lisp)', R) > 0 THEN
-            SAY 'OK sample2.lisp moved into work and its window is closed:' R
+            SAY 'OK sample2.lisp''s window is closed, sample.lisp''s open:' R
         ELSE
-            SAY 'FAIL after the restore the windows are' R
-        'GETFILE'
-        IF POS('sample.lisp', RESULT) > 0 & POS('sample2.lisp', RESULT) = 0 THEN
-            SAY 'OK main''s file has the keyboard after the restore'
-        ELSE
-            SAY 'FAIL after the restore the active file is' RESULT
+            SAY 'FAIL in main the windows are' R
         'PERSPECTIVES work'
         R = RESULT
+        'STATUS'
+        IF R = '' & RESULT = 'Perspective: work' THEN
+            SAY 'OK the second switch into work is a plain switch'
+        ELSE
+            SAY 'FAIL the second PERSPECTIVES work gave' R', status' RESULT
         'GETFILE'
-        IF R = '' & POS('sample2.lisp', RESULT) > 0 THEN
+        IF POS('sample2.lisp', RESULT) > 0 THEN
             SAY 'OK switching to work brought sample2.lisp back'
         ELSE
-            SAY 'FAIL PERSPECTIVES work gave' R', active' RESULT
+            SAY 'FAIL in work the active file is' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
         IF POS('current work of (main|work)', R) > 0 & POS('open (sample2.lisp)', R) > 0 & POS('closed (sample.lisp)', R) > 0 THEN
@@ -991,6 +1035,25 @@ ELSE DO
             SAY 'OK the window a perspective hid came back where it was:' RESULT
         ELSE
             SAY 'FAIL the reopened window is at' RESULT '(wanted' WANT')'
+        /* The REPL's window title names the perspective in front once
+        ** there are two; its name does not. */
+        'EVAL clamacs-repl'
+        'GETNAME'
+        IF RESULT = '*clamacs-repl*' THEN
+            SAY 'OK the REPL window is open in work, named' RESULT
+        ELSE
+            SAY 'FAIL clamacs-repl activated' RESULT
+        'EVAL (clamacs::repl-title (clamacs::repl-doc clamacs::*editor*))'
+        IF RESULT = '"*clamacs-repl* [work]"' THEN
+            SAY 'OK the REPL''s title names the perspective:' RESULT
+        ELSE
+            SAY 'FAIL the REPL''s title is' RESULT
+        'PERSPECTIVES main'
+        'EVAL (clamacs::repl-title (clamacs::repl-doc clamacs::*editor*))'
+        IF RESULT = '"*clamacs-repl* [main]"' THEN
+            SAY 'OK the REPL''s title follows the switch:' RESULT
+        ELSE
+            SAY 'FAIL the REPL''s title after the switch is' RESULT
     END
     'EVAL save-buffers-kill-emacs'
     DO i = 1 TO 20 WHILE SHOW('P', PORT2)

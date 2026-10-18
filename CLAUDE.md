@@ -348,14 +348,24 @@ once it exists -- and that quit writes the layout file too
 (`snapshot-autosave` after `perspective-autosave` in `quit-requested`,
 2026-10-15: a restored session came up in a default-sized window; the
 perspectives file is the one opt-in, a layout file alone stays written
-on command) -- and read at a start without files
-(`perspective-restore-at-start`, in both frontends' `start`) or by
-Restore Perspectives; a restore opens each perspective's files with
+on command) -- and LISTED at every start
+(`perspective-list-at-start`, in both frontends' `start`, before the
+first window; since 2026-10-18, when the restore at start was taken
+out: the perspectives come back by name with their roots, their files
+WAITING on them -- `pending-files` / `pending-active` -- and the editor
+opens the window it always did, in the first perspective listed; the
+first `perspective-switch` into a waiting perspective opens its files,
+`perspective-open-pending`, even when it is the one in front, and the
+quit's write keeps what was never opened) or read by Restore
+Perspectives; a restore opens each perspective's files with
 that perspective made current raw, then `perspective-sync-shown` and
 one `perspective-switch` -- or, when the recorded perspective is the one
 in front already (a switch to it does nothing), the recorded document
 activated by hand, since the files opened each took the keyboard as
-they came (the drive's second editor found it, 2026-10-15).  Phase P2
+they came (the drive's second editor found it, 2026-10-15).  The REPL
+window's TITLE names the perspective in front once there are two
+(`repl-title`, the status line's rule; `repl-sync-title` from every
+perspective change), its name staying `*clamacs-repl*`.  Phase P2
 (2026-10-15) is the host frontend:
 `doc-set-shown` on a `host-document` is one `CK.showDoc(id, flag)` --
 sent on a change only -- and the page keeps a hidden document's view

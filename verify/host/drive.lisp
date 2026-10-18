@@ -1889,6 +1889,12 @@ EVAL prints it: `\\\"doc1\\\",\\\"doc2\\\"'; \"\" without a report."
       (when (eq has present) (return t)))
     (pause 25)))
 
+(defun repl-title-now ()
+  "The REPL window's title as the editor last gave it to the page (its tab
+and, when it is the active one, the window), without EVAL's quotes."
+  (cmd "EVAL (clamacs::hdoc-title (clamacs::repl-doc clamacs::*editor*))")
+  (string-trim "\"" *result*))
+
 (defun status-line ()
   "The active document's status line, as the editor renders it."
   (cmd "EVAL (clamacs::status-text (clamacs::editor-active-document clamacs::*editor*))")
@@ -2227,48 +2233,97 @@ wrote: it must come up where the file said, then quit."
       (ok "the second editor came up with a bar: the init file's form took")
       (fail "the second editor's CURSOR gave ~{~A~^|~}" (cursor-lines)))
   (check-cursor "the second editor" nil)
-  ;; ... and Restore Perspectives reads the file the first editor saved
-  ;; (and kept in step at its quit): work made with its root, its file
-  ;; moved out of main and hidden, main in front
-  (if (equal (perspectives-lines) '("> main"))
-      (ok "the second editor started on a file: main alone, no restore")
+  ;; ... and the perspectives file the first editor saved (and kept in
+  ;; step at its quit) is LISTED, not restored: main and work by name,
+  ;; work with its root, their files waiting, the file it was started on
+  ;; alone on the screen, in main.  The first switch into a listed
+  ;; perspective opens its files.
+  (if (equal (perspectives-lines) '("> main" "  work"))
+      (ok "the second editor lists main and work, main in front, nothing restored")
       (fail "the second editor's PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
   (let ((before (active-id)))
-    (cmd "EVAL clamacs-perspective-restore")
-    (cmd "STATUS")
-    (if (result-has "Restored: 1 perspective(s) made, ")
-        (ok "Restore Perspectives: ~A" *result*)
-        (fail "clamacs-perspective-restore said ~A" *result*))
-    (if (equal (perspectives-lines) '("> main" "  work"))
-        (ok "the second editor has main and work, main in front")
-        (fail "after the restore PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
     (cmd "EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\"))")
     (if (result-has "drivesys/")
-        (ok "work came back with its project directory: ~A" *result*)
-        (fail "work's root after the restore is ~A" *result*))
-    ;; sample2.lisp, the file it was started on, is work's: hidden now
+        (ok "work is listed with its project directory: ~A" *result*)
+        (fail "work's root at the start is ~A" *result*))
+    (cmd "EVAL (clamacs::perspective-pending-p (clamacs::find-perspective clamacs::*editor* \"main\"))")
+    (if (result-is "T")
+        (ok "main's files wait: nothing was opened at the start")
+        (fail "main waits ~A" *result*))
+    (let ((state (panel-state :perspectives "current main of (main|work) hidden ()")))
+      (if (string/= state "")
+          (ok "nothing is hidden at the start: ~A" state)
+          (fail "host-panel-state :perspectives says ~A" *result*)))
+    (if (and (wait-page-tabs "source" before t 20) (string= (page-tabs "hidden") ""))
+        (ok "the page draws the started file alone: ~A" before)
+        (fail "the page's tabs at the start: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+    ;; Into work: sample2.lisp, the file it was started on, is work's --
+    ;; brought over from main, which has nothing left to hide
+    (cmd "PERSPECTIVES work")
+    (cmd "STATUS")
+    (if (result-has "Perspective: work, 1 file(s) opened")
+        (ok "the first switch into work opened its file: ~A" *result*)
+        (fail "PERSPECTIVES work said ~A" *result*))
+    (cmd "GETNAME")
+    (if (result-has "sample2.lisp")
+        (ok "sample2.lisp moved into work and has the keyboard")
+        (fail "in work the active buffer is ~A" *result*))
+    (let ((state (panel-state :perspectives "current work of (main|work) hidden ()")))
+      (if (string/= state "")
+          (ok "work in front, nothing hidden: ~A" state)
+          (fail "host-panel-state :perspectives says ~A" *result*)))
+    ;; Into main: its files open now.  The first editor quit with
+    ;; errors.lisp active (MAIN's last OPEN), and its quit kept the file
+    ;; in step: that is main's recorded document, and it has the
+    ;; keyboard although the files opened each took it as they came
+    (cmd "PERSPECTIVES main")
+    (cmd "STATUS")
+    (if (result-has "Perspective: main, ")
+        (ok "the first switch into main opened its files: ~A" *result*)
+        (fail "PERSPECTIVES main said ~A" *result*))
+    (cmd "GETNAME")
+    (if (result-has "errors.lisp")
+        (ok "main's recorded document is open and active: ~A" *result*)
+        (fail "in main the active buffer is ~A (wanted errors.lisp, the first editor's last)" *result*))
     (let ((state (panel-state :perspectives "current main of (main|work) hidden (")))
       (if (and (string/= state "") (search before state))
-          (ok "sample2.lisp moved into work and is hidden: ~A" state)
+          (ok "sample2.lisp is work's and hidden: ~A" state)
           (fail "host-panel-state :perspectives says ~A" *result*)))
     (if (and (wait-page-tabs "hidden" before t 20) (wait-page-tabs "source" before nil 20))
         (ok "the second editor's page hides ~A" before)
         (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-    ;; The first editor quit with errors.lisp active (MAIN's last OPEN),
-    ;; and its quit kept the file in step: that is main's recorded
-    ;; document, activated although main was in front all along
-    (cmd "GETNAME")
-    (if (result-has "errors.lisp")
-        (ok "main's recorded document is open and active: ~A" *result*)
-        (fail "after the restore the active buffer is ~A (wanted errors.lisp, the first editor's last)" *result*))
+    ;; Back to work: opened already, a plain switch
     (cmd "PERSPECTIVES work")
+    (cmd "STATUS")
+    (if (result-is "Perspective: work")
+        (ok "the second switch into work is a plain switch")
+        (fail "the second PERSPECTIVES work said ~A" *result*))
     (cmd "GETNAME")
     (if (result-has "sample2.lisp")
         (ok "switching to work brings sample2.lisp back")
         (fail "in work the active buffer is ~A" *result*))
     (if (wait-page-tabs "source" before t 20)
         (ok "the second editor's page draws ~A again" before)
-        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden"))))
+        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+    ;; The REPL's title names the perspective in front, its name does not.
+    ;; The window alone: this editor has no amilisp, and clamacs-repl
+    ;; would ask whether to start one.
+    (cmd "EVAL (clamacs::doc-activate (clamacs::repl-open clamacs::*editor* nil))")
+    (cmd "GETNAME")
+    (if (result-has "*clamacs-repl*")
+        (ok "the REPL window is open in work")
+        (fail "clamacs-repl activated ~A" *result*))
+    (if (equal (repl-title-now) "*clamacs-repl* [work]")
+        (ok "the REPL's title names the perspective: ~A" *result*)
+        (fail "the REPL's title is ~A" *result*))
+    (cmd "PERSPECTIVES main")
+    (if (equal (repl-title-now) "*clamacs-repl* [main]")
+        (ok "the REPL's title follows the switch: ~A" *result*)
+        (fail "the REPL's title after the switch is ~A" *result*))
+    (cmd "EVAL (clamacs::doc-name (clamacs::repl-doc clamacs::*editor*))")
+    (if (equal (string-trim "\"" *result*) "*clamacs-repl*")
+        (ok "the REPL's name stays ~A" *result*)
+        (fail "the REPL's name is ~A" *result*)))
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)

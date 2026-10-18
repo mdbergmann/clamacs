@@ -398,17 +398,25 @@ there, and a switch to the perspective makes it amilisp's default
 directory (an open REPL notes it), so a relative path typed at the
 REPL means the project's -- SLIME's `,cd`, done by the perspective.
 There is one amilisp and one REPL, shown in every perspective, as
-`perspective.el` shows the one SLIME REPL everywhere.
+`perspective.el` shows the one SLIME REPL everywhere; the REPL window's
+title names the perspective in front once there are two, as the status
+line does.
 
 **Save Perspectives** (`C-x x C-s`) writes every perspective with its
 directory and its files to `ENVARC:Clamacs/perspectives.cfg` (and
 `ENV:`) on the Amiga, `~/.clamacs-perspectives.cfg` on the host; from
 then on every quit keeps the file in step -- and writes the window
-positions beside it, as Snapshot Windows does, so the next start comes
-up where this one was left -- and a start without files on the command
-line opens the perspectives it holds, the recorded one in front.
-**Restore Perspectives** (`C-x x C-l`) reads it into a running
-editor.  The file is plain text, one `perspective NAME` line followed by
+positions beside it, as Snapshot Windows does, so a window comes back
+where it was left.  The next start **lists** the perspectives it holds
+and opens nothing of theirs: the editor comes up with the files named
+on the command line, else an empty buffer, and the saved perspectives
+are in the menu by name, each with its project directory -- the first
+switch into one (the menu, `C-x x s`, `PERSPECTIVES <name>`) opens its
+files, the one that had the keyboard first.  A perspective never
+entered keeps its files in the file across the quit.  **Restore
+Perspectives** (`C-x x C-l`) reads the file into a running editor,
+opening every perspective's files at once.  The file is plain text, one
+`perspective NAME` line followed by
 its `root` and `file` lines; edit it or delete it to start over.  A
 macro reads the menu with `PERSPECTIVES` and switches with
 `PERSPECTIVES <name>`.  On the host a buffer of a perspective not in

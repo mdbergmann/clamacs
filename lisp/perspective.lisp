@@ -8,8 +8,11 @@
 ;;;; a file opened from a perspective belongs to it, and a perspective may
 ;;;; have a project directory that `find-file' and the ASDF commands start
 ;;;; from (specs/clamacs-perspectives.md).  The set of perspectives is
-;;;; written to a small text file beside the layout file and comes back
-;;;; at the next start.
+;;;; written to a small text file beside the layout file and is LISTED at
+;;;; the next start: the perspectives come back by name with their roots,
+;;;; their files waiting, and the first switch into one opens them
+;;;; (PERSPECTIVE-OPEN-PENDING) -- a start opens the window it always
+;;;; did, no more, and the user picks the perspective to reopen.
 ;;;;
 ;;;; Three rules.  A perspective is DATA the frontends read: this file
 ;;;; decides which documents are shown (DOC-SHOWN-P), and a frontend only
@@ -35,8 +38,17 @@
   name                        ; a string, unique among the editor's
   (root nil)                  ; the project directory, ending in / or :, or NIL
   (documents '())             ; its source documents, oldest first
-  (active nil))               ; the document that had the keyboard when
+  (active nil)                ; the document that had the keyboard when
                               ; the perspective was left, or NIL
+  (pending-files '())         ; the files the perspectives file records for
+                              ; it, not opened yet: a start lists, the
+                              ; first switch into it opens
+  (pending-active nil))       ; ... and the path of its recorded document
+
+(defun perspective-pending-p (p)
+  "Whether P still has the files of the perspectives file waiting to be
+opened: listed at a start and never entered since."
+  (and (perspective-pending-files p) t))
 
 (defparameter *main-perspective-name* "main"
   "The name of the perspective an editor starts with.")
@@ -65,6 +77,8 @@ name in use, or no name at all."
     (let ((p (%make-perspective name)))
       (setf (perspective-root p) root
             (editor-perspectives editor) (append (editor-perspectives editor) (list p)))
+      ;; The second perspective puts ` [name]' into the REPL's title.
+      (repl-sync-title editor)
       p)))
 
 (defun current-perspective (editor)
@@ -158,37 +172,96 @@ Never starts an amilisp.  True when the EVAL went out."
           (repl-note repl "default directory ~A (perspective ~A)" root (perspective-name p))))
       t)))
 
+(defun perspective-open-files (editor p files active-path)
+  "FILES opened into P, which must be in front so they join it: a file
+open elsewhere is moved over, one that is not there or cannot be read
+is skipped.  The document showing ACTIVE-PATH, when it is P's, becomes
+P's active one.  Three values: the files opened, the files skipped, the
+files that were open already.  What a restore does per entry, and what
+a listed perspective does at its first switch."
+  (let ((opened 0) (skipped 0) (moved 0))
+    (dolist (path files)
+      (let ((open (find-document-by-path editor path)))
+        (cond (open (perspective-move open p) (incf moved))
+              ((not (ignore-errors (probe-file path))) (incf skipped))
+              ((open-document editor path) (incf opened))
+              (t (incf skipped)))))
+    (let ((active (and active-path (find-document-by-path editor active-path))))
+      (when (and active (eq (doc-perspective active) p))
+        (setf (perspective-active p) active)))
+    (values opened skipped moved)))
+
+(defun perspective-open-pending (editor p)
+  "P's waiting files (PERSPECTIVE-LIST-AT-START) opened into P, which must
+be in front, and P waits no more.  Two values, the files P has open now
+for it (the ones brought over from elsewhere counted) and the files
+skipped; NIL and 0 when none waited."
+  (let ((files (perspective-pending-files p))
+        (active-path (perspective-pending-active p)))
+    (cond (files
+           (setf (perspective-pending-files p) '()
+                 (perspective-pending-active p) nil)
+           (multiple-value-bind (opened skipped moved)
+               (perspective-open-files editor p files active-path)
+             (values (+ opened moved) skipped)))
+          (t (values nil 0)))))
+
+(defun perspective-opened-note (opened skipped)
+  "`, N file(s) opened[, M missing]' after the switch's message when the
+switch opened a listed perspective's files; \"\" otherwise."
+  (if opened
+      (format nil ", ~D file(s) opened~A" opened
+              (if (> skipped 0) (format nil ", ~D missing" skipped) ""))
+      ""))
+
 (defun perspective-switch (editor p &key (say t))
   "Bring P in front.  The active document of the perspective left is
 remembered on it; P's documents are shown, the remembered one -- or the
 first -- activated, and only then the old perspective's hidden, so the
 frontend never has a moment without a shown active document.  A
 perspective entered empty gets an unnamed buffer.  amilisp is told P's
-project directory (PERSPECTIVE-TELL-ROOT).  Says `Perspective: NAME'
-unless SAY is NIL.  P."
-  (let ((old (editor-perspective editor)))
-    (unless (eq old p)
-      (when old
-        (let ((active (editor-active-document editor)))
-          (when (and active (eq (doc-perspective active) old))
-            (setf (perspective-active old) active))))
-      (setf (editor-perspective editor) p)
-      (let ((docs (perspective-live-documents p)))
-        (cond (docs
-               (dolist (doc docs)
-                 (doc-set-shown doc t))
-               (let ((active (perspective-active p)))
-                 (doc-activate (if (and active (member active docs)) active (first docs)))))
-              (t
-               ;; Made now, so it joins P, which is in front.
-               (let ((doc (open-document editor nil)))
-                 (when doc (doc-activate doc))))))
-      (when old
-        (dolist (doc (perspective-live-documents old))
-          (doc-set-shown doc nil)))
-      (perspective-tell-root editor p))
+project directory (PERSPECTIVE-TELL-ROOT).  A perspective listed at a
+start opens its recorded files first (PERSPECTIVE-OPEN-PENDING) -- also
+when it is the one in front already, which a switch otherwise leaves
+alone.  Says `Perspective: NAME', with the files opened, unless SAY is
+NIL.  P."
+  (let ((old (editor-perspective editor))
+        (opened nil) (skipped 0))
+    (cond ((eq old p)
+           ;; In front already: only the waiting files, if any, and the
+           ;; recorded document to the keyboard, since each file took it
+           ;; as it opened.
+           (multiple-value-setq (opened skipped) (perspective-open-pending editor p))
+           (when opened
+             (let ((active (perspective-active p)))
+               (when (and active (member active (perspective-live-documents p)))
+                 (doc-activate active)))
+             (perspective-tell-root editor p)))
+          (t
+           (when old
+             (let ((active (editor-active-document editor)))
+               (when (and active (eq (doc-perspective active) old))
+                 (setf (perspective-active old) active))))
+           (setf (editor-perspective editor) p)
+           (multiple-value-setq (opened skipped) (perspective-open-pending editor p))
+           (let ((docs (perspective-live-documents p)))
+             (cond (docs
+                    (dolist (doc docs)
+                      (doc-set-shown doc t))
+                    (let ((active (perspective-active p)))
+                      (doc-activate (if (and active (member active docs)) active (first docs)))))
+                   (t
+                    ;; Made now, so it joins P, which is in front.
+                    (let ((doc (open-document editor nil)))
+                      (when doc (doc-activate doc))))))
+           (when old
+             (dolist (doc (perspective-live-documents old))
+               (doc-set-shown doc nil)))
+           (perspective-tell-root editor p)))
+    (repl-sync-title editor)
     (when say
-      (perspective-note editor "Perspective: ~A" (perspective-name p)))
+      (perspective-note editor "Perspective: ~A~A" (perspective-name p)
+                        (perspective-opened-note opened skipped)))
     p))
 
 (defun perspective-sync-shown (editor)
@@ -280,6 +353,7 @@ forgotten.  T when it went; :ONLY for the only perspective, which stays;
          (setf (editor-perspectives editor) (remove p (editor-perspectives editor)))
          (when (eq (editor-perspective editor) p)
            (setf (editor-perspective editor) nil))
+         (repl-sync-title editor)
          t)))
 
 ;;; ------------------------------------------------------------------
@@ -358,7 +432,9 @@ else the one remembered when P was left."
 
 (defun perspectives-text (editor)
   "The perspectives as the file holds them: one keyword and the rest of
-the line.  Unnamed buffers are not recorded."
+the line.  Unnamed buffers are not recorded.  A perspective listed at the
+start and never entered keeps the files it was listed with: the quit's
+write must not lose what this session never opened."
   (with-output-to-string (out)
     (write-string *perspectives-header* out)
     (terpri out)
@@ -369,9 +445,13 @@ the line.  Unnamed buffers are not recorded."
       (dolist (doc (perspective-live-documents p))
         (when (doc-path doc)
           (format out "file ~A~%" (doc-path doc))))
+      (dolist (path (perspective-pending-files p))
+        (format out "file ~A~%" path))
       (let ((active (perspective-active-now editor p)))
-        (when (and active (not (doc-closing active)) (doc-path active))
-          (format out "active ~A~%" (doc-path active)))))
+        (cond ((and active (not (doc-closing active)) (doc-path active))
+               (format out "active ~A~%" (doc-path active)))
+              ((perspective-pending-active p)
+               (format out "active ~A~%" (perspective-pending-active p))))))
     (format out "current ~A~%" (perspective-name (current-perspective editor)))))
 
 (defun perspectives-parse-line (line)
@@ -460,18 +540,16 @@ is no file."
               (incf made))
             (when (getf e :root)
               (setf (perspective-root p) (getf e :root)))
+            ;; The file's files are opened now, so none wait (a
+            ;; perspective listed at the start).
+            (setf (perspective-pending-files p) '()
+                  (perspective-pending-active p) nil)
             ;; In front while its files open, so they join it.
             (setf (editor-perspective editor) p)
-            (dolist (path (getf e :files))
-              (let ((open (find-document-by-path editor path)))
-                (cond (open (perspective-move open p))
-                      ((not (ignore-errors (probe-file path))) (incf skipped))
-                      ((open-document editor path) (incf opened))
-                      (t (incf skipped)))))
-            (let ((active (and (getf e :active)
-                               (find-document-by-path editor (getf e :active)))))
-              (when (and active (eq (doc-perspective active) p))
-                (setf (perspective-active p) active)))))
+            (multiple-value-bind (o s)
+                (perspective-open-files editor p (getf e :files) (getf e :active))
+              (incf opened o)
+              (incf skipped s))))
         (setf (editor-perspective editor) original)
         (let ((target (or (find-perspective editor current-name)
                           (first (editor-perspectives editor)))))
@@ -487,14 +565,25 @@ is no file."
                 (perspective-switch editor target :say nil))))
         (values made opened skipped)))))
 
-(defun perspective-restore-at-start (editor)
-  "A start without files: the perspectives file read when there is one.
-True when the editor has a document afterwards; NIL -- and the caller
-opens the unnamed buffer it always did -- when there is no file or it
-opened nothing."
-  (and (perspective-restore editor)
-       (live-documents editor)
-       t))
+(defun perspective-list-at-start (editor &optional (text (perspectives-read)))
+  "A start: the perspectives of TEXT (the file's, by default) made by
+name with their roots, their files and recorded document kept WAITING on
+them -- nothing opened, nothing brought in front -- so the editor comes
+up with the window it always did (the files named on the command line,
+else an unnamed buffer, in the first perspective listed) and the user
+picks the perspective to reopen from the menu, at `C-x x s' or over the
+port; that first switch opens its files (PERSPECTIVE-OPEN-PENDING).  The
+file's `current' line is not honoured: no perspective is restored.  The
+number of perspectives listed, or NIL when there is no file."
+  (when text
+    (let ((made 0))
+      (dolist (e (perspectives-parse text))
+        (unless (find-perspective editor (getf e :name))
+          (let ((p (make-perspective editor (getf e :name) :root (getf e :root))))
+            (setf (perspective-pending-files p) (getf e :files)
+                  (perspective-pending-active p) (getf e :active))
+            (incf made))))
+      made)))
 
 ;;; ------------------------------------------------------------------
 ;;; The menu's group
@@ -530,7 +619,8 @@ perspective and whether it was made now; NIL for no name."
 (define-command clamacs-perspective-switch (doc arg)
   "Switch to a perspective by name, with completion.  A name no
 perspective has makes a new, empty one and switches to it, where an
-unnamed buffer opens."
+unnamed buffer opens.  The name of the one in front opens its files when
+they are still waiting from the start, and is refused otherwise."
   (declare (ignore arg))
   (let ((editor (doc-editor doc)))
     (prompt doc "Perspective: "
@@ -539,12 +629,13 @@ unnamed buffer opens."
                 (cond ((null p)
                        (message doc "A perspective needs a name")
                        (doc-beep doc))
-                      ((eq p (current-perspective editor))
+                      ((and (eq p (current-perspective editor))
+                            (not (perspective-pending-p p)))
                        (message doc "Already in ~A" (perspective-name p)))
-                      (t
+                      (new
                        (perspective-switch editor p :say nil)
-                       (perspective-note editor (if new "New perspective: ~A" "Perspective: ~A")
-                                         (perspective-name p))))))
+                       (perspective-note editor "New perspective: ~A" (perspective-name p)))
+                      (t (perspective-switch editor p)))))
             :completer (perspective-completer editor))))
 
 (defun perspective-step (doc delta)
@@ -581,6 +672,7 @@ unnamed buffer opens."
                       (t
                        (let ((old (perspective-name p)))
                          (setf (perspective-name p) name)
+                         (repl-sync-title editor)
                          (message doc "Renamed ~A to ~A" old name))))))
             :initial (perspective-name p))))
 

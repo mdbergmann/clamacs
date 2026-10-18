@@ -311,13 +311,22 @@ OK the file holds the error list
 OK a second editor is at
 OK a second editor came up where the file said
 OK wrote a perspectives file of our own
-OK Restore Perspectives read the file
-OK the second editor has main and work, main in front
-OK sample2.lisp moved into work and its window is closed
-OK main'"'"'s file has the keyboard after the restore
+OK the start listed main and work, main in front, nothing restored
+OK work is listed with its project directory
+OK main'"'"'s file waits: nothing was opened at the start
+OK the started file alone is on the screen
+OK the first switch into work brought sample2.lisp over
+OK sample2.lisp is work'"'"'s, its window open, main empty
+OK the first switch into main opened sample.lisp
+OK main'"'"'s file has the keyboard
+OK sample2.lisp'"'"'s window is closed, sample.lisp'"'"'s open
+OK the second switch into work is a plain switch
 OK switching to work brought sample2.lisp back
 OK the switch opened work'"'"'s window and closed main'"'"'s
 OK the window a perspective hid came back where it was
+OK the REPL window is open in work, named
+OK the REPL'"'"'s title names the perspective
+OK the REPL'"'"'s title follows the switch
 OK the second editor quit
 OK the perspectives files are gone again
 OK the snapshot files are gone again

@@ -749,7 +749,9 @@ document and they changed."
       (unless (equal text (host-window-shown-status window))
         (setf (host-window-shown-status window) text)
         (ck doc "setStatus" text))
-      (set-window-title window (doc-name doc)))))
+      ;; The title DOC-SET-TITLE last gave: the REPL's names the
+      ;; perspective in front, which its name does not.
+      (set-window-title window (hdoc-title doc)))))
 
 (defmethod doc-show-arglist ((doc host-document) text)
   (setf (hdoc-arglist doc) text)
@@ -2752,14 +2754,15 @@ last tab closes."
                     (send-minimap editor)
                     (send-cursor-style editor)
                     (place-dock editor)
+                    ;; The saved perspectives listed, their files waiting
+                    ;; for the user's pick (perspective.lisp); the window
+                    ;; a start always opened.
+                    (perspective-list-at-start editor)
                     (if files
                         (dolist (path files)
                           (unless (open-document editor path)
                             (format *error-output* "clamacs: cannot open ~A~%" path)))
-                        ;; The saved perspectives, when there are any
-                        ;; (perspective.lisp), else the unnamed buffer.
-                        (unless (perspective-restore-at-start editor)
-                          (open-document editor nil))))
+                        (open-document editor nil)))
                   (when (live-documents editor)
                     (when *wire-starter*
                       (handler-case (funcall *wire-starter* editor)

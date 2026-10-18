@@ -3530,14 +3530,15 @@ function: an image is saved before it runs and restores into it."
            (setup-mailbox editor)
            (unwind-protect
                 (progn
+                  ;; The saved perspectives listed, their files waiting
+                  ;; for the user's pick (perspective.lisp); the window a
+                  ;; start always opened.
+                  (perspective-list-at-start editor)
                   (if files
                       (dolist (path files)
                         (unless (open-document editor path)
                           (format *error-output* "clamacs: cannot open ~A~%" path)))
-                      ;; The saved perspectives, when there are any
-                      ;; (perspective.lisp), else the unnamed buffer.
-                      (unless (perspective-restore-at-start editor)
-                        (open-document editor nil)))
+                      (open-document editor nil))
                   (when (live-documents editor)
                     ;; The wire and the editor's own port, once there is a
                     ;; document for the first command to act on.
@@ -3548,9 +3549,9 @@ function: an image is saved before it runs and restores into it."
                       (funcall hook editor))
                     (menu-update editor)
                     (dynamic-menus-sync editor)
-                    ;; The windows a restored perspective hides, and a
-                    ;; theme a start hook or the wire's first reply
-                    ;; picked, before the first key.
+                    ;; The windows a start hook hid, and a theme it or
+                    ;; the wire's first reply picked, before the first
+                    ;; key.
                     (shown-sync editor)
                     (theme-repaint editor)
                     (run-loop editor)))

@@ -585,7 +585,7 @@ editor a b)."
              ;; files opened, the missing one skipped, `work' in front with
              ;; its recorded document active, main's windows hidden.
              (let ((editor (make-fake-editor)))
-               (is (perspective-restore-at-start editor))
+               (is (perspective-restore editor))
                (is-equal (perspective-names editor) '("main" "work"))
                (is-equal (perspective-name (current-perspective editor)) "work")
                (is-equal (perspective-root (find-perspective editor "work")) (concatenate 'string dir "/"))
@@ -648,22 +648,177 @@ editor a b)."
         (delete-quietly one)
         (delete-quietly two)))))
 
-(deftest a-restore-that-opens-nothing-leaves-the-start-to-the-caller
-  (let ((file (temp-file "persp-empty.cfg" (lines "perspective main" "file T:no-such-file-at-all.lisp"))))
+;;; --- the start: listed, not restored ------------------------------------------
+
+(deftest a-start-lists-the-saved-perspectives-and-the-first-switch-opens-them
+  (let* ((one (temp-file "persp-start-one.lisp" "(one)"))
+         (two (temp-file "persp-start-two.lisp" "(two)"))
+         (file (temp-file "persp-start.cfg"
+                          (lines "perspective main" (format nil "file ~A" one) (format nil "active ~A" one)
+                                 "perspective work" "root /tmp/" (format nil "file ~A" two)
+                                 "current work"))))
     (let ((*perspective-files* (list file)))
       (unwind-protect
            (let ((editor (make-fake-editor)))
-             ;; The perspective is made, entered empty, and gets its unnamed
-             ;; buffer -- so the editor has a document after all.
-             (is (perspective-restore-at-start editor))
-             (is-equal (perspective-names editor) '("main"))
-             (is-equal (doc-name (editor-active-document editor)) *unnamed*)
-             ;; An empty file makes nothing: the caller opens the buffer.
+             ;; Listed: both perspectives by name, work with its root, their
+             ;; files waiting -- nothing opened, and the recorded `current'
+             ;; not honoured: no perspective is restored at a start.
+             (is-equal (perspective-list-at-start editor) 2)
+             (is-equal (perspective-names editor) '("main" "work"))
+             (is (null (live-documents editor)))
+             (let ((main (find-perspective editor "main"))
+                   (work (find-perspective editor "work")))
+               (is (perspective-pending-p main))
+               (is (perspective-pending-p work))
+               (is-equal (perspective-pending-files main) (list one))
+               (is-equal (perspective-pending-active main) one)
+               (is-equal (perspective-root work) "/tmp/")
+               (is (null (editor-perspective editor)))
+               ;; The window a start always opened: the unnamed buffer, in
+               ;; the first perspective listed.
+               (let ((u (open-document editor nil)))
+                 (doc-activate u)
+                 (is (eq (current-perspective editor) main))
+                 (is (eq (doc-perspective u) main))
+                 (is-equal (shown-names editor) (list *unnamed*))
+                 ;; The user picks work at C-x x s: its file opens into it,
+                 ;; the unnamed buffer (main's) is hidden, work waits no more.
+                 (run-command u 'clamacs-perspective-switch)
+                 (answer-prompt u "work")
+                 (is (eq (current-perspective editor) work))
+                 (is (not (perspective-pending-p work)))
+                 (is-equal (mapcar #'doc-path (live-documents editor)) (list nil two))
+                 (is-equal (doc-path (editor-active-document editor)) two)
+                 (is-equal (fake-last-message (editor-active-document editor))
+                           "Perspective: work, 1 file(s) opened")
+                 (is-equal (shown-names editor) '("clamacs-test-persp-start-two.lisp"))
+                 (is-equal (fake-shown-names editor) '("clamacs-test-persp-start-two.lisp"))
+                 (is (not (fake-shown u)))
+                 ;; ... and main from the menu: its file opens, the recorded
+                 ;; document has the keyboard, the unnamed buffer is back.
+                 (is (dynamic-menu-pick editor :perspectives main))
+                 (is (not (perspective-pending-p main)))
+                 (is-equal (doc-path (editor-active-document editor)) one)
+                 (is-equal (fake-last-message (editor-active-document editor))
+                           "Perspective: main, 1 file(s) opened")
+                 (is-equal (fake-shown-names editor) (list *unnamed* "clamacs-test-persp-start-one.lisp"))
+                 (is (not (fake-shown (find-document-by-path editor two))))
+                 ;; Once opened, the one in front is refused as before.
+                 (run-command u 'clamacs-perspective-switch)
+                 (answer-prompt u "main")
+                 (is-equal (fake-last-message u) "Already in main")
+                 (is-equal (length (live-documents editor)) 3))))
+        (delete-quietly file)
+        (delete-quietly one)
+        (delete-quietly two)))))
+
+(deftest a-switch-into-the-listed-perspective-in-front-opens-its-files
+  (let* ((one (temp-file "persp-infront-one.lisp" "(one)"))
+         (two (temp-file "persp-infront-two.lisp" "(two)"))
+         (file (temp-file "persp-infront.cfg"
+                          (lines "perspective main" (format nil "file ~A" one) (format nil "file ~A" two)
+                                 (format nil "active ~A" one) "file T:no-such-file-at-all.lisp"))))
+    (let ((*perspective-files* (list file)))
+      (unwind-protect
+           (let ((editor (make-fake-editor)))
+             (is-equal (perspective-list-at-start editor) 1)
+             (let ((u (open-document editor nil))
+                   (main (find-perspective editor "main")))
+               (doc-activate u)
+               ;; main is in front, so a switch would do nothing -- but its
+               ;; files wait: C-x x s main opens them, the recorded one gets
+               ;; the keyboard although the last opened took it, the
+               ;; missing one is counted, and the unnamed buffer stays.
+               (run-command u 'clamacs-perspective-switch)
+               (answer-prompt u "main")
+               (is (not (perspective-pending-p main)))
+               (is-equal (mapcar #'doc-path (live-documents editor)) (list nil one two))
+               (is-equal (doc-path (editor-active-document editor)) one)
+               (is-equal (fake-last-message (editor-active-document editor))
+                         "Perspective: main, 2 file(s) opened, 1 missing")
+               (is (every #'fake-shown (live-documents editor)))
+               ;; A file open already is brought over, not opened twice:
+               ;; listed again, a switch finds it.
+               (let ((p (make-perspective editor "again")))
+                 (setf (perspective-pending-files p) (list two))
+                 (perspective-switch editor p)
+                 (is (eq (doc-perspective (find-document-by-path editor two)) p))
+                 (is-equal (length (live-documents editor)) 3)
+                 (is-equal (fake-last-message (editor-active-document editor))
+                           "Perspective: again, 1 file(s) opened"))))
+        (delete-quietly file)
+        (delete-quietly one)
+        (delete-quietly two)))))
+
+(deftest the-file-keeps-what-a-listed-perspective-never-opened
+  (let* ((one (temp-file "persp-keep-one.lisp" "(one)"))
+         (two (temp-file "persp-keep-two.lisp" "(two)"))
+         (file (temp-file "persp-keep.cfg"
+                          (lines "perspective main" (format nil "file ~A" one) (format nil "active ~A" one)
+                                 "perspective work" (format nil "file ~A" two) "current main"))))
+    (let ((*perspective-files* (list file)))
+      (unwind-protect
+           (let ((editor (make-fake-editor)))
+             (perspective-list-at-start editor)
+             (doc-activate (open-document editor nil))
+             ;; Only work entered: the quit's write must still hold main's
+             ;; file and its recorded document, never opened this session.
+             (perspective-switch editor (find-perspective editor "work"))
+             (let ((text (perspectives-text editor)))
+               (is (search (format nil "perspective main~%file ~A~%active ~A~%perspective work~%file ~A~%active ~A~%current work~%"
+                                   one one two two)
+                           text))
+               ;; Listed again from that text, main waits as before.
+               (let ((editor2 (make-fake-editor)))
+                 (perspective-list-at-start editor2 text)
+                 (is-equal (perspective-pending-files (find-perspective editor2 "main")) (list one))
+                 (is-equal (perspective-pending-active (find-perspective editor2 "main")) one)
+                 (is-equal (perspective-pending-files (find-perspective editor2 "work")) (list two))))
+             ;; Restore Perspectives into the running editor opens the
+             ;; waiting files eagerly, and nothing waits afterwards.
+             (run-command (editor-active-document editor) 'clamacs-perspective-restore)
+             (is (not (perspective-pending-p (find-perspective editor "main"))))
+             (is (find-document-by-path editor one))
+             (is-equal (fake-last-message (editor-active-document editor))
+                       "Restored: 0 perspective(s) made, 1 file(s) opened"))
+        (delete-quietly file)
+        (delete-quietly one)
+        (delete-quietly two)))))
+
+(deftest a-start-without-a-file-or-with-an-empty-one-lists-nothing
+  (let ((file (temp-path "persp-none.cfg")))
+    (let ((*perspective-files* (list file)))
+      (unwind-protect
+           (let ((editor (make-fake-editor)))
+             (is (null (perspective-list-at-start editor)))
+             (is (null (editor-perspectives editor)))
              (write-file-text file "")
-             (let ((editor (make-fake-editor)))
-               (is (not (perspective-restore-at-start editor)))
-               (is (null (live-documents editor)))))
+             (is-equal (perspective-list-at-start editor) 0)
+             (is (null (editor-perspectives editor)))
+             ;; A name listed twice, or in the editor already, is one.
+             (is-equal (perspective-list-at-start editor (lines "perspective main" "perspective main")) 1)
+             (is-equal (perspective-list-at-start editor (lines "perspective main" "perspective work")) 1)
+             (is-equal (perspective-names editor) '("main" "work")))
         (delete-quietly file)))))
+
+(deftest the-repl-title-names-the-perspective-in-front
+  (multiple-value-bind (editor a b) (persp-fixture)
+    (declare (ignore b))
+    (let ((repl (repl-open editor a)))
+      ;; One perspective: the name alone, as the status line has it.
+      (is-equal (doc-name repl) "*clamacs-repl*")
+      (is-equal (fake-title repl) "*clamacs-repl*")
+      (let ((work (make-perspective editor "work")))
+        (is-equal (fake-title repl) "*clamacs-repl* [main]")
+        (perspective-switch editor work)
+        (is-equal (fake-title repl) "*clamacs-repl* [work]")
+        (run-command repl 'clamacs-perspective-rename)
+        (answer-prompt repl "proj")
+        (is-equal (fake-title repl) "*clamacs-repl* [proj]")
+        ;; The name stays: the Buffers menu, the window's role.
+        (is-equal (doc-name repl) "*clamacs-repl*")
+        (is (eq (perspective-close editor work) t))
+        (is-equal (fake-title repl) "*clamacs-repl*")))))
 
 (deftest a-restore-into-the-perspective-in-front-activates-the-recorded-document
   (let* ((one (temp-file "persp-front-one.lisp" "(one)"))

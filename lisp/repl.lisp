@@ -64,6 +64,21 @@
 (defun repl-mode-p (doc)
   (and (doc-repl doc) t))
 
+(defun repl-title (doc)
+  "The REPL window's title: its name, and ` [NAME]' after it while the
+editor has more than one perspective (STATUS-PERSPECTIVE, the status
+line's rule) -- the one REPL is shown in every perspective and its
+default directory follows the one in front, so the title says which."
+  (concatenate 'string *repl-name* (status-perspective doc)))
+
+(defun repl-sync-title (editor)
+  "The REPL window's title in step with the perspectives, when the window
+is open: a perspective made, closed, renamed or brought in front changes
+what it says (perspective.lisp calls it then)."
+  (let ((doc (repl-doc editor)))
+    (when doc
+      (doc-set-title doc (repl-title doc)))))
+
 ;;; ------------------------------------------------------------------
 ;;; Inserting into the transcript
 ;;; ------------------------------------------------------------------
@@ -237,6 +252,8 @@ front; the caller decides whether that is where the user goes."
                      (repl-session-doc session) doc
                      (repl-session-attached session) nil
                      (repl-session-origin session) nil)
+               ;; Made under its name; the title names the perspective.
+               (doc-set-title doc (repl-title doc))
                doc)))))
 
 (defun repl-switch (from)
