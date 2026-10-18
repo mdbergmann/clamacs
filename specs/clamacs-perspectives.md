@@ -207,8 +207,20 @@ before the first window, makes each perspective of the file by name
 with its root and keeps its files and its recorded document WAITING on
 it (`pending-files`, `pending-active`); the editor then opens the
 window it always did -- the files named on the command line, else the
-unnamed buffer -- which joins the first perspective listed, and the
-file's `current` line is not honoured.  The user picks the perspective
+unnamed buffer -- which joins the SCRATCH perspective
+(`*scratch-perspective-name*`, made first and put in front when the
+file lists anything; decided 2026-10-18 after the first cut put the
+start's window into the first perspective listed, which the menu then
+showed ticked with none of its windows open), so none of the listed
+perspectives is ticked, the status line and the REPL's title say
+`[scratch]`, and the file's `current` line is not honoured.  The
+scratch perspective is Emacs's `*scratch*`: `perspectives-text` leaves
+it out (`recorded-perspectives`; no `current` line while it is in
+front), a `perspective scratch` entry in the file is skipped like any
+name in use, and renaming it (`C-x x r`) makes it an ordinary,
+recorded perspective, since `perspective-scratch-p` goes by the name.
+A start without a file, or with an empty one, makes no scratch: `main`
+as ever.  The user picks the perspective
 to reopen: the first `perspective-switch` into a waiting perspective
 opens its files (`perspective-open-pending`, with the perspective in
 front so they join it; a file open elsewhere is brought over), makes

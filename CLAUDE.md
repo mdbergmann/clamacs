@@ -353,7 +353,10 @@ on command) -- and LISTED at every start
 first window; since 2026-10-18, when the restore at start was taken
 out: the perspectives come back by name with their roots, their files
 WAITING on them -- `pending-files` / `pending-active` -- and the editor
-opens the window it always did, in the first perspective listed; the
+opens the window it always did in a `scratch` perspective made first
+and put in front (`*scratch-perspective-name*`; none of the listed
+ones ticked), which the file never records (`recorded-perspectives`,
+`perspective-scratch-p` by name, so a rename makes it ordinary); the
 first `perspective-switch` into a waiting perspective opens its files,
 `perspective-open-pending`, even when it is the one in front, and the
 quit's write keeps what was never opened) or read by Restore

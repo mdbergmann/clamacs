@@ -906,9 +906,9 @@ ELSE
     SAY 'FAIL could not write' CFG
 /* And a perspectives file of our own for the Lisp editor to find at its
 ** start (specs/clamacs-perspectives.md): LISTED there, not restored --
-** the editor must come up on sample2.lisp alone, in main, with work
-** beside it by name and both perspectives' files waiting for the first
-** switch into them. */
+** the editor must come up on sample2.lisp alone, in a scratch
+** perspective of its own, with main and work beside it by name and both
+** perspectives' files waiting for the first switch into them. */
 IF AMILISP ~= '' THEN DO
     NL = '0A'x
     PCFG = 'ENV:Clamacs/perspectives.cfg'
@@ -951,20 +951,26 @@ ELSE DO
         SAY 'FAIL the second editor came up at' GOT '(wanted' WANT')'
     /* The perspectives file written before the start (specs/clamacs-
     ** perspectives.md; the Lisp editor only) was LISTED, not restored:
-    ** main and work by name, work with its root, nothing opened but
-    ** sample2.lisp, the file the editor was started on, in main; the
-    ** file's `current work' not honoured.  The first switch into work
-    ** brings sample2.lisp over (open already), the first into main opens
-    ** sample.lisp and, work not in front now, CLOSES sample2.lisp's
-    ** window from the loop's housekeeping -- the pure layer's account
-    ** and the windows' must agree -- and the switch back to work opens
-    ** it again where it was, the place the layout file gave it. */
+    ** main and work by name after a scratch perspective that is in
+    ** front, work with its root, nothing opened but sample2.lisp, the
+    ** file the editor was started on, in scratch; the file's `current
+    ** work' not honoured.  The first switch into work brings sample2.lisp
+    ** over (open already), the first into main opens sample.lisp and,
+    ** work not in front now, CLOSES sample2.lisp's window from the
+    ** loop's housekeeping -- the pure layer's account and the windows'
+    ** must agree -- and the switch back to work opens it again where it
+    ** was, the place the layout file gave it. */
     IF AMILISP ~= '' THEN DO
         'PERSPECTIVES'
-        IF RESULT = '> main' || NL || '  work' THEN
-            SAY 'OK the start listed main and work, main in front, nothing restored'
+        IF RESULT = '> scratch' || NL || '  main' || NL || '  work' THEN
+            SAY 'OK the start listed main and work after scratch, scratch in front, nothing restored'
         ELSE
             SAY 'FAIL at the start PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
+        'EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))'
+        IF POS('[scratch]', RESULT) > 0 THEN
+            SAY 'OK the status line names scratch at the start:' RESULT
+        ELSE
+            SAY 'FAIL the status line at the start:' RESULT
         'EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* "work"))'
         IF POS('Clamacs:verify/', RESULT) > 0 THEN
             SAY 'OK work is listed with its project directory:' RESULT
@@ -977,7 +983,7 @@ ELSE DO
             SAY 'FAIL main waits' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
-        IF POS('current main of (main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
+        IF POS('current scratch of (scratch|main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
             SAY 'OK the started file alone is on the screen:' R
         ELSE
             SAY 'FAIL at the start the windows are' R
@@ -990,8 +996,8 @@ ELSE DO
             SAY 'FAIL PERSPECTIVES work gave' R', status' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
-        IF POS('current work of (main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
-            SAY 'OK sample2.lisp is work''s, its window open, main empty:' R
+        IF POS('current work of (scratch|main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
+            SAY 'OK sample2.lisp is work''s, its window open, scratch empty:' R
         ELSE
             SAY 'FAIL after the switch into work the windows are' R
         'PERSPECTIVES main'
@@ -1008,7 +1014,7 @@ ELSE DO
             SAY 'FAIL in main the active file is' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
-        IF POS('current main of (main|work)', R) > 0 & POS('closed (sample2.lisp)', R) > 0 & POS('open (sample.lisp)', R) > 0 THEN
+        IF POS('current main of (scratch|main|work)', R) > 0 & POS('closed (sample2.lisp)', R) > 0 & POS('open (sample.lisp)', R) > 0 THEN
             SAY 'OK sample2.lisp''s window is closed, sample.lisp''s open:' R
         ELSE
             SAY 'FAIL in main the windows are' R
@@ -1026,7 +1032,7 @@ ELSE DO
             SAY 'FAIL in work the active file is' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
-        IF POS('current work of (main|work)', R) > 0 & POS('open (sample2.lisp)', R) > 0 & POS('closed (sample.lisp)', R) > 0 THEN
+        IF POS('current work of (scratch|main|work)', R) > 0 & POS('open (sample2.lisp)', R) > 0 & POS('closed (sample.lisp)', R) > 0 THEN
             SAY 'OK the switch opened work''s window and closed main''s:' R
         ELSE
             SAY 'FAIL after the switch the windows are' R
@@ -1078,6 +1084,16 @@ ELSE DO
             SAY 'OK the quit recorded the window where it was left:' WANT
         ELSE
             SAY 'FAIL no line' WANT 'in' CFG 'and' ARCHIVE 'after the quit'
+        /* ... and the perspectives file: main and work, the current one,
+        ** and nothing of scratch, which the file never records. */
+        IF FileHasLine(PCFG, 'perspective main') & FileHasLine(PCFG, 'perspective work') & FileHasLine(PCFG, 'current main') THEN
+            SAY 'OK the quit kept the perspectives file in step'
+        ELSE
+            SAY 'FAIL after the quit the perspectives file lacks main, work or the current line'
+        IF FileHasLine(PCFG, 'perspective scratch') THEN
+            SAY 'FAIL the quit wrote the scratch perspective to' PCFG
+        ELSE
+            SAY 'OK the quit left scratch out of the perspectives file'
         ADDRESS COMMAND 'Delete >NIL: QUIET' PCFG PARCHIVE
         IF EXISTS(PCFG) | EXISTS(PARCHIVE) THEN
             SAY 'FAIL the perspectives files could not be deleted'

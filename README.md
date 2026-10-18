@@ -409,11 +409,16 @@ then on every quit keeps the file in step -- and writes the window
 positions beside it, as Snapshot Windows does, so a window comes back
 where it was left.  The next start **lists** the perspectives it holds
 and opens nothing of theirs: the editor comes up with the files named
-on the command line, else an empty buffer, and the saved perspectives
-are in the menu by name, each with its project directory -- the first
-switch into one (the menu, `C-x x s`, `PERSPECTIVES <name>`) opens its
-files, the one that had the keyboard first.  A perspective never
-entered keeps its files in the file across the quit.  **Restore
+on the command line, else an empty buffer, in a **scratch** perspective
+of its own, and the saved perspectives are in the menu by name, none of
+them ticked, each with its project directory -- the first switch into
+one (the menu, `C-x x s`, `PERSPECTIVES <name>`) opens its files, the
+one that had the keyboard first.  A perspective never entered keeps its
+files in the file across the quit.  The scratch perspective is never
+written to the file, like Emacs's `*scratch*`: a file opened there is
+gone from the file at the quit unless the buffer is moved to another
+perspective (`C-x x a`) or scratch is renamed (`C-x x r`), which makes
+it an ordinary perspective.  **Restore
 Perspectives** (`C-x x C-l`) reads the file into a running editor,
 opening every perspective's files at once.  The file is plain text, one
 `perspective NAME` line followed by

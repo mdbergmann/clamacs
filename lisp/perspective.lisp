@@ -12,7 +12,8 @@
 ;;;; the next start: the perspectives come back by name with their roots,
 ;;;; their files waiting, and the first switch into one opens them
 ;;;; (PERSPECTIVE-OPEN-PENDING) -- a start opens the window it always
-;;;; did, no more, and the user picks the perspective to reopen.
+;;;; did, no more, in a `scratch' perspective of its own that the file
+;;;; never records, and the user picks the perspective to reopen.
 ;;;;
 ;;;; Three rules.  A perspective is DATA the frontends read: this file
 ;;;; decides which documents are shown (DOC-SHOWN-P), and a frontend only
@@ -51,7 +52,18 @@ opened: listed at a start and never entered since."
   (and (perspective-pending-files p) t))
 
 (defparameter *main-perspective-name* "main"
-  "The name of the perspective an editor starts with.")
+  "The name of the perspective an editor starts with when it has none.")
+
+(defparameter *scratch-perspective-name* "scratch"
+  "The name of the perspective a start comes up in when the perspectives
+file lists any: Emacs's *scratch*, never written to the file, so the
+listed perspectives stay as the file has them until one is picked, and
+none of them is ticked at the start.  Renaming it makes it an ordinary
+perspective that the file records.")
+
+(defun perspective-scratch-p (p)
+  "Whether P is the scratch perspective, which the file leaves out."
+  (string= (perspective-name p) *scratch-perspective-name*))
 
 (defun find-perspective (editor name)
   "The perspective called NAME, or NIL.  Names are exact."
@@ -430,15 +442,21 @@ else the one remembered when P was left."
         (if (and active (eq (doc-perspective active) p)) active (perspective-active p)))
       (perspective-active p)))
 
+(defun recorded-perspectives (editor)
+  "The perspectives the file records: all but the scratch one."
+  (remove-if #'perspective-scratch-p (editor-perspectives editor)))
+
 (defun perspectives-text (editor)
   "The perspectives as the file holds them: one keyword and the rest of
-the line.  Unnamed buffers are not recorded.  A perspective listed at the
-start and never entered keeps the files it was listed with: the quit's
-write must not lose what this session never opened."
+the line.  Unnamed buffers are not recorded, nor is the scratch
+perspective (RECORDED-PERSPECTIVES; the `current' line names none when
+it is in front).  A perspective listed at the start and never entered
+keeps the files it was listed with: the quit's write must not lose what
+this session never opened."
   (with-output-to-string (out)
     (write-string *perspectives-header* out)
     (terpri out)
-    (dolist (p (editor-perspectives editor))
+    (dolist (p (recorded-perspectives editor))
       (format out "perspective ~A~%" (perspective-name p))
       (when (perspective-root p)
         (format out "root ~A~%" (perspective-root p)))
@@ -452,7 +470,9 @@ write must not lose what this session never opened."
                (format out "active ~A~%" (doc-path active)))
               ((perspective-pending-active p)
                (format out "active ~A~%" (perspective-pending-active p))))))
-    (format out "current ~A~%" (perspective-name (current-perspective editor)))))
+    (let ((current (current-perspective editor)))
+      (unless (perspective-scratch-p current)
+        (format out "current ~A~%" (perspective-name current))))))
 
 (defun perspectives-parse-line (line)
   "A line's keyword and value, two values, or NIL for a comment or a
@@ -568,16 +588,24 @@ is no file."
 (defun perspective-list-at-start (editor &optional (text (perspectives-read)))
   "A start: the perspectives of TEXT (the file's, by default) made by
 name with their roots, their files and recorded document kept WAITING on
-them -- nothing opened, nothing brought in front -- so the editor comes
-up with the window it always did (the files named on the command line,
-else an unnamed buffer, in the first perspective listed) and the user
-picks the perspective to reopen from the menu, at `C-x x s' or over the
-port; that first switch opens its files (PERSPECTIVE-OPEN-PENDING).  The
-file's `current' line is not honoured: no perspective is restored.  The
-number of perspectives listed, or NIL when there is no file."
+them -- nothing opened, none of them brought in front -- so the editor
+comes up with the window it always did (the files named on the command
+line, else an unnamed buffer) in the SCRATCH perspective, made first and
+put in front when the file lists anything, and the user picks the
+perspective to reopen from the menu, at `C-x x s' or over the port; that
+first switch opens its files (PERSPECTIVE-OPEN-PENDING).  The file's
+`current' line is not honoured: no perspective is restored.  (A file
+that lists `scratch' itself, which the editor never writes, is skipped
+like any name in use.)  The number of perspectives listed, or NIL when
+there is no file."
   (when text
-    (let ((made 0))
-      (dolist (e (perspectives-parse text))
+    (let ((entries (perspectives-parse text))
+          (made 0))
+      (when entries
+        (setf (editor-perspective editor)
+              (or (find-perspective editor *scratch-perspective-name*)
+                  (make-perspective editor *scratch-perspective-name*))))
+      (dolist (e entries)
         (unless (find-perspective editor (getf e :name))
           (let ((p (make-perspective editor (getf e :name) :root (getf e :root))))
             (setf (perspective-pending-files p) (getf e :files)
@@ -781,8 +809,9 @@ and the editor switches to it.  A perspective of that name is switched to."
 
 (define-command clamacs-perspective-save (doc arg)
   "Save the perspectives -- each with its project directory and its
-files -- to the perspectives file, which a start without files restores
-and every later quit keeps in step, the windows' places with it."
+files, the scratch one left out -- to the perspectives file, which the
+next start lists and every later quit keeps in step, the windows' places
+with it."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (failed (perspective-save editor)))
@@ -791,7 +820,7 @@ and every later quit keeps in step, the windows' places with it."
            (doc-beep doc))
           (t
            (message doc "Saved ~D perspective(s) to ~A"
-                    (length (editor-perspectives editor))
+                    (length (recorded-perspectives editor))
                     (car (last *perspective-files*)))))))
 
 (define-command clamacs-perspective-restore (doc arg)

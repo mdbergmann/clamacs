@@ -311,12 +311,13 @@ OK the file holds the error list
 OK a second editor is at
 OK a second editor came up where the file said
 OK wrote a perspectives file of our own
-OK the start listed main and work, main in front, nothing restored
+OK the start listed main and work after scratch, scratch in front, nothing restored
+OK the status line names scratch at the start
 OK work is listed with its project directory
 OK main'"'"'s file waits: nothing was opened at the start
 OK the started file alone is on the screen
 OK the first switch into work brought sample2.lisp over
-OK sample2.lisp is work'"'"'s, its window open, main empty
+OK sample2.lisp is work'"'"'s, its window open, scratch empty
 OK the first switch into main opened sample.lisp
 OK main'"'"'s file has the keyboard
 OK sample2.lisp'"'"'s window is closed, sample.lisp'"'"'s open
@@ -328,6 +329,8 @@ OK the REPL window is open in work, named
 OK the REPL'"'"'s title names the perspective
 OK the REPL'"'"'s title follows the switch
 OK the second editor quit
+OK the quit kept the perspectives file in step
+OK the quit left scratch out of the perspectives file
 OK the perspectives files are gone again
 OK the snapshot files are gone again
 OK the AmiLisp menu woke up with the port

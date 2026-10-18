@@ -2234,12 +2234,13 @@ wrote: it must come up where the file said, then quit."
       (fail "the second editor's CURSOR gave ~{~A~^|~}" (cursor-lines)))
   (check-cursor "the second editor" nil)
   ;; ... and the perspectives file the first editor saved (and kept in
-  ;; step at its quit) is LISTED, not restored: main and work by name,
-  ;; work with its root, their files waiting, the file it was started on
-  ;; alone on the screen, in main.  The first switch into a listed
-  ;; perspective opens its files.
-  (if (equal (perspectives-lines) '("> main" "  work"))
-      (ok "the second editor lists main and work, main in front, nothing restored")
+  ;; step at its quit) is LISTED, not restored: main and work by name
+  ;; after a scratch perspective that is in front, work with its root,
+  ;; their files waiting, the file it was started on alone on the screen,
+  ;; in scratch.  The first switch into a listed perspective opens its
+  ;; files.
+  (if (equal (perspectives-lines) '("> scratch" "  main" "  work"))
+      (ok "the second editor lists main and work after scratch, scratch in front, nothing restored")
       (fail "the second editor's PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
   (let ((before (active-id)))
     (cmd "EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\"))")
@@ -2250,7 +2251,11 @@ wrote: it must come up where the file said, then quit."
     (if (result-is "T")
         (ok "main's files wait: nothing was opened at the start")
         (fail "main waits ~A" *result*))
-    (let ((state (panel-state :perspectives "current main of (main|work) hidden ()")))
+    (cmd "EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))")
+    (if (result-has "[scratch]")
+        (ok "the status line names scratch at the start: ~A" *result*)
+        (fail "the status line at the start: ~A" *result*))
+    (let ((state (panel-state :perspectives "current scratch of (scratch|main|work) hidden ()")))
       (if (string/= state "")
           (ok "nothing is hidden at the start: ~A" state)
           (fail "host-panel-state :perspectives says ~A" *result*)))
@@ -2258,7 +2263,7 @@ wrote: it must come up where the file said, then quit."
         (ok "the page draws the started file alone: ~A" before)
         (fail "the page's tabs at the start: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
     ;; Into work: sample2.lisp, the file it was started on, is work's --
-    ;; brought over from main, which has nothing left to hide
+    ;; brought over from scratch, which has nothing left to hide
     (cmd "PERSPECTIVES work")
     (cmd "STATUS")
     (if (result-has "Perspective: work, 1 file(s) opened")
@@ -2268,7 +2273,7 @@ wrote: it must come up where the file said, then quit."
     (if (result-has "sample2.lisp")
         (ok "sample2.lisp moved into work and has the keyboard")
         (fail "in work the active buffer is ~A" *result*))
-    (let ((state (panel-state :perspectives "current work of (main|work) hidden ()")))
+    (let ((state (panel-state :perspectives "current work of (scratch|main|work) hidden ()")))
       (if (string/= state "")
           (ok "work in front, nothing hidden: ~A" state)
           (fail "host-panel-state :perspectives says ~A" *result*)))
@@ -2285,7 +2290,7 @@ wrote: it must come up where the file said, then quit."
     (if (result-has "errors.lisp")
         (ok "main's recorded document is open and active: ~A" *result*)
         (fail "in main the active buffer is ~A (wanted errors.lisp, the first editor's last)" *result*))
-    (let ((state (panel-state :perspectives "current main of (main|work) hidden (")))
+    (let ((state (panel-state :perspectives "current main of (scratch|main|work) hidden (")))
       (if (and (string/= state "") (search before state))
           (ok "sample2.lisp is work's and hidden: ~A" state)
           (fail "host-panel-state :perspectives says ~A" *result*)))
@@ -2329,7 +2334,16 @@ wrote: it must come up where the file said, then quit."
   (setq *port* nil)
   (if (wait-gone 20)
       (ok "the second editor quit")
-      (fail "the second editor did not quit")))
+      (fail "the second editor did not quit"))
+  ;; Its quit kept the perspectives file in step: main and work, the
+  ;; current one, and nothing of scratch, which the file never records.
+  (dolist (want (list "perspective main" "perspective work" "current main"))
+    (if (file-has-line *persp-file* want)
+        (ok "after the second editor's quit the file holds ~A" want)
+        (fail "no line ~A in ~A after the second editor's quit" want *persp-file*)))
+  (if (file-has-line *persp-file* "perspective scratch")
+      (fail "the second editor's quit wrote the scratch perspective to ~A" *persp-file*)
+      (ok "the second editor's quit left scratch out of the file")))
 
 (defvar *library* nil
   "True when the file was loaded for its helpers only (verify/host/shots.lisp

@@ -660,29 +660,35 @@ editor a b)."
     (let ((*perspective-files* (list file)))
       (unwind-protect
            (let ((editor (make-fake-editor)))
-             ;; Listed: both perspectives by name, work with its root, their
-             ;; files waiting -- nothing opened, and the recorded `current'
-             ;; not honoured: no perspective is restored at a start.
+             ;; Listed: both perspectives by name after a scratch one that
+             ;; is in front, work with its root, their files waiting --
+             ;; nothing opened, and the recorded `current' not honoured: no
+             ;; perspective is restored at a start, none of the listed ones
+             ;; is ticked.
              (is-equal (perspective-list-at-start editor) 2)
-             (is-equal (perspective-names editor) '("main" "work"))
+             (is-equal (perspective-names editor) '("scratch" "main" "work"))
              (is (null (live-documents editor)))
-             (let ((main (find-perspective editor "main"))
+             (let ((scratch (find-perspective editor "scratch"))
+                   (main (find-perspective editor "main"))
                    (work (find-perspective editor "work")))
+               (is (eq (editor-perspective editor) scratch))
+               (is (perspective-scratch-p scratch))
+               (is (not (perspective-pending-p scratch)))
                (is (perspective-pending-p main))
                (is (perspective-pending-p work))
                (is-equal (perspective-pending-files main) (list one))
                (is-equal (perspective-pending-active main) one)
                (is-equal (perspective-root work) "/tmp/")
-               (is (null (editor-perspective editor)))
                ;; The window a start always opened: the unnamed buffer, in
-               ;; the first perspective listed.
+               ;; scratch, whose name the status line shows.
                (let ((u (open-document editor nil)))
                  (doc-activate u)
-                 (is (eq (current-perspective editor) main))
-                 (is (eq (doc-perspective u) main))
+                 (is (eq (current-perspective editor) scratch))
+                 (is (eq (doc-perspective u) scratch))
                  (is-equal (shown-names editor) (list *unnamed*))
+                 (is-equal (status-perspective u) " [scratch]")
                  ;; The user picks work at C-x x s: its file opens into it,
-                 ;; the unnamed buffer (main's) is hidden, work waits no more.
+                 ;; the unnamed buffer (scratch's) is hidden, work waits no more.
                  (run-command u 'clamacs-perspective-switch)
                  (answer-prompt u "work")
                  (is (eq (current-perspective editor) work))
@@ -695,19 +701,36 @@ editor a b)."
                  (is-equal (fake-shown-names editor) '("clamacs-test-persp-start-two.lisp"))
                  (is (not (fake-shown u)))
                  ;; ... and main from the menu: its file opens, the recorded
-                 ;; document has the keyboard, the unnamed buffer is back.
+                 ;; document has the keyboard, scratch's buffer stays hidden.
                  (is (dynamic-menu-pick editor :perspectives main))
                  (is (not (perspective-pending-p main)))
                  (is-equal (doc-path (editor-active-document editor)) one)
                  (is-equal (fake-last-message (editor-active-document editor))
                            "Perspective: main, 1 file(s) opened")
-                 (is-equal (fake-shown-names editor) (list *unnamed* "clamacs-test-persp-start-one.lisp"))
+                 (is-equal (fake-shown-names editor) '("clamacs-test-persp-start-one.lisp"))
+                 (is (not (fake-shown u)))
                  (is (not (fake-shown (find-document-by-path editor two))))
                  ;; Once opened, the one in front is refused as before.
                  (run-command u 'clamacs-perspective-switch)
                  (answer-prompt u "main")
                  (is-equal (fake-last-message u) "Already in main")
-                 (is-equal (length (live-documents editor)) 3))))
+                 (is-equal (length (live-documents editor)) 3)
+                 ;; Back to scratch from the menu: a plain switch, the
+                 ;; unnamed buffer back; and scratch is refused in front too.
+                 (is (dynamic-menu-pick editor :perspectives scratch))
+                 (is-equal (fake-last-message u) "Perspective: scratch")
+                 (is-equal (fake-shown-names editor) (list *unnamed*))
+                 (run-command u 'clamacs-perspective-switch)
+                 (answer-prompt u "scratch")
+                 (is-equal (fake-last-message u) "Already in scratch")
+                 ;; The quit's write leaves scratch out, and names no
+                 ;; current while it is in front.
+                 (let ((text (perspectives-text editor)))
+                   (is (not (search "scratch" text)))
+                   (is (not (search (format nil "~%current ") text)))
+                   (is (search (format nil "perspective main~%file ~A~%active ~A~%perspective work~%root /tmp/~%file ~A~%active ~A~%"
+                                       one one two two)
+                               text))))))
         (delete-quietly file)
         (delete-quietly one)
         (delete-quietly two)))))
@@ -725,10 +748,9 @@ editor a b)."
              (let ((u (open-document editor nil))
                    (main (find-perspective editor "main")))
                (doc-activate u)
-               ;; main is in front, so a switch would do nothing -- but its
-               ;; files wait: C-x x s main opens them, the recorded one gets
-               ;; the keyboard although the last opened took it, the
-               ;; missing one is counted, and the unnamed buffer stays.
+               ;; C-x x s main opens its files: the recorded one gets the
+               ;; keyboard although the last opened took it, the missing one
+               ;; is counted, and the unnamed buffer, scratch's, is hidden.
                (run-command u 'clamacs-perspective-switch)
                (answer-prompt u "main")
                (is (not (perspective-pending-p main)))
@@ -736,14 +758,20 @@ editor a b)."
                (is-equal (doc-path (editor-active-document editor)) one)
                (is-equal (fake-last-message (editor-active-document editor))
                          "Perspective: main, 2 file(s) opened, 1 missing")
-               (is (every #'fake-shown (live-documents editor)))
-               ;; A file open already is brought over, not opened twice:
-               ;; listed again, a switch finds it.
+               (is (not (fake-shown u)))
+               (is (every #'fake-shown (perspective-live-documents main)))
+               ;; Files waiting on the perspective IN FRONT -- which a
+               ;; switch otherwise leaves alone -- open too, and a file open
+               ;; already is brought over, not opened twice.
                (let ((p (make-perspective editor "again")))
-                 (setf (perspective-pending-files p) (list two))
                  (perspective-switch editor p)
+                 (is-equal (fake-last-message (editor-active-document editor)) "Perspective: again")
+                 (setf (perspective-pending-files p) (list two))
+                 (run-command (editor-active-document editor) 'clamacs-perspective-switch)
+                 (answer-prompt (editor-active-document editor) "again")
+                 (is (not (perspective-pending-p p)))
                  (is (eq (doc-perspective (find-document-by-path editor two)) p))
-                 (is-equal (length (live-documents editor)) 3)
+                 (is-equal (length (live-documents editor)) 4)
                  (is-equal (fake-last-message (editor-active-document editor))
                            "Perspective: again, 1 file(s) opened"))))
         (delete-quietly file)
@@ -762,12 +790,14 @@ editor a b)."
              (perspective-list-at-start editor)
              (doc-activate (open-document editor nil))
              ;; Only work entered: the quit's write must still hold main's
-             ;; file and its recorded document, never opened this session.
+             ;; file and its recorded document, never opened this session --
+             ;; and nothing of scratch, the start's.
              (perspective-switch editor (find-perspective editor "work"))
              (let ((text (perspectives-text editor)))
                (is (search (format nil "perspective main~%file ~A~%active ~A~%perspective work~%file ~A~%active ~A~%current work~%"
                                    one one two two)
                            text))
+               (is (not (search "scratch" text)))
                ;; Listed again from that text, main waits as before.
                (let ((editor2 (make-fake-editor)))
                  (perspective-list-at-start editor2 text)
@@ -792,14 +822,57 @@ editor a b)."
            (let ((editor (make-fake-editor)))
              (is (null (perspective-list-at-start editor)))
              (is (null (editor-perspectives editor)))
+             ;; An empty file lists nothing and makes no scratch either: the
+             ;; editor starts in main, as one without a file does.
              (write-file-text file "")
              (is-equal (perspective-list-at-start editor) 0)
              (is (null (editor-perspectives editor)))
-             ;; A name listed twice, or in the editor already, is one.
+             (is (null (editor-perspective editor)))
+             ;; A name listed twice, or in the editor already, is one; the
+             ;; scratch perspective comes first and is in front, and a
+             ;; `scratch' entry of the file is skipped like a name in use.
              (is-equal (perspective-list-at-start editor (lines "perspective main" "perspective main")) 1)
-             (is-equal (perspective-list-at-start editor (lines "perspective main" "perspective work")) 1)
-             (is-equal (perspective-names editor) '("main" "work")))
+             (is-equal (perspective-names editor) '("scratch" "main"))
+             (is (perspective-scratch-p (current-perspective editor)))
+             (is-equal (perspective-list-at-start editor (lines "perspective main" "perspective work"
+                                                                 "perspective scratch" "file /tmp/x.lisp"))
+                       1)
+             (is-equal (perspective-names editor) '("scratch" "main" "work"))
+             (is (not (perspective-pending-p (find-perspective editor "scratch")))))
         (delete-quietly file)))))
+
+(deftest the-scratch-perspective-is-never-written-until-renamed
+  (let* ((one (temp-file "persp-scratch-one.lisp" "(one)"))
+         (file (temp-file "persp-scratch.cfg" (lines "perspective main" "root /tmp/"))))
+    (let ((*perspective-files* (list file)))
+      (unwind-protect
+           (let ((editor (make-fake-editor)))
+             (is-equal (perspective-list-at-start editor) 1)
+             ;; A file opened in scratch is not recorded: the file keeps
+             ;; main as it was, with no current.
+             (let ((d (open-document editor one)))
+               (doc-activate d)
+               (is-equal (perspective-name (doc-perspective d)) "scratch")
+               (is-equal (perspectives-text editor)
+                         (lines *perspectives-header* "perspective main" "root /tmp/" ""))
+               (run-command d 'clamacs-perspective-save)
+               (is-equal (fake-last-message d) (format nil "Saved 1 perspective(s) to ~A" file))
+               ;; Renamed, it is an ordinary perspective: recorded with its
+               ;; file, and the current one.
+               (run-command d 'clamacs-perspective-rename)
+               (answer-prompt d "proj")
+               (is-equal (perspective-names editor) '("proj" "main"))
+               (is-equal (perspectives-text editor)
+                         (lines *perspectives-header*
+                                "perspective proj" (format nil "file ~A" one) (format nil "active ~A" one)
+                                "perspective main" "root /tmp/"
+                                "current proj" ""))
+               ;; The next start lists proj too, and makes a new scratch.
+               (let ((editor2 (make-fake-editor)))
+                 (is-equal (perspective-list-at-start editor2 (perspectives-text editor)) 2)
+                 (is-equal (perspective-names editor2) '("scratch" "proj" "main")))))
+        (delete-quietly file)
+        (delete-quietly one)))))
 
 (deftest the-repl-title-names-the-perspective-in-front
   (multiple-value-bind (editor a b) (persp-fixture)
