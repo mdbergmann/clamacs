@@ -31,7 +31,15 @@ with tests; `host/` holds the native shim, the page and `build.sh`
 (webview at a pinned commit, the CodeMirror bundle from a lockfile with
 its sha256 checked, the page kept pure ASCII); `verify/host/run-smoke.sh`
 is its gate.  Phase H1 (same day) is `lisp/frontend-host.lisp`, the
-document window: a `host-document` over the mirror, the key decoder, the
+document window: a `host-document` over the mirror, the key decoder (a
+key under Alt is read by the layout the decoder LEARNED from the keys
+typed without Alt, `*host-layout*`, the US table only for a key never
+typed -- since 2026-10-20, when `M-;` on a German keyboard was M-<; on
+macOS the shim takes every Option key before WebKit sees it and types it
+through `simulateKey` with the layout's character, `take_option_key` in
+`host/clamacs-host.m`, because a dead key under Option started a WebKit
+composition that `M-n` could not stop: a `~` in the text, the mirror
+wrong), the
 batch (one `webview_eval` per entry into Lisp, colour runs coalesced per
 line), the stepped loop, the requesters through the shim; `lisp/clamacs.lisp`
 picks it on a non-Amiga host and `host/run.sh` starts it.
@@ -409,7 +417,10 @@ hand-written file; `PERSPECTIVE=1 verify/realamiga/run-lisp-editor.sh`
 is the hide/show cycle on a real MUI.
 **iedit** (2026-10-17, `lisp/iedit.lisp`, pure): `C-;` marks every
 occurrence of the symbol at point -- symbol TOKENS of the cursor's
-defun, case-insensitively; the buffer with `C-u`; whole words outside
+defun, case-insensitively, or of the whole buffer when the defun holds
+it once (a function's name on its defun line, a fixture used in the
+tests below it; since 2026-10-20, `iedit-find` recurses with `:buffer`);
+the buffer with `C-u`; whole words outside
 Lisp mode -- and an edit made inside the one under the cursor is
 repeated in the others.  The model is iedit's, not multiple-cursors':
 one cursor, the set of occurrences, and the edit found by DIFFING the

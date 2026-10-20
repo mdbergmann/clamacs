@@ -60,10 +60,46 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
   (let ((doc (iedit-fake *iedit-text* "list")))
     (type-keys doc "C-;")
     (is (not (iedit-active-p doc)))
-    (is-equal (fake-last-message doc) "list occurs once in the defun"))
+    (is-equal (fake-last-message doc) "list occurs once in the buffer"))
   (let ((doc (make-fake "   |   ")))
     (type-keys doc "C-;")
     (is-equal (fake-last-message doc) "No symbol at point")))
+
+(deftest iedit-widens-to-the-buffer-when-the-defun-holds-the-symbol-once
+  ;; g is called once in f and defined below: each defun holds it once,
+  ;; so `C-;' on the call takes the whole buffer, as `C-u C-;' would
+  (let ((doc (iedit-fake *iedit-text* "g")))
+    (type-keys doc "C-;")
+    (is (iedit-active-p doc))
+    (is-equal (iedit-starts-of doc) (list 60 89))
+    (is-equal (iedit-scope (doc-iedit doc)) :buffer)
+    (is-equal (iedit-region (doc-iedit doc)) nil)
+    (is-equal (fake-last-message doc) "iedit: 2 occurrences of g in the buffer")
+    ;; The widened set edits as one
+    (type-keys doc "h")
+    (is-equal (string-right-trim '(#\Newline) (doc-lines-text doc 2 2))
+              "  (list \"foo\" foo (hg bar))")
+    (is-equal (string-right-trim '(#\Newline) (doc-lines-text doc 5 5))
+              "(defun hg (foo)"))
+  ;; A defun that holds it more than once keeps the tight scope
+  (let ((doc (iedit-fake)))
+    (type-keys doc "C-;")
+    (is-equal (iedit-starts-of doc) (list 10 55 73))
+    (is-equal (iedit-scope (doc-iedit doc)) :defun)))
+
+(deftest iedit-outside-any-defun-is-the-buffer-and-says-so
+  ;; No `(' in column 0: the defun scope is the whole buffer, and the
+  ;; messages name the buffer, not a defun that is not there
+  (let ((doc (make-fake "foo |foo")))
+    (type-keys doc "C-;")
+    (is (iedit-active-p doc))
+    (is-equal (iedit-starts-of doc) (list 0 4))
+    (is-equal (fake-last-message doc) "iedit: 2 occurrences of foo in the buffer")
+    (is-equal (iedit-scope (doc-iedit doc)) :buffer))
+  (let ((doc (make-fake "  |x y")))
+    (type-keys doc "C-;")
+    (is (not (iedit-active-p doc)))
+    (is-equal (fake-last-message doc) "x occurs once in the buffer")))
 
 (deftest iedit-matches-the-symbol-whatever-its-case
   (let ((doc (make-fake "(defun f (|foo) (list FOO Foo foobar))")))

@@ -331,7 +331,9 @@ moves by the word.
 ### Editing every occurrence at once
 
 `C-;` on a symbol (Edit > Edit Occurrences) marks every occurrence of it
-in the current defun -- with `C-u`, in the whole buffer -- and from then
+in the current defun -- or in the whole buffer when the defun holds it
+only once, as a function's name does on its `defun` line; with `C-u`,
+in the whole buffer from the start -- and from then
 on whatever you do inside the one under the cursor happens in all of
 them: typing, Backspace, Delete, `M-d`, `C-y`.  That is how a parameter
 or a local is renamed.  Only symbols in code count: `foo` in a string or

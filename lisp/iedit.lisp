@@ -132,7 +132,10 @@ the whole buffer."
 (defun iedit-find (doc scope)
   "The occurrences of the symbol at point within SCOPE: the symbol's
 text, the sorted list of starts and the lines of the scope (NIL for the
-whole buffer), or NIL and a reason when there is nothing to edit."
+whole buffer), or NIL and a reason when there is nothing to edit.  A
+defun that holds the symbol once -- a function's name on its DEFUN line,
+a fixture defined here and used in the tests below -- is no scope to
+edit in, and the search widens to the whole buffer, as with `C-u'."
   (multiple-value-bind (symbol s0) (symbol-at-point doc)
     (cond ((null symbol)
            (values nil "No symbol at point"))
@@ -145,8 +148,10 @@ whole buffer), or NIL and a reason when there is nothing to edit."
                       ;; In a string or a comment: a symbol for `M-.',
                       ;; not an occurrence.
                       (values nil (format nil "~A here is not code" symbol)))
+                     ((and (null (rest starts)) region)
+                      (iedit-find doc :buffer))
                      ((null (rest starts))
-                      (values nil (format nil "~A occurs once in the ~(~A~)" symbol scope)))
+                      (values nil (format nil "~A occurs once in the buffer" symbol)))
                      (t (values symbol starts region)))))))))
 
 (defun iedit-occurrences-between (doc st from to)
@@ -197,7 +202,10 @@ narrowed by hand (the lines counted from 1, as `M-g g' does)."
            (doc-beep doc)
            nil)
           (t
-           (let ((st (%make-iedit starts (length symbol) symbol scope region)))
+           ;; Outside any defun the `defun' scope was the whole buffer:
+           ;; say so.
+           (let ((st (%make-iedit starts (length symbol) symbol
+                                  (if region scope :buffer) region)))
              (setf (iedit-current st) (iedit-index-at st (doc-point doc))
                    (doc-iedit doc) st)
              (iedit-paint doc st)
@@ -616,8 +624,10 @@ itself.  True when the key was taken."
 
 (define-command clamacs-iedit (doc arg)
   "Edit every occurrence of the symbol at point at once (C-u: in the whole buffer); again, or C-g, ends it.
-The occurrences are those in the current defun; with `C-u' those in the
-whole buffer.  While the session is on, M-n and M-p move between them,
+The occurrences are those in the current defun -- or in the whole buffer
+when the defun holds the symbol only once, as a function's name does on
+its DEFUN line -- and with `C-u' those in the whole buffer from the
+start.  While the session is on, M-n and M-p move between them,
 M-; drops the one at point out of the set, M-{ and M-} widen the scope
 by a line at the top and at the bottom, M-H narrows it to the cursor's
 defun again; `C-;' again or C-g ends the session."
