@@ -262,10 +262,13 @@
 
   // A bare modifier press is nobody's key; IME composition and a dead key
   // stay with the widget (the composed character comes back through
-  // clamacsUpdate) -- except under Alt, where macOS reports Option-N/E/I/U/`
-  // as "Dead" and the decoder reads the letter from `code' (M-n); a key with
-  // the Command key is the OS's -- but the platform's editing keys, Cmd-C,
-  // X, V, A and Z, which Lisp runs as the commands the Emacs keys run (a
+  // clamacsUpdate) -- except under Alt, where the decoder reads the letter
+  // from `code' (M-n) when a browser reports a dead key.  On macOS an
+  // Option key never gets this far as a real event: the shim takes it
+  // before WebKit can start a composition from it and sends it through
+  // simulateKey below (clamacs-host.m, take_option_key).  A key with the
+  // Command key is the OS's -- but the platform's editing keys, Cmd-C, X,
+  // V, A and Z, which Lisp runs as the commands the Emacs keys run (a
   // webview without an Edit menu of Cocoa's own does nothing for them).
   // Everything else goes to Lisp.
   const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "CapsLock"];

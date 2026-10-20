@@ -37,7 +37,60 @@
 
 #if defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+
+/* ---- Option keys ----------------------------------------------------- */
+
+/* The web view RESPONDER is or is inside, or nil when the keyboard is
+ * elsewhere (a panel, a requester's field). */
+static WKWebView *web_view_of(NSResponder *responder)
+{
+    NSView *view = [responder isKindOfClass:[NSView class]] ? (NSView *)responder : nil;
+    while (view != nil && ![view isKindOfClass:[WKWebView class]])
+        view = view.superview;
+    return (WKWebView *)view;
+}
+
+/* A key pressed with Option and without Command while a web view has the
+ * keyboard is the editor's Meta key, and must not reach WebKit: Option
+ * composes characters on macOS, and for a dead key -- Option-N is the
+ * tilde accent on the German layout and on the US one -- WebKit starts a
+ * COMPOSITION that the page's preventDefault on the keydown does not
+ * stop.  `M-n' typed a `~' into the text behind the editor's back, and
+ * the mirror in Lisp no longer matched the widget (2026-10-20).  So the
+ * event is taken before sendEvent: and the page gets the key as the
+ * synthetic event its harness types with (simulateKey, page-app.js),
+ * carrying the character the key types on the user's layout with Shift
+ * alone -- `;' for Shift+Comma on a German keyboard, so M-; is M-; -- and
+ * no code, which the decoder reads as that character (host-decode-key).
+ * Only a key typing a printable Latin-1 character is taken: Option with
+ * an arrow, Return, Backspace or a function key composes nothing and goes
+ * its usual way.  True when the event was taken. */
+static BOOL take_option_key(NSEvent *ev)
+{
+    if (ev.type != NSEventTypeKeyDown)
+        return NO;
+    NSEventModifierFlags mods = ev.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    if (!(mods & NSEventModifierFlagOption) || (mods & NSEventModifierFlagCommand))
+        return NO;
+    WKWebView *web = web_view_of(ev.window.firstResponder);
+    if (web == nil)
+        return NO;
+    NSString *chars = ev.charactersIgnoringModifiers;
+    if (chars.length != 1)
+        return NO;
+    unichar c = [chars characterAtIndex:0];
+    if (c < 0x20 || c == 0x7f || c > 0xff)
+        return NO;
+    NSString *js = [NSString stringWithFormat:
+        @"simulateKey(\"\\u%04x\",{code:\"\",ctrlKey:%@,altKey:true,shiftKey:%@})",
+        (unsigned)c,
+        (mods & NSEventModifierFlagControl) ? @"true" : @"false",
+        (mods & NSEventModifierFlagShift) ? @"true" : @"false"];
+    [web evaluateJavaScript:js completionHandler:nil];
+    return YES;
+}
 
 /* ---- the event loop ------------------------------------------------- */
 
@@ -45,7 +98,8 @@
  * long, then deliver everything already pending without waiting.  The
  * blocks webview_dispatch queues on the main queue run inside the wait
  * (the run loop services the main dispatch queue), as do the bindings'
- * callbacks.  Returns the number of events delivered. */
+ * callbacks.  An Option key for a web view goes to the page directly
+ * (take_option_key).  Returns the number of events delivered. */
 int clamacs_host_step(void *w, int ms)
 {
     (void)w;
@@ -59,7 +113,8 @@ int clamacs_host_step(void *w, int ms)
                                                dequeue:YES];
             if (ev == nil)
                 break;
-            [NSApp sendEvent:ev];
+            if (!take_option_key(ev))
+                [NSApp sendEvent:ev];
             n++;
             until = [NSDate distantPast];
         }

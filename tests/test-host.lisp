@@ -101,6 +101,37 @@ each, with the KeyboardEvent fields a real key would carry."
   (is-equal (dk "Dead" "Backquote" :alt t) (k "M-`"))
   (is-equal (dk "Dead" "KeyN" :ctrl t :alt t) (k "C-M-n")))
 
+(deftest host-decoder-learns-the-layout-from-what-is-typed
+  (let ((*host-layout* (make-hash-table :test 'equal)))
+    ;; A key not typed yet reads by the US table under Alt
+    (is-equal (dk (string (code-char 8804)) "Comma" :alt t :shift t) (k "M-<"))
+    ;; A German keyboard types `;' as Shift+Comma.  `C-;' there is
+    ;; Ctrl+Shift+Comma -- and teaches the decoder what the key types,
+    ;; so the `M-;' of the iedit session that follows is M-;, not M-<
+    (is-equal (dk ";" "Comma" :ctrl t :shift t) (k "C-;"))
+    (is-equal (dk (string (code-char 8804)) "Comma" :alt t :shift t) (k "M-;"))
+    ;; The unshifted key is a lesson of its own
+    (is-equal (dk "," "Comma" :alt t) (k "M-,"))
+    (is-equal (dk "," "Comma") (k ","))
+    (is-equal (dk "," "Comma" :alt t) (k "M-,"))
+    ;; QWERTZ: the key at the US Z position types y, so under Alt it is M-y
+    (is-equal (dk "Dead" "KeyZ" :alt t) (k "M-z"))
+    (is-equal (dk "y" "KeyZ") (k "y"))
+    (is-equal (dk "Dead" "KeyZ" :alt t) (k "M-y"))
+    (is-equal (dk "Y" "KeyZ" :shift t) (k "Y"))
+    (is-equal (dk "Y" "KeyZ" :alt t :shift t) (k "M-Y"))
+    ;; What teaches: a character typed without Alt, with a code.  A dead
+    ;; key, a named key, a character outside Latin-1 and a key without a
+    ;; code teach nothing
+    (is-equal (dk "Dead" "KeyE") nil)
+    (is-equal (dk (string (code-char 8364)) "KeyE") nil)
+    (is-equal (dk "e" "") (k "e"))
+    (is-equal (dk "Dead" "KeyE" :alt t) (k "M-e"))
+    ;; Nor does a key under Alt: Option-E's character is not what the key types
+    (is-equal (dk (string (code-char 180)) "KeyE" :alt t) (k "M-e"))
+    (is-equal (dk "e" "KeyE") (k "e"))
+    (is-equal (dk (string (code-char 180)) "KeyE" :alt t) (k "M-e"))))
+
 (deftest host-decoder-refuses-what-is-not-the-editors
   ;; The Command key is the OS's and the widget's
   (is-equal (dk "a" "KeyA" :meta t) nil)

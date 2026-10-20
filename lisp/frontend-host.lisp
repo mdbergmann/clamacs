@@ -852,10 +852,14 @@ contents, not pushed back, and the minibuffer told once."
 ;;; The page sends `key' (what the key types, or its name), `code' (the
 ;;; physical key) and the four modifier flags.  Without Alt the character
 ;;; is `key' itself.  With Alt held macOS composes a character (Option-f
-;;; is a florin), so the character comes from `code' through a US layout
-;;; table -- letters and digits by code on every layout, punctuation
-;;; right on the US one (specs/clamacs-host.md, Risks).  A key held with
-;;; the Command key is the OS's and the widget's, never the editor's.
+;;; is a florin), so the character comes from `code': from the layout
+;;; the decoder has LEARNED -- every key typed without Alt teaches it
+;;; what that physical key types, with and without Shift -- and, for a
+;;; key not typed yet, from a US layout table.  So on a German keyboard
+;;; `C-;' (Ctrl+Shift+Comma there) teaches the decoder that Shift+Comma
+;;; is `;', and the `M-;' that follows is M-; and not M-< (specs/
+;;; clamacs-host.md, Risks).  A key held with the Command key is the
+;;; OS's and the widget's, never the editor's.
 
 (defparameter *host-named-keys*
   `(("Enter" . ,+key-return+) ("Tab" . ,+key-tab+) ("Escape" . ,+key-esc+)
@@ -890,11 +894,26 @@ with Shift.")
         (t (let ((entry (assoc code *host-code-chars* :test #'string=)))
              (and entry (if shift (third entry) (second entry)))))))
 
+(defvar *host-layout* (make-hash-table :test 'equal)
+  "The keyboard layout as the keys typed so far have shown it: (CODE
+. SHIFT) -> the character that physical key types with that Shift state.
+What a key under Alt is read by, ahead of the US table.")
+
+(defun host-layout-char (code shift)
+  "The character CODE types with SHIFT on the layout learned so far, or
+NIL for a key not typed yet."
+  (values (gethash (cons code (and shift t)) *host-layout*)))
+
+(defun host-learn-layout (code shift char)
+  (setf (gethash (cons code (and shift t)) *host-layout*) char))
+
 (defun host-decode-key (key code ctrl alt meta shift)
   "The key of keymap.lisp for a KeyboardEvent, or NIL for one the editor
 leaves alone: a Command key, a bare modifier, a dead key (under Alt the
 letter comes from CODE, so Option-N is M-n), a character outside Latin-1,
-a key with no name here."
+a key with no name here.  A character typed without Alt teaches the
+decoder the layout (*HOST-LAYOUT*): what that physical key types, which
+is what the same key means under Alt."
   (unless meta
     (let ((mods (logior (if ctrl +mod-ctrl+ 0)
                         (if alt +mod-meta+ 0)
@@ -902,11 +921,14 @@ a key with no name here."
           (named (assoc key *host-named-keys* :test #'string=)))
       (cond (named (make-key (cdr named) mods))
             (alt
-             (let ((c (or (host-code-char code shift)
+             (let ((c (or (host-layout-char code shift)
+                          (host-code-char code shift)
                           (and (= (length key) 1) (char key 0)))))
                (and c (< (char-code c) 256) (make-key (char-code c) mods))))
             ((= (length key) 1)
              (let ((c (char key 0)))
+               (when (and (< (char-code c) 256) (plusp (length code)))
+                 (host-learn-layout code shift c))
                (and (< (char-code c) 256) (make-key (char-code c) mods))))
             (t nil)))))
 

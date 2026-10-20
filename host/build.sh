@@ -133,7 +133,7 @@ if [ ! -f "$out/libclamacs-host.$so" ] || [ "$here/clamacs-host.m" -nt "$out/lib
     case "$os" in
         mac)
             clang -dynamiclib -fobjc-arc -Wall -Wextra -O2 "$here/clamacs-host.m" \
-                -framework Cocoa -o "$out/libclamacs-host.$so" ;;
+                -framework Cocoa -framework WebKit -o "$out/libclamacs-host.$so" ;;
         gtk)
             # The file is Objective-C on macOS only; here it is C.
             ${CC:-cc} -shared -fPIC -Wall -Wextra -O2 -DCLAMACS_HOST_GTK -x c "$here/clamacs-host.m" \

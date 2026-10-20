@@ -106,9 +106,9 @@ binding is a promise on the JS side, so the page cannot ask synchronously
 either.  Therefore:
 
 - the page `preventDefault`s **every** key except IME composition
-  (`isComposing`), a dead key without Alt (with Alt, macOS reports
-  Option-N/E/I/U/` as `Dead`, and the decoder reads the letter from
-  `code`: `M-n`), keys with the Command key (the host's Amiga key: left
+  (`isComposing`), a dead key without Alt (with Alt, a browser that
+  reports a dead key still gets the letter read from `code`: `M-n`),
+  keys with the Command key (the host's Amiga key: left
   to the OS and to CodeMirror -- Cmd-C/V/X/A/Z stay native), and modifier
   presses, and sends it to Lisp (`clamacsKey`);
 - Lisp decodes it (`host-decode-key`, the browser's `KeyboardEvent`
@@ -1182,10 +1182,22 @@ with the memory note updated.
 ## Risks and what decides them
 
 - **Alt as Meta on macOS**: Option composes characters (`Option-f` is
-  `ƒ`), so the decoder derives the base character from `code` when Alt
-  is held (US layout table for punctuation; letters and digits by code).
-  A non-US layout gets letters right and punctuation wrong under Alt --
-  documented; a preference for "right Option types" can follow.
+  `ƒ`), and for a dead key -- Option-N is the tilde accent on the German
+  layout and on the US one -- WebKit starts a *composition* that the
+  page's `preventDefault` does not stop: `M-n` typed `~` behind the
+  editor's back and the mirror no longer matched the widget (2026-10-20).
+  So the shim's event loop takes every Option key (without Command)
+  headed for a web view before `sendEvent:` (`take_option_key`) and
+  hands it to the page through `simulateKey` with the character the key
+  types on the user's layout with Shift alone (`charactersIgnoringModifiers`:
+  `;` for Shift+Comma on a German keyboard, so `M-;` is M-; rather than
+  M-<, which the US table made of it), no `code`, and the Ctrl and Shift
+  flags.  Keys typing no printable character (arrows, Return, Backspace,
+  function keys) go their usual way.  Behind that, for a browser that
+  delivers Alt keys as real events (GTK), the decoder *learns* the layout:
+  every character typed without Alt records what its `code` types with
+  and without Shift (`*host-layout*`), a key under Alt is read by that
+  record first and by a US layout table when the key was never typed.
 - **A modal dialog inside a binding**: `doc-ask` runs `NSAlert`'s nested
   loop while a binding callback is on the stack.  Fine for the alert;
   the mailbox is not drained meanwhile (`*in-modal*`).  If WebKit refuses
