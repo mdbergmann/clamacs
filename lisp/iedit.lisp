@@ -25,10 +25,13 @@
 ;;;; other than the cursor's line, cannot be placed that cheaply and ends
 ;;;; the session instead, saying so.
 ;;;;
-;;;; The occurrences are symbol TOKENS (token.lisp), so `foo' inside a
-;;;; string or a comment is not one and `foobar' never matches, and the
-;;;; match is case-insensitive, since the reader folds case: FOO is foo.
-;;;; Outside Lisp mode a plain word match stands in.
+;;;; The occurrences are whole SYMBOLS -- runs of symbol characters, as
+;;;; `M-.' delimits them -- wherever they read: in code, in a string, in
+;;;; a comment (a docstring's mention of the parameter is renamed with
+;;;; it, as under Emacs's iedit; symbol tokens of the code alone were the
+;;;; rule until 2026-10-20).  `foobar' never matches, and the match is
+;;;; case-insensitive, since the reader folds case: FOO is foo.  Outside
+;;;; Lisp mode the same rule reads as whole words.
 ;;;;
 ;;;; Undo: every mirrored edit is a few of the widget's undo steps.  The
 ;;;; session keeps a log of how many, with the occurrence list as it was,
@@ -69,30 +72,10 @@ runs it inside the outer one's accounting.")
 ;;; Finding the occurrences
 ;;; ------------------------------------------------------------------
 
-(defun iedit-token-occurrences (text base symbol)
-  "The starts of the symbol tokens of TEXT that read as SYMBOL, as document
-indices (TEXT starts at BASE).  TEXT's offset 0 is outside any string and
-comment, the tokenizer's contract."
-  (let ((state (make-tok-state))
-        (n (length symbol))
-        (offset 0)
-        (starts '()))
-    (declare (fixnum n offset))
-    (do-text-lines (line text)
-      (dolist (token (tokenize-line line state))
-        (when (and (= (token-len token) n)
-                   (member (token-kind token) '(:symbol :keyword :defining))
-                   (string-equal line symbol
-                                 :start1 (token-start token)
-                                 :end1 (+ (token-start token) n)))
-          (push (+ base offset (token-start token)) starts)))
-      (incf offset (1+ (length line))))
-    (nreverse starts)))
-
 (defun iedit-word-occurrences (text base word)
   "The starts of the whole words of TEXT that read as WORD -- runs of
-symbol characters, as SEXP-SYMBOL-AT-POINT delimits them -- as document
-indices.  For a buffer that is not Lisp."
+symbol characters, as SEXP-SYMBOL-AT-POINT delimits them, in code and
+prose alike -- as document indices (TEXT starts at BASE)."
   (declare (simple-string text))
   (let ((n (length word))
         (len (length text))
@@ -141,14 +124,8 @@ edit in, and the search widens to the whole buffer, as with `C-u'."
            (values nil "No symbol at point"))
           (t
            (multiple-value-bind (text base region) (iedit-scope-text doc s0 scope)
-             (let ((starts (if (doc-lisp-mode doc)
-                               (iedit-token-occurrences text base symbol)
-                               (iedit-word-occurrences text base symbol))))
-               (cond ((not (member s0 starts))
-                      ;; In a string or a comment: a symbol for `M-.',
-                      ;; not an occurrence.
-                      (values nil (format nil "~A here is not code" symbol)))
-                     ((and (null (rest starts)) region)
+             (let ((starts (iedit-word-occurrences text base symbol)))
+               (cond ((and (null (rest starts)) region)
                       (iedit-find doc :buffer))
                      ((null (rest starts))
                       (values nil (format nil "~A occurs once in the buffer" symbol)))
@@ -156,17 +133,8 @@ edit in, and the search widens to the whole buffer, as with `C-u'."
 
 (defun iedit-occurrences-between (doc st from to)
   "The starts of the set's text between the indices FROM and TO: the
-occurrences a widened scope takes in.  In Lisp mode the scan begins at
-the defun start above FROM -- a line on its own may begin inside a
-string or a comment, and the tokenizer's offset 0 is outside both --
-and keeps what lies at FROM or after."
-  (let* ((text (doc-text doc 0 (doc-end doc)))
-         (lisp (doc-lisp-mode doc))
-         (base (if lisp (or (sexp-defun-start text from) 0) from))
-         (starts (if lisp
-                     (iedit-token-occurrences (subseq text base to) base (iedit-text st))
-                     (iedit-word-occurrences (subseq text base to) base (iedit-text st)))))
-    (remove-if (lambda (start) (< start from)) starts)))
+occurrences a widened scope takes in."
+  (iedit-word-occurrences (doc-text doc from to) from (iedit-text st)))
 
 ;;; ------------------------------------------------------------------
 ;;; The state
@@ -309,14 +277,18 @@ edit the session did not see -- and end when too few remain
   (let ((starts (remove-if-not (lambda (start) (iedit-occurrence-reads-p doc st start))
                                (iedit-starts st))))
     (unless (equal starts (iedit-starts st))
-      ;; The marks of the dropped ones taken down where the text still
-      ;; reaches (a frontend whose marks outlive a recolour keeps them)
-      (dolist (start (set-difference (iedit-starts st) starts))
-        (when (<= (iedit-end-index st start) (doc-end doc))
-          (multiple-value-bind (y x) (doc-index-line doc start)
-            (doc-style doc y x (+ x (iedit-length st)) nil))))
-      (setf (iedit-starts st) starts
-            (iedit-current st) (iedit-index-at st (doc-point doc))))
+      (let ((dropped (set-difference (iedit-starts st) starts)))
+        ;; Out of the set first: the recolour below puts the marks of
+        ;; the set back on the line (the mark is a colour on both
+        ;; frontends, so the line's token colours have to be painted
+        ;; again under it) -- where the text still reaches
+        (setf (iedit-starts st) starts
+              (iedit-current st) (iedit-index-at st (doc-point doc)))
+        (dolist (start dropped)
+          (when (<= (iedit-end-index st start) (doc-end doc))
+            (multiple-value-bind (y x) (doc-index-line doc start)
+              (doc-style doc y x (+ x (iedit-length st)) nil)
+              (colour-lines doc y y))))))
     (when (iedit-too-few-p st)
       (iedit-end doc "the other occurrences changed"))))
 

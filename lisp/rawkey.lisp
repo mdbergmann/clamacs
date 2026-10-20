@@ -34,8 +34,12 @@
 ;;; The qualifier bits the keymap is allowed to see.  Shift and caps select
 ;;; the character; Control and Alt are OURS: letting the keymap see Control
 ;;; would turn C-f into #x06 and lose which letter it was, and Alt would
-;;; produce a dead-key accent instead of Meta.
+;;; produce a dead-key accent instead of Meta.  The one exception is the
+;;; RIGHT Alt (RAWKEY-DECODE): held with the left one, the keymap is asked
+;;; for its Alt level, so that the key is Meta over the character the
+;;; layout types under Alt.
 (defconstant +qual-map-mask+ #x0107)    ; shifts, capslock, numericpad
+(defconstant +qual-alt-mask+ (logior +qual-lalt+ +qual-ralt+))
 
 ;;; Raw codes of the keys that have no character.
 (defconstant +raw-up+    #x4C)
@@ -63,8 +67,11 @@ first, so that an event that cannot be a key costs it nothing else."
 (defun rawkey-mods (qualifier)
   (declare (fixnum qualifier))
   (logior (if (/= 0 (logand qualifier +qual-control+)) +mod-ctrl+ 0)
-          ;; Meta is Alt, either one (specs/clamacs-ide.md, "Key handling").
-          (if (/= 0 (logand qualifier (logior +qual-lalt+ +qual-ralt+)))
+          ;; Meta is Alt, either one, on a key without a character; on a
+          ;; character key the right Alt alone composes instead, which
+          ;; RAWKEY-DECODE decides before it asks here (specs/clamacs-ide.md,
+          ;; "Key handling").
+          (if (/= 0 (logand qualifier +qual-alt-mask+))
               +mod-meta+
               0)
           (if (/= 0 (logand qualifier (logior +qual-lshift+ +qual-rshift+)))
@@ -105,7 +112,16 @@ masked) qualifier.  It returns the code of the ONE character the keymap
 gives for the key, or NIL for a dead key, a key that maps to a string and a
 key with no character: none of those is something the Emacs layer binds,
 they belong to the class.  On the Amiga it wraps MapRawKey.  MAPPER may be
-NIL; then only the keys recognised by code decode."
+NIL; then only the keys recognised by code decode.
+
+The two Alt keys differ on a character key, as the two Option keys do on
+the Mac host (Emacs's `ns-right-alternate-modifier'): the LEFT Alt is
+Meta over the key's plain character, and the RIGHT Alt composes -- held
+alone it is the class's key, which types the layout's Alt level (`{' on
+Alt-Shift-Ü of a German MorphOS keymap, an accent on a dead key), and
+held with the left one it is Meta over that character, `M-{'.  With
+Control the right Alt is Meta like the left (C-M-x).  A key without a
+character takes either Alt as Meta."
   (declare (fixnum code qualifier))
   (cond ((/= 0 (logand code +raw-up-prefix+)) nil)
         ;; The Amiga keys stay free for the OS and for MUI's menu
@@ -125,18 +141,29 @@ NIL; then only the keys recognised by code decode."
                               ((= code +raw-help+) +key-help+)
                               ((<= +raw-f1+ code (+ +raw-f1+ 9))
                                (+ +key-f1+ (- code +raw-f1+)))
-                              (t nil))))
+                              (t nil)))
+               (left (/= 0 (logand qualifier +qual-lalt+)))
+               (right (and (/= 0 (logand qualifier +qual-ralt+))
+                           (= 0 (logand qualifier +qual-control+)))))
            (cond (special (make-key special mods))
                  ((null mapper) nil)
+                 ;; The right Alt alone: the class types the Alt level.
+                 ((and right (not left)) nil)
                  (t
-                  ;; Shift and caps only: we want the BASE character and add
-                  ;; our own modifier bits on top.
-                  (let ((char-code (funcall mapper code
-                                            (logand qualifier
-                                                    +qual-map-mask+))))
-                    (and char-code
-                         (< 0 char-code #x100)
-                         (make-key char-code mods)))))))))
+                  (flet ((char-of (qualifier)
+                           (let ((char-code (funcall mapper code qualifier)))
+                             (and char-code (< 0 char-code #x100) char-code))))
+                    ;; Shift and caps only: we want the BASE character and
+                    ;; add our own modifier bits on top -- unless both
+                    ;; Alts are down, when the keymap's Alt level is the
+                    ;; character, the base one standing in where that
+                    ;; level is a dead key or nothing.
+                    (let ((char-code (or (and right
+                                              (char-of (logand qualifier
+                                                               (logior +qual-map-mask+
+                                                                       +qual-alt-mask+))))
+                                         (char-of (logand qualifier +qual-map-mask+)))))
+                      (and char-code (make-key char-code mods))))))))))
 
 ;;; The inverse, for a tool that synthesises events: the raw code of a key
 ;;; that has no character, or NIL when KEYCODE is a character (whose code

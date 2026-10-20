@@ -9,11 +9,17 @@
 
 (in-package :clamacs)
 
-;;; A slice of the US keymap: raw code, unshifted, shifted.
+;;; A slice of the US keymap: raw code, unshifted, shifted; and for two
+;;; keys of a German one the Alt level too (Alt, Alt-Shift), as the right
+;;; Alt composes it -- the Ü key, whose Alt-Shift is `{', and the `+' key,
+;;; whose Alt-Shift is `}' (the MorphOS keymap the finding came from).  A
+;;; key without an Alt level is a dead key under Alt, as most are.
 (defparameter *us-keymap*
   '((#x10 #\q #\Q) (#x20 #\a #\A) (#x21 #\s #\S) (#x33 #\x #\X)
     (#x36 #\n #\N) (#x38 #\, #\<) (#x39 #\. #\>) (#x0A #\9 #\()
     (#x0B #\0 #\)) (#x0C #\- #\_) (#x40 #\Space #\Space)
+    (#x1A #\ü #\Ü #\[ #\{)              ; the Ü key of a German keymap
+    (#x1B #\+ #\* #\] #\})              ; its `+' key
     (#x41 8 8)                          ; Backspace
     (#x42 9 9)                          ; Tab
     (#x43 13 13)                        ; Enter
@@ -28,12 +34,13 @@
   (incf *mapper-calls*)
   (setq *seen-qualifier* qualifier)
   ;; Code 0 is a dead key here: no character on its own.
-  (let ((row (and (/= code 0) (assoc code *us-keymap*))))
+  (let ((row (and (/= code 0) (assoc code *us-keymap*)))
+        (shift (/= 0 (logand qualifier (logior +qual-lshift+ +qual-rshift+))))
+        (alt (/= 0 (logand qualifier (logior +qual-lalt+ +qual-ralt+)))))
     (when row
-      (let ((c (if (/= 0 (logand qualifier
-                                 (logior +qual-lshift+ +qual-rshift+)))
-                   (third row)
-                   (second row))))
+      (let ((c (cond (alt (if shift (fifth row) (fourth row)))
+                     (shift (third row))
+                     (t (second row)))))
         (if (characterp c) (char-code c) c)))))
 
 (deftest rawkey-right-amiga-letters-are-copy-cut-and-paste
@@ -81,17 +88,50 @@
   ;; ... and the keymap was not told about it.
   (is-equal (logand *seen-qualifier* +qual-control+) 0))
 
-(deftest rawkey-alt-is-meta
+(deftest rawkey-left-alt-is-meta
   (is-equal (decode #x33 +qual-lalt+) (k "M-x"))
   (is-equal (logand *seen-qualifier* (logior +qual-lalt+ +qual-ralt+)) 0)
-  (is-equal (decode #x33 +qual-ralt+) (k "M-x"))
   ;; M-< is Alt plus Shift plus the comma key: Shift reaches the keymap and
   ;; yields `<'; Alt does not, and becomes Meta.
   (is-equal (decode #x38 (logior +qual-lalt+ +qual-lshift+)) (k "M-<"))
+  (is-equal *seen-qualifier* +qual-lshift+)
+  ;; The left Alt on the Ü key is Meta over the plain character, Alt level
+  ;; or not: the keymap is not told about it.
+  (is-equal (decode #x1A (logior +qual-lalt+ +qual-lshift+)) (make-key (char-code #\Ü) +mod-meta+))
   (is-equal *seen-qualifier* +qual-lshift+))
 
+(deftest rawkey-right-alt-composes
+  ;; The right Alt alone is the class's key: it types the layout's Alt
+  ;; level (`{' on Alt-Shift-Ü of a German MorphOS keymap, an accent on a
+  ;; dead key), and the decoder does not even ask the keymap.
+  (is-equal (decode #x33 +qual-ralt+) nil)
+  (is-equal *mapper-calls* 0)
+  (is-equal (decode #x1A (logior +qual-ralt+ +qual-lshift+)) nil)
+  ;; Both Alts: Meta over the Alt level -- M-{ and M-} -- the keymap told
+  ;; about Alt this once.
+  (is-equal (decode #x1A (logior +qual-lalt+ +qual-ralt+ +qual-lshift+)) (k "M-{"))
+  (is-equal *seen-qualifier* (logior +qual-lalt+ +qual-ralt+ +qual-lshift+))
+  (is-equal (decode #x1B (logior +qual-lalt+ +qual-ralt+ +qual-rshift+)) (k "M-}"))
+  (is-equal (decode #x1A (logior +qual-lalt+ +qual-ralt+)) (k "M-["))
+  ;; Both Alts on a key whose Alt level is a dead key: Meta over the plain
+  ;; character, as with the left Alt alone (asked twice).
+  (is-equal (decode #x36 (logior +qual-lalt+ +qual-ralt+)) (k "M-n"))
+  (is-equal *mapper-calls* 2)
+  (is-equal (decode #x38 (logior +qual-lalt+ +qual-ralt+ +qual-lshift+)) (k "M-<"))
+  ;; A key without a character takes either Alt as Meta.
+  (is-equal (decode +raw-up+ +qual-ralt+) (make-key +key-up+ +mod-meta+))
+  (is-equal (decode +raw-f1+ +qual-ralt+) (make-key +key-f1+ +mod-meta+))
+  ;; An Amiga key beside it is still not ours.
+  (is-equal (decode #x1A (logior +qual-ralt+ +qual-rcommand+)) nil))
+
 (deftest rawkey-control-meta-together
-  (is-equal (decode #x36 (logior +qual-control+ +qual-lalt+)) (k "C-M-n")))
+  (is-equal (decode #x36 (logior +qual-control+ +qual-lalt+)) (k "C-M-n"))
+  ;; With Control the right Alt is Meta like the left: C-M-x, the plain
+  ;; character, the keymap told neither.
+  (is-equal (decode #x33 (logior +qual-control+ +qual-ralt+)) (k "C-M-x"))
+  (is-equal *seen-qualifier* 0)
+  (is-equal (decode #x1A (logior +qual-control+ +qual-ralt+ +qual-lshift+))
+            (make-key (char-code #\Ü) (logior +mod-ctrl+ +mod-meta+))))
 
 (deftest rawkey-control-letter-is-case-insensitive
   ;; C-S-n and C-n are one key, as MAKE-KEY promises.
@@ -122,6 +162,7 @@
   (dotimes (code #x100)
     (unless (rawkey-press-p code)
       (dolist (qualifier (list 0 +qual-lshift+ +qual-control+ +qual-lalt+
+                               +qual-ralt+ (logior +qual-lalt+ +qual-ralt+)
                                +qual-rcommand+))
         (is-equal (rawkey-decode code qualifier #'fake-map) nil)
         (is-equal (rawkey-command code qualifier #'fake-map) nil)))))

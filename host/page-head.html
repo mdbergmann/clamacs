@@ -19,6 +19,7 @@
     --status-bg: #e4e8f0; --status-fg: #1a3a6a;
     --echo-bg: #f4f4f4; --echo-fg: #1f1f1f;
     --cursor: #1f1f1f; --selection: #b8d4ff; --active-line: #f6f8fc;
+    --occurrence: #8e24aa; --occurrence-current: #e65100;
     --gutter-bg: #f7f7f7; --gutter-fg: #9a9a9a;
     --c-comment: #7a7a7a; --c-string: #a31515; --c-number: #098658;
     --c-keyword: #0000ff; --c-defining: #795e26; --c-symbol: #1f1f1f;
@@ -34,6 +35,7 @@
       --status-bg: #223047; --status-fg: #9cdcfe;
       --echo-bg: #252526; --echo-fg: #d4d4d4;
       --cursor: #d4d4d4; --selection: #264f78; --active-line: #232323;
+      --occurrence: #d7a0ff; --occurrence-current: #ffb74d;
       --gutter-bg: #1e1e1e; --gutter-fg: #6e6e6e;
       --c-comment: #6a9955; --c-string: #ce9178; --c-number: #b5cea8;
       --c-keyword: #569cd6; --c-defining: #dcdcaa; --c-symbol: #d4d4d4;
@@ -94,12 +96,13 @@
   .ck-symbol { color: var(--c-symbol); }
   .ck-paren-match { background: var(--c-paren-match); }
   .ck-paren-bad { background: var(--c-paren-bad); }
-  /* An iedit session's occurrences (lisp/iedit.lisp): underlined, the
-     one under the cursor on the selection's tint as well.  Colour runs
-     like the tokens', painted by Lisp through DOC-STYLE. */
-  .ck-occurrence { text-decoration: underline; text-decoration-color: var(--cursor);
+  /* An iedit session's occurrences (lisp/iedit.lisp): underlined in the
+     theme's two mark colours (what the MUI frontend paints the text in),
+     the one under the cursor on the selection's tint as well.  Colour
+     runs like the tokens', painted by Lisp through DOC-STYLE. */
+  .ck-occurrence { text-decoration: underline; text-decoration-color: var(--occurrence);
                    text-underline-offset: 2px; }
-  .ck-occurrence-current { text-decoration: underline; text-decoration-color: var(--cursor);
+  .ck-occurrence-current { text-decoration: underline; text-decoration-color: var(--occurrence-current);
                            text-underline-offset: 2px; background: var(--selection); }
   /* The dock: the tool buffers and the three panels as tabs below a
      splitter, collapsed until something is shown in it.  A tab that is

@@ -35,28 +35,56 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
   (let ((doc (iedit-fake)))
     (type-keys doc "C-;")
     (is (iedit-active-p doc))
-    ;; The parameter, the one in the LIST form and the one in the `+'
-    ;; form; not the comment's, not the string's, not g's.
-    (is-equal (iedit-starts-of doc) (list 10 55 73))
-    (is-equal (fake-last-message doc) "iedit: 3 occurrences of foo in the defun")
+    ;; The parameter, the comment's, the string's, the one in the LIST
+    ;; form and the one in the `+' form -- every whole symbol of the
+    ;; defun, code or prose (a docstring's mention follows a rename, as
+    ;; under Emacs's iedit); not g's.
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73))
+    (is-equal (fake-last-message doc) "iedit: 5 occurrences of foo in the defun")
     ;; Marked, the one under the cursor distinctly
     (is-equal (iedit-marks doc 0) '((10 13 :occurrence-current)))
-    (is-equal (iedit-marks doc 2) '((14 17 :occurrence)))
+    (is-equal (iedit-marks doc 1) '((5 8 :occurrence)))
+    (is-equal (iedit-marks doc 2) '((9 12 :occurrence) (14 17 :occurrence)))
     (is-equal (iedit-marks doc 3) '((5 8 :occurrence)))
-    (is-equal (iedit-marks doc 1) '())))
+    (is-equal (iedit-marks doc 4) '())))
 
 (deftest iedit-with-an-argument-takes-the-buffer
   (let ((doc (iedit-fake)))
     (type-keys doc "C-u C-;")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))
-    (is-equal (fake-last-message doc) "iedit: 5 occurrences of foo in the buffer")))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))
+    (is-equal (fake-last-message doc) "iedit: 7 occurrences of foo in the buffer")))
 
-(deftest iedit-refuses-a-symbol-in-a-string-or-alone
-  (let ((doc (iedit-fake *iedit-text* "foo" 1)))   ; the comment's
+(deftest iedit-starts-in-a-comment-or-a-string-too
+  ;; The comment's foo: the same set, the cursor's one marked as such
+  (let ((doc (iedit-fake *iedit-text* "foo" 1)))
     (type-keys doc "C-;")
-    (is (not (iedit-active-p doc)))
-    (is-equal (fake-last-message doc) "foo here is not code")
-    (is-equal (fake-beeps doc) 1))
+    (is (iedit-active-p doc))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73))
+    (is-equal (iedit-current (doc-iedit doc)) 1)
+    (is-equal (iedit-marks doc 1) '((5 8 :occurrence-current)))
+    (is-equal (iedit-marks doc 0) '((10 13 :occurrence)))
+    (is-equal (fake-beeps doc) 0))
+  ;; The string's: typing there reaches the code, the comment and the
+  ;; string alike
+  (let ((doc (iedit-fake *iedit-text* "foo" 2)))
+    (type-keys doc "C-;")
+    (is-equal (iedit-current (doc-iedit doc)) 2)
+    (is-equal (iedit-marks doc 2) '((9 12 :occurrence-current) (14 17 :occurrence)))
+    (type-keys doc "x")
+    (is-equal (fake-state doc) (lines "(defun f (xfoo bar)"
+                                      "  ;; xfoo in a comment"
+                                      "  (list \"x|foo\" xfoo (g bar))"
+                                      "  (+ xfoo 1))"
+                                      ""
+                                      "(defun g (foo)"
+                                      "  foo)")))
+  ;; A word of prose outside any code is a symbol like any other
+  (let ((doc (make-fake (lines "(defun f ()" "  \"the |cat sat\")" ";; a cat" "(cat)"))))
+    (type-keys doc "C-;")
+    (is-equal (iedit-starts-of doc) (list 19 34 39))
+    (is-equal (fake-last-message doc) "iedit: 3 occurrences of cat in the buffer")))
+
+(deftest iedit-refuses-a-symbol-alone
   (let ((doc (iedit-fake *iedit-text* "list")))
     (type-keys doc "C-;")
     (is (not (iedit-active-p doc)))
@@ -84,7 +112,7 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
   ;; A defun that holds it more than once keeps the tight scope
   (let ((doc (iedit-fake)))
     (type-keys doc "C-;")
-    (is-equal (iedit-starts-of doc) (list 10 55 73))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73))
     (is-equal (iedit-scope (doc-iedit doc)) :defun)))
 
 (deftest iedit-outside-any-defun-is-the-buffer-and-says-so
@@ -144,17 +172,17 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (type-keys doc "C-;")
     (is-equal (type-keys doc "x y") '())
     (is-equal (fake-state doc) "(defun f (xy|foo bar)
-  ;; foo in a comment
-  (list \"foo\" xyfoo (g bar))
+  ;; xyfoo in a comment
+  (list \"xyfoo\" xyfoo (g bar))
   (+ xyfoo 1))
 
 (defun g (foo)
   foo)")
-    (is-equal (iedit-starts-of doc) (list 10 57 77))
+    (is-equal (iedit-starts-of doc) (list 10 26 54 61 81))
     (is-equal (iedit-text (doc-iedit doc)) "xyfoo")
     ;; The marks moved with the text
     (is-equal (iedit-marks doc 0) '((10 15 :occurrence-current)))
-    (is-equal (iedit-marks doc 2) '((14 19 :occurrence)))))
+    (is-equal (iedit-marks doc 2) '((9 14 :occurrence) (16 21 :occurrence)))))
 
 (deftest iedit-edits-at-the-end-and-inside-mirror
   (let ((doc (make-fake "(let ((foo 1)) (* foo| foo))")))
@@ -255,10 +283,13 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
   (let ((doc (iedit-fake)))
     (type-keys doc "C-;")
     (type-keys doc "M-n")
-    (is-equal (fake-point doc) 55)
-    (is-equal (fake-last-message doc) "iedit: occurrence 2 of 3")
+    (is-equal (fake-point doc) 24)
+    (is-equal (fake-last-message doc) "iedit: occurrence 2 of 5")
     (is-equal (iedit-marks doc 0) '((10 13 :occurrence)))
-    (is-equal (iedit-marks doc 2) '((14 17 :occurrence-current)))
+    (is-equal (iedit-marks doc 1) '((5 8 :occurrence-current)))
+    (type-keys doc "M-n M-n")
+    (is-equal (fake-point doc) 55)
+    (is-equal (iedit-marks doc 2) '((9 12 :occurrence) (14 17 :occurrence-current)))
     (type-keys doc "M-n M-n")
     (is-equal (fake-point doc) 10)
     (type-keys doc "M-p")
@@ -266,10 +297,10 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     ;; From outside the set: the next one after the cursor
     (doc-set-point doc 30)
     (type-keys doc "M-n")
-    (is-equal (fake-point doc) 55)
+    (is-equal (fake-point doc) 50)
     (doc-set-point doc 30)
     (type-keys doc "M-p")
-    (is-equal (fake-point doc) 10)))
+    (is-equal (fake-point doc) 24)))
 
 (deftest iedit-toggle-drops-the-occurrence-at-point
   (let ((doc (make-fake "(defun f (|foo) (+ foo foo))")))
@@ -320,30 +351,30 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (is-equal (iedit-region (doc-iedit doc)) '(0 . 3))
     ;; The empty line: nothing joins, the scope is lines now
     (type-keys doc "M-}")
-    (is-equal (iedit-starts-of doc) (list 10 55 73))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73))
     (is-equal (iedit-region (doc-iedit doc)) '(0 . 4))
-    (is-equal (fake-last-message doc) "iedit: 3 occurrences of foo in lines 1-5")
+    (is-equal (fake-last-message doc) "iedit: 5 occurrences of foo in lines 1-5")
     ;; g's parameter line
     (type-keys doc "M-}")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92))
-    (is-equal (fake-last-message doc) "iedit: 4 occurrences of foo in lines 1-6")
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92))
+    (is-equal (fake-last-message doc) "iedit: 6 occurrences of foo in lines 1-6")
     (is-equal (iedit-marks doc 5) '((10 13 :occurrence)))
     (is-equal (iedit-marks doc 6) '())
     ;; g's body, the last line
     (type-keys doc "M-}")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))
     (is-equal (iedit-marks doc 6) '((2 5 :occurrence)))
     ;; No further
     (type-keys doc "M-}")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))
     (is-equal (fake-last-message doc) "iedit: at the end of the buffer")
     (is-equal (fake-beeps doc) 1)
     ;; The cursor's occurrence is still the current one, and an edit
     ;; reaches the ones that joined
     (type-keys doc "x")
     (is-equal (fake-state doc) (lines "(defun f (x|foo bar)"
-                                      "  ;; foo in a comment"
-                                      "  (list \"foo\" xfoo (g bar))"
+                                      "  ;; xfoo in a comment"
+                                      "  (list \"xfoo\" xfoo (g bar))"
                                       "  (+ xfoo 1))"
                                       ""
                                       "(defun g (xfoo)"
@@ -362,14 +393,15 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (is-equal (iedit-starts-of doc) (list 73 92 99))
     (is-equal (iedit-marks doc 3) '((5 8 :occurrence)))
     (is-equal (iedit-marks doc 5) '((10 13 :occurrence-current)))
-    ;; The LIST line: the string's foo is not code, the other one joins
+    ;; The LIST line: the string's foo and the code's both join
     (type-keys doc "M-{")
-    (is-equal (iedit-starts-of doc) (list 55 73 92 99))
-    ;; The comment's never joins
+    (is-equal (iedit-starts-of doc) (list 50 55 73 92 99))
+    (is-equal (iedit-marks doc 2) '((9 12 :occurrence) (14 17 :occurrence)))
+    ;; The comment's too
     (type-keys doc "M-{")
-    (is-equal (iedit-starts-of doc) (list 55 73 92 99))
+    (is-equal (iedit-starts-of doc) (list 24 50 55 73 92 99))
     (type-keys doc "M-{")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))
     (is-equal (iedit-region (doc-iedit doc)) '(0 . 6))
     (type-keys doc "M-{")
     (is-equal (fake-last-message doc) "iedit: at the top of the buffer")
@@ -382,24 +414,26 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (type-keys doc "M-}")
     (is-equal (fake-last-message doc) "iedit: the whole buffer already")
     (is-equal (fake-beeps doc) 1)
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))))
 
 (deftest iedit-expand-keeps-a-dropped-occurrence-dropped
   (let ((doc (iedit-fake)))
+    ;; M-n is on the comment's foo: dropped, its mark gone for good
     (type-keys doc "C-; M-n M-;")
-    (is-equal (iedit-starts-of doc) (list 10 73))
+    (is-equal (iedit-starts-of doc) (list 10 50 55 73))
+    (is-equal (iedit-marks doc 1) '())
     (type-keys doc "M-} M-}")
-    (is-equal (iedit-starts-of doc) (list 10 73 92))
-    (is-equal (iedit-marks doc 2) '())))
+    (is-equal (iedit-starts-of doc) (list 10 50 55 73 92))
+    (is-equal (iedit-marks doc 1) '())))
 
 (deftest iedit-restricts-to-the-defun-again
   (let ((doc (iedit-fake)))
     (type-keys doc "C-u C-;")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92 99))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92 99))
     (type-keys doc "M-H")
-    (is-equal (iedit-starts-of doc) (list 10 55 73))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73))
     (is-equal (iedit-region (doc-iedit doc)) '(0 . 3))
-    (is-equal (fake-last-message doc) "iedit: 3 occurrences of foo in the defun")
+    (is-equal (fake-last-message doc) "iedit: 5 occurrences of foo in the defun")
     ;; The marks outside are gone, the ones inside stay
     (is-equal (iedit-marks doc 5) '())
     (is-equal (iedit-marks doc 6) '())
@@ -407,12 +441,12 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (is-equal (iedit-marks doc 3) '((5 8 :occurrence)))
     ;; Widening again from the defun works as from the start
     (type-keys doc "M-} M-}")
-    (is-equal (iedit-starts-of doc) (list 10 55 73 92))
+    (is-equal (iedit-starts-of doc) (list 10 24 50 55 73 92))
     ;; An edit no longer reaches what left
     (type-keys doc "M-H x")
     (is-equal (fake-state doc) (lines "(defun f (x|foo bar)"
-                                      "  ;; foo in a comment"
-                                      "  (list \"foo\" xfoo (g bar))"
+                                      "  ;; xfoo in a comment"
+                                      "  (list \"xfoo\" xfoo (g bar))"
                                       "  (+ xfoo 1))"
                                       ""
                                       "(defun g (foo)"
@@ -530,7 +564,7 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (type-keys doc "C-;")
     (colour-lines doc 0 3)
     (is-equal (iedit-marks doc 0) '((10 13 :occurrence-current)))
-    (is-equal (iedit-marks doc 2) '((14 17 :occurrence)))
+    (is-equal (iedit-marks doc 2) '((9 12 :occurrence) (14 17 :occurrence)))
     (colour-all doc)
     (is-equal (iedit-marks doc 3) '((5 8 :occurrence)))
     ;; A text replaced under the session (a file loaded into the window):

@@ -42,7 +42,12 @@ composition that `M-n` could not stop: a `~` in the text, the mirror
 wrong; the LEFT Option is Meta and the RIGHT one composes the layout's
 Option-level character, Emacs's `ns-right-alternate-modifier`, so
 left-Option + right-Option-8 is `M-{` on a German keyboard --
-`verify/host/option-keys.sh` is that table), the
+`verify/host/option-keys.sh` is that table; the Amiga's two Alt keys
+are split the same way in `rawkey-decode` since 2026-10-20, when `M-{`
+was not typeable on the MorphOS box: the right Alt alone is left to
+the class, which types the keymap's Alt level, `{` on Alt-Shift-Ü of a
+German MorphOS keymap, both Alts are Meta over that character, and
+with Control either Alt is Meta -- `tests/test-rawkey.lisp`), the
 batch (one `webview_eval` per entry into Lisp, colour runs coalesced per
 line), the stepped loop, the requesters through the shim; `lisp/clamacs.lisp`
 picks it on a non-Amiga host and `host/run.sh` starts it.
@@ -419,12 +424,15 @@ the PERSPECTIVES leg at its end and its second editor restores a
 hand-written file; `PERSPECTIVE=1 verify/realamiga/run-lisp-editor.sh`
 is the hide/show cycle on a real MUI.
 **iedit** (2026-10-17, `lisp/iedit.lisp`, pure): `C-;` marks every
-occurrence of the symbol at point -- symbol TOKENS of the cursor's
-defun, case-insensitively, or of the whole buffer when the defun holds
-it once (a function's name on its defun line, a fixture used in the
-tests below it; since 2026-10-20, `iedit-find` recurses with `:buffer`);
-the buffer with `C-u`; whole words outside
-Lisp mode -- and an edit made inside the one under the cursor is
+occurrence of the symbol at point -- whole SYMBOLS (runs of symbol
+characters, as `M-.` delimits them; in code, strings and comments alike
+since 2026-10-20, when the MorphOS run asked for a docstring's mention
+to follow a rename -- the code's symbol tokens alone before) of the
+cursor's defun, case-insensitively, or of the whole buffer when the
+defun holds it once (a function's name on its defun line, a fixture
+used in the tests below it; since 2026-10-20, `iedit-find` recurses
+with `:buffer`); the buffer with `C-u`; whole words outside Lisp mode
+-- and an edit made inside the one under the cursor is
 repeated in the others.  The model is iedit's, not multiple-cursors':
 one cursor, the set of occurrences, and the edit found by DIFFING the
 cursor's line before and after the key (`iedit-around`, which
@@ -435,11 +443,18 @@ Four rules: while a session is on, the keys the widget would edit with
 on its own (typing, BS, DEL, RET, TAB) are taken by `handle-key` and
 done through the protocol, since the widget's own edit would be
 invisible to the diff; the marks are one new generic, `doc-style`
-(`:occurrence`, `:occurrence-current`, NIL), which the host turns into
-colour runs of their own kind (`.ck-occurrence`, an underline on the
-page) and MUI into SetBlock's underline and bold STYLES -- a recolour
-wipes the host's and `iedit-after-recolour` (from `colour-lines`) puts
-them back, while MUI's survive it; `undo` and `redo` inside the session
+(`:occurrence`, `:occurrence-current`, NIL), which both frontends turn
+into colour runs of their own kind in the theme's two mark colours
+(`:occurrence` / `:occurrence-current` in theme.lisp: the page's
+`.ck-occurrence` underline, MUI's pens 9 and 10) -- a recolour wipes
+them and `iedit-after-recolour` (from `colour-lines`) puts them back,
+and the pure layer recolours a line after every mark it takes down for
+good, since the NIL style is plain text.  MUI's marks were SetBlock's
+underline and bold STYLES until 2026-10-20 and no use: the class's
+`AddStyle` skips a block when the style AT THE CURSOR already has, or
+lacks, the bit, so only the first occurrence painted got its underline
+and only the first unpainted lost it (the MorphOS finding;
+`vendor/texteditor/mcc/StyleOperators.c`); `undo` and `redo` inside the session
 are the session's own (a log of the widget's steps per mirrored edit,
 so one `C-/` takes the edit back everywhere), and past the log's start
 the session ends; and an edit the session did not make (the page's own

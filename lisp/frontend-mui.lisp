@@ -108,12 +108,12 @@
 (defconstant +tef-export-block-full-lines+ 1)
 (defconstant +tef-export-block-take-block+ 2)
 (defconstant +tef-set-block-color+ 1)
-;;; SetBlock's style operations: the value is TRUE to add the style to
-;;; the block, FALSE to take it off; several flags in one call share the
-;;; value.  An iedit occurrence (iedit.lisp) is underlined, the one under
-;;; the cursor bold as well (DOC-STYLE).
-(defconstant +tef-set-block-style-bold+ 2)
-(defconstant +tef-set-block-style-underline+ 8)
+;;; SetBlock's style operations (bold 2, underline 8) are NOT used: the
+;;; class's AddStyle (vendor/texteditor/mcc/StyleOperators.c) returns
+;;; before it touches the block when the style AT THE CURSOR already has
+;;; the bit it is to add, or lacks the one it is to take off -- the
+;;; operation is meant for the marked block around the cursor, not for a
+;;; block elsewhere.  The iedit marks (DOC-STYLE) are colours for that.
 ;;; The class's prefs items (mcp/TextEditor_mcp.h) it asks its object for
 ;;; with MUIM_GetConfigItem at Setup: the cursor's pen spec, the marked
 ;;; block's and the text's, which the theme answers, and the cursor's
@@ -218,19 +218,19 @@
 ;; depth decides the shallow-screen rule (THEME-TEXT-PENS-P)
 (defconstant +screen-rastport-bitmap-offset+ 88)
 
-;;; Instance data of ClamacsText: the handler node, the eight pens
+;;; Instance data of ClamacsText: the handler node, the ten pens
 ;;; (MUIA_TextEditor_ColorMap points here), two flags, the idle timer's
 ;;; input handler node and its flag, and whether the theme's background
 ;;; was set on this object (a switch to a theme without one puts the
 ;;; standard text background back in its place).
-(defconstant +text-data-size+ 96)
+(defconstant +text-data-size+ 104)
 (defconstant +text-ehn-offset+ 0)
 (defconstant +text-cmap-offset+ 24)
-(defconstant +text-pens-held-offset+ 56)
-(defconstant +text-eh-added-offset+ 60)
-(defconstant +text-ihn-offset+ 64)
-(defconstant +text-timer-added-offset+ 88)
-(defconstant +text-own-bg-offset+ 92)
+(defconstant +text-pens-held-offset+ 64)
+(defconstant +text-eh-added-offset+ 68)
+(defconstant +text-ihn-offset+ 72)
+(defconstant +text-timer-added-offset+ 96)
+(defconstant +text-own-bg-offset+ 100)
 ;;; Instance data of ClamacsMini: the handler node and the event
 ;;; MUIM_HandleEvent last saw.  The edit hook itself is a Lisp object
 ;;; (MUI-EDITOR-MINI-HOOKS), not an address here: FREE-STRING-KEY-HOOK
@@ -275,22 +275,25 @@
   (logior m:+muikeyf-gadget-next+ m:+muikeyf-gadget-off+
           m:+muikeyf-window-close+))
 
-;;; Eight pens for MUIA_TextEditor_ColorMap, the theme's (THEME-PENS in
+;;; Ten pens for MUIA_TextEditor_ColorMap, the theme's (THEME-PENS in
 ;;; theme.lisp gives them in this order: the text colour, a free white,
-;;; the paren match, comment, keyword, string, defining, number).  A
-;;; SetBlock colour value of N means pen N-1 of the table, 0 the class's
-;;; own text pen; the token kinds map onto them below.
-(defconstant +pen-count+ 8)
+;;; the paren match, comment, keyword, string, defining, number, and the
+;;; two iedit marks).  A SetBlock colour value of N means pen N-1 of the
+;;; table, 0 the class's own text pen; the token kinds map onto them
+;;; below.
+(defconstant +pen-count+ 10)
 
 (defun colour-value (colour text-pen-p)
-  "The SetBlock colour value of COLOUR, a token kind or NIL for plain
-text.  Every recolour clears the line with the plain value before it
-paints the tokens, so with TEXT-PEN-P -- the theme's text colour in slot
-1 (THEME-TEXT-PENS-P) -- plain text is painted in the theme's foreground
-at the same cost; without it the class's own text pen stays."
+  "The SetBlock colour value of COLOUR, a token kind, an iedit mark or
+NIL for plain text.  Every recolour clears the line with the plain value
+before it paints the tokens, so with TEXT-PEN-P -- the theme's text
+colour in slot 1 (THEME-TEXT-PENS-P) -- plain text is painted in the
+theme's foreground at the same cost; without it the class's own text pen
+stays."
   (case colour
     (:comment 4) ((:string :char) 6) (:keyword 5) (:number 8) (:defining 7)
     (:paren-match 3)
+    (:occurrence 9) (:occurrence-current 10)
     (t (if text-pen-p 1 0))))
 
 ;;; ------------------------------------------------------------------
@@ -693,7 +696,7 @@ object to carry it -- the caller repaints at once then."
 
 ;;; --- The theme on the text objects (theme.lisp; specs/clamacs-themes.md,
 ;;; "The MUI frontend").  TextEditor.mcc lets a program set the colour map
-;;; its SetBlock colours index -- eight pens obtained on the screen's
+;;; its SetBlock colours index -- ten pens obtained on the screen's
 ;;; colour map at Setup, released at Cleanup -- and a MUIA_Background,
 ;;; which it keeps (FLG_OwnBackground) instead of its configured one; the
 ;;; text colour has no attribute, so plain text is painted with the
@@ -774,7 +777,7 @@ once."
       (doc-message doc note))))
 
 (defun obtain-text-pens (editor data object)
-  "The theme's eight pens on OBJECT's screen into its colour map."
+  "The theme's ten pens on OBJECT's screen into its colour map."
   (let ((cm (screen-colormap object)))
     (loop for (r g b) in (mui-editor-theme-rgb editor)
           for i from 0 below +pen-count+
@@ -1910,30 +1913,22 @@ presentation, not content, so the flag is put back afterwards."
     (set-block-colour doc y x0 x1
                       (colour-value colour (mui-editor-text-pen-p (doc-editor doc))))))
 
-(defun set-block-style (doc y x0 x1 flags on)
-  "SetBlock's style FLAGS (bold, underline) added to columns X0 to X1 of
-line Y when ON, taken off otherwise."
-  (mui:do-method (mdoc-text doc) +tem-set-block+ x0 y x1 y flags (if on 1 0)))
-
-;;; An iedit mark is a STYLE of the class's, apart from the colours: the
-;;; occurrence underlined, the one under the cursor bold as well.  A
-;;; recolour (SetBlock's colour operation) leaves the styles alone, so
-;;; the marks outlive the repaints the typing causes; the session's end
-;;; takes them off with the NIL style.
+;;; An iedit mark is a colour run like a token's, in the theme's two
+;;; mark pens (slots 9 and 10), in place of the token colour under it --
+;;; what the host page does with its underline runs -- and the NIL style
+;;; is the plain text colour, as on the host: the recolour that follows
+;;; (iedit.lisp calls COLOUR-LINES after every mark it takes down for
+;;; good) gives the token colour back.  The class's bold and underline
+;;; STYLES were the first choice and are no use here: AddStyle (see
+;;; +TEF-SET-BLOCK-COLOR+) skips a block when the style at the CURSOR
+;;; already has, or lacks, the bit -- so of a session's occurrences only
+;;; the first painted got its underline and only the first unpainted lost
+;;; it, until a cursor move changed the class's idea of the current style
+;;; (the MorphOS finding of 2026-10-20).
 (defmethod doc-style ((doc mui-document) y x0 x1 style)
   (with-changed-flag (doc)
-    (case style
-      (:occurrence
-       (set-block-style doc y x0 x1 +tef-set-block-style-underline+ t)
-       (set-block-style doc y x0 x1 +tef-set-block-style-bold+ nil))
-      (:occurrence-current
-       (set-block-style doc y x0 x1
-                        (logior +tef-set-block-style-underline+ +tef-set-block-style-bold+)
-                        t))
-      (t
-       (set-block-style doc y x0 x1
-                        (logior +tef-set-block-style-underline+ +tef-set-block-style-bold+)
-                        nil)))))
+    (set-block-colour doc y x0 x1
+                      (colour-value style (mui-editor-text-pen-p (doc-editor doc))))))
 
 (defun clear-text-colours (doc)
   "Every line of DOC back to the class's own text pen and no token colours:

@@ -58,7 +58,8 @@ before.
 
 `theme-css-vars` answers the theme as an alist of CSS variable name and
 value, every key resolved through the inherit chain; `theme-pens`
-answers the eight RGB triples in the MUI colour map's order.  Both are
+answers the RGB triples in the MUI colour map's order (eight at T1, ten
+since the iedit marks of 2026-10-20).  Both are
 pure and both are what the frontends read.
 
 ## Three entrances
@@ -197,6 +198,17 @@ TextEditor.mcc (read in `vendor/texteditor/mcc/InitConfig.c`,
   is on screen.  `editor-apply-theme` on `mui-editor` releases the
   pens, obtains the theme's, sets the background, and runs `colour-all`
   on every document -- the function exists for the file-load case.
+- **The iedit marks** (since 2026-10-20) are two more pens, slots 9
+  and 10, from the theme's `:occurrence` and `:occurrence-current`
+  keys (text colours here; the page underlines in them).  The class's
+  bold and underline styles were the marks first and are no use for
+  them: `AddStyle` (`StyleOperators.c`) skips a block when the style at
+  the CURSOR already has, or lacks, the bit it is to add or remove --
+  the operation is meant for the marked block around the cursor -- so
+  only the first occurrence painted got its underline and only the
+  first unpainted lost it, until a cursor move changed the class's
+  idea of the current style (the MorphOS finding).  A colour has no
+  such guard (`AddColor`).
 
 - **The cursor and the selection** (since 2026-09-30): the class's
   settings, no attribute -- but it reads them by asking its own object

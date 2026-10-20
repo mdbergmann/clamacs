@@ -21,7 +21,13 @@
 ;;;;     Execute script that sets the 128K stack, in a console of its own,
 ;;;;     with a --load file that opens the development port -- no quoting
 ;;;;     on the DOS command line, where `*' and `"' have meanings of their
-;;;;     own.
+;;;;     own.  Since 2026-10-20 that amilisp is headless, as the host's
+;;;;     is: `--non-interactive', the preamble waiting on a flag once the
+;;;;     port is up, and the editor's exit sets the flag over the port
+;;;;     (the client thread's farewell), so the child and its console go
+;;;;     with the editor.  A console REPL could not be stopped from
+;;;;     outside -- its read of the console blocks, nothing interrupts
+;;;;     it -- and stayed open on the MorphOS box after every quit.
 ;;;;
 ;;;; Amiga only: loaded after frontend-mui.lisp.
 
@@ -54,6 +60,7 @@
   (cv (mp:make-condition-variable "clamacs-client"))
   (pending nil)             ; (port . command) for the client thread
   (quit nil)
+  (launched nil)            ; the port of an amilisp this editor started
   thread)
 
 (defmethod transport-find-port ((tr arexx-transport))
@@ -85,7 +92,13 @@ one opened its own."
         ;; A job pending at the quit still goes out: it is the REPL-DETACH
         ;; the closing REPL window queued, and amilisp's REPL thread must be
         ;; stopped rather than left sending to a port about to vanish.
+        ;; After it the farewell to an amilisp this editor started -- the
+        ;; one message at a time, on the thread that sends them.
         (when (and (arexx-transport-quit tr) (null job))
+          (let ((launched (arexx-transport-launched tr)))
+            (when launched
+              (setf (arexx-transport-launched tr) nil)
+              (ignore-errors (amiga.arexx:send launched *launched-stop-command*))))
           (return))
         (when job
           (multiple-value-bind (rc text lost)
@@ -113,6 +126,23 @@ one opened its own."
 ;;; bytes of an icon -- so the launch is an Execute script that says Stack.
 (defconstant +launch-stack-size+ 131072)
 (defconstant +launch-wait-seconds+ 20)
+
+;;; The started amilisp runs the preamble's wait loop on its main thread
+;;; (SLEEP a half second at a time) until this variable is set -- which
+;;; the editor's farewell does over the port; the EVAL is answered first,
+;;; the loop ends within the half second, and amilisp's exit hooks take
+;;; the port down cleanly behind it.
+(defparameter *launched-stop-variable* "cl-user::*clamacs-launched-stop*")
+(defparameter *launched-stop-command*
+  (format nil "EVAL (setq ~A t)" *launched-stop-variable*))
+
+(defun launch-preamble-text ()
+  "What the started amilisp loads: the port, then the wait."
+  (format nil "(require \"amiga/arexx\")~%~
+               (unless (amiga.arexx:running-p) (amiga.arexx:start))~%~
+               (defvar ~A nil)~%~
+               (loop until ~A do (sleep 0.5))~%"
+          *launched-stop-variable* *launched-stop-variable*))
 
 (defun own-amilisp-command ()
   "The amilisp this editor runs on -- PROGDIR:amilisp as an absolute path,
@@ -146,19 +176,20 @@ two rapid launches) never share a file."
 (defmethod transport-launch ((tr arexx-transport))
   (multiple-value-bind (script preamble) (launch-file-names)
     (let ((command (own-amilisp-command)))
-      (unless (and (write-file-text
-                    preamble
-                    (format nil "(require \"amiga/arexx\")~%(unless (amiga.arexx:running-p) (amiga.arexx:start))~%"))
+      (unless (and (write-file-text preamble (launch-preamble-text))
                    (write-file-text
                     script
                     ;; The init file's heap and options (wire.lisp) first.
-                    (format nil "Stack ~D~%\"~A\"~{ ~A~} --load ~A~%" +launch-stack-size+ command
-                            (amilisp-launch-options) preamble)))
+                    (format nil "Stack ~D~%\"~A\"~{ ~A~} --non-interactive --load ~A~%"
+                            +launch-stack-size+ command (amilisp-launch-options) preamble)))
         (delete-quietly preamble)
         (delete-quietly script)
         (return-from transport-launch nil))
-      ;; amilisp gets a console of its own: it is a REPL in its own right.
-      (let ((console (ffi:with-foreign-string (s "CON:0/40/640/220/amilisp/CLOSE/WAIT")
+      ;; amilisp gets a console of its own for what it prints -- it reads
+      ;; nothing from it -- which closes with it (no WAIT: the farewell
+      ;; at the editor's exit ends it, and a window left behind was the
+      ;; complaint).
+      (let ((console (ffi:with-foreign-string (s "CON:0/40/640/220/amilisp/CLOSE")
                        (dos:open s dos:+mode-oldfile+))))
         (when (zerop console)
           (delete-quietly preamble)
@@ -184,9 +215,12 @@ two rapid launches) never share a file."
           (let ((found nil))
             (dotimes (i (* 5 +launch-wait-seconds+))
               (sleep 0.2)
-              (when (transport-find-port tr)
-                (setq found t)
-                (return)))
+              (let ((port (transport-find-port tr)))
+                (when port
+                  ;; Ours to stop at the exit (STOP-WIRE's client thread).
+                  (setf (arexx-transport-launched tr) port
+                        found t)
+                  (return))))
             (delete-quietly script)
             (delete-quietly preamble)
             found))))))
@@ -232,7 +266,8 @@ argument is trimmed."
 
 (defun stop-wire (editor)
   "The port first (its handler thread may be parked in CALL-IN-EDITOR;
-the closed mailbox has answered it), then the client thread.  A client
+the closed mailbox has answered it), then the client thread, which sends
+the farewell to an amilisp this editor started on its way out.  A client
 still inside a send to an amilisp that never replies cannot be helped:
 that is the ARexx rule, and the editor does not wait for it forever."
   (handler-case (amiga.arexx:stop)

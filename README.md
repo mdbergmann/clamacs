@@ -152,8 +152,10 @@ yourself opens its port with
 
 (in `S:.amilisprc`, or at its prompt), and the editor finds it by
 scanning `AMILISP`, `AMILISP.1`, ... .  The amilisp the editor starts
-itself gets a console window of its own and opens its port from a
-preamble the editor writes.
+itself opens its port from a preamble the editor writes and runs
+headless, with a console window of its own for what it prints; it is
+stopped when the editor quits, and its window goes with it.  An amilisp
+you started yourself is left running.
 
 **On the host the wire is TCP**, over AmiLisp's `dev-tcp` port.  An
 amilisp you start yourself opens it with
@@ -336,9 +338,10 @@ only once, as a function's name does on its `defun` line; with `C-u`,
 in the whole buffer from the start -- and from then
 on whatever you do inside the one under the cursor happens in all of
 them: typing, Backspace, Delete, `M-d`, `C-y`.  That is how a parameter
-or a local is renamed.  Only symbols in code count: `foo` in a string or
-a comment is left alone, `foobar` never matches, and `FOO` is `foo`, as
-it is to the reader.  `M-n` and `M-p` move between the occurrences,
+or a local is renamed.  Every whole symbol counts, in code, in a string
+or in a comment -- a docstring's mention of the parameter follows the
+rename -- while `foobar` never matches, and `FOO` is `foo`, as it is to
+the reader.  `M-n` and `M-p` move between the occurrences,
 `M-;` drops the one at point out of the set, `M-{` and `M-}` widen the
 scope by one line at the top and at the bottom (the occurrences on it
 join), `M-H` narrows it to the cursor's defun again (a session of one
@@ -604,7 +607,11 @@ Option keys differ, as they do in Emacs: the left one is Meta, the
 right one composes the character the key types under Option on your
 layout -- so on a German keyboard right-Option-8 types a `{`,
 left-Option + right-Option-8 is `M-{`, and right-Option-N then a space
-is a `~`.  The document window
+is a `~`.  The two Alt keys of an Amiga or MorphOS keyboard are split
+the same way: the left Alt is Meta, the right Alt alone types the
+layout's Alt level (on a German MorphOS keymap Alt-Shift-Ü is `{`), and
+both together are Meta over it -- left-Alt + right-Alt-Shift-Ü is `M-{`;
+with Control either Alt is Meta.  The document window
 has files, editing, colouring, search, the minibuffer and the status
 line with the arglist, and the minimap at its right edge; the Lisp
 behind it -- the REPL, the debugger, the inspector, introspection and

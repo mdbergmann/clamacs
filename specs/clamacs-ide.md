@@ -121,10 +121,17 @@ Facts from the 15.56 sources that shape the design:
   told, which keys are known by code, what is refused) are pure C in
   `src/emacs/rawkey.c`, parameterised over the one OS call (`MapRawKey`),
   and host-tested; `src/textclass.c` supplies the call.
-- **Meta** is Alt (left or right).  `ESC` acts as a Meta prefix as well,
-  for keyboards and users where Alt is awkward.  **Control** is
-  `IEQUALIFIER_CONTROL`.  The Amiga keys stay free for the OS and for MUI
-  menu shortcuts.
+- **Meta** is the left Alt.  The right Alt composes, as the right Option
+  does on the Mac host and under Emacs's `ns-right-alternate-modifier`
+  (since 2026-10-20, when `M-{` could not be typed on the MorphOS box):
+  alone it is the class's key, which types the keymap's Alt level
+  (`{` on Alt-Shift-Ü of a German MorphOS keymap, an accent on a dead
+  key); with the left Alt it is Meta over that character, `M-{`; with
+  Control it is Meta like the left (`C-M-x`); and a key without a
+  character (arrows, function keys) takes either Alt as Meta.  `ESC`
+  acts as a Meta prefix as well, for keyboards and users where Alt is
+  awkward.  **Control** is `IEQUALIFIER_CONTROL`.  The Amiga keys stay
+  free for the OS and for MUI menu shortcuts.
 
 ### Text access
 

@@ -27,6 +27,10 @@
 ;;; ------------------------------------------------------------------
 
 (defparameter *theme-text-keys* '(:bg :fg :dim :cursor :selection :active-line))
+;;; An iedit session's marks (iedit.lisp): the occurrences, and the one
+;;; under the cursor.  Text colours on MUI (two pens of the colour map),
+;;; the underline's colour on the page.
+(defparameter *theme-mark-keys* '(:occurrence :occurrence-current))
 (defparameter *theme-gutter-keys* '(:gutter-bg :gutter-fg))
 (defparameter *theme-chrome-keys* '(:bar :bar-fg :tab-active :line
                                     :status-bg :status-fg :echo-bg :echo-fg))
@@ -35,7 +39,8 @@
 (defparameter *theme-font-keys* '(:font-family :font-size))
 
 (defun theme-colour-keys ()
-  (append *theme-text-keys* *theme-gutter-keys* *theme-chrome-keys* *theme-token-keys*))
+  (append *theme-text-keys* *theme-mark-keys* *theme-gutter-keys* *theme-chrome-keys*
+          *theme-token-keys*))
 
 (defun theme-keys ()
   "Every key a theme may set, in the order the CSS lists them."
@@ -224,11 +229,14 @@ value, every key resolved; a key nothing sets is left out."
 ;;; class colours characters, it does not tint behind them), so it takes
 ;;; :NUMBER's colour -- green on the two default themes, as the page's
 ;;; :PAREN-MATCH tint is -- and not the tint itself, which would be a pale
-;;; paren on a pale page (decided at T3, 2026-09-26).
-(defparameter *theme-pen-keys* '(:fg nil :number :comment :keyword :string :defining :number))
+;;; paren on a pale page (decided at T3, 2026-09-26).  Slots 9 and 10 are
+;;; the iedit marks (since 2026-10-20: the class's styles are no use for
+;;; them, see DOC-STYLE in frontend-mui.lisp).
+(defparameter *theme-pen-keys* '(:fg nil :number :comment :keyword :string :defining :number
+                                 :occurrence :occurrence-current))
 
 (defun theme-pens (theme)
-  "THEME as the MUI frontend takes it: eight (R G B) lists in the colour
+  "THEME as the MUI frontend takes it: ten (R G B) lists in the colour
 map's order.  The free slot is white."
   (mapcar (lambda (key)
             (multiple-value-bind (r g b) (and key (theme-rgb (theme-resolve theme key)))
@@ -288,6 +296,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :light (:label "Light")
   :bg "#ffffff" :fg "#1f1f1f" :dim "#6a6a6a"
   :cursor "#1f1f1f" :selection "#b8d4ff" :active-line "#f6f8fc"
+  :occurrence "#8e24aa" :occurrence-current "#e65100"
   :gutter-bg "#f7f7f7" :gutter-fg "#9a9a9a"
   :bar "#ececec" :bar-fg "#333333" :tab-active "#ffffff" :line "#d0d0d0"
   :status-bg "#e4e8f0" :status-fg "#1a3a6a"
@@ -300,6 +309,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :dark (:label "Dark" :dark t)
   :bg "#1e1e1e" :fg "#d4d4d4" :dim "#8a8a8a"
   :cursor "#d4d4d4" :selection "#264f78" :active-line "#232323"
+  :occurrence "#d7a0ff" :occurrence-current "#ffb74d"
   :gutter-bg "#1e1e1e" :gutter-fg "#6e6e6e"
   :bar "#2d2d30" :bar-fg "#cccccc" :tab-active "#1e1e1e" :line "#3c3c3c"
   :status-bg "#223047" :status-fg "#9cdcfe"
@@ -314,6 +324,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :solarized-light (:inherits :light :label "Solarized Light")
   :bg "#fdf6e3" :fg "#657b83" :dim "#93a1a1"
   :cursor "#657b83" :selection "#eee8d5" :active-line "#f5efdc"
+  :occurrence "#6c71c4" :occurrence-current "#cb4b16"
   :gutter-bg "#eee8d5" :gutter-fg "#93a1a1"
   :bar "#eee8d5" :bar-fg "#586e75" :tab-active "#fdf6e3" :line "#ddd6c1"
   :status-bg "#eee8d5" :status-fg "#268bd2"
@@ -325,6 +336,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :solarized-dark (:inherits :dark :label "Solarized Dark")
   :bg "#002b36" :fg "#839496" :dim "#586e75"
   :cursor "#839496" :selection "#073642" :active-line "#073642"
+  :occurrence "#6c71c4" :occurrence-current "#cb4b16"
   :gutter-bg "#073642" :gutter-fg "#586e75"
   :bar "#073642" :bar-fg "#93a1a1" :tab-active "#002b36" :line "#0f3a45"
   :status-bg "#073642" :status-fg "#268bd2"
@@ -337,6 +349,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :one-dark (:inherits :dark :label "One Dark")
   :bg "#282c34" :fg "#abb2bf" :dim "#5c6370"
   :cursor "#528bff" :selection "#3e4451" :active-line "#2c313c"
+  :occurrence "#e5c07b" :occurrence-current "#e06c75"
   :gutter-bg "#282c34" :gutter-fg "#4b5263"
   :bar "#21252b" :bar-fg "#9da5b4" :tab-active "#282c34" :line "#181a1f"
   :status-bg "#21252b" :status-fg "#61afef"
@@ -349,6 +362,7 @@ theme, and for a dark one on a screen deeper than +THEME-SHALLOW-DEPTH+
 (define-theme :gruvbox-dark (:inherits :dark :label "Gruvbox Dark")
   :bg "#282828" :fg "#ebdbb2" :dim "#928374"
   :cursor "#ebdbb2" :selection "#504945" :active-line "#3c3836"
+  :occurrence "#8ec07c" :occurrence-current "#fe8019"
   :gutter-bg "#282828" :gutter-fg "#7c6f64"
   :bar "#3c3836" :bar-fg "#d5c4a1" :tab-active "#282828" :line "#1d2021"
   :status-bg "#3c3836" :status-fg "#83a598"

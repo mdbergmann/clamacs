@@ -49,17 +49,17 @@
         (unless (theme-value th key)
           (test-failure (list :unset name key))))
       (is-equal (length (theme-css-vars th)) (length (theme-keys)))
-      (is-equal (length (theme-pens th)) 8)))
-  (is-equal (length (theme-keys)) 26))
+      (is-equal (length (theme-pens th)) 10)))
+  (is-equal (length (theme-keys)) 28))
 
 ;;; The MUI frontend's view (specs/clamacs-themes.md, "The MUI frontend"):
-;;; the eight pens in the colour map's order, the background spec, and the
+;;; the ten pens in the colour map's order, the background spec, and the
 ;;; shallow-screen rule -- pure, so they are settled here and not in FS-UAE.
 
 (deftest theme-pens-are-the-colour-map-in-slot-order
   ;; Slot 1 the text colour, slot 2 free (white), slot 3 the paren match --
   ;; a foreground pen, so :number's colour, not the page's tint -- then
-  ;; comment, keyword, string, defining, number.
+  ;; comment, keyword, string, defining, number, and the two iedit marks.
   (let ((pens (theme-pens (find-theme :light))))
     (is-equal (nth 0 pens) '(#x1f #x1f #x1f))
     (is-equal (nth 1 pens) '(255 255 255))
@@ -68,7 +68,9 @@
     (is-equal (nth 4 pens) '(#x00 #x00 #xff))
     (is-equal (nth 5 pens) '(#xa3 #x15 #x15))
     (is-equal (nth 6 pens) '(#x79 #x5e #x26))
-    (is-equal (nth 7 pens) '(#x09 #x86 #x58)))
+    (is-equal (nth 7 pens) '(#x09 #x86 #x58))
+    (is-equal (nth 8 pens) '(#x8e #x24 #xaa))
+    (is-equal (nth 9 pens) '(#xe6 #x51 #x00)))
   ;; Through the inherit chain and the default's fallback: a theme of a few
   ;; keys still fills every slot.
   (with-theme-state ()
@@ -272,12 +274,14 @@ CSS, as an alist -- a `#abc' expanded to `#aabbcc', the theme's spelling."
   (is-equal (theme-css-var :font-size) "--font-size"))
 
 (deftest the-pen-view-is-the-colour-map
-  ;; Eight (r g b) in SetBlock's slot order: the text, the free slot, the
+  ;; Ten (r g b) in SetBlock's slot order: the text, the free slot, the
   ;; paren match (a foreground pen: :number's colour, T3), comment,
-  ;; keyword, string, defining, number.
+  ;; keyword, string, defining, number, the iedit occurrence and the one
+  ;; under the cursor.
   (is-equal (theme-pens (find-theme :light))
             '((31 31 31) (255 255 255) (9 134 88) (122 122 122)
-              (0 0 255) (163 21 21) (121 94 38) (9 134 88)))
+              (0 0 255) (163 21 21) (121 94 38) (9 134 88)
+              (142 36 170) (230 81 0)))
   (is-equal (first (theme-pens (find-theme :dark))) '(212 212 212))
   (is-equal (multiple-value-list (theme-rgb "#FFcc00")) '(255 204 0))
   (is-equal (multiple-value-list (theme-rgb "#000000")) '(0 0 0))
