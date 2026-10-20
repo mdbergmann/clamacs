@@ -418,16 +418,58 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
                                       "(defun g (foo)"
                                       "  foo)"))))
 
-(deftest iedit-restrict-ends-the-session-when-too-few-remain
-  ;; One occurrence in the cursor's defun
+(deftest iedit-session-of-one-occurrence-survives-its-own-paths
+  ;; A key typed on the one occurrence is applied and the session stays
+  (let ((doc (make-fake (lines "(defun f (foo) foo)" "(defun g () |foo)"))))
+    (type-keys doc "C-u C-; M-H")
+    (type-keys doc "x")
+    (is (iedit-active-p doc))
+    (is-equal (length (iedit-starts-of doc)) 1)
+    ;; Undo inside the session (validated against the text) keeps it too
+    (type-keys doc "C-/")
+    (is (iedit-active-p doc))
+    (is-equal (length (iedit-starts-of doc)) 1)
+    ;; M-; drops the last one: nothing left ends the session
+    (type-keys doc "M-;")
+    (is (not (iedit-active-p doc))))
+  ;; C-g ends it
+  (let ((doc (make-fake (lines "(defun f (foo) foo)" "(defun g () |foo)"))))
+    (type-keys doc "C-u C-; M-H C-g")
+    (is (not (iedit-active-p doc)))))
+
+(deftest iedit-restrict-keeps-a-session-of-one-occurrence
+  ;; One occurrence in the cursor's defun: the session stays, to be
+  ;; widened from the defun
   (let ((doc (make-fake (lines "(defun f (foo) foo)" "(defun g () |foo)"))))
     (type-keys doc "C-u C-;")
     (is-equal (length (iedit-starts-of doc)) 3)
     (type-keys doc "M-H")
-    (is (not (iedit-active-p doc)))
-    (is-equal (fake-last-message doc) "iedit ended: one occurrence left")
+    (is (iedit-active-p doc))
+    (is-equal (iedit-starts-of doc) (list 32))
+    (is-equal (iedit-region (doc-iedit doc)) '(1 . 1))
+    (is-equal (fake-last-message doc) "iedit: 1 occurrence of foo in the defun")
     (is-equal (iedit-marks doc 0) '())
-    (is-equal (iedit-marks doc 1) '()))
+    (is-equal (iedit-marks doc 1) '((12 15 :occurrence-current)))
+    (type-keys doc "M-{")
+    (is-equal (iedit-starts-of doc) (list 10 15 32))
+    (is-equal (fake-last-message doc) "iedit: 3 occurrences of foo in lines 1-2"))
+  ;; The way in from `C-;': a symbol its defun holds once began over
+  ;; the whole buffer, M-H narrows to the defun's one, M-} widens from
+  ;; there until the next defun's joins
+  (let ((doc (make-fake (lines "(defun f (x) |foo)" "" "(defun g () foo)"))))
+    (type-keys doc "C-;")
+    (is-equal (fake-last-message doc) "iedit: 2 occurrences of foo in the buffer")
+    (type-keys doc "M-H")
+    (is (iedit-active-p doc))
+    (is-equal (fake-last-message doc) "iedit: 1 occurrence of foo in the defun")
+    (type-keys doc "M-}")
+    (is-equal (fake-last-message doc) "iedit: 1 occurrence of foo in lines 1-2")
+    (type-keys doc "M-}")
+    (is-equal (iedit-starts-of doc) (list 13 31))
+    (is-equal (fake-last-message doc) "iedit: 2 occurrences of foo in lines 1-3")
+    ;; And the edit reaches both again
+    (type-keys doc "x")
+    (is-equal (fake-state doc) (lines "(defun f (x) x|foo)" "" "(defun g () xfoo)")))
   ;; None: the cursor moved out of the defun with the occurrences
   (let ((doc (make-fake (lines "(defun f (|foo) foo)" "(defun g () bar)"))))
     (type-keys doc "C-;")

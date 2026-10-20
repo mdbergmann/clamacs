@@ -191,7 +191,7 @@ narrowed by hand (the lines counted from 1, as `M-g g' does)."
                (1+ (car (iedit-region st))) (1+ (cdr (iedit-region st)))))))
 
 (defun iedit-describe (doc st)
-  (message doc "iedit: ~D occurrences of ~A in ~A"
+  (message doc "iedit: ~D occurrence~:P of ~A in ~A"
            (length (iedit-starts st)) (iedit-text st) (iedit-scope-name st)))
 
 (defun iedit-start (doc scope)
@@ -293,9 +293,19 @@ entered follow."
     (and (<= end (doc-end doc))
          (string-equal (doc-text doc start end) (iedit-text st)))))
 
+(defun iedit-too-few-p (st)
+  "Whether the set is too small to go on: empty, or one occurrence in a
+session whose scope was not narrowed to a defun or widened by lines (those
+two can leave exactly one on purpose, see `iedit-restrict-defun')."
+  (let ((starts (iedit-starts st)))
+    (or (null starts)
+        (and (null (rest starts))
+             (not (member (iedit-scope st) '(:defun :lines)))))))
+
 (defun iedit-validate (doc st)
   "Drop every occurrence that no longer reads as the set's text -- an
-edit the session did not see -- and end when fewer than two remain."
+edit the session did not see -- and end when too few remain
+(`iedit-too-few-p')."
   (let ((starts (remove-if-not (lambda (start) (iedit-occurrence-reads-p doc st start))
                                (iedit-starts st))))
     (unless (equal starts (iedit-starts st))
@@ -307,7 +317,7 @@ edit the session did not see -- and end when fewer than two remain."
             (doc-style doc y x (+ x (iedit-length st)) nil))))
       (setf (iedit-starts st) starts
             (iedit-current st) (iedit-index-at st (doc-point doc))))
-    (when (null (rest starts))
+    (when (iedit-too-few-p st)
       (iedit-end doc "the other occurrences changed"))))
 
 (defun iedit-drop (doc st k)
@@ -322,7 +332,9 @@ edit the session did not see -- and end when fewer than two remain."
       (doc-style doc y x (+ x (iedit-length st)) nil)
       (colour-lines doc y y))
     (when (null (rest (iedit-starts st)))
-      (iedit-end doc "one occurrence left"))))
+      (iedit-end doc (if (iedit-starts st)
+                         "one occurrence left"
+                         "no occurrence left")))))
 
 ;;; ------------------------------------------------------------------
 ;;; Widening and narrowing the scope
@@ -365,7 +377,10 @@ for the whole buffer, or at its top or end."
 
 (defun iedit-restrict-defun (doc st)
   "Narrow the scope to the defun the cursor is in: the occurrences
-outside it leave the set.  The session ends when fewer than two remain."
+outside it leave the set.  A session with ONE occurrence stays on -- a
+`C-;' on a symbol its defun holds once began over the whole buffer, and
+the key after this one is `M-{' or `M-}', widening from the defun; the
+session ends only when the defun holds none."
   (let* ((text (doc-text doc 0 (doc-end doc)))
          (point (doc-point doc))
          (start (and (doc-lisp-mode doc) (sexp-defun-start text point)))
@@ -391,8 +406,6 @@ outside it leave the set.  The session ends when fewer than two remain."
                  (colour-lines doc y y)))
              (cond ((null (iedit-starts st))
                     (iedit-end doc "no occurrence in the defun"))
-                   ((null (rest (iedit-starts st)))
-                    (iedit-end doc "one occurrence left"))
                    (t
                     (iedit-describe doc st))))))))
 
@@ -450,7 +463,7 @@ The cursor is put back where the user's edit left it."
                                          insert
                                          (subseq (iedit-text st) rel-to))
             (iedit-current st) (iedit-index-at st (doc-point doc))))
-    (if (null (rest (iedit-starts st)))
+    (if (iedit-too-few-p st)
         (iedit-end doc "the other occurrences changed")
         ;; The marks where the occurrences are now; a frontend that
         ;; recolours the edited lines afterwards paints them again.
@@ -466,7 +479,7 @@ every occurrence: the ones after it move, one it overlaps is dropped."
               ((>= start to) (push (+ start delta) starts)))))
     (setf (iedit-starts st) (nreverse starts)
           (iedit-current st) (iedit-index-at st (doc-point doc)))
-    (if (null (rest (iedit-starts st)))
+    (if (iedit-too-few-p st)
         (iedit-end doc "the other occurrences changed")
         (iedit-paint doc st))))
 
