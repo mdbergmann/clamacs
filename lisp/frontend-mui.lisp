@@ -2137,10 +2137,12 @@ otherwise (DOC-WINDOW-TITLE, files.lisp)."
   (mui:set-attrs (mdoc-window doc) m:+muia-window-title+
                  (store-string (mdoc-title-buf doc) (doc-window-title doc title))))
 
-(defmethod doc-ask-file ((doc mui-document) title save initial)
+(defmethod doc-ask-file ((doc mui-document) title mode initial)
   "The ASL file requester, through MUI so it opens on the editor's screen,
 in INITIAL's drawer with its file part (\"\" for a directory) in the file
-gadget."
+gadget.  In :DIRECTORY mode the requester lists drawers only and the
+drawer chosen is the answer (the file part is empty, so JOIN-PATH hands
+the drawer back)."
   (let ((req (mui:with-tags (tags) (m:mui-alloc-asl-request asl:+asl-file-request+ tags))))
     (when req
       (unwind-protect
@@ -2148,7 +2150,8 @@ gadget."
              (ffi:with-foreign-string (fdrawer (path-directory initial))
                (ffi:with-foreign-string (ffile (path-basename initial))
                  (mui:with-tags (tags asl:+aslfr-title-text+ ftitle
-                                      asl:+aslfr-do-save-mode+ (and save t)
+                                      asl:+aslfr-do-save-mode+ (eq mode t)
+                                      asl:+aslfr-drawers-only+ (eq mode :directory)
                                       asl:+aslfr-initial-drawer+ fdrawer
                                       asl:+aslfr-initial-file+ ffile
                                       asl:+aslfr-window+ (mui:get-attr-pointer m:+muia-window-window+
@@ -2316,9 +2319,10 @@ window; NIL when it is NIL or not open."
 
 ;;; The dynamic groups this frontend makes items for: the open buffers,
 ;;; the themes (phase T3 of specs/clamacs-themes.md), the cursor's
-;;; shape and the perspectives, one mechanism below.
+;;; shape and the two project groups (the open projects at the tail of
+;;; the Project menu, the Recent Projects submenu), one mechanism below.
 (defmethod editor-dynamic-groups ((editor mui-editor))
-  '(:buffers :themes :cursor :perspectives))
+  '(:buffers :themes :cursor :projects :recent))
 
 (defun build-menustrip (editor)
   "The strip from the table, or NIL -- with the reason on the console --

@@ -192,7 +192,7 @@ frameworks; no other toolchain).  Its C API, called through
 | `int clamacs_host_step(void *w, int ms)` | one turn of the event loop: wait up to `ms` for the first event, deliver what is pending, return |
 | `void clamacs_host_wake(void)` | from any thread: end the step in progress (the mailbox's wake) |
 | `int clamacs_host_ask(void *win, const char *text, const char *buttons)` | `doc-ask`: an `NSAlert`, buttons `"Save\|Discard\|Cancel"`, answers the index, -1 for Escape |
-| `char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)` | `doc-ask-file`: `NSOpenPanel` / `NSSavePanel`, a malloc'd path or NULL |
+| `char *clamacs_host_ask_file(void *win, const char *title, int mode, const char *initial)` | `doc-ask-file`: `NSOpenPanel` / `NSSavePanel` (mode 0 a file to read, 1 one to write, 2 a folder -- Open Project; GTK's `SELECT_FOLDER`, the shell's folder browser on Windows), a malloc'd path or NULL |
 | `void clamacs_host_free(void *p)` | frees it |
 | `void clamacs_host_beep(void)` | `NSBeep` |
 | `int clamacs_host_clipboard_set(const char *text)` | `doc-clipboard-set`, `doc-clipboard-copy` |

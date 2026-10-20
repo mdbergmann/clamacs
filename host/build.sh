@@ -140,7 +140,7 @@ if [ ! -f "$out/libclamacs-host.$so" ] || [ "$here/clamacs-host.m" -nt "$out/lib
                 $gtk_cflags $gtk_libs -o "$out/libclamacs-host.$so" ;;
         win)
             ${CC:-gcc} -shared -Wall -Wextra -O2 -x c "$here/clamacs-host.m" \
-                -lcomdlg32 -lshell32 -luser32 -o "$out/libclamacs-host.$so" ;;
+                -lcomdlg32 -lshell32 -lole32 -luser32 -o "$out/libclamacs-host.$so" ;;
     esac
     echo "built $out/libclamacs-host.$so"
 fi

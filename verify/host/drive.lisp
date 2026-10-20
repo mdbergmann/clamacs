@@ -28,8 +28,8 @@
 ;;;;                       (~/.clamacs-windows.cfg of the run's own HOME)
 ;;;;   CLAMACS_DRIVE_RC    the init file a theme pick writes (~/.clamacsrc
 ;;;;                       of that HOME), which the second editor loads
-;;;;   CLAMACS_DRIVE_PERSP the perspectives file Save Perspectives writes
-;;;;                       (~/.clamacs-perspectives.cfg of that HOME),
+;;;;   CLAMACS_DRIVE_PERSP the projects file the editor keeps on its own
+;;;;                       (~/.clamacs-projects.cfg of that HOME),
 ;;;;                       which the second editor restores
 ;;;;
 ;;;; Every line printed lands in the run's log; run-drive.sh greps it for
@@ -1110,7 +1110,7 @@ editor's first window must come up.")
         (fail "no dock line in ~A" *cfg*))
     (check-panels '(:diagnostics "clamacs-show-errors") "open rows 0" "\"diagnostics\":{\"open\":true,\"rows\":0")
     ;; The file the second editor (run-drive.sh, the SECOND mode below)
-    ;; comes up against is written by this editor's QUIT (the perspectives
+    ;; comes up against is written by this editor's QUIT (the projects
     ;; leg saves its file, which opts the layout file in too): QUIT-EDITOR
     ;; moves the window where *WANT* says first.
     (if (write-file *cfg* (format nil "; written by drive.lisp~%~%doc1 1 2 3 4~%"))
@@ -1851,19 +1851,31 @@ follows a change by a turn); \"\" after TICKS half-seconds."
       (ok "the panel's window went with it: ~A" *result*)
       (fail "after the panel's return the windows are ~A" *result*)))
 
-;;; Perspectives (specs/clamacs-perspectives.md, phase P2): a second
-;;; perspective made at the prompt and entered, the page's tabs read back
-;;; beside the editor's account -- the tabs hidden listed as such -- the
-;;; Buffers menu and the status line following, a file brought over from
-;;; the other perspective, the switch back through the verb and through
-;;; the host's own bar, the project directory told to amilisp (the REPL's
-;;; default directory follows), and the file written -- which the second
-;;; editor restores.
+;;; Projects (specs/clamacs-perspectives.md): a project opened at the
+;;; prompt -- the folder of the drive's own .asd, so the project is named
+;;; after the system -- and entered, the page's tabs read back beside the
+;;; editor's account -- the tabs hidden listed as such -- the Buffers
+;;; menu and the status line following, a file brought over from outside
+;;; the project, the switch back through the verb and through the host's
+;;; own bar, the folder told to amilisp (the REPL's default directory
+;;; follows), a buffer moved out of the project, the project closed into
+;;; Recent Projects and reopened from there, and the file the editor
+;;; keeps on its own -- which the second editor lists.
 
-(defun perspectives-lines ()
-  "PERSPECTIVES as a list of lines."
-  (cmd "PERSPECTIVES")
+(defun projects-lines ()
+  "PROJECTS as a list of lines."
+  (cmd "PROJECTS")
   (result-lines))
+
+(defun recent-lines ()
+  "RECENT as a list of lines; NIL when the submenu is empty."
+  (cmd "RECENT")
+  (and (string/= *result* "") (result-lines)))
+
+(defun answer-prompt (text)
+  "The open minibuffer's line set to TEXT and accepted."
+  (cmd (format nil "EVAL (clamacs::doc-set-minibuffer-text (clamacs::editor-active-document clamacs::*editor*) ~S)" text))
+  (cmd "KEY RET"))
 
 (defun active-id ()
   "The page id of the active document."
@@ -1900,160 +1912,195 @@ and, when it is the active one, the window), without EVAL's quotes."
   (cmd "EVAL (clamacs::status-text (clamacs::editor-active-document clamacs::*editor*))")
   *result*)
 
-(defun leg-perspectives ()
-  (if (equal (perspectives-lines) '("> main"))
-      (ok "the Perspectives menu lists main, ticked")
-      (fail "PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
-  (cmd "PERSPECTIVES nobody")
-  (if (result-is "no such perspective")
-      (ok "PERSPECTIVES refused an unknown perspective")
-      (fail "PERSPECTIVES nobody gave ~A" *result*))
-  (if (not (search "[main]" (status-line)))
-      (ok "with one perspective the status line names none: ~A" *result*)
-      (fail "the status line with one perspective: ~A" *result*))
+(defun leg-projects ()
+  (if (equal (projects-lines) '("> (no project)"))
+      (ok "the Project menu lists (no project) alone, ticked")
+      (fail "PROJECTS gave ~{~A~^|~}" (projects-lines)))
+  (cmd "PROJECTS nobody")
+  (if (result-is "no such project")
+      (ok "PROJECTS refused an unknown project")
+      (fail "PROJECTS nobody gave ~A" *result*))
+  (if (null (recent-lines))
+      (ok "Recent Projects is empty")
+      (fail "RECENT gave ~{~A~^|~}" (recent-lines)))
+  (if (not (search "[" (status-line)))
+      (ok "outside a project the status line names none: ~A" *result*)
+      (fail "the status line outside a project: ~A" *result*))
   (let ((home-name (cmd "GETNAME"))
-        (home-id (active-id)))
-    ;; A new perspective at the prompt (C-x x s): made and entered, an
-    ;; unnamed buffer opened in it
-    (cmd "EVAL clamacs-perspective-switch")
-    (cmd "KEY w o r k RET")
-    (if (string/= (wait-echo "New perspective: work" 20) "")
-        (ok "C-x x s work made a perspective and entered it")
-        (fail "after C-x x s work the echo area says ~A" *result*))
-    (if (equal (perspectives-lines) '("  main" "> work"))
-        (ok "the Perspectives menu ticks work")
-        (fail "PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+        (home-id (active-id))
+        (root (scratch "drivesys/")))
+    ;; Open Project at the prompt: the drive's system folder, so the
+    ;; project is named after its one .asd; entered, an unnamed buffer
+    ;; opened in it; and the file written at once
+    (cmd "EVAL clamacs-project-open")
+    (answer-prompt root)
+    (if (string/= (wait-echo (format nil "New project: drivesys (~A)" root) 20) "")
+        (ok "Open Project made drivesys from its folder and entered it")
+        (fail "after Open Project the echo area says ~A" *result*))
+    (if (equal (projects-lines) '("  (no project)" "> drivesys"))
+        (ok "the Project menu ticks drivesys below (no project)")
+        (fail "PROJECTS gave ~{~A~^|~}" (projects-lines)))
     (cmd "GETNAME")
     (if (result-is "(unnamed)")
-        (ok "the new perspective came up with an unnamed buffer")
-        (fail "in work the active buffer is ~A" *result*))
+        (ok "the new project came up with an unnamed buffer")
+        (fail "in drivesys the active buffer is ~A" *result*))
+    (if (probe-file *persp-file*)
+        (ok "the first Open Project wrote the projects file: ~A" *persp-file*)
+        (fail "no projects file at ~A after Open Project" *persp-file*))
     (let ((new-id (active-id)))
-      ;; The editor's account: main's tabs hidden
-      (let ((state (panel-state :perspectives "current work of (main|work) hidden (")))
+      ;; The editor's account: the tabs outside the project hidden
+      (let ((state (panel-state :projects "current drivesys of (scratch|drivesys) hidden (")))
         (if (and (string/= state "") (search home-id state))
-            (ok "the editor hides main's tabs: ~A" state)
-            (fail "host-panel-state :perspectives says ~A" *result*)))
+            (ok "the editor hides the tabs outside the project: ~A" state)
+            (fail "host-panel-state :projects says ~A" *result*)))
       ;; The page's: the unnamed buffer its one source tab, HOME-ID hidden
       (if (and (wait-page-tabs "source" new-id t 20) (wait-page-tabs "source" home-id nil 20)
                (wait-page-tabs "hidden" home-id t 20))
           (ok "the page draws ~A alone and lists ~A hidden" new-id home-id)
           (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-      ;; The Buffers menu sees work's buffers and the tool buffers only
+      ;; The Buffers menu sees the project's buffers and the tool buffers only
       (let ((b (buffers-lines)))
         (if (and (member "> (unnamed)" b :test #'string=)
                  (not (find home-name b :test #'search)))
-            (ok "the Buffers menu lists work's buffers, not ~A" home-name)
-            (fail "in work BUFFERS gave ~{~A~^|~}" b)))
-      (if (search "(unnamed) [work]  " (status-line))
-          (ok "the status line names the perspective: ~A" *result*)
-          (fail "the status line in work: ~A" *result*))
-      (if (string/= (menu-report "\"> work\"") "")
-          (ok "the menu bar's Perspectives menu ticks work")
-          (fail "the menu bar's Perspectives menu: ~A" *result*))
-      ;; A file open in main, opened here: brought over -- a window cannot
-      ;; be in two perspectives
+            (ok "the Buffers menu lists the project's buffers, not ~A" home-name)
+            (fail "in drivesys BUFFERS gave ~{~A~^|~}" b)))
+      (if (search "(unnamed) [drivesys]  " (status-line))
+          (ok "the status line names the project: ~A" *result*)
+          (fail "the status line in drivesys: ~A" *result*))
+      (if (string/= (menu-report "\"> drivesys\"") "")
+          (ok "the menu bar's Project menu ticks drivesys")
+          (fail "the menu bar's Project menu: ~A" *result*))
+      ;; A file open outside, opened here: brought over -- a window cannot
+      ;; be in two places
       (cmd (format nil "OPEN FILE ~A" (fixture "sample2.lisp")))
       (cmd "EVAL (clamacs::perspective-name (clamacs::doc-perspective (clamacs::editor-active-document clamacs::*editor*)))")
-      (if (result-is "\"work\"")
-          (ok "OPEN brought sample2.lisp over from main into work")
-          (fail "after OPEN sample2.lisp's perspective is ~A" *result*))
+      (if (result-is "\"drivesys\"")
+          (ok "OPEN brought sample2.lisp over into drivesys")
+          (fail "after OPEN sample2.lisp's project is ~A" *result*))
       (let ((second-id (active-id)))
-        ;; Back to main through the verb: main's tabs drawn again, work's
-        ;; hidden, the buffer that had the keyboard when main was left
-        ;; active again
-        (cmd "PERSPECTIVES main")
+        ;; Back outside through the verb: the tabs drawn again, the
+        ;; project's hidden, the buffer that had the keyboard when the
+        ;; scratch set was left active again
+        (cmd "PROJECTS (no project)")
         (if (result-is "")
-            (ok "PERSPECTIVES main switched back")
-            (fail "PERSPECTIVES main gave ~A" *result*))
+            (ok "PROJECTS (no project) switched back")
+            (fail "PROJECTS (no project) gave ~A" *result*))
         (cmd "GETNAME")
         (if (result-is home-name)
-            (ok "~A has the keyboard again, as when main was left" home-name)
-            (fail "back in main the active buffer is ~A (wanted ~A)" *result* home-name))
-        (let ((state (panel-state :perspectives "current main of (main|work) hidden (")))
+            (ok "~A has the keyboard again, as when the scratch set was left" home-name)
+            (fail "back outside the active buffer is ~A (wanted ~A)" *result* home-name))
+        (let ((state (panel-state :projects "current scratch of (scratch|drivesys) hidden (")))
           (if (and (string/= state "") (search new-id state) (search second-id state))
-              (ok "the editor hides work's tabs: ~A" state)
-              (fail "host-panel-state :perspectives says ~A" *result*)))
+              (ok "the editor hides the project's tabs: ~A" state)
+              (fail "host-panel-state :projects says ~A" *result*)))
         (if (and (wait-page-tabs "source" home-id t 20) (wait-page-tabs "source" new-id nil 20)
                  (wait-page-tabs "hidden" new-id t 20) (wait-page-tabs "hidden" second-id t 20))
             (ok "the page draws ~A again and lists ~A and ~A hidden" home-id new-id second-id)
             (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-        (if (search "[main]  " (status-line))
-            (ok "the status line says main again")
-            (fail "the status line back in main: ~A" *result*))
+        (if (not (search "[" (status-line)))
+            (ok "the status line names no project again")
+            (fail "the status line back outside: ~A" *result*))
         ;; The host's own bar (macOS): the item itself performs its action;
         ;; elsewhere the page draws the menu and the verb is the pick
-        (let ((work (position "  work" (perspectives-lines) :test #'string=)))
-          (cmd (format nil "EVAL (clamacs::host-menu-click :perspectives ~D)" work))
+        (let ((pos (position "  drivesys" (projects-lines) :test #'string=)))
+          (cmd (format nil "EVAL (clamacs::host-menu-click :projects ~D)" pos))
           (cond ((result-is "\"no native menu\"")
-                 (ok "the page draws the Perspectives menu here; the verb is the pick")
-                 (cmd "PERSPECTIVES work"))
+                 (ok "the page draws the Project menu here; the verb is the pick")
+                 (cmd "PROJECTS drivesys"))
                 ((not (result-is "\"picked\""))
-                 (fail "picking work on the host's menu bar gave ~A" *result*))
-                (t (ok "the host's Perspectives menu pick (item ~D) switched" work))))
-        (if (equal (perspectives-lines) '("  main" "> work"))
-            (ok "work is in front again")
-            (fail "after the pick PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+                 (fail "picking drivesys on the host's menu bar gave ~A" *result*))
+                (t (ok "the host's Project menu pick (item ~D) switched" pos))))
+        (if (equal (projects-lines) '("  (no project)" "> drivesys"))
+            (ok "drivesys is in front again")
+            (fail "after the pick PROJECTS gave ~{~A~^|~}" (projects-lines)))
         (cmd "GETNAME")
         (if (result-has "sample2.lisp")
-            (ok "sample2.lisp, the buffer left active in work, has the keyboard")
-            (fail "in work the active buffer is ~A" *result*))
+            (ok "sample2.lisp, the buffer left active in drivesys, has the keyboard")
+            (fail "in drivesys the active buffer is ~A" *result*))
         (if (wait-page-tabs "hidden" home-id t 20)
             (ok "the page hides ~A again" home-id)
             (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-        ;; The project directory: set on work, told to amilisp at the next
-        ;; switch into it -- the REPL transcript gets a note, and a relative
-        ;; path at the prompt means the project's (SLIME's ,cd, done by the
-        ;; perspective).  The REPL is a tool buffer, shown in every
-        ;; perspective.
-        (let ((root (scratch "drivesys/")))
-          (cmd (format nil "EVAL (setf (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\")) ~S)" root))
-          (cmd "PERSPECTIVES main")
-          (cmd "PERSPECTIVES work")
-          (cmd "EVAL clamacs-repl")
-          (cmd "GETNAME")
-          (if (result-has "*clamacs-repl*")
-              (ok "the REPL window is shown in work too")
-              (fail "clamacs-repl in work activated ~A" *result*))
-          (cmd "EVAL end-of-buffer")
-          (let ((note (format nil "; default directory ~A (perspective work)" root)))
-            (if (string/= (wait-eval (format nil "(let ((d (clamacs::repl-doc clamacs::*editor*))) (and (search ~S (clamacs::doc-text d 0 (clamacs::doc-end d))) t))" note)
-                                     "T" 20)
-                          "")
-                (ok "the transcript notes the directory told: ~A" note)
-                (fail "no note ~S in the transcript" note)))
-          (let ((p (cursor-line)))
-            (cmd "INSERT (namestring *default-pathname-defaults*)")
-            (cmd "KEY RET")
-            (let ((y (wait-cursor-at (+ p 2) 40)))
-              (cmd (format nil "GOTOLINE ~D" (+ p 2)))
-              (let ((l (get-line)))
-                (if (and y (search "drivesys/" l))
-                    (ok "amilisp's default directory is the project's: ~A" l)
-                    (fail "*default-pathname-defaults* at the prompt gave ~A (cursor ~A)" l y)))))
-          (cmd "EVAL end-of-buffer")
-          ;; Save Perspectives: the file, for the second editor
-          (cmd "PERSPECTIVES main")
-          (cmd "EVAL clamacs-perspective-save")
-          (cmd "STATUS")
-          (if (result-has "Saved 2 perspective(s) to ")
-              (ok "Save Perspectives wrote the file: ~A" *result*)
-              (fail "clamacs-perspective-save said ~A" *result*))
-          (if (probe-file *persp-file*)
-              (ok "the perspectives file is ~A" *persp-file*)
-              (fail "no perspectives file at ~A" *persp-file*))
-          (dolist (want (list "perspective main" "perspective work" (format nil "root ~A" root)
-                              (format nil "file ~A" (fixture "sample2.lisp")) "current main"))
-            (if (file-has-line *persp-file* want)
-                (ok "the file holds ~A" want)
-                (fail "no line ~A in ~A" want *persp-file*)))
-          (cmd "GETNAME")
-          (if (result-is home-name)
-              (ok "back in main with ~A, as before the leg" home-name)
-              (fail "the leg ends with ~A active" *result*)))))))
+        ;; The folder: told to amilisp at the switch into the project --
+        ;; the REPL transcript gets a note, and a relative path at the
+        ;; prompt means the project's (SLIME's ,cd, done by the project).
+        ;; The REPL is a tool buffer, shown in every project.
+        (cmd "EVAL clamacs-repl")
+        (cmd "GETNAME")
+        (if (result-has "*clamacs-repl*")
+            (ok "the REPL window is shown in the project too")
+            (fail "clamacs-repl in drivesys activated ~A" *result*))
+        (cmd "EVAL end-of-buffer")
+        (let ((note (format nil "; default directory ~A (project drivesys)" root)))
+          (if (string/= (wait-eval (format nil "(let ((d (clamacs::repl-doc clamacs::*editor*))) (and (search ~S (clamacs::doc-text d 0 (clamacs::doc-end d))) t))" note)
+                                   "T" 20)
+                        "")
+              (ok "the transcript notes the folder told: ~A" note)
+              (fail "no note ~S in the transcript" note)))
+        (let ((p (cursor-line)))
+          (cmd "INSERT (namestring *default-pathname-defaults*)")
+          (cmd "KEY RET")
+          (let ((y (wait-cursor-at (+ p 2) 40)))
+            (cmd (format nil "GOTOLINE ~D" (+ p 2)))
+            (let ((l (get-line)))
+              (if (and y (search "drivesys/" l))
+                  (ok "amilisp's default directory is the project's: ~A" l)
+                  (fail "*default-pathname-defaults* at the prompt gave ~A (cursor ~A)" l y)))))
+        (cmd "EVAL end-of-buffer")
+        ;; sample2.lisp moved out of the project at the prompt (it may
+        ;; carry the run's typing, and Close Project would ask about it):
+        ;; hidden, the unnamed buffer to the keyboard
+        (cmd (format nil "OPEN FILE ~A" (fixture "sample2.lisp")))
+        (cmd "EVAL clamacs-project-move-buffer")
+        (answer-prompt "(no project)")
+        (if (string/= (wait-echo "sample2.lisp moved to (no project)" 20) "")
+            (ok "Move Buffer put sample2.lisp outside the project")
+            (fail "after Move Buffer the echo area says ~A" *result*))
+        (cmd "GETNAME")
+        (if (result-is "(unnamed)")
+            (ok "the project's unnamed buffer has the keyboard")
+            (fail "after the move the active buffer is ~A" *result*))
+        ;; Close Project: the editor goes back outside, the project is in
+        ;; Recent Projects, its unnamed buffer closed
+        (cmd "EVAL clamacs-project-close")
+        (if (string/= (wait-echo "Closed project drivesys" 20) "")
+            (ok "Close Project closed drivesys")
+            (fail "after Close Project the echo area says ~A" *result*))
+        (if (equal (projects-lines) '("> (no project)"))
+            (ok "the Project menu lists (no project) alone again")
+            (fail "after the close PROJECTS gave ~{~A~^|~}" (projects-lines)))
+        (if (equal (recent-lines) '("  drivesys"))
+            (ok "Recent Projects lists drivesys")
+            (fail "after the close RECENT gave ~{~A~^|~}" (recent-lines)))
+        (if (and (wait-page-tabs "source" second-id t 20) (wait-page-tabs "source" new-id nil 20)
+                 (wait-page-tabs "hidden" new-id nil 20))
+            (ok "the page draws sample2.lisp and the project's buffer is gone")
+            (fail "the page's tabs after the close: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
+        (if (string/= (menu-report "\"  drivesys\"") "")
+            (ok "the menu bar's Recent Projects submenu lists drivesys")
+            (fail "the menu bar's Recent Projects: ~A" *result*))
+        ;; Reopened from Recent through the verb: entered again, empty
+        (cmd "RECENT drivesys")
+        (if (result-is "")
+            (ok "RECENT drivesys reopened it")
+            (fail "RECENT drivesys gave ~A" *result*))
+        (if (string/= (wait-echo (format nil "Project: drivesys (~A)" root) 20) "")
+            (ok "the reopened project says its folder: ~A" *result*)
+            (fail "after RECENT drivesys the echo area says ~A" *result*))
+        (if (and (equal (projects-lines) '("  (no project)" "> drivesys")) (null (recent-lines)))
+            (ok "drivesys is open again, Recent Projects empty")
+            (fail "after the reopen PROJECTS gave ~{~A~^|~}, RECENT ~{~A~^|~}" (projects-lines) (recent-lines)))
+        ;; sample2.lisp into the project for the second editor to find
+        ;; waiting on it, then back outside: the quit's write records it
+        (cmd (format nil "OPEN FILE ~A" (fixture "sample2.lisp")))
+        (cmd "PROJECTS (no project)")
+        (cmd "GETNAME")
+        (if (result-is home-name)
+            (ok "back outside with ~A, as before the leg" home-name)
+            (fail "the leg ends with ~A active" *result*))))))
 
 (defun quit-editor ()
   "The window moved where *WANT-FRAME* says -- the quit writes the layout
-file beside the perspectives file the run saved, and the second editor
+file beside the projects file the run left, and the second editor
 must come up there -- then kill-emacs: what the run typed into the
 fixtures is discarded, no requester asked.  Then wait for the port to
 go."
@@ -2174,7 +2221,7 @@ go."
   (leg-systems)
   (leg-own-lisp)
   (leg-detach)
-  (leg-perspectives)
+  (leg-projects)
   ;; Leave the errors file active, as the Amiga run does.
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (pause 25)
@@ -2190,7 +2237,7 @@ wrote: it must come up where the file said, then quit."
          (return-from second nil))
         (t (ok "a second editor is at 127.0.0.1:~A" (file-line (concatenate 'string *dir* "clamacs-port")))))
   ;; The layout file is the first editor's quit's, not the drive's: the
-  ;; perspectives file it saved opted the layout in, and its window was
+  ;; projects file it wrote opted the layout in, and its window was
   ;; moved to *WANT-FRAME* before the quit (QUIT-EDITOR).  The drive's
   ;; own line is gone, the editor's header and the dock's line are there.
   (if (and (file-has-prefix *cfg* "; clamacs window positions")
@@ -2233,119 +2280,111 @@ wrote: it must come up where the file said, then quit."
       (ok "the second editor came up with a bar: the init file's form took")
       (fail "the second editor's CURSOR gave ~{~A~^|~}" (cursor-lines)))
   (check-cursor "the second editor" nil)
-  ;; ... and the perspectives file the first editor saved (and kept in
-  ;; step at its quit) is LISTED, not restored: main and work by name
-  ;; after a scratch perspective that is in front, work with its root,
-  ;; their files waiting, the file it was started on alone on the screen,
-  ;; in scratch.  The first switch into a listed perspective opens its
-  ;; files.
-  (if (equal (perspectives-lines) '("> scratch" "  main" "  work"))
-      (ok "the second editor lists main and work after scratch, scratch in front, nothing restored")
-      (fail "the second editor's PERSPECTIVES gave ~{~A~^|~}" (perspectives-lines)))
+  ;; ... and the projects file the first editor wrote (and kept in step
+  ;; at its quit) is LISTED, not restored: drivesys in Recent Projects
+  ;; with its folder, its file waiting, the file it was started on alone
+  ;; on the screen, outside any project.  The first switch into a recent
+  ;; project opens its files.
+  (if (equal (projects-lines) '("> (no project)"))
+      (ok "the second editor lists (no project) alone: nothing restored")
+      (fail "the second editor's PROJECTS gave ~{~A~^|~}" (projects-lines)))
+  (if (equal (recent-lines) '("  drivesys"))
+      (ok "the second editor lists drivesys in Recent Projects")
+      (fail "the second editor's RECENT gave ~{~A~^|~}" (recent-lines)))
   (let ((before (active-id)))
-    (cmd "EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"work\"))")
+    (cmd "EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* \"drivesys\"))")
     (if (result-has "drivesys/")
-        (ok "work is listed with its project directory: ~A" *result*)
-        (fail "work's root at the start is ~A" *result*))
-    (cmd "EVAL (clamacs::perspective-pending-p (clamacs::find-perspective clamacs::*editor* \"main\"))")
+        (ok "drivesys is listed with its folder: ~A" *result*)
+        (fail "drivesys's root at the start is ~A" *result*))
+    (cmd "EVAL (clamacs::perspective-pending-p (clamacs::find-perspective clamacs::*editor* \"drivesys\"))")
     (if (result-is "T")
-        (ok "main's files wait: nothing was opened at the start")
-        (fail "main waits ~A" *result*))
+        (ok "drivesys's file waits: nothing was opened at the start")
+        (fail "drivesys waits ~A" *result*))
     (cmd "EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))")
-    (if (result-has "[scratch]")
-        (ok "the status line names scratch at the start: ~A" *result*)
+    (if (not (result-has "["))
+        (ok "the status line names no project at the start: ~A" *result*)
         (fail "the status line at the start: ~A" *result*))
-    (let ((state (panel-state :perspectives "current scratch of (scratch|main|work) hidden ()")))
+    (let ((state (panel-state :projects "current scratch of (scratch|drivesys) hidden ()")))
       (if (string/= state "")
           (ok "nothing is hidden at the start: ~A" state)
-          (fail "host-panel-state :perspectives says ~A" *result*)))
+          (fail "host-panel-state :projects says ~A" *result*)))
     (if (and (wait-page-tabs "source" before t 20) (string= (page-tabs "hidden") ""))
         (ok "the page draws the started file alone: ~A" before)
         (fail "the page's tabs at the start: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-    ;; Into work: sample2.lisp, the file it was started on, is work's --
-    ;; brought over from scratch, which has nothing left to hide
-    (cmd "PERSPECTIVES work")
+    ;; Into drivesys from Recent: sample2.lisp, the file it was started
+    ;; on, is the project's -- brought over from outside, which has
+    ;; nothing left to hide and leaves the menu
+    (cmd "RECENT drivesys")
     (cmd "STATUS")
-    ;; ... and the message names work's project directory
-    (if (and (result-has "Perspective: work (") (result-has "drivesys/), 1 file(s) opened"))
-        (ok "the first switch into work opened its file and names its directory: ~A" *result*)
-        (fail "PERSPECTIVES work said ~A" *result*))
+    (if (and (result-has "Project: drivesys (") (result-has "drivesys/), 1 file(s) opened"))
+        (ok "the first switch into drivesys opened its file and names its folder: ~A" *result*)
+        (fail "RECENT drivesys said ~A" *result*))
     (cmd "GETNAME")
     (if (result-has "sample2.lisp")
-        (ok "sample2.lisp moved into work and has the keyboard")
-        (fail "in work the active buffer is ~A" *result*))
-    (let ((state (panel-state :perspectives "current work of (scratch|main|work) hidden ()")))
+        (ok "sample2.lisp moved into drivesys and has the keyboard")
+        (fail "in drivesys the active buffer is ~A" *result*))
+    (let ((state (panel-state :projects "current drivesys of (scratch|drivesys) hidden ()")))
       (if (string/= state "")
-          (ok "work in front, nothing hidden: ~A" state)
-          (fail "host-panel-state :perspectives says ~A" *result*)))
-    ;; Into main: its files open now.  The first editor quit with
-    ;; errors.lisp active (MAIN's last OPEN), and its quit kept the file
-    ;; in step: that is main's recorded document, and it has the
-    ;; keyboard although the files opened each took it as they came
-    (cmd "PERSPECTIVES main")
-    (cmd "STATUS")
-    (if (result-has "Perspective: main, ")
-        (ok "the first switch into main opened its files: ~A" *result*)
-        (fail "PERSPECTIVES main said ~A" *result*))
-    (cmd "GETNAME")
-    (if (result-has "errors.lisp")
-        (ok "main's recorded document is open and active: ~A" *result*)
-        (fail "in main the active buffer is ~A (wanted errors.lisp, the first editor's last)" *result*))
-    (let ((state (panel-state :perspectives "current main of (scratch|main|work) hidden (")))
-      (if (and (string/= state "") (search before state))
-          (ok "sample2.lisp is work's and hidden: ~A" state)
-          (fail "host-panel-state :perspectives says ~A" *result*)))
-    (if (and (wait-page-tabs "hidden" before t 20) (wait-page-tabs "source" before nil 20))
-        (ok "the second editor's page hides ~A" before)
-        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-    ;; Back to work: opened already, a plain switch
-    (cmd "PERSPECTIVES work")
-    (cmd "STATUS")
-    (if (and (result-has "Perspective: work (") (result-has "drivesys/)")
-             (not (result-has "opened")))
-        (ok "the second switch into work is a plain switch: ~A" *result*)
-        (fail "the second PERSPECTIVES work said ~A" *result*))
-    (cmd "GETNAME")
-    (if (result-has "sample2.lisp")
-        (ok "switching to work brings sample2.lisp back")
-        (fail "in work the active buffer is ~A" *result*))
-    (if (wait-page-tabs "source" before t 20)
-        (ok "the second editor's page draws ~A again" before)
-        (fail "the page's tabs: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
-    ;; The REPL's title names the perspective in front, its name does not.
+          (ok "drivesys in front, nothing hidden: ~A" state)
+          (fail "host-panel-state :projects says ~A" *result*)))
+    (if (and (equal (projects-lines) '("> drivesys")) (null (recent-lines)))
+        (ok "drivesys is the one entry of the Project menu, Recent Projects empty")
+        (fail "after the reopen PROJECTS gave ~{~A~^|~}, RECENT ~{~A~^|~}" (projects-lines) (recent-lines)))
+    (cmd "EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))")
+    (if (result-has "[drivesys]")
+        (ok "the status line names the project: ~A" *result*)
+        (fail "the status line in drivesys: ~A" *result*))
+    ;; The REPL's title names the project in front, its name does not.
     ;; The window alone: this editor has no amilisp, and clamacs-repl
     ;; would ask whether to start one.
     (cmd "EVAL (clamacs::doc-activate (clamacs::repl-open clamacs::*editor* nil))")
     (cmd "GETNAME")
     (if (result-has "*clamacs-repl*")
-        (ok "the REPL window is open in work")
+        (ok "the REPL window is open in drivesys")
         (fail "clamacs-repl activated ~A" *result*))
-    (if (equal (repl-title-now) "*clamacs-repl* [work]")
-        (ok "the REPL's title names the perspective: ~A" *result*)
+    (if (equal (repl-title-now) "*clamacs-repl* [drivesys]")
+        (ok "the REPL's title names the project: ~A" *result*)
         (fail "the REPL's title is ~A" *result*))
-    (cmd "PERSPECTIVES main")
-    (if (equal (repl-title-now) "*clamacs-repl* [main]")
-        (ok "the REPL's title follows the switch: ~A" *result*)
-        (fail "the REPL's title after the switch is ~A" *result*))
     (cmd "EVAL (clamacs::doc-name (clamacs::repl-doc clamacs::*editor*))")
     (if (equal (string-trim "\"" *result*) "*clamacs-repl*")
         (ok "the REPL's name stays ~A" *result*)
-        (fail "the REPL's name is ~A" *result*)))
+        (fail "the REPL's name is ~A" *result*))
+    ;; Close Project: sample2.lisp, untouched here, closes without a
+    ;; question; the editor is outside any project with an unnamed
+    ;; buffer, the title plain again, drivesys recent with its file
+    (cmd "EVAL clamacs-project-close")
+    (if (string/= (wait-echo "Closed project drivesys" 20) "")
+        (ok "the second editor closed drivesys")
+        (fail "after Close Project the echo area says ~A" *result*))
+    (if (and (equal (projects-lines) '("> (no project)")) (equal (recent-lines) '("  drivesys")))
+        (ok "drivesys is recent again, (no project) in front")
+        (fail "after the close PROJECTS gave ~{~A~^|~}, RECENT ~{~A~^|~}" (projects-lines) (recent-lines)))
+    (if (equal (repl-title-now) "*clamacs-repl*")
+        (ok "the REPL's title is plain again outside a project")
+        (fail "the REPL's title after the close is ~A" *result*))
+    (cmd "EVAL (clamacs::perspective-pending-files (clamacs::find-perspective clamacs::*editor* \"drivesys\"))")
+    (if (result-has "sample2.lisp")
+        (ok "the close remembered sample2.lisp on drivesys: ~A" *result*)
+        (fail "after the close drivesys waits with ~A" *result*)))
   (cmd "EVAL save-buffers-kill-emacs")
   (ignore-errors (close *port*))
   (setq *port* nil)
   (if (wait-gone 20)
       (ok "the second editor quit")
       (fail "the second editor did not quit"))
-  ;; Its quit kept the perspectives file in step: main and work, the
-  ;; current one, and nothing of scratch, which the file never records.
-  (dolist (want (list "perspective main" "perspective work" "current main"))
+  ;; Its quit kept the projects file in step: drivesys with its folder and
+  ;; its remembered file, no current line (nothing was in front), and
+  ;; nothing of the scratch set, which the file never records.
+  (dolist (want (list "project drivesys" (format nil "file ~A" (fixture "sample2.lisp"))))
     (if (file-has-line *persp-file* want)
         (ok "after the second editor's quit the file holds ~A" want)
         (fail "no line ~A in ~A after the second editor's quit" want *persp-file*)))
-  (if (file-has-line *persp-file* "perspective scratch")
-      (fail "the second editor's quit wrote the scratch perspective to ~A" *persp-file*)
-      (ok "the second editor's quit left scratch out of the file")))
+  (if (file-has-prefix *persp-file* "root ")
+      (ok "the file holds drivesys's folder")
+      (fail "no root line in ~A" *persp-file*))
+  (if (or (file-has-line *persp-file* "project scratch") (file-has-prefix *persp-file* "current "))
+      (fail "the second editor's quit wrote the scratch set, or a current line, to ~A" *persp-file*)
+      (ok "the second editor's quit left the scratch set out of the file")))
 
 (defvar *library* nil
   "True when the file was loaded for its helpers only (verify/host/shots.lisp

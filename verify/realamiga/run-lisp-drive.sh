@@ -96,6 +96,15 @@ stack 128000
 IF EXISTS T:clamacs-exit.log
   delete >NIL: T:clamacs-exit.log
 ENDIF
+; The projects file the last run's editor wrote at its quit (the editor
+; keeps it on its own once a project exists) stays on the Workbench
+; image: this run starts without one.
+IF EXISTS ENV:Clamacs/projects.cfg
+  delete >NIL: ENV:Clamacs/projects.cfg
+ENDIF
+IF EXISTS ENVARC:Clamacs/projects.cfg
+  delete >NIL: ENVARC:Clamacs/projects.cfg
+ENDIF
 $SAVE_IMAGE
 ; The target amilisp first, with its development port (see boot-override).
 cd AmiLisp:
@@ -310,28 +319,30 @@ OK ENVARC: holds the same line
 OK the file holds the error list
 OK a second editor is at
 OK a second editor came up where the file said
-OK wrote a perspectives file of our own
-OK the start listed main and work after scratch, scratch in front, nothing restored
-OK the status line names scratch at the start
-OK work is listed with its project directory
+OK wrote a projects file of our own
+OK the start listed nothing open: (no project) alone, nothing restored
+OK the start listed main and work in Recent Projects
+OK the status line names no project at the start
+OK work is listed with its folder
 OK main'"'"'s file waits: nothing was opened at the start
 OK the started file alone is on the screen
 OK the first switch into work brought sample2.lisp over
-OK sample2.lisp is work'"'"'s, its window open, scratch empty
+OK sample2.lisp is work'"'"'s, its window open, the scratch set empty
 OK the first switch into main opened sample.lisp
 OK main'"'"'s file has the keyboard
 OK sample2.lisp'"'"'s window is closed, sample.lisp'"'"'s open
+OK Recent Projects is empty once both are open
 OK the second switch into work is a plain switch
 OK switching to work brought sample2.lisp back
 OK the switch opened work'"'"'s window and closed main'"'"'s
-OK the window a perspective hid came back where it was
+OK the window a project hid came back where it was
 OK the REPL window is open in work, named
-OK the REPL'"'"'s title names the perspective
+OK the REPL'"'"'s title names the project
 OK the REPL'"'"'s title follows the switch
 OK the second editor quit
-OK the quit kept the perspectives file in step
-OK the quit left scratch out of the perspectives file
-OK the perspectives files are gone again
+OK the quit kept the projects file in step
+OK the quit left the scratch set out of the projects file
+OK the projects files are gone again
 OK the snapshot files are gone again
 OK the AmiLisp menu woke up with the port
 OK Start amilisp is dimmed while connected
@@ -344,27 +355,36 @@ OK the REPL moved to the editor itself
 OK (room) at the self REPL reported the editor heap
 OK IN-EDITOR ran on the MUI task and named the active window
 OK Talk to amilisp moved the REPL back
-OK the Perspectives menu lists main, ticked
-OK PERSPECTIVES refused an unknown perspective
-OK with one perspective the status line names none
-OK C-x x s work made a perspective and entered it
-OK the Perspectives menu ticks work
-OK the new perspective came up with an unnamed buffer
-OK the switch closed main'"'"'s windows and left the REPL open
-OK the Buffers menu lists work'"'"'s buffers, not main'"'"'s
-OK the status line names the perspective
-OK OPEN brought sample2.lisp over from main into work
-OK PERSPECTIVES main switched back, sample.lisp has the keyboard again
-OK the switch back opened main'"'"'s windows and closed work'"'"'s
-OK the status line says main again
-OK picking work in the Perspectives menu brought sample2.lisp back
-OK the REPL window is shown in work too
-OK the transcript notes the directory told to amilisp
+OK the Project menu lists (no project) alone, ticked
+OK PROJECTS refused an unknown project
+OK Recent Projects is empty
+OK outside a project the status line names none
+OK Open Project made realamiga from its folder and entered it
+OK the Project menu ticks realamiga below (no project)
+OK the first Open Project wrote the projects file to ENV: and ENVARC:
+OK the new project came up with an unnamed buffer
+OK the switch closed the windows outside the project and left the REPL open
+OK the Buffers menu lists the project'"'"'s buffers, not sample.lisp
+OK the status line names the project
+OK OPEN brought sample2.lisp over into realamiga
+OK PROJECTS (no project) switched back, sample.lisp has the keyboard again
+OK the switch back opened the windows outside and closed the project'"'"'s
+OK the window a project hid came back where it was
+OK the status line names no project again
+OK picking realamiga in the Project menu brought sample2.lisp back
+OK the REPL window is shown in the project too
+OK the transcript notes the folder told to amilisp
 OK amilisp'"'"'s default directory is the project'"'"'s
-OK Save Perspectives wrote the file
-OK the perspectives file is in ENV: and ENVARC:
-OK the file holds both perspectives, work'"'"'s root and file, main current
-OK back in main with sample.lisp, as before the leg'
+OK Move Buffer put sample2.lisp outside the project
+OK the project'"'"'s unnamed buffer has the keyboard
+OK Close Project closed realamiga
+OK the Project menu lists (no project) alone again
+OK Recent Projects lists realamiga
+OK the project'"'"'s buffer is gone, both files on the screen
+OK RECENT realamiga reopened it
+OK realamiga is open again, Recent Projects empty
+OK the file holds realamiga and its folder
+OK back outside with sample2.lisp, the buffer moved out last'
 
 want="$want_phase2"
 if [ "$PHASE" -ge 3 ]; then

@@ -35,6 +35,9 @@ Delete >NIL: build/amiga/drive-done
 ; The editor's exit log (quit.rexx reads the WHOLE of it) must be this
 ; run's alone -- T: survives between runs on a real machine.
 Delete >NIL: T:clamacs-exit.log
+; The projects file the last run's editor wrote at its quit (it keeps the
+; file on its own once a project exists): this run starts without one.
+Delete >NIL: ENV:Clamacs/projects.cfg ENVARC:Clamacs/projects.cfg ENV:Clamacs/perspectives.cfg ENVARC:Clamacs/perspectives.cfg
 echo "=== run start ===" >build/amiga/clamacs-test.log
 echo "hardware phase {PHASE}" >>build/amiga/clamacs-test.log
 date >>build/amiga/clamacs-test.log

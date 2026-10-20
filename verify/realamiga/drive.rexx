@@ -904,18 +904,18 @@ IF WriteFile(CFG, '; written by drive.rexx' || '0A'x || '0A'x || WANT || '0A'x) 
     SAY 'OK wrote a file of our own:' WANT
 ELSE
     SAY 'FAIL could not write' CFG
-/* And a perspectives file of our own for the Lisp editor to find at its
+/* And a projects file of our own for the Lisp editor to find at its
 ** start (specs/clamacs-perspectives.md): LISTED there, not restored --
-** the editor must come up on sample2.lisp alone, in a scratch
-** perspective of its own, with main and work beside it by name and both
-** perspectives' files waiting for the first switch into them. */
+** the editor must come up on sample2.lisp alone, outside any project,
+** with main and work in Recent Projects and both projects' files waiting
+** for the first switch into them. */
 IF AMILISP ~= '' THEN DO
     NL = '0A'x
-    PCFG = 'ENV:Clamacs/perspectives.cfg'
-    PARCHIVE = 'ENVARC:Clamacs/perspectives.cfg'
-    PTEXT = '; written by drive.rexx' || NL || 'perspective main' || NL || 'file Clamacs:verify/realamiga/sample.lisp' || NL || 'perspective work' || NL || 'root Clamacs:verify/' || NL || 'file Clamacs:verify/realamiga/sample2.lisp' || NL || 'current work' || NL
+    PCFG = 'ENV:Clamacs/projects.cfg'
+    PARCHIVE = 'ENVARC:Clamacs/projects.cfg'
+    PTEXT = '; written by drive.rexx' || NL || 'project main' || NL || 'file Clamacs:verify/realamiga/sample.lisp' || NL || 'project work' || NL || 'root Clamacs:verify/' || NL || 'file Clamacs:verify/realamiga/sample2.lisp' || NL || 'current work' || NL
     IF WriteFile(PCFG, PTEXT) THEN
-        SAY 'OK wrote a perspectives file of our own'
+        SAY 'OK wrote a projects file of our own'
     ELSE
         SAY 'FAIL could not write' PCFG
 END
@@ -949,31 +949,36 @@ ELSE DO
         SAY 'OK a second editor came up where the file said:' GOT
     ELSE
         SAY 'FAIL the second editor came up at' GOT '(wanted' WANT')'
-    /* The perspectives file written before the start (specs/clamacs-
+    /* The projects file written before the start (specs/clamacs-
     ** perspectives.md; the Lisp editor only) was LISTED, not restored:
-    ** main and work by name after a scratch perspective that is in
-    ** front, work with its root, nothing opened but sample2.lisp, the
-    ** file the editor was started on, in scratch; the file's `current
-    ** work' not honoured.  The first switch into work brings sample2.lisp
-    ** over (open already), the first into main opens sample.lisp and,
-    ** work not in front now, CLOSES sample2.lisp's window from the
-    ** loop's housekeeping -- the pure layer's account and the windows'
-    ** must agree -- and the switch back to work opens it again where it
-    ** was, the place the layout file gave it. */
+    ** main and work in Recent Projects, work with its folder, nothing
+    ** opened but sample2.lisp, the file the editor was started on,
+    ** outside any project; the file's `current work' not honoured.  The
+    ** first switch into work brings sample2.lisp over (open already), the
+    ** first into main opens sample.lisp and, work not in front now,
+    ** CLOSES sample2.lisp's window from the loop's housekeeping -- the
+    ** pure layer's account and the windows' must agree -- and the switch
+    ** back to work opens it again where it was, the place the layout
+    ** file gave it. */
     IF AMILISP ~= '' THEN DO
-        'PERSPECTIVES'
-        IF RESULT = '> scratch' || NL || '  main' || NL || '  work' THEN
-            SAY 'OK the start listed main and work after scratch, scratch in front, nothing restored'
+        'PROJECTS'
+        IF RESULT = '> (no project)' THEN
+            SAY 'OK the start listed nothing open: (no project) alone, nothing restored'
         ELSE
-            SAY 'FAIL at the start PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
+            SAY 'FAIL at the start PROJECTS gave' TRANSLATE(RESULT, '|', NL)
+        'RECENT'
+        IF RESULT = '  main' || NL || '  work' THEN
+            SAY 'OK the start listed main and work in Recent Projects'
+        ELSE
+            SAY 'FAIL at the start RECENT gave' TRANSLATE(RESULT, '|', NL)
         'EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))'
-        IF POS('[scratch]', RESULT) > 0 THEN
-            SAY 'OK the status line names scratch at the start:' RESULT
+        IF POS('[', RESULT) = 0 THEN
+            SAY 'OK the status line names no project at the start:' RESULT
         ELSE
             SAY 'FAIL the status line at the start:' RESULT
         'EVAL (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* "work"))'
         IF POS('Clamacs:verify/', RESULT) > 0 THEN
-            SAY 'OK work is listed with its project directory:' RESULT
+            SAY 'OK work is listed with its folder:' RESULT
         ELSE
             SAY 'FAIL work''s root at the start is' RESULT
         'EVAL (clamacs::perspective-pending-p (clamacs::find-perspective clamacs::*editor* "main"))'
@@ -987,27 +992,27 @@ ELSE DO
             SAY 'OK the started file alone is on the screen:' R
         ELSE
             SAY 'FAIL at the start the windows are' R
-        'PERSPECTIVES work'
+        'RECENT work'
         R = RESULT
         'STATUS'
-        /* ... and the message names work's project directory. */
-        IF R = '' & POS('Perspective: work (Clamacs:verify/', RESULT) > 0 & POS('), 1 file(s) opened', RESULT) > 0 THEN
-            SAY 'OK the first switch into work brought sample2.lisp over and names its directory:' RESULT
+        /* ... and the message names work's folder. */
+        IF R = '' & POS('Project: work (Clamacs:verify/', RESULT) > 0 & POS('), 1 file(s) opened', RESULT) > 0 THEN
+            SAY 'OK the first switch into work brought sample2.lisp over and names its folder:' RESULT
         ELSE
-            SAY 'FAIL PERSPECTIVES work gave' R', status' RESULT
+            SAY 'FAIL RECENT work gave' R', status' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
         R = RESULT
         IF POS('current work of (scratch|main|work)', R) > 0 & POS('open (sample2.lisp) closed ()', R) > 0 THEN
-            SAY 'OK sample2.lisp is work''s, its window open, scratch empty:' R
+            SAY 'OK sample2.lisp is work''s, its window open, the scratch set empty:' R
         ELSE
             SAY 'FAIL after the switch into work the windows are' R
-        'PERSPECTIVES main'
+        'RECENT main'
         R = RESULT
         'STATUS'
-        IF R = '' & POS('Perspective: main, 1 file(s) opened', RESULT) > 0 THEN
+        IF R = '' & POS('Project: main, 1 file(s) opened', RESULT) > 0 THEN
             SAY 'OK the first switch into main opened sample.lisp:' RESULT
         ELSE
-            SAY 'FAIL PERSPECTIVES main gave' R', status' RESULT
+            SAY 'FAIL RECENT main gave' R', status' RESULT
         'GETFILE'
         IF POS('sample.lisp', RESULT) > 0 & POS('sample2.lisp', RESULT) = 0 THEN
             SAY 'OK main''s file has the keyboard'
@@ -1019,13 +1024,18 @@ ELSE DO
             SAY 'OK sample2.lisp''s window is closed, sample.lisp''s open:' R
         ELSE
             SAY 'FAIL in main the windows are' R
-        'PERSPECTIVES work'
+        'RECENT'
+        IF RESULT = '' THEN
+            SAY 'OK Recent Projects is empty once both are open'
+        ELSE
+            SAY 'FAIL with both open RECENT gave' TRANSLATE(RESULT, '|', NL)
+        'PROJECTS work'
         R = RESULT
         'STATUS'
-        IF R = '' & POS('Perspective: work (Clamacs:verify/', RESULT) > 0 & POS('opened', RESULT) = 0 THEN
+        IF R = '' & POS('Project: work (Clamacs:verify/', RESULT) > 0 & POS('opened', RESULT) = 0 THEN
             SAY 'OK the second switch into work is a plain switch:' RESULT
         ELSE
-            SAY 'FAIL the second PERSPECTIVES work gave' R', status' RESULT
+            SAY 'FAIL the second PROJECTS work gave' R', status' RESULT
         'GETFILE'
         IF POS('sample2.lisp', RESULT) > 0 THEN
             SAY 'OK switching to work brought sample2.lisp back'
@@ -1039,11 +1049,11 @@ ELSE DO
             SAY 'FAIL after the switch the windows are' R
         'GETWINDOW'
         IF RESULT = WANT THEN
-            SAY 'OK the window a perspective hid came back where it was:' RESULT
+            SAY 'OK the window a project hid came back where it was:' RESULT
         ELSE
             SAY 'FAIL the reopened window is at' RESULT '(wanted' WANT')'
-        /* The REPL's window title names the perspective in front once
-        ** there are two; its name does not. */
+        /* The REPL's window title names the project in front; its name
+        ** does not. */
         'EVAL clamacs-repl'
         'GETNAME'
         IF RESULT = '*clamacs-repl*' THEN
@@ -1052,10 +1062,10 @@ ELSE DO
             SAY 'FAIL clamacs-repl activated' RESULT
         'EVAL (clamacs::repl-title (clamacs::repl-doc clamacs::*editor*))'
         IF RESULT = '"*clamacs-repl* [work]"' THEN
-            SAY 'OK the REPL''s title names the perspective:' RESULT
+            SAY 'OK the REPL''s title names the project:' RESULT
         ELSE
             SAY 'FAIL the REPL''s title is' RESULT
-        'PERSPECTIVES main'
+        'PROJECTS main'
         'EVAL (clamacs::repl-title (clamacs::repl-doc clamacs::*editor*))'
         IF RESULT = '"*clamacs-repl* [main]"' THEN
             SAY 'OK the REPL''s title follows the switch:' RESULT
@@ -1071,11 +1081,11 @@ ELSE DO
     ELSE
         SAY 'OK the second editor quit'
     ADDRESS VALUE PORT
-    /* The quit keeps a perspectives file that exists in step, and with
-    ** it the layout file: the hand-written one above is the editor's own
-    ** now (its header, no comment of ours), holding the window where it
-    ** was left -- doc1, sample2.lisp's, at WANT.  Then both pairs go, as
-    ** the snapshot files do. */
+    /* The quit keeps the projects file in step, and with it the layout
+    ** file: the hand-written one above is the editor's own now (its
+    ** header, no comment of ours), holding the window where it was left
+    ** -- doc1, sample2.lisp's, at WANT.  Then both pairs go, as the
+    ** snapshot files do. */
     IF AMILISP ~= '' THEN DO
         IF FileHasPrefix(CFG, '; clamacs window positions') & ~FileHasPrefix(CFG, '; written by drive.rexx') THEN
             SAY 'OK the second editor''s quit wrote the layout file'
@@ -1085,21 +1095,21 @@ ELSE DO
             SAY 'OK the quit recorded the window where it was left:' WANT
         ELSE
             SAY 'FAIL no line' WANT 'in' CFG 'and' ARCHIVE 'after the quit'
-        /* ... and the perspectives file: main and work, the current one,
-        ** and nothing of scratch, which the file never records. */
-        IF FileHasLine(PCFG, 'perspective main') & FileHasLine(PCFG, 'perspective work') & FileHasLine(PCFG, 'current main') THEN
-            SAY 'OK the quit kept the perspectives file in step'
+        /* ... and the projects file: main and work, the current one, and
+        ** nothing of the scratch set, which the file never records. */
+        IF FileHasLine(PCFG, 'project main') & FileHasLine(PCFG, 'project work') & FileHasLine(PCFG, 'current main') THEN
+            SAY 'OK the quit kept the projects file in step'
         ELSE
-            SAY 'FAIL after the quit the perspectives file lacks main, work or the current line'
-        IF FileHasLine(PCFG, 'perspective scratch') THEN
-            SAY 'FAIL the quit wrote the scratch perspective to' PCFG
+            SAY 'FAIL after the quit the projects file lacks main, work or the current line'
+        IF FileHasLine(PCFG, 'project scratch') THEN
+            SAY 'FAIL the quit wrote the scratch set to' PCFG
         ELSE
-            SAY 'OK the quit left scratch out of the perspectives file'
+            SAY 'OK the quit left the scratch set out of the projects file'
         ADDRESS COMMAND 'Delete >NIL: QUIET' PCFG PARCHIVE
         IF EXISTS(PCFG) | EXISTS(PARCHIVE) THEN
-            SAY 'FAIL the perspectives files could not be deleted'
+            SAY 'FAIL the projects files could not be deleted'
         ELSE
-            SAY 'OK the perspectives files are gone again'
+            SAY 'OK the projects files are gone again'
     END
 END
 ADDRESS COMMAND 'Delete >NIL: QUIET' CFG ARCHIVE
@@ -1971,152 +1981,164 @@ END
 END /* AMILISP ~= '' & PHASE >= 5: the editor's own Lisp */
 
 /* ------------------------------------------------------------------ *
-** Perspectives (specs/clamacs-perspectives.md, phase P3; the Lisp editor
-** only).  PERSPECTIVES is the twin of BUFFERS: the Perspectives menu's
-** items read back from MUI, `>' before the one in front, PERSPECTIVES
-** <name> a pick through the item's id.  A switch hides the windows of
-** the perspective left and shows the ones of the perspective entered --
-** on MUI a hidden window is a CLOSED window, closed and opened from the
-** loop's housekeeping -- and SHOWN-REPORT reads the windows' state back
-** off MUI beside the pure layer's account (BUFFERS, GETFILE, the status
-** line).  A file open in main is brought over by OPEN, a hidden window
-** comes back where it was, the project directory is told to amilisp (the
-** REPL's default directory follows: the REPL is attached to amilisp
-** again, the leg above put it back), and Save Perspectives writes the
-** file -- deleted after, as the snapshot files are, so the Workbench
-** image carries nothing into the next run and the quit writes none.
+** Projects (specs/clamacs-perspectives.md; the Lisp editor only).
+** PROJECTS and RECENT are the twins of BUFFERS: the Project menu's tail
+** and its Recent Projects submenu read back from MUI, `>' before the one
+** in front, PROJECTS <name> / RECENT <name> a pick through the item's
+** id.  Open Project at the prompt makes the project of a folder and
+** enters it, a switch hides the windows of the set left and shows the
+** ones of the set entered -- on MUI a hidden window is a CLOSED window,
+** closed and opened from the loop's housekeeping -- and SHOWN-REPORT
+** reads the windows' state back off MUI beside the pure layer's account
+** (BUFFERS, GETFILE, the status line).  A file open outside is brought
+** over by OPEN, a hidden window comes back where it was, the folder is
+** told to amilisp (the REPL's default directory follows: the REPL is
+** attached to amilisp again, the leg above put it back), a buffer is
+** moved out at the prompt, Close Project puts the project in Recent
+** Projects and RECENT <name> opens it again.  The file the editor keeps
+** on its own stays: the quit writes it anyway, and run-lisp-drive deletes
+** it before the next run.
 ** ------------------------------------------------------------------ */
 IF AMILISP ~= '' & PHASE >= 5 THEN DO
 NL = '0A'x
-PCFG = 'ENV:Clamacs/perspectives.cfg'
-PARCHIVE = 'ENVARC:Clamacs/perspectives.cfg'
+PCFG = 'ENV:Clamacs/projects.cfg'
+PARCHIVE = 'ENVARC:Clamacs/projects.cfg'
 'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
 CALL pause 10
 'GETWINDOW'
 HOME = RESULT
-'PERSPECTIVES'
-IF RESULT = '> main' THEN
-    SAY 'OK the Perspectives menu lists main, ticked'
+'PROJECTS'
+IF RESULT = '> (no project)' THEN
+    SAY 'OK the Project menu lists (no project) alone, ticked'
 ELSE
-    SAY 'FAIL PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
-'PERSPECTIVES nobody'
-IF RESULT = 'no such perspective' THEN
-    SAY 'OK PERSPECTIVES refused an unknown perspective'
+    SAY 'FAIL PROJECTS gave' TRANSLATE(RESULT, '|', NL)
+'PROJECTS nobody'
+IF RESULT = 'no such project' THEN
+    SAY 'OK PROJECTS refused an unknown project'
 ELSE
-    SAY 'FAIL PERSPECTIVES nobody gave' RESULT
+    SAY 'FAIL PROJECTS nobody gave' RESULT
+'RECENT'
+IF RESULT = '' THEN
+    SAY 'OK Recent Projects is empty'
+ELSE
+    SAY 'FAIL RECENT gave' TRANSLATE(RESULT, '|', NL)
 'EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))'
-IF POS('[main]', RESULT) = 0 & POS('sample.lisp', RESULT) > 0 THEN
-    SAY 'OK with one perspective the status line names none:' RESULT
+IF POS('[', RESULT) = 0 & POS('sample.lisp', RESULT) > 0 THEN
+    SAY 'OK outside a project the status line names none:' RESULT
 ELSE
-    SAY 'FAIL the status line with one perspective:' RESULT
-/* A new perspective at the prompt (C-x x s): made and entered, an
-** unnamed buffer opened in it; main's windows closed. */
-'EVAL clamacs-perspective-switch'
-'KEY w o r k RET'
-ECHO = WaitEcho('New perspective: work', 20)
+    SAY 'FAIL the status line outside a project:' RESULT
+/* Open Project at the prompt (C-x p o): the folder of the fixtures,
+** which has no .asd, so the project is named after the folder; entered,
+** an unnamed buffer opened in it, the windows outside closed, and the
+** file written at once. */
+'EVAL clamacs-project-open'
+'EVAL (clamacs::doc-set-minibuffer-text (clamacs::editor-active-document clamacs::*editor*) "Clamacs:verify/realamiga/")'
+'KEY RET'
+ECHO = WaitEcho('New project: realamiga (Clamacs:verify/realamiga/)', 20)
 IF ECHO ~= '' THEN
-    SAY 'OK C-x x s work made a perspective and entered it'
+    SAY 'OK Open Project made realamiga from its folder and entered it'
 ELSE DO
     'STATUS'
-    SAY 'FAIL after C-x x s work the echo area says' RESULT
+    SAY 'FAIL after Open Project the echo area says' RESULT
 END
-'PERSPECTIVES'
-IF RESULT = '  main' || NL || '> work' THEN
-    SAY 'OK the Perspectives menu ticks work'
+'PROJECTS'
+IF RESULT = '  (no project)' || NL || '> realamiga' THEN
+    SAY 'OK the Project menu ticks realamiga below (no project)'
 ELSE
-    SAY 'FAIL PERSPECTIVES gave' TRANSLATE(RESULT, '|', NL)
+    SAY 'FAIL PROJECTS gave' TRANSLATE(RESULT, '|', NL)
+IF EXISTS(PCFG) & EXISTS(PARCHIVE) THEN
+    SAY 'OK the first Open Project wrote the projects file to ENV: and ENVARC:'
+ELSE
+    SAY 'FAIL after Open Project ENV: has' EXISTS(PCFG) 'and ENVARC: has' EXISTS(PARCHIVE)
 'GETNAME'
 IF RESULT = '(unnamed)' THEN
-    SAY 'OK the new perspective came up with an unnamed buffer'
+    SAY 'OK the new project came up with an unnamed buffer'
 ELSE
-    SAY 'FAIL in work the active buffer is' RESULT
+    SAY 'FAIL in realamiga the active buffer is' RESULT
 'EVAL (clamacs::shown-report clamacs::*editor*)'
 R = RESULT
 CLOSED = POS('closed (', R)
-IF POS('current work of (main|work)', R) > 0 & POS('(unnamed)', R) < CLOSED & POS('sample.lisp', R) > CLOSED & POS('*clamacs-repl*', R) < CLOSED THEN
-    SAY 'OK the switch closed main''s windows and left the REPL open:' R
+IF POS('current realamiga of (scratch|realamiga)', R) > 0 & POS('(unnamed)', R) < CLOSED & POS('sample.lisp', R) > CLOSED & POS('*clamacs-repl*', R) < CLOSED THEN
+    SAY 'OK the switch closed the windows outside the project and left the REPL open:' R
 ELSE
-    SAY 'FAIL in work the windows are' R
+    SAY 'FAIL in realamiga the windows are' R
 'BUFFERS'
 B = RESULT
 IF POS('> (unnamed)' || NL, B || NL) > 0 & POS('sample.lisp', B) = 0 THEN
-    SAY 'OK the Buffers menu lists work''s buffers, not main''s'
+    SAY 'OK the Buffers menu lists the project''s buffers, not sample.lisp'
 ELSE
-    SAY 'FAIL in work BUFFERS gave' TRANSLATE(B, '|', NL)
+    SAY 'FAIL in realamiga BUFFERS gave' TRANSLATE(B, '|', NL)
 'EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))'
-IF POS('(unnamed) [work]  ', RESULT) > 0 THEN
-    SAY 'OK the status line names the perspective:' RESULT
+IF POS('(unnamed) [realamiga]  ', RESULT) > 0 THEN
+    SAY 'OK the status line names the project:' RESULT
 ELSE
-    SAY 'FAIL the status line in work:' RESULT
-/* A file open in main, opened here: brought over -- a window cannot be
-** in two perspectives. */
+    SAY 'FAIL the status line in realamiga:' RESULT
+/* A file open outside, opened here: brought over -- a window cannot be
+** in two places. */
 'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
 'EVAL (clamacs::perspective-name (clamacs::doc-perspective (clamacs::editor-active-document clamacs::*editor*)))'
-IF POS('"work"', RESULT) > 0 THEN
-    SAY 'OK OPEN brought sample2.lisp over from main into work'
+IF POS('"realamiga"', RESULT) > 0 THEN
+    SAY 'OK OPEN brought sample2.lisp over into realamiga'
 ELSE
-    SAY 'FAIL after OPEN sample2.lisp''s perspective is' RESULT
-/* Back to main through the verb: main's windows opened again where they
-** were, work's closed, the buffer that had the keyboard when main was
-** left active again. */
-'PERSPECTIVES main'
+    SAY 'FAIL after OPEN sample2.lisp''s project is' RESULT
+/* Back outside through the verb: the windows outside opened again where
+** they were, the project's closed, the buffer that had the keyboard
+** when the scratch set was left active again. */
+'PROJECTS (no project)'
 R = RESULT
 'GETFILE'
 IF R = '' & POS('sample.lisp', RESULT) > 0 & POS('sample2.lisp', RESULT) = 0 THEN
-    SAY 'OK PERSPECTIVES main switched back, sample.lisp has the keyboard again'
+    SAY 'OK PROJECTS (no project) switched back, sample.lisp has the keyboard again'
 ELSE
-    SAY 'FAIL PERSPECTIVES main gave' R', active' RESULT
+    SAY 'FAIL PROJECTS (no project) gave' R', active' RESULT
 'EVAL (clamacs::shown-report clamacs::*editor*)'
 R = RESULT
 CLOSED = POS('closed (', R)
-IF POS('current main of (main|work)', R) > 0 & POS('sample.lisp', R) < CLOSED & POS('(unnamed)', R) > CLOSED & POS('sample2.lisp', R) > CLOSED THEN
-    SAY 'OK the switch back opened main''s windows and closed work''s:' R
+IF POS('current scratch of (scratch|realamiga)', R) > 0 & POS('sample.lisp', R) < CLOSED & POS('(unnamed)', R) > CLOSED & POS('sample2.lisp', R) > CLOSED THEN
+    SAY 'OK the switch back opened the windows outside and closed the project''s:' R
 ELSE
-    SAY 'FAIL back in main the windows are' R
+    SAY 'FAIL back outside the windows are' R
 'GETWINDOW'
 IF RESULT = HOME THEN
-    SAY 'OK the window a perspective hid came back where it was:' RESULT
+    SAY 'OK the window a project hid came back where it was:' RESULT
 ELSE
     SAY 'FAIL the reopened window is at' RESULT '(wanted' HOME')'
 'EVAL (clamacs::status-text (clamacs::active-document clamacs::*editor*))'
-IF POS('[main]  ', RESULT) > 0 THEN
-    SAY 'OK the status line says main again'
+IF POS('[', RESULT) = 0 THEN
+    SAY 'OK the status line names no project again'
 ELSE
-    SAY 'FAIL the status line back in main:' RESULT
+    SAY 'FAIL the status line back outside:' RESULT
 /* The menu's own pick (the item's id, as the MenuAction hook would):
-** work in front again, sample2.lisp -- left active there -- with the
-** keyboard. */
-'PERSPECTIVES work'
+** realamiga in front again, sample2.lisp -- left active there -- with
+** the keyboard. */
+'PROJECTS realamiga'
 R = RESULT
 'GETFILE'
 IF R = '' & POS('sample2.lisp', RESULT) > 0 THEN
-    SAY 'OK picking work in the Perspectives menu brought sample2.lisp back'
+    SAY 'OK picking realamiga in the Project menu brought sample2.lisp back'
 ELSE
-    SAY 'FAIL PERSPECTIVES work gave' R', active' RESULT
-/* The project directory: set on work, told to amilisp at the next
-** switch into it -- the REPL transcript gets a note, and a relative path
-** at the prompt means the project's (SLIME's ,cd, done by the
-** perspective).  The REPL is a tool buffer, shown in every perspective. */
-'EVAL (setf (clamacs::perspective-root (clamacs::find-perspective clamacs::*editor* "work")) "Clamacs:verify/")'
-'PERSPECTIVES main'
-'PERSPECTIVES work'
+    SAY 'FAIL PROJECTS realamiga gave' R', active' RESULT
+/* The folder: told to amilisp at the switch into the project -- the
+** REPL transcript gets a note, and a relative path at the prompt means
+** the project's (SLIME's ,cd, done by the project).  The REPL is a tool
+** buffer, shown in every project. */
 'EVAL clamacs-repl'
 'GETNAME'
 IF POS('*clamacs-repl*', RESULT) > 0 THEN
-    SAY 'OK the REPL window is shown in work too'
+    SAY 'OK the REPL window is shown in the project too'
 ELSE
-    SAY 'FAIL clamacs-repl in work activated' RESULT
+    SAY 'FAIL clamacs-repl in realamiga activated' RESULT
 'EVAL end-of-buffer'
 NOTED = ''
 DO i = 1 TO 20 WHILE NOTED = ''
-    'EVAL (let ((d (clamacs::repl-doc clamacs::*editor*))) (and d (search "; default directory Clamacs:verify/ (perspective work)" (clamacs::doc-text d 0 (clamacs::doc-end d))) t))'
+    'EVAL (let ((d (clamacs::repl-doc clamacs::*editor*))) (and d (search "; default directory Clamacs:verify/realamiga/ (project realamiga)" (clamacs::doc-text d 0 (clamacs::doc-end d))) t))'
     IF RC = 0 & RESULT = 'T' THEN NOTED = 'yes'
     ELSE CALL pause 25
 END
 IF NOTED ~= '' THEN
-    SAY 'OK the transcript notes the directory told to amilisp'
+    SAY 'OK the transcript notes the folder told to amilisp'
 ELSE
-    SAY 'FAIL no directory note in the transcript'
+    SAY 'FAIL no folder note in the transcript'
 'TE GETCURSOR LINE'
 P = RESULT
 'INSERT (namestring *default-pathname-defaults*)'
@@ -2124,38 +2146,85 @@ P = RESULT
 Y = WaitCursorAt(P + 2, 40)
 'GOTOLINE' P + 2
 L = GetLine()
-IF Y ~= '' & POS('Clamacs:verify/', L) > 0 THEN
+IF Y ~= '' & POS('Clamacs:verify/realamiga/', L) > 0 THEN
     SAY 'OK amilisp''s default directory is the project''s:' L
 ELSE
     SAY 'FAIL *default-pathname-defaults* at the prompt gave' L '(cursor' Y')'
 'EVAL end-of-buffer'
-/* Save Perspectives: the file, checked line by line, then deleted. */
-'PERSPECTIVES main'
-'EVAL clamacs-perspective-save'
-'STATUS'
-IF POS('Saved 2 perspective(s) to ', RESULT) > 0 THEN
-    SAY 'OK Save Perspectives wrote the file:' RESULT
+/* sample2.lisp moved out of the project at the prompt (it may carry the
+** run's typing, and Close Project would ask about it): hidden, the
+** unnamed buffer to the keyboard. */
+'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
+'EVAL clamacs-project-move-buffer'
+'EVAL (clamacs::doc-set-minibuffer-text (clamacs::editor-active-document clamacs::*editor*) "(no project)")'
+'KEY RET'
+ECHO = WaitEcho('sample2.lisp moved to (no project)', 20)
+IF ECHO ~= '' THEN
+    SAY 'OK Move Buffer put sample2.lisp outside the project'
+ELSE DO
+    'STATUS'
+    SAY 'FAIL after Move Buffer the echo area says' RESULT
+END
+'GETNAME'
+IF RESULT = '(unnamed)' THEN
+    SAY 'OK the project''s unnamed buffer has the keyboard'
 ELSE
-    SAY 'FAIL clamacs-perspective-save said' RESULT
-IF EXISTS(PCFG) & EXISTS(PARCHIVE) THEN
-    SAY 'OK the perspectives file is in ENV: and ENVARC:'
+    SAY 'FAIL after the move the active buffer is' RESULT
+/* Close Project: the editor goes back outside, the project is in Recent
+** Projects, its unnamed buffer closed, both files on the screen. */
+'EVAL clamacs-project-close'
+ECHO = WaitEcho('Closed project realamiga', 20)
+IF ECHO ~= '' THEN
+    SAY 'OK Close Project closed realamiga'
+ELSE DO
+    'STATUS'
+    SAY 'FAIL after Close Project the echo area says' RESULT
+END
+'PROJECTS'
+IF RESULT = '> (no project)' THEN
+    SAY 'OK the Project menu lists (no project) alone again'
 ELSE
-    SAY 'FAIL after the save ENV: has' EXISTS(PCFG) 'and ENVARC: has' EXISTS(PARCHIVE)
-IF FileHasLine(PCFG, 'perspective main') & FileHasLine(PCFG, 'perspective work') & FileHasLine(PCFG, 'root Clamacs:verify/') & FileHasLine(PCFG, 'file Clamacs:verify/realamiga/sample2.lisp') & FileHasLine(PCFG, 'current main') THEN
-    SAY 'OK the file holds both perspectives, work''s root and file, main current'
+    SAY 'FAIL after the close PROJECTS gave' TRANSLATE(RESULT, '|', NL)
+'RECENT'
+IF RESULT = '  realamiga' THEN
+    SAY 'OK Recent Projects lists realamiga'
 ELSE
-    SAY 'FAIL the perspectives file lacks a line (perspective main/work, root, file sample2.lisp, current main)'
-ADDRESS COMMAND 'Delete >NIL: QUIET' PCFG PARCHIVE
-IF EXISTS(PCFG) | EXISTS(PARCHIVE) THEN
-    SAY 'FAIL the perspectives files could not be deleted'
+    SAY 'FAIL after the close RECENT gave' TRANSLATE(RESULT, '|', NL)
+'EVAL (clamacs::shown-report clamacs::*editor*)'
+R = RESULT
+CLOSED = POS('closed (', R)
+IF POS('current scratch of (scratch|realamiga)', R) > 0 & POS('(unnamed)', R) = 0 & POS('sample.lisp', R) < CLOSED & POS('sample2.lisp', R) < CLOSED THEN
+    SAY 'OK the project''s buffer is gone, both files on the screen:' R
 ELSE
-    SAY 'OK the perspectives files are gone again'
+    SAY 'FAIL after the close the windows are' R
+/* Reopened from Recent through the verb: entered again, empty. */
+'RECENT realamiga'
+R = RESULT
+ECHO = WaitEcho('Project: realamiga (Clamacs:verify/realamiga/)', 20)
+IF R = '' & ECHO ~= '' THEN
+    SAY 'OK RECENT realamiga reopened it:' ECHO
+ELSE
+    SAY 'FAIL RECENT realamiga gave' R', echo' ECHO
+'PROJECTS'
+P1 = RESULT
+'RECENT'
+IF P1 = '  (no project)' || NL || '> realamiga' & RESULT = '' THEN
+    SAY 'OK realamiga is open again, Recent Projects empty'
+ELSE
+    SAY 'FAIL after the reopen PROJECTS gave' TRANSLATE(P1, '|', NL)', RECENT' TRANSLATE(RESULT, '|', NL)
+IF FileHasLine(PCFG, 'project realamiga') & FileHasLine(PCFG, 'root Clamacs:verify/realamiga/') THEN
+    SAY 'OK the file holds realamiga and its folder'
+ELSE
+    SAY 'FAIL the projects file lacks realamiga or its root line'
+/* Back outside: sample2.lisp, the buffer moved out last, is what the
+** scratch set comes back to. */
+'PROJECTS (no project)'
 'GETFILE'
-IF POS('sample.lisp', RESULT) > 0 & POS('sample2.lisp', RESULT) = 0 THEN
-    SAY 'OK back in main with sample.lisp, as before the leg'
+IF POS('sample2.lisp', RESULT) > 0 THEN
+    SAY 'OK back outside with sample2.lisp, the buffer moved out last'
 ELSE
     SAY 'FAIL the leg ends with' RESULT 'active'
-END /* AMILISP ~= '' & PHASE >= 5: perspectives */
+END /* AMILISP ~= '' & PHASE >= 5: projects */
 
 /* Leave the errors file active, as the phase-1 leg did: the shipped macro
 ** runs next on whatever window is active, and its verdict on errors.lisp

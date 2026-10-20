@@ -162,19 +162,20 @@
   (check-table '(("C-x C-+" "clamacs-increase-font-size") ("C-x C--" "clamacs-decrease-font-size"))
                nil))
 
-(deftest the-perspective-keys-are-perspective-el-s
-  ;; `C-x x' with perspective.el's letters (specs/clamacs-perspectives.md).
-  (check-table '(("C-x x s" "clamacs-perspective-switch")
-                 ("C-x x n" "clamacs-perspective-next") ("C-x x p" "clamacs-perspective-previous")
-                 ("C-x x r" "clamacs-perspective-rename") ("C-x x c" "clamacs-perspective-close")
-                 ("C-x x a" "clamacs-perspective-move-buffer")
-                 ("C-x x d" "clamacs-perspective-set-directory")
-                 ("C-x x o" "clamacs-perspective-open-project")
-                 ("C-x x C-s" "clamacs-perspective-save") ("C-x x C-l" "clamacs-perspective-restore"))
+(deftest the-project-keys-are-project-el-s
+  ;; `C-x p' with project.el's letters where it has them (specs/clamacs-
+  ;; perspectives.md): p switches, k closes (kills the buffers).
+  (check-table '(("C-x p o" "clamacs-project-open") ("C-x p p" "clamacs-project-switch")
+                 ("C-x p k" "clamacs-project-close")
+                 ("C-x p n" "clamacs-project-next") ("C-x p N" "clamacs-project-previous")
+                 ("C-x p a" "clamacs-project-move-buffer"))
                nil)
-  ;; The prefix does not hide `C-x C-x', and is there in Lisp mode too.
-  (check-table '(("C-x C-x" "exchange-point-and-mark") ("C-x x s" "clamacs-perspective-switch"))
-               (lisp-keymap)))
+  ;; The prefix is there in Lisp mode too; the keys dropped from the menu
+  ;; stay commands.
+  (check-table '(("C-x C-x" "exchange-point-and-mark") ("C-x p p" "clamacs-project-switch"))
+               (lisp-keymap))
+  (dolist (name '("clamacs-project-rename" "clamacs-project-save" "clamacs-project-restore"))
+    (is (find-command name))))
 
 (deftest unbound-keys-reach-the-superclass
   ;; The keys TextEditor.mcc handles itself must NOT be claimed here, or the

@@ -55,11 +55,16 @@
                 (is (member (menu-entry-map e) '(:global :lisp :repl)))
                 (incf items))
                (:dynamic
-                ;; The place of a group made at run time: the tail of its
-                ;; menu, right after its title or after a bar closing the
-                ;; menu's own items (the Buffers menu; View's text sizes,
-                ;; then its themes, its minimap item, its cursor item).
-                (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic :bar))))
+                ;; The place of a group made at run time without a title:
+                ;; the tail of its menu, right after its title or after a
+                ;; bar closing the menu's own items (the Buffers menu;
+                ;; View's text sizes, then its themes, its minimap item,
+                ;; its cursor item; the Project menu's open projects).  A
+                ;; titled group is a submenu and sits among the items
+                ;; (Recent Projects after Open Project).
+                (unless (menu-entry-title e)
+                  (is (and (> i 0) (member (menu-entry-kind (nth (1- i) entries)) '(:title :dynamic :bar))))
+                  (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))
                 (is-equal (menu-entry-title
                            (find :title (reverse (subseq entries 0 i)) :key #'menu-entry-kind))
                           (ecase (menu-entry-dynamic e)
@@ -67,27 +72,39 @@
                             (:themes "View")
                             (:minimap "View")
                             (:cursor "View")
-                            (:perspectives "Perspectives")))
-                (is (or (null next) (member (menu-entry-kind next) '(:title :dynamic)))))))
-    (is-equal (count :dynamic entries :key #'menu-entry-kind) 5)
+                            (:projects "Project")
+                            (:recent "Project"))))))
+    (is-equal (count :dynamic entries :key #'menu-entry-kind) 6)
     (is-equal (menu-count) (length entries))
     (is-equal titles 10)
     (is (> items 30))
-    ;; View sits between Windows and Perspectives, Perspectives before
-    ;; Buffers; View's text-size items come before its groups, and the
-    ;; perspectives' commands before their group.
+    ;; View sits between Windows and Project, Project before Buffers;
+    ;; View's text-size items come before its groups; the Project menu
+    ;; opens with Open Project, its Recent submenu and Close, then the
+    ;; switching, then the open projects at its tail.
     (is (< (position "Windows" entries :key #'menu-entry-title :test #'equal)
            (menu-find 'clamacs-increase-font-size)
            (menu-find 'clamacs-decrease-font-size)
            (menu-find 'clamacs-reset-font-size)
            (menu-find-dynamic :themes)
-           (menu-find 'clamacs-perspective-switch)
-           (menu-find 'clamacs-perspective-close)
-           (menu-find-dynamic :perspectives)
+           (menu-find 'clamacs-project-open)
+           (menu-find-dynamic :recent)
+           (menu-find 'clamacs-project-close)
+           (menu-find 'clamacs-project-switch)
+           (menu-find 'clamacs-project-next)
+           (menu-find 'clamacs-project-previous)
+           (menu-find 'clamacs-project-move-buffer)
+           (menu-find-dynamic :projects)
            (menu-find-dynamic :buffers)))
-    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :perspectives)))))
-    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-perspective-close))) :perspectives)
-    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-perspective-next))) :perspectives)
+    (is (null (menu-entry-title (menu-entry (menu-find-dynamic :projects)))))
+    (is-equal (menu-entry-title (menu-entry (menu-find-dynamic :recent))) "Recent Projects")
+    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-project-close))) :in-project)
+    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-project-next))) :projects)
+    (is-equal (menu-entry-rule (menu-entry (menu-find 'clamacs-project-previous))) :projects)
+    ;; What left the menu stays a command, reachable at M-x.
+    (dolist (name '("clamacs-project-rename" "clamacs-project-save" "clamacs-project-restore"))
+      (is (null (menu-find name)))
+      (is (find-command name)))
     (is-equal (menu-entry-dynamic (menu-entry (menu-find-dynamic :themes))) :themes)
     (is (null (menu-entry-dynamic (menu-entry 0))))
     (is (null (menu-find-dynamic :nothing)))
@@ -113,8 +130,8 @@
     (let ((with (make-menu-table :systems t))
           (without (make-menu-table :systems nil)))
       (is-equal (titles with)
-                '("Project" "Edit" "Lisp" "ASDF" "AmiLisp" "Windows" "View"
-                  "Perspectives" "Buffers" "Help"))
+                '("File" "Edit" "Lisp" "ASDF" "AmiLisp" "Windows" "View"
+                  "Project" "Buffers" "Help"))
       (is-equal (titles without) (remove "ASDF" (titles with) :test #'equal))
       (is-equal (set-difference (commands with) (commands without))
                 '(clamacs-load-system clamacs-load-system-from clamacs-test-system))
@@ -136,7 +153,7 @@
   ;; drawn for its themes and its cursor item.
   (let ((editor (make-fake-editor))
         (minimap (menu-find-dynamic :minimap)))
-    (is-equal (editor-dynamic-groups editor) '(:buffers :themes :cursor :perspectives))
+    (is-equal (editor-dynamic-groups editor) '(:buffers :themes :cursor :projects :recent))
     (dotimes (i (menu-count))
       (cond ((= i minimap)
              (is (not (menu-entry-drawn-p editor i)))
@@ -149,7 +166,8 @@
     (is-equal (menu-wire-kind editor (menu-find-dynamic :themes)) :themes)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :buffers)) :buffers)
     (is-equal (menu-wire-kind editor (menu-find-dynamic :cursor)) :cursor)
-    (is-equal (menu-wire-kind editor (menu-find-dynamic :perspectives)) :perspectives)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :projects)) :projects)
+    (is-equal (menu-wire-kind editor (menu-find-dynamic :recent)) :recent)
     (is (menu-entry-drawn-p editor (1- (menu-find-dynamic :themes))))))
 
 (deftest the-minimap-item-is-a-setting-every-frontend-keeps
@@ -243,7 +261,8 @@
                   (find-file-other-window . find-file-other-window-requester)
                   (save-buffer . save-buffer-requester)
                   (write-file . write-file-requester)
-                  (clamacs-load-file . clamacs-load-file-requester)))
+                  (clamacs-load-file . clamacs-load-file-requester)
+                  (clamacs-project-open . clamacs-project-open-requester)))
     (let ((e (menu-entry (menu-find (car pair)))))
       (is-equal (menu-entry-pick e) (cdr pair))
       (is-equal (menu-entry-picks e) (cdr pair))))
@@ -280,12 +299,14 @@
     (is (not (menu-rule-holds-p :debugging s)))
     (is (not (menu-rule-holds-p :diagnostics s)))
     (is (not (menu-rule-holds-p :can-pop s)))
-    (is (not (menu-rule-holds-p :perspectives s)))
+    (is (not (menu-rule-holds-p :projects s)))
+    (is (not (menu-rule-holds-p :in-project s)))
     (setf (menu-state-doc-changed s) t (menu-state-doc-has-path s) t
           (menu-state-connected s) t (menu-state-repl-window s) t
           (menu-state-debugging s) t (menu-state-diagnostics s) t
-          (menu-state-can-pop s) t (menu-state-perspectives s) t)
-    (is (menu-rule-holds-p :perspectives s))
+          (menu-state-can-pop s) t (menu-state-projects s) t (menu-state-in-project s) t)
+    (is (menu-rule-holds-p :projects s))
+    (is (menu-rule-holds-p :in-project s))
     (is (menu-rule-holds-p :doc-changed s))
     (is (menu-rule-holds-p :doc-has-path s))
     (is (menu-rule-holds-p :connected s))

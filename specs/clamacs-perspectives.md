@@ -1,73 +1,92 @@
-# Clamacs perspectives
+# Clamacs projects
 
-A perspective is a named set of buffers with their windows -- a project
--- of which one is in front: Emacs's `perspective.el` (`persp-switch`,
-`C-x x`), brought to an editor where a buffer IS a window (MUI) or a
-tab (the host).  Switching perspectives hides the windows of the one
-left and shows the windows of the one entered, the Buffers menu and
-`C-x o` see only the buffers of the perspective in front, a file opened
-from a perspective belongs to it, and a perspective may have a project
-directory that `find-file` and the ASDF commands start from.  The set of
-perspectives, each with its directory and its files, is written to a
-small text file and comes back at the next start.  Decided 2026-10-14.
-The pure part comes first (phase P1), the host frontend second (P2), the
-MUI frontend third (P3), the two frontends independent once P1 is in.
+A project is a folder: the user opens it, works in it, closes it, and
+the editor remembers which folders it has had open.  Three verbs --
+**Open Project**, **Switch Project**, **Close Project** -- and a
+**Recent Projects** list; nothing else on the menu.  Decided 2026-10-20,
+replacing the perspectives UI of 2026-10-14 (below, "What it replaced"),
+which asked the user to learn two nouns (a *perspective* that may have a
+*project directory*), to set that directory by hand, and to save and
+restore a file nobody had told them about.
 
-This is `perspective.el`'s model and no more: buffer bookkeeping and
-what is on screen.  `perspective.el` knows nothing of SLIME -- the REPL
-buffer is a buffer like any other, shown in whichever perspective asks
-for it -- and a Lisp per project is SLIME's *multiple connections*, a
-separate feature the user drives by hand.  Clamacs does the same
-(decided 2026-10-15, after a day spent designing an amilisp per
-perspective and finding it was that other feature): there is one
-amilisp, one REPL, one debugger, shown in every perspective, and a
-switch tells it the new perspective's directory -- the `,cd` of a
-perspective.  A second amilisp per project, when wanted, is a `Connect`
-that remembers its port per perspective, and is not part of this.
+Underneath, a project IS a perspective -- `perspective.el`'s model, a
+named set of buffers with their windows, of which one is in front,
+brought to an editor where a buffer is a window (MUI) or a tab (the
+host) -- and the code keeps that word for the mechanism
+(`lisp/perspective.lisp`, the `perspective` struct, `doc-perspective`,
+`editor-perspectives`).  The user sees *project* everywhere: the menu,
+the commands (`clamacs-project-*`), the keys (`C-x p`, Emacs's
+`project.el` prefix), the port's `PROJECTS` and `RECENT` verbs, the file
+(`projects.cfg`), the messages.  Switching projects hides the windows
+of the one left and shows the windows of the one entered, the Buffers
+menu and `C-x o` see only the buffers of the project in front, a file
+opened from a project belongs to it, `find-file` and the ASDF commands
+start from the project's folder, and a switch tells amilisp the folder
+(the `,cd` of a project).  There is one amilisp, one REPL, one
+debugger, shown in every project (the "Not done" section says why not
+one per project).
 
 Three rules shape everything below, the same three the themes have.  A
-perspective is **data the frontends read**: the pure layer decides which
+project is **data the frontends read**: the pure layer decides which
 documents are shown, and a frontend only hides or shows a window when
 told (`doc-set-shown`).  There is **one implementation with three
-entrances**: the Perspectives menu, the `M-x clamacs-perspective-*`
-commands on `C-x x` and the port's `PERSPECTIVES` verb all end in
-`perspective-switch` and its siblings.  And **the editor must never be
-left without a window**: a perspective entered empty gets an unnamed
-buffer, and closing the last buffer of a perspective brings another
-perspective in front when one has buffers -- only when none has does
-the last window's close end the editor, as it always did.
+entrances**: the Project menu, the `M-x clamacs-project-*` commands on
+`C-x p` and the port's verbs all end in `perspective-switch` and its
+siblings.  And **the editor must never be left without a window**: a
+project entered empty gets an unnamed buffer, closing the last buffer of
+the project in front brings another set with buffers in front, and
+closing the last open project puts the editor back in its no-project
+state with an unnamed buffer -- only when nothing at all has buffers
+does the last window's close end the editor, as it always did.
 
-## What a perspective is
+## What a project is
 
-A struct in a new pure module, `lisp/perspective.lisp`:
+A `perspective` struct in `lisp/perspective.lisp`:
 
 | Slot | What |
 |---|---|
-| `name` | a string, unique among the editor's; the first is `main` |
-| `root` | the project directory, a string ending in `/` or `:`, or NIL |
+| `name` | a string, unique among the editor's |
+| `root` | the folder, a string ending in `/` or `:`; NIL for the scratch set only |
+| `open` | whether the project is open (has, or may have, windows) or recent |
 | `documents` | its source documents, oldest first |
-| `active` | the document that had the keyboard when the perspective was left |
+| `active` | the document that had the keyboard when the project was left |
+| `pending-files`, `pending-active` | a recent project's files, waiting to be opened |
 
 The editor keeps `perspectives` (in the order made) and `perspective`
 (the one in front); a document keeps `perspective`, the one it belongs
-to.  The main perspective is made when the first document needs one, so
-an editor that never hears of perspectives has one, called `main`, and
-behaves exactly as before.
+to.
+
+**The scratch set.**  Buffers outside any project -- the unnamed buffer
+a start opens, a file opened before any project was -- live in a
+perspective called `scratch` (`*scratch-perspective-name*`), made when
+the first source document needs one (`current-perspective`), never
+recorded in the file, with no root.  The user never sees the word: the
+status line and the REPL's title show nothing while it is in front, and
+the Project menu lists it as `(no project)` (`perspective-label`) only
+while it holds buffers, so an editor that never opens a project looks
+exactly as it did before projects existed.
+
+**A project** is a perspective with a root, **open** or **recent**.
+Open projects are listed at the tail of the Project menu, the one in
+front ticked, and are what `Next Project` / `Previous Project` cycle --
+together with the scratch set while it has buffers (`project-cycle`).
+Recent projects are the **Recent Projects** submenu: known, no windows,
+their files waiting (`pending-files`); a pick opens one.  A project
+listed from the file at a start is recent; the first switch into it
+opens its files and makes it open; `Close Project` closes its windows,
+remembers its file list and makes it recent again.
 
 **Who belongs.**  A *source* document -- a file window or an unnamed
 buffer, `(not (tool-document-p doc))` -- joins the perspective in front
 when it is made (`perspective-adopt`, from the document's
-`initialize-instance`, as the window's role is chosen there).  A *tool*
-buffer -- the REPL, `*clamacs-description*`, `*clamacs-apropos*`, the
-error list and the panels -- belongs to no perspective and is shown in
-every one: there is one amilisp, one REPL thread, one debugger, and
-every tool buffer shows what that amilisp answered.  A tool buffer that
-`C-x C-w` turns into a file joins the perspective in front then
-(`visit-path`).  A document belongs to exactly one perspective
-(a window cannot be in two places), which is where this differs from
-`perspective.el`'s shared buffers: a file already open in another
-perspective is MOVED into the one in front by `find-file`, and the echo
-area says where it came from.
+`initialize-instance`).  A *tool* buffer -- the REPL,
+`*clamacs-description*`, `*clamacs-apropos*`, the error list and the
+panels -- belongs to none and is shown in every project.  A tool buffer
+that `C-x C-w` turns into a file joins the perspective in front then
+(`visit-path`).  A document belongs to exactly one perspective (a window
+cannot be in two places): a file already open in another project is
+MOVED into the one in front by `find-file`, and the echo area says where
+it came from.
 
 **Shown.**  `doc-shown-p` is pure: a document is shown when it belongs
 to no perspective or to the one in front.  `shown-documents` are the
@@ -77,335 +96,246 @@ read it instead of `live-documents`.  `live-documents` itself is
 unchanged -- a quit still closes every window, hidden ones included.
 
 **Switching** (`perspective-switch editor p`): the active document of
-the perspective left is remembered on it; the new one is made current;
-its documents are shown (`doc-set-shown doc t`), the remembered one --
-or the first -- activated, and only then the old perspective's hidden,
-so the frontend never has a moment without a shown active document; an
-empty perspective gets an unnamed buffer (`open-document editor nil`),
-which joins it because it is current by then.  The echo area says
-`Perspective: NAME (ROOT)` -- the project directory in the parentheses
-when the perspective has one (`perspective-root-note`, 2026-10-20: the
-one place the directory a switch puts the user in is shown; `C-x x d`'s
-prompt offers it too), nothing after the name otherwise.
-
-**Closing** (`close-document`): a document leaves its perspective when
-its window goes.  When that was the last document of the perspective
-in front and another perspective has documents, the editor switches to
-it (the previous one in the list, cyclically) -- the one rule that
-keeps a window on screen.  When no other has any, nothing happens and
-the frontend's loop sees the last window go, as before.  A question
-about unsaved changes in a HIDDEN document (a quit, Close Perspective)
-is asked in front of it: `close-document` switches to the document's
-perspective first.
-
-**The project directory.**  `doc-directory`, where a file prompt and
-the requester start for a buffer without a file, falls back to the
-perspective's root; `find-file`'s line is seeded with it in such a
-buffer (a file-backed buffer's prompt stays empty, so a drive that
-types a full path there is unaffected); and `with-system-file` looks
-for the `.asd` from the root when the buffer has no file.  And a switch
-to a perspective that has a root tells amilisp, when the wire is
-connected, to make it the default directory (`perspective-tell-root`:
+the perspective left is remembered on it; the new one is made current
+and, when it is a project, open; its waiting files, if any, are opened
+into it (`perspective-open-pending`); its documents are shown
+(`doc-set-shown doc t`), the remembered one -- or the first -- activated,
+and only then the old perspective's hidden, so the frontend never has a
+moment without a shown active document; an empty one gets an unnamed
+buffer.  amilisp is told the project's folder (`perspective-tell-root`:
 one `EVAL` setting `*default-pathname-defaults*`, nothing waited for,
-the reply dropped), so a relative path typed at the REPL means the
-project's -- Emacs's `default-directory` is buffer-local and SLIME's
-`,cd` does this by hand; here the perspective does it.  A perspective
-without a root leaves the directory as it is.  Nothing else is
-project-aware: a root is a place to start from.
+the reply dropped; an open REPL transcript gets a note).  The echo area
+says `Project: NAME (ROOT)` with `, N file(s) opened[, M missing]` when
+files were opened, or `No project` for the scratch set
+(`perspective-switch-message`).  A switch into the project in front
+opens its waiting files and otherwise does nothing.
 
-## Not done: an amilisp per perspective
+**Closing a buffer** (`close-document`): a document leaves its
+perspective when its window goes.  When that was the last document of
+the one in front and another perspective has documents, the editor
+switches to it (the previous one in the list, cyclically) -- the rule
+that keeps a window on screen.  A question about unsaved changes in a
+HIDDEN document (a quit, Close Project) is asked in front of it:
+`close-document` switches to the document's perspective first.
 
-Designed on 2026-10-15 and set aside the same day.  One image for
-every project does collide -- amilisp has one default directory and
-one set of packages -- and an amilisp per perspective would fix it: the
-wire, the REPL session, the debugger and the inspector moved onto the
-perspective, `editor-wire` answering the one in front, a child started
-in the root, the ARexx wire taught to tell its amilisp instances apart (the
-inbound verbs arrive at the editor's one MUI port unnamed, so
-`REPL-ATTACH` would need a tag, an EXT.DEV change in AmiLisp).  But
-that is SLIME's multiple connections, not a perspective: Emacs users
-start a second `M-x slime` and pick the default connection by hand,
-and most run one image with everything loaded.  A 68020 with 16 MB
-cannot hold two heaps anyway.  So the perspectives stay buffer
-bookkeeping with the directory `EVAL` above, and a second amilisp, if
-it is ever wanted, is a `Connect` that remembers its port per
-perspective -- a feature of the wire, designed then.
+**The project's folder.**  `doc-directory`, where a file prompt and the
+requester start for a buffer without a file, falls back to the
+perspective's root; `find-file`'s line is seeded with it in such a
+buffer; `with-system-file` looks for the `.asd` from the root when the
+buffer has no file.  Nothing else is project-aware: a root is a place
+to start from.  A project's folder is its identity and is never changed:
+there is no Set Directory; one opens another folder.
 
-## Commands and keys
+## The commands
 
-`perspective.el`'s prefix, `C-x x`, with its letters where it has them:
+| Command | Key | Menu | What |
+|---|---|---|---|
+| `clamacs-project-open` | `C-x p o` | Open Project... | a folder, or its `.asd`, at the prompt (path completion; TAB on a bare directory opens the folder requester there, RET on an empty line where the prompt started); the project of that folder opened: made and entered when new, entered (its files opened) when recent, switched to when open.  The menu item itself opens the folder requester (`clamacs-project-open-requester`, `doc-ask-file` in `:directory` mode: ASL's `DrawersOnly`, the host's folder panel), as Open File... opens the file one |
+| `clamacs-project-switch` | `C-x p p` | Switch Project... | a name with completion over the open projects, the recent ones and `(no project)`; a recent one is opened; an unknown name is refused |
+| `clamacs-project-close` | `C-x p k` | Close Project | the project in front: the editor switches away (the previous in the cycle, else the scratch set, which gets an unnamed buffer), its buffers are closed (each unsaved one asking; a cancel keeps it open with what is left), its file list is remembered and it is recent again; refused outside a project |
+| `clamacs-project-next` / `-previous` | `C-x p n` / `C-x p N` | Next / Previous Project | cycle the open projects, the scratch set among them while it has buffers; dimmed with fewer than two |
+| `clamacs-project-move-buffer` | `C-x p a` | Move Buffer to Project... | the buffer into an open project (or `(no project)`), hidden here; refused for a tool buffer |
+| `clamacs-project-rename` | -- | -- | `M-x` only: the project in front renamed; refused for the scratch set, for an empty or a taken name |
+| `clamacs-project-save` / `-restore` | -- | -- | `M-x` only: the file written now / read into the running editor, every project's files opened at once (a restore makes its projects open) |
 
-| Command | Key | What |
-|---|---|---|
-| `clamacs-perspective-switch` | `C-x x s` | prompt with completion; a new name makes a perspective and enters it |
-| `clamacs-perspective-next` / `-previous` | `C-x x n` / `C-x x p` | cycle in the order made |
-| `clamacs-perspective-rename` | `C-x x r` | prompt, seeded with the name; refuses empty and taken names |
-| `clamacs-perspective-close` | `C-x x c` | switch away first, then close its buffers (asking), then forget it; refused for the only one |
-| `clamacs-perspective-move-buffer` | `C-x x a` | the buffer into a named perspective (made if new), hidden here |
-| `clamacs-perspective-set-directory` | `C-x x d` | the project directory, with path completion; must exist |
-| `clamacs-perspective-open-project` | `C-x x o` | a directory: a perspective named after it, its root set, entered |
-| `clamacs-perspective-save` | `C-x x C-s` | the file written |
-| `clamacs-perspective-restore` | `C-x x C-l` | the file read into the running editor |
-
-A prompt's completer is `complete` over the names; the directory
-prompts use `complete-path`, so TAB descends.  The commands are
-written against the frontend protocol and run on the fake frontend.
+**Naming** (`project-name-from-directory`, `unique-project-name`): a
+project is named after the one `.asd` in its folder -- `sento` for
+`Work:sento/sento.asd`, what a Lisp programmer calls the project --
+else after the folder (`src` for `Work:src/`, `Work` for `Work:`).  A
+name another project has gets the folder above in parentheses, `src
+(sento)`, then a number; `scratch` is always taken.  A folder that is a
+project already (by root, case-insensitively) is that project, never a
+second one.
 
 ## The menu and the port
 
-A **Perspectives** title between View and Buffers: the commands above
-as items (Close Perspective under a new rule, `:perspectives`, enabled
-while there are two or more), then a titleless dynamic group
-`:perspectives` at the tail -- one item per perspective, the one in
-front ticked, a pick switching -- made by the same mechanism as the
-Buffers menu: `dynamic-menu` / `dynamic-menu-pick` on the name, every
-frontend listing it in `editor-dynamic-groups`, so the page, the Cocoa
-shim and the MUI strip each draw it without knowing what a perspective
-is.  The port's `PERSPECTIVES [name]` is the twin of `BUFFERS`: the
-lines, or a pick answering `""` or `no such perspective`.
+The first menu is **File** since 2026-10-20 (it was `Project`, the
+Amiga's name for it, which the new menu needed).  A **Project** title
+between View and Buffers:
+
+```
+Project
+  Open Project...             C-x p o   the folder requester; the key prompts
+  Recent Projects          >            the :recent group, a submenu
+  Close Project               C-x p k   enabled in a project (:in-project)
+  --------------------------
+  Switch Project...           C-x p p
+  Next Project                C-x p n   enabled with two to cycle (:projects)
+  Previous Project            C-x p N
+  Move Buffer to Project...   C-x p a
+  --------------------------
+  (no project)                          the :projects group: the scratch set
+  * sento                               while it has buffers, then the open
+    cl-gserver                          projects, the one in front ticked
+```
+
+Both groups are dynamic groups like the Buffers menu
+(`dynamic-menu` / `dynamic-menu-pick` on the name), every frontend lists
+them in `editor-dynamic-groups`, and the page, the Cocoa shim and the
+MUI strip draw them without knowing what a project is -- the titled one
+as a submenu (the Themes mechanism), the titleless one at the tail.  The
+port's `PROJECTS [name]` and `RECENT [name]` are the twins of `BUFFERS`:
+the lines, or a pick answering `""` or `no such project`.
 
 ## The file
 
-`ENVARC:Clamacs/perspectives.cfg` (and `ENV:`) on the Amiga,
-`~/.clamacs-perspectives.cfg` on the host -- the layout file's
-sibling, settled by `refresh-user-paths` the same way.  Plain text the
-user can read and edit, one keyword and the rest of the line:
+`ENVARC:Clamacs/projects.cfg` (and `ENV:`) on the Amiga,
+`~/.clamacs-projects.cfg` on the host -- the layout file's sibling,
+settled by `refresh-user-paths` the same way.  Plain text the user can
+read and edit, one keyword and the rest of the line:
 
 ```
-; clamacs perspectives -- perspective NAME, then its root and files
-perspective main
-root Work:src/
-file Work:src/a.lisp
-file Work:src/b.lisp
-active Work:src/b.lisp
-perspective scratch
-current main
+; clamacs projects -- project NAME, then its root and files
+project sento
+root Work:sento/
+file Work:sento/src/actor.lisp
+file Work:sento/src/queue.lisp
+active Work:sento/src/queue.lisp
+project tools
+root Work:tools/
+current sento
 ```
 
-Unnamed buffers are not recorded; a line that does not parse is
-skipped, never fatal.  `perspectives-text` and `perspectives-parse`
-are pure string work with tests on fixtures.
+(`perspective NAME` is read as `project NAME`, for a file written before
+the rename.)  Unnamed buffers are not recorded, nor is the scratch set;
+a line that does not parse is skipped, never fatal.  `perspectives-text`
+and `perspectives-parse` are pure string work with tests on fixtures.
 
-**When it is written.**  By `clamacs-perspective-save`, and at every
-quit once the file exists -- saving once opts in, and from then on the
-editor keeps the file in step without being asked.  The write goes to
-every path of `*perspective-files*` through `snapshot-write-file`.
-**The layout file goes with it** (decided 2026-10-15): a quit that
-writes the perspectives file also records every window's place in the
-layout file (`snapshot-autosave`, the command's path without the
-message, from `quit-requested` right after `perspective-autosave`), so
-a saved session comes back where it was left -- a session is its
-buffers and its windows.  The perspectives file's existence is the one
-opt-in; a layout file without a perspectives file stays as it is,
-written on command only (the first design had it that way for both,
-and the first restart on the host came up with the right perspective in
-a window of the default size).
+**When it is written.**  The editor keeps it on its own
+(`perspective-autosave`): after Open Project, Close Project and a
+rename, and at every quit -- whenever there is a project to record or
+the file exists already.  The first Open Project creates it; that is
+the opt-in that also turns on the layout file's autosave at quit
+(`snapshot-autosave` from `quit-requested`, right after
+`perspective-autosave`), so a saved session comes back where it was left
+-- a session is its buffers and its windows.  An editor that never
+opens a project writes nothing.
 
-**When it is read.**  By `clamacs-perspective-restore`, and at every
-start when the file is there -- but a start LISTS, it does not restore
-(decided 2026-10-18; until then a start without files restored the
-file, the recorded perspective in front, and the windows came up
-unasked).  `perspective-list-at-start`, from both frontends' `start`
-before the first window, makes each perspective of the file by name
-with its root and keeps its files and its recorded document WAITING on
-it (`pending-files`, `pending-active`); the editor then opens the
+**When it is read.**  At every start when the file is there -- and a
+start LISTS, it does not restore (decided 2026-10-18): every project in
+the file is made recent, by name with its root, its files and its
+recorded document waiting on it (`perspective-list-at-start`, from both
+frontends' `start` before the first window), and the editor opens the
 window it always did -- the files named on the command line, else the
-unnamed buffer -- which joins the SCRATCH perspective
-(`*scratch-perspective-name*`, made first and put in front when the
-file lists anything; decided 2026-10-18 after the first cut put the
-start's window into the first perspective listed, which the menu then
-showed ticked with none of its windows open), so none of the listed
-perspectives is ticked, the status line and the REPL's title say
-`[scratch]`, and the file's `current` line is not honoured.  The
-scratch perspective is Emacs's `*scratch*`: `perspectives-text` leaves
-it out (`recorded-perspectives`; no `current` line while it is in
-front), a `perspective scratch` entry in the file is skipped like any
-name in use, and renaming it (`C-x x r`) makes it an ordinary,
-recorded perspective, since `perspective-scratch-p` goes by the name.
-A start without a file, or with an empty one, makes no scratch: `main`
-as ever.  The user picks the perspective
-to reopen: the first `perspective-switch` into a waiting perspective
-opens its files (`perspective-open-pending`, with the perspective in
-front so they join it; a file open elsewhere is brought over), makes
-the recorded document its active one and says `Perspective: NAME (ROOT), N
-file(s) opened[, M missing]` -- also when it is the one in front
-already, which a switch otherwise leaves alone (`C-x x s` refuses the
-name in front only once nothing waits).  Until then the quit's write
-keeps the waiting files, so a session that never entered a perspective
-loses none of it.  A restore (`C-x x C-l`) makes each perspective
-that is missing, sets its root, opens its files into it at once (a file
-already open elsewhere is moved, one that cannot be read is skipped and
-counted; nothing waits on it afterwards), makes the recorded document
-active, then brings the recorded perspective -- or the first -- in
-front with `perspective-switch` after syncing every document's shown
-state, so a frontend that showed the restored windows as they opened
-hides the ones not in front.  A restore that opened nothing leaves the
-editor as it was.
+unnamed buffer -- in the scratch set.  Nothing is ticked, the status
+line shows no project, the `current` line is not honoured.  The user
+picks a project from Recent Projects (or `C-x p p`, or `RECENT name`),
+and that first switch opens its files, the recorded one to the keyboard.
+A project never entered keeps its files in the file across the quit.
+`clamacs-project-restore` reads the file into a running editor eagerly:
+every project made, open, its files opened at once, the recorded
+project in front.
 
-**The REPL's title** (2026-10-18) names the perspective in front once
-there are two -- `*clamacs-repl* [work]`, the status line's rule
-(`status-perspective`) -- since the one REPL is shown in every
-perspective and its default directory follows the one in front; its
-NAME stays `*clamacs-repl*` (the Buffers menu, the window's role).
-`repl-title` / `repl-sync-title` in `repl.lisp`, called by
-`perspective.lisp` when a perspective is made, closed, renamed or
-brought in front, and by `repl-open`.  The host's `update-status` sets
-the window's title to the document's last `doc-set-title`, not its
-name, for that.
+**The status line and the REPL's title** name the project in front --
+` [sento]` after the buffer's name, `*clamacs-repl* [sento]` -- and
+nothing outside a project (`status-perspective`; `repl-title` /
+`repl-sync-title` in `repl.lisp`, called by `perspective.lisp` on every
+change).  The REPL's NAME stays `*clamacs-repl*`.
+
+## Not done: an amilisp per project
+
+Designed on 2026-10-15 and set aside the same day.  One image for every
+project does collide -- amilisp has one default directory and one set of
+packages -- and an amilisp per project would fix it: the wire, the REPL
+session, the debugger and the inspector moved onto the project,
+`editor-wire` answering the one in front, a child started in the root,
+the ARexx wire taught to tell its amilisp instances apart (an EXT.DEV
+change in AmiLisp).  But that is SLIME's multiple connections, not a
+project: Emacs users start a second `M-x slime` and pick the default
+connection by hand, and most run one image with everything loaded.  A
+68020 with 16 MB cannot hold two heaps anyway.  So a switch tells the one
+amilisp the folder, and a second amilisp, if it is ever wanted, is a
+`Connect` that remembers its port per project -- a feature of the wire.
 
 ## The frontends
 
-One new generic, `doc-set-shown (doc flag)`, default nothing: the fake
+One generic, `doc-set-shown (doc flag)`, default nothing: the fake
 records it (`fake-shown`), so the pure tests check which windows a
 switch would show.
 
-**The host (phase P2).**  A hidden tab is a tab the page does not draw:
+**The host.**  A hidden tab is a tab the page does not draw:
 `CK.showDoc(id, flag)` sets a flag on the page's document record,
 `refreshTabs` leaves hidden ones out, the page never activates a hidden
-document on its own, and the report's `tabs` lists the shown ones
-only.  `editor-active-document`'s fallback and `doc-close-window`'s
-choice of the next document read `shown-documents`; a detached window
+document on its own, and the report's `tabs` lists the shown ones only
+(`tabs.hidden`).  `editor-active-document`'s fallback and
+`doc-close-window`'s choice of the next document read `shown-documents`;
+`move-document` never activates a hidden document, so a detached window
 whose tabs are all hidden stays up, empty, until they are shown again
-(or is closed by the user, which attaches them hidden).  The
-`host-panel-state :menu` line and `host-page-panels` grow a
-`perspectives` entry, and `drive.lisp` a PERSPECTIVES leg: the verb
-pick, the native pick, a switch with the page's tabs read back, the
-file written and read back by a second editor.  The status line shows
-the perspective's name when there is more than one.
+(or is closed by the user, which attaches them hidden).
+`host-panel-state :projects` is the editor's account (`current NAME of
+(a|b) hidden (doc2)`), the `:menu` line carries `projects (...)` and
+`recent (...)`, and the port's `OPEN` brings a file hidden in another
+project over, as `find-file` does.  `drive.lisp` has the PROJECTS leg
+and its second editor lists the file the first one's quit wrote.
 
-**MUI (phase P3).**  `doc-set-shown` on an `mui-document` sets
-`MUIA_Window_Open`; on hide the window's geometry is read first
-(`window-geometry`) and set on the closed window before it is opened
-again (the theme-repaint rule: MUI 4 reopens a window at its creation
-size otherwise).  Since `close-document` may switch perspectives from
-inside a window's own event handling (the last window of a perspective
-closed with `C-x k`), the MUI method only MARKS the document and the
-windows are opened and closed from the loop's housekeeping, as
-`theme-repaint` is -- never from a hook.  `active-document`'s fallbacks
-read `shown-documents`.  `drive.rexx` gets the PERSPECTIVES leg;
-`run-lisp-editor.sh` is the gate for the hide/show.
+**MUI.**  A hidden window is a CLOSED window (its object, text, undo and
+colours kept, as the theme switch relies on).  `doc-set-shown` on an
+`mui-document` only MARKS the document; `shown-sync`, from the loop's
+housekeeping before `theme-repaint` and once in `start` after the
+listing, never from a hook (`close-document` may switch perspectives
+from inside a window's own event handling), closes and opens the
+windows, giving a reopened window the geometry it had (kept on the
+document; `doc-geometry` answers it, so the snapshot records a hidden
+window where it was), recolouring one a theme change found closed
+(`repaint-owed`) and activating the active document again.  The status
+lines follow in `redisplay-documents` when the number of perspectives or
+the name of the one in front changed.  `shown-report` reads the windows'
+open state off MUI for a drive.  `drive.rexx` has the PROJECTS leg at
+its end and its second editor lists a hand-written file; `PERSPECTIVE=1
+verify/realamiga/run-lisp-editor.sh` is the hide/show cycle on a real
+MUI.
 
 ## Files
 
 ```
-lisp/perspective.lisp      NEW  the struct, adoption, shown-p, switch, close
-                                bookkeeping, the commands, the menu group,
-                                the file (pure)
-lisp/frontend.lisp         the two slots; doc-set-shown; perspective-adopt
-                           from initialize-instance
+lisp/perspective.lisp      the struct, the scratch set, open/recent, naming,
+                           adoption, shown-p, switch, close, move, the file,
+                           the commands, the two menu groups (pure)
+lisp/frontend.lisp         the two editor slots; doc-set-shown; perspective-adopt
 lisp/files.lisp            doc-directory's fallback; find-file moves; the
                            seeded prompt; close-document's two rules; the
-                           quit's save
-lisp/menu.lisp             the Perspectives title and group; the rule;
-                           editor-dynamic-groups; the PERSPECTIVES verb
-lisp/bindings.lisp         the C-x x keys
-lisp/wire.lisp             with-system-file from the root; the switch's
-                           directory EVAL (perspective-tell-root)
-lisp/snapshot.lisp         refresh-user-paths settles *perspective-files*;
-                           snapshot-autosave, the quit's layout write
-lisp/load.lisp             perspective.lisp after menu.lisp
-lisp/frontend-host.lisp    P1: :perspectives in editor-dynamic-groups, the
-                           restore at start; P2: doc-set-shown, the page
-lisp/frontend-mui.lisp     P1: the same two; P3: doc-set-shown
-tests/test-perspective.lisp NEW
-tests/fake-frontend.lisp   fake-shown; the active document's fallback
-tests/test-menu.lisp       the title, the group, the rule
-tests/test-host.lisp       the table's new lines
-README.md                  a "Perspectives" section
+                           quit's autosave
+lisp/menu.lisp             File; the Project title, its items and groups; the
+                           :projects / :in-project rules; the two verbs
+lisp/bindings.lisp         the C-x p keys
+lisp/wire.lisp             with-system-file from the root; the switch's EVAL
+lisp/snapshot.lisp         refresh-user-paths; snapshot-autosave
+lisp/repl.lisp             repl-title / repl-sync-title
+lisp/frontend-host.lisp    the groups; doc-set-shown; host-panel-state :projects
+lisp/frontend-mui.lisp     the groups; doc-set-shown; shown-sync; shown-report
+tests/test-perspective.lisp
+README.md                  the "Projects" section
 ```
 
-## Phases -- one session each
+## What it replaced (2026-10-14 to 2026-10-20)
 
-### P1 -- the pure part
-
-Everything above but the frontends' hide and show: `make test-lisp`
-green with `tests/test-perspective.lisp`, the menu on both frontends
-(the group draws itself), the keys, the file, the restore at start.
-Switching perspectives on a real frontend changes the Buffers menu, the
-`C-x o` cycle and the tick, and shows every window still -- the T1
-situation, where the editor looked the same until T2.
-
-### P2 -- the host frontend
-
-As above.  `run-smoke.sh`, `host-keys.sh`, `run-drive.sh` with the new
-leg, `MEMTRACK=1`, `make host-linux`.  Landed 2026-10-15: `CK.showDoc`
-and the page's `hidden` list, `doc-set-shown` on `host-document` (a
-change only; a document made in another window from the mirror is
-hidden there again), the fallbacks on `shown-documents`, the status
-line's `[name]`, `host-panel-state :perspectives`, the port's `OPEN`
-bringing a hidden file over as `find-file` does, the drive's leg and the
-second editor's restore.  One rule found on the way: a hidden document
-is never brought to the keyboard by the frontend -- `move-document`
-skips its activation, and the page's own fallbacks skip hidden tabs --
-so the pure layer's "show, activate, then hide" order is the only thing
-that decides what has the keyboard.  And one P1 gap the second editor
-found: a restore whose recorded perspective is the one in front already
-left the last file opened active, since a switch to the current
-perspective does nothing -- `perspective-restore` activates the recorded
-document by hand then.  Gates: `run-smoke.sh`, `host-keys.sh`,
-`MEMTRACK=1 run-drive.sh` (329 OK, both editors and the started amilisp
-leak-free) green on macOS; `make host-linux` not run (no docker daemon,
-and the standalone checkout has no superproject beside it).
-
-### P3 -- the MUI frontend
-
-As above.  `run-lisp-editor.sh 040`, `run-lisp-drive.sh` with the leg,
-a MorphOS run.  Landed 2026-10-15: `doc-set-shown` on an `mui-document`
-marks the document and sets the editor's `shown-dirty`; `shown-sync`,
-run by the loop's housekeeping before `theme-repaint` and once by
-`start` after the restore, closes the windows to hide (their geometry
-kept on the document, `doc-geometry` answering it so the snapshot
-records a hidden window where it was) and opens the ones to show at
-that place, recolours a window a theme change found closed
-(`theme-repaint` applies the background and the font to the closed
-object and leaves the colours owed, `repaint-owed`) and activates the
-active document again
--- MUI opens a window with no active object, and `doc-activate` on a
-closed window records the request only, since MUI ignores the two
-attributes there.  The status lines follow in `redisplay-documents`:
-every one on the screen is rewritten when the number of perspectives
-or the name of the one in front changed since it last looked (` [name]`
-after the buffer's name once there are two; `status-perspective` lives
-in `perspective.lisp` now, both frontends' `status-text` call it) --
-the first smoke run's screenshot showed a `[main]` left over from a
-perspective closed since.  `active-document`'s fallbacks read
-`shown-documents`.  `shown-report` reads the windows' open state back
-off MUI for the drive, beside the pure layer's account.  `drive.rexx` has the leg at
-the end (the prompt through `KEY`, the windows closed and opened, the
-file brought over, the hidden window back at its `GETWINDOW` place, the
-status line, the menu's pick, the directory told to amilisp read back
-at the REPL prompt, the file saved and deleted) and its second editor
-restores a hand-written file (the file it started on moved into a
-perspective not in front and its window closed, the switch bringing it
-back where the layout file put it); `PERSPECTIVE=1 run-lisp-editor.sh`
-is the hide/show cycle on a real MUI before the typing, with the exit
-checked as ever.  Gates on 2026-10-15: `make test-lisp` (791),
-`run-smoke.sh`, `host-keys.sh` and `run-drive.sh` (326 OK) on macOS for
-the moved status helper, `run-lisp-drive.sh 040` (185 OK, PHASE 5, the
-two legs included) and `PERSPECTIVE=1 run-lisp-editor.sh 040` green in
-FS-UAE; `run-lisp-drive PHASE 5` on the real MorphOS box the same day
-(189 OK, both perspective legs green, the hidden window back at its
-place under MUI 4 too -- the one FAIL was the themes leg's assumption
-that the editor starts in Light against that box's own init file,
-which loads One Dark).
+The first UI was `perspective.el`'s, on `C-x x`: Switch Perspective
+(a new name made an empty, folderless perspective), Open Project
+Directory, Set Project Directory, Rename, Close, Move Buffer, Save
+Perspectives and Restore Perspectives, the first perspective called
+`main` and named in the status line once there were two.  Phases P1
+(pure), P2 (host) and P3 (MUI) landed 2026-10-14/15 and the hide/show
+machinery, the file format and the listing at start are theirs,
+unchanged.  What went: the word on screen, `main`, the folderless
+perspective, Set Directory, the two file commands and the opt-in by
+saving once.
 
 ## Risks and what decides them
 
-- **A perspective's window hidden on MUI is a closed window**: its
-  object stays, its text stays, its undo stays (the class keeps them
-  across close and open -- the theme switch relies on it already).  If
-  a hidden window turned out to lose something, the fallback is
-  `MUIA_Window_Open` kept and the window iconified instead.
-- **The restore at start opens windows the user did not ask for.**
-  It did grate (2026-10-18): a start lists the perspectives now and
-  opens nothing of theirs, the first switch into one does ("When it is
-  read" above).
-- **Moving a file's window between perspectives** (rather than sharing
-  the buffer) may surprise a `perspective.el` user who expects
-  `persp-add-buffer`'s sharing.  A window cannot be in two
-  perspectives; the move is said in the echo area, and
-  `clamacs-perspective-move-buffer` moves it back.
+- **A hidden window on MUI is a closed window**: its object, text and
+  undo stay (the theme switch relies on it already).  If a hidden window
+  turned out to lose something, the fallback is `MUIA_Window_Open` kept
+  and the window iconified instead.
+- **A start opens nothing of a project's** -- a restore at start grated
+  (2026-10-18).  Recent Projects is one pick away.
+- **Moving a file's window between projects** (rather than sharing the
+  buffer) may surprise a `perspective.el` user.  A window cannot be in
+  two projects; the move is said in the echo area, and Move Buffer moves
+  it back.
 - **The switch's directory `EVAL` lands mid-session**: a REPL in the
   middle of work sees its default directory change under it.  Accepted
-  (2026-10-15): the folder following the perspective is the point; the
-  REPL transcript gets a note saying so when it is open.
+  (2026-10-15): the folder following the project is the point; the REPL
+  transcript gets a note.
+- **An empty Recent Projects submenu** is a submenu with nothing in it
+  until the first project is closed or listed.  Harmless on all three
+  menu bars.

@@ -13,7 +13,7 @@
 # layout file the drive wrote and the init file it left (a theme of the
 # drive's own, defined and loaded there), with a TMPDIR of its own, and
 # the drive's `second' mode reads where it came up and what theme it shows
-# over ITS port, restores the perspectives file the drive saved, and
+# over ITS port, lists the projects file the drive left, and
 # quits it.
 #
 #   verify/host/run-drive.sh            under ../build/host/amilisp
@@ -159,7 +159,7 @@ run_drive() {
     CLAMACS_DRIVE_DIR="$1/" CLAMACS_DRIVE_ROOT="$root/" \
     CLAMACS_DRIVE_TMP="$out/scratch/" CLAMACS_DRIVE_CFG="$cfg" \
     CLAMACS_DRIVE_RC="$out/home/.clamacsrc" \
-    CLAMACS_DRIVE_PERSP="$out/home/.clamacs-perspectives.cfg" \
+    CLAMACS_DRIVE_PERSP="$out/home/.clamacs-projects.cfg" \
         "$amilisp" --no-userinit --heap 16M --non-interactive \
         --load "$here/drive.lisp" -- "$2" </dev/null >"$out/drive-$2.out" 2>&1 &
     drive_pid=$!

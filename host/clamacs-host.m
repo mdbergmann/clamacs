@@ -240,17 +240,19 @@ int clamacs_host_ask(void *win, const char *text, const char *buttons)
 /* The file panel: an NSSavePanel when SAVE, else an NSOpenPanel; INITIAL
  * is the path to start from (a file or a directory), or NULL.  The chosen
  * path, malloc'd (clamacs_host_free), or NULL when cancelled. */
-char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)
+/* MODE: 0 a file to read, 1 a file to write, 2 a folder (Open Project:
+ * the open panel lets a folder be chosen and no file). */
+char *clamacs_host_ask_file(void *win, const char *title, int mode, const char *initial)
 {
     (void)win;
     @autoreleasepool {
         NSSavePanel *panel;
-        if (save) {
+        if (mode == 1) {
             panel = [NSSavePanel savePanel];
         } else {
             NSOpenPanel *open = [NSOpenPanel openPanel];
-            open.canChooseFiles = YES;
-            open.canChooseDirectories = NO;
+            open.canChooseFiles = (mode == 0);
+            open.canChooseDirectories = (mode == 2);
             open.allowsMultipleSelection = NO;
             panel = open;
         }
@@ -937,17 +939,21 @@ int clamacs_host_ask(void *win, const char *text, const char *buttons)
     return answer;
 }
 
-char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)
+/* MODE: 0 a file to read, 1 a file to write, 2 a folder (Open Project:
+ * the chooser selects a folder). */
+char *clamacs_host_ask_file(void *win, const char *title, int mode, const char *initial)
 {
     char *message = text_arg(title);
     GtkWidget *dialog;
     GtkFileChooser *chooser;
     char *result = NULL;
+    int save = (mode == 1);
 
     dialog = gtk_file_chooser_dialog_new(message,
                                          win ? GTK_WINDOW(win) : NULL,
                                          save ? GTK_FILE_CHOOSER_ACTION_SAVE
-                                              : GTK_FILE_CHOOSER_ACTION_OPEN,
+                                         : mode == 2 ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER
+                                                     : GTK_FILE_CHOOSER_ACTION_OPEN,
                                          "_Cancel", GTK_RESPONSE_CANCEL,
                                          save ? "_Save" : "_Open", GTK_RESPONSE_ACCEPT,
                                          NULL);
@@ -1125,6 +1131,7 @@ void clamacs_host_menu_clear(void) {}
 #include <windows.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <shlobj.h>
 
 /* ---- the event loop ------------------------------------------------- */
 
@@ -1271,7 +1278,54 @@ int clamacs_host_ask(void *win, const char *text, const char *buttons)
     return answer;
 }
 
-char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)
+/* The folder browser's start folder: BFFM_SETSELECTION wants the shell's
+ * spelling, with backslashes. */
+static int CALLBACK browse_folder_init(HWND hwnd, UINT msg, LPARAM lparam, LPARAM data)
+{
+    (void)lparam;
+    if (msg == BFFM_INITIALIZED && data)
+        SendMessageW(hwnd, BFFM_SETSELECTIONW, TRUE, data);
+    return 0;
+}
+
+/* Mode 2: a folder, through the shell's folder browser (the common file
+ * dialog cannot choose one).  DIR is where it starts, or NULL. */
+static char *ask_folder(void *win, const wchar_t *wtitle, wchar_t *dir)
+{
+    BROWSEINFOW bi;
+    LPITEMIDLIST pidl;
+    wchar_t path[MAX_PATH];
+    wchar_t *q;
+    char *result = NULL;
+    HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+    if (dir)
+        for (q = dir; *q; q++)
+            if (*q == L'/')
+                *q = L'\\';
+    memset(&bi, 0, sizeof bi);
+    bi.hwndOwner = (HWND)win;
+    bi.lpszTitle = wtitle;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI;
+    bi.lpfn = browse_folder_init;
+    bi.lParam = (LPARAM)dir;
+    pidl = SHBrowseForFolderW(&bi);
+    if (pidl) {
+        if (SHGetPathFromIDListW(pidl, path)) {
+            for (q = path; *q; q++)
+                if (*q == L'\\')
+                    *q = L'/';
+            result = path_result(path);
+        }
+        CoTaskMemFree(pidl);
+    }
+    if (SUCCEEDED(com))
+        CoUninitialize();
+    return result;
+}
+
+/* MODE: 0 a file to read, 1 a file to write, 2 a folder. */
+char *clamacs_host_ask_file(void *win, const char *title, int mode, const char *initial)
 {
     OPENFILENAMEW ofn;
     wchar_t file[MAX_PATH];
@@ -1279,8 +1333,15 @@ char *clamacs_host_ask_file(void *win, const char *title, int save, const char *
     wchar_t *winitial = (initial && *initial) ? path_arg(initial) : NULL;
     wchar_t *dir = NULL;
     BOOL ok;
+    int save = (mode == 1);
     char *result = NULL;
 
+    if (mode == 2) {
+        result = ask_folder(win, wtitle, winitial);
+        free(wtitle);
+        free(winitial);
+        return result;
+    }
     file[0] = 0;
     if (winitial) {
         DWORD attr = GetFileAttributesW(winitial);
@@ -1518,8 +1579,8 @@ int clamacs_host_step(void *w, int ms) { (void)w; (void)ms; return -1; }
 void clamacs_host_wake(void) {}
 int clamacs_host_ask(void *win, const char *text, const char *buttons)
 { (void)win; (void)text; (void)buttons; return -1; }
-char *clamacs_host_ask_file(void *win, const char *title, int save, const char *initial)
-{ (void)win; (void)title; (void)save; (void)initial; return NULL; }
+char *clamacs_host_ask_file(void *win, const char *title, int mode, const char *initial)
+{ (void)win; (void)title; (void)mode; (void)initial; return NULL; }
 void clamacs_host_free(void *p) { free(p); }
 void clamacs_host_beep(void) {}
 int clamacs_host_clipboard_set(const char *text) { (void)text; return 0; }

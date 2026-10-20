@@ -263,7 +263,7 @@ wildcard is refused).
 
 ## Files and evaluation
 
-**Project > New File** opens an empty Lisp buffer in a window of its own;
+**File > New File** opens an empty Lisp buffer in a window of its own;
 `C-x C-f` (Open File...) with a name no file has yet does the same under that
 name, as in Emacs, and `C-x C-s` writes it.  The keys ask for the name in
 the minibuffer, where TAB completes it against the directory typed so far
@@ -377,81 +377,75 @@ name, each entry also shows its directory. A macro can read the menu with
 `BUFFERS` and pick from it with `BUFFERS <name>`. See
 `tests/test-menu.lisp`.
 
-### Perspectives
+### Projects
 
-A perspective is a named set of buffers with their windows -- a project
--- of which one is in front, as in Emacs's `perspective.el`.  Every
-file you open belongs to the perspective in front (the first is called
-`main`), the **Buffers** menu and `C-x o` see only its buffers, and
-switching to another perspective hides this one's windows and shows the
+A project is a folder.  **Open Project...** in the menu asks for one in
+the folder requester; `C-x p o` asks at the prompt -- a folder or its
+`.asd`, with path completion, TAB on a bare directory browsing from
+there -- and
+either opens it: the project is named after the one `.asd` in the folder (`sento`
+for `Work:sento/sento.asd`), else after the folder, and the editor
+switches to it.  Every file you open from then on belongs to the project
+in front, the **Buffers** menu and `C-x o` see only its buffers, and
+switching to another project hides this one's windows and shows the
 other's; the tool buffers -- the REPL, `*clamacs-description*`, the
-error list -- are shown in every perspective.  The keys are
-`perspective.el`'s, on `C-x x`: `C-x x s` switches by name, with
-completion, and a new name makes a new perspective (empty, so an unnamed
-buffer opens in it); `C-x x n` and `C-x x p` go to the next and the
-previous one; `C-x x r` renames; `C-x x c` closes the perspective in
-front after closing its buffers, each unsaved one asking; `C-x x a`
-moves the current buffer into another perspective.  The **Perspectives**
-menu has the same, and lists the perspectives below, the one in front
-ticked.  Closing the last buffer of a perspective brings another one
-with buffers in front, so a window is always on the screen; when no
-other has any, the last window's close ends the editor as before.  A
-file already open in another perspective is brought over by `C-x C-f`
-rather than opened twice, and the echo area says from where.
+error list -- are shown in every project.  The open projects are listed
+at the bottom of the **Project** menu, the one in front ticked, with
+`(no project)` above them while there are buffers that belong to none
+(the buffer the editor started with, say); **Switch Project...**
+(`C-x p p`) does the same by name with completion, and `C-x p n` /
+`C-x p N` go to the next and the previous one.  **Close Project**
+(`C-x p k`) closes the project's buffers -- each unsaved one asking --
+and moves it to **Recent Projects**, a submenu of the projects the
+editor knows and has no windows for; picking one there (or naming it at
+`C-x p p`) opens it again with the files it had.  `C-x p a` moves the
+current buffer into another project (or out of any).  Closing the last
+buffer of a project brings another set with buffers in front, so a
+window is always on the screen; a file already open in another project
+is brought over by `C-x C-f` rather than opened twice, and the echo
+area says from where.
 
-A perspective may have a **project directory**: `C-x x d` sets it, and
-`C-x x o` opens a project -- a directory asked for at the prompt
-becomes a perspective named after it, with that directory as its
-project directory.  In a buffer without a file the `Find file` prompt
-and the requester start there, the ASDF commands look for the `.asd`
-there, and a switch to the perspective makes it amilisp's default
-directory (an open REPL notes it), so a relative path typed at the
-REPL means the project's -- SLIME's `,cd`, done by the perspective.
-The switch's message names it, `Perspective: sento (Work:sento/)`, and
-`C-x x d` offers it at its prompt.  A file window's title bar shows the
-file's full path (the tab and the Buffers menu keep the name), and the
-status line shows the package of the form at the cursor -- the one
-`C-c C-c` and the arglist ask amilisp in -- after the buffer's name.
-A buffer whose package amilisp has not got yet (its system not loaded)
-is told so once in the echo area, and asked for again once something
-has run.
-There is one amilisp and one REPL, shown in every perspective, as
-`perspective.el` shows the one SLIME REPL everywhere; the REPL window's
-title names the perspective in front once there are two, as the status
-line does.
+The project's folder is where things start: in a buffer without a file
+the `Find file` prompt and the requester start there, the ASDF commands
+look for the `.asd` there, and a switch to the project makes it
+amilisp's default directory (an open REPL notes it), so a relative path
+typed at the REPL means the project's -- SLIME's `,cd`, done by the
+project.  The switch's message names it, `Project: sento
+(Work:sento/)`, and the status line and the REPL window's title show
+the project's name in brackets after the buffer's -- nothing while no
+project is in front.  A file window's title bar shows the file's full
+path (the tab and the Buffers menu keep the name), and the status line
+shows the package of the form at the cursor -- the one `C-c C-c` and
+the arglist ask amilisp in -- after the buffer's name.  A buffer whose
+package amilisp has not got yet (its system not loaded) is told so once
+in the echo area, and asked for again once something has run.  There is
+one amilisp and one REPL, shown in every project, as `perspective.el`
+shows the one SLIME REPL everywhere.
 
-**Save Perspectives** (`C-x x C-s`) writes every perspective with its
-directory and its files to `ENVARC:Clamacs/perspectives.cfg` (and
-`ENV:`) on the Amiga, `~/.clamacs-perspectives.cfg` on the host; from
-then on every quit keeps the file in step -- and writes the window
-positions beside it, as Snapshot Windows does, so a window comes back
-where it was left.  The next start **lists** the perspectives it holds
-and opens nothing of theirs: the editor comes up with the files named
-on the command line, else an empty buffer, in a **scratch** perspective
-of its own, and the saved perspectives are in the menu by name, none of
-them ticked, each with its project directory -- the first switch into
-one (the menu, `C-x x s`, `PERSPECTIVES <name>`) opens its files, the
-one that had the keyboard first.  A perspective never entered keeps its
-files in the file across the quit.  The scratch perspective is never
-written to the file, like Emacs's `*scratch*`: a file opened there is
-gone from the file at the quit unless the buffer is moved to another
-perspective (`C-x x a`) or scratch is renamed (`C-x x r`), which makes
-it an ordinary perspective.  **Restore
-Perspectives** (`C-x x C-l`) reads the file into a running editor,
-opening every perspective's files at once.  The file is plain text, one
-`perspective NAME` line followed by
-its `root` and `file` lines; edit it or delete it to start over.  A
-macro reads the menu with `PERSPECTIVES` and switches with
-`PERSPECTIVES <name>`.  On the host a buffer of a perspective not in
-front is a tab the page does not draw -- its text and its undo stay --
-and the status line shows the perspective's name in brackets after the
-buffer's once there is more than one; a window shown separately keeps
-its hidden tabs and comes back to life when they are shown again.  On
-the Amiga a hidden buffer's window is closed -- its text, its undo and
-its colours stay -- and opened again where it was when its perspective
-comes back in front; the window positions snapshot records a hidden
-window at that place too.  See `specs/clamacs-perspectives.md` and
-`tests/test-perspective.lisp`.
+The editor remembers the projects on its own: `ENVARC:Clamacs/projects.cfg`
+(and `ENV:`) on the Amiga, `~/.clamacs-projects.cfg` on the host, kept
+in step whenever a project is opened or closed and at every quit, when
+the window positions are written beside it, as Snapshot Windows does,
+so a window comes back where it was left.  The next start opens nothing
+of theirs: the editor comes up with the files named on the command
+line, else an empty buffer, and every project is in Recent Projects
+with its folder and its files -- one pick, and it is back, the file
+that had the keyboard first.  A project never opened keeps its files in
+the file across the quit; a buffer outside any project is not recorded.
+The file is plain text, one `project NAME` line followed by its `root`
+and `file` lines; edit it or delete it to start over (`M-x
+clamacs-project-restore` reopens every project of the file at once, `M-x
+clamacs-project-rename` renames the one in front).  A macro reads the
+menu with `PROJECTS` and `RECENT` and picks with `PROJECTS <name>` /
+`RECENT <name>`.  On the host a buffer of a project not in front is a
+tab the page does not draw -- its text and its undo stay -- and a window
+shown separately keeps its hidden tabs and comes back to life when they
+are shown again.  On the Amiga a hidden buffer's window is closed -- its
+text, its undo and its colours stay -- and opened again where it was
+when its project comes back in front; the window positions snapshot
+records a hidden window at that place too.  See
+`specs/clamacs-perspectives.md` (a project is a perspective underneath)
+and `tests/test-perspective.lisp`.
 
 ## Appearance
 

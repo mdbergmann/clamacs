@@ -65,10 +65,10 @@
   (and (doc-repl doc) t))
 
 (defun repl-title (doc)
-  "The REPL window's title: its name, and ` [NAME]' after it while the
-editor has more than one perspective (STATUS-PERSPECTIVE, the status
-line's rule) -- the one REPL is shown in every perspective and its
-default directory follows the one in front, so the title says which."
+  "The REPL window's title: its name, and ` [NAME]' after it while a
+project is in front (STATUS-PERSPECTIVE, the status line's rule) -- the
+one REPL is shown in every project and its default directory follows
+the one in front, so the title says which."
   (concatenate 'string *repl-name* (status-perspective doc)))
 
 (defun repl-sync-title (editor)

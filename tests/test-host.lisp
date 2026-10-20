@@ -970,9 +970,11 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (host-editor-beeps editor) 1)
     (is-equal (doc-message-text doc) "C-x C-q is undefined")
     ;; The file requester and the browser answer from the script
-    (setf (host-editor-answers editor) '(nil))
+    (setf (host-editor-answers editor) '(nil "/tmp/proj"))
     (is-equal (doc-ask-file doc "Open" nil "/tmp/") nil)
     (is-equal (first (host-editor-asked editor)) '(:file "Open" nil "/tmp/"))
+    (is-equal (doc-ask-file doc "Open Project" :directory "/tmp/") "/tmp/proj")
+    (is-equal (first (host-editor-asked editor)) '(:file "Open Project" :directory "/tmp/"))
     (is-equal (doc-open-url doc "https://example.org/") :opened)
     (is-equal (host-editor-urls editor) '("https://example.org/"))
     (is-equal (multiple-value-list (doc-geometry doc)) '(0 0 800 600))
@@ -1428,14 +1430,14 @@ batch of both taken."
 (deftest host-menu-bar-is-the-table-and-its-enable-states-follow-the-editor
   (multiple-value-bind (editor doc js) (host-menu-editor "" nil)
     ;; The table, one entry per index, at the head of the batch
-    (is (search "CK.setMenus([[\"title\",\"Project\",\"\"],[\"item\",\"New File\",\"\"],[\"item\",\"Open File...\",\"C-x C-f\"]," js))
+    (is (search "CK.setMenus([[\"title\",\"File\",\"\"],[\"item\",\"New File\",\"\"],[\"item\",\"Open File...\",\"C-x C-f\"]," js))
     (is (search "[\"bar\",\"\",\"\"]" js))
     ;; The two dynamic groups go out under their names, the themes with
     ;; the title of their submenu
     ;; -- the View menu's text-size items first, then its groups
-    (is (search "[\"title\",\"View\",\"\"],[\"item\",\"Bigger Text\",\"C-x C-+\"],[\"item\",\"Smaller Text\",\"C-x C--\"],[\"item\",\"Normal Text Size\",\"C-x C-0\"],[\"bar\",\"\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"cursor\",\"\",\"\"],[\"title\",\"Perspectives\",\"\"],[\"item\",\"Switch Perspective...\",\"C-x x s\"]" js))
-    ;; The perspectives' own group at the tail of their menu, before Buffers
-    (is (search "[\"item\",\"Restore Perspectives\",\"C-x x C-l\"],[\"bar\",\"\",\"\"],[\"perspectives\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
+    (is (search "[\"title\",\"View\",\"\"],[\"item\",\"Bigger Text\",\"C-x C-+\"],[\"item\",\"Smaller Text\",\"C-x C--\"],[\"item\",\"Normal Text Size\",\"C-x C-0\"],[\"bar\",\"\",\"\"],[\"themes\",\"Themes\",\"\"],[\"minimap\",\"\",\"\"],[\"cursor\",\"\",\"\"],[\"title\",\"Project\",\"\"],[\"item\",\"Open Project...\",\"C-x p o\"],[\"recent\",\"Recent Projects\",\"\"],[\"item\",\"Close Project\",\"C-x p k\"]" js))
+    ;; The open projects' own group at the tail of their menu, before Buffers
+    (is (search "[\"item\",\"Move Buffer to Project...\",\"C-x p a\"],[\"bar\",\"\",\"\"],[\"projects\",\"\",\"\"],[\"title\",\"Buffers\",\"\"],[\"buffers\",\"\",\"\"],[\"title\",\"Help\",\"\"]" js))
     (is (< (search "CK.setMenus" js) (search "CK.makeDoc" js)))
     ;; Every item's state went out once: a clean unnamed buffer without a
     ;; wire dims Save, Complete Symbol and the REPL, keeps Open and Undo
@@ -1833,7 +1835,7 @@ batch of both taken."
     ;; The table as the shim takes it: one line per entry, in order, the
     ;; dynamic groups under their names
     (let ((text (menu-table-text (host-test-editor))))
-      (is (search (lines (tabbed "title" "Project" "") (tabbed "item" "New File" "")
+      (is (search (lines (tabbed "title" "File" "") (tabbed "item" "New File" "")
                          (tabbed "item" "Open File..." "C-x C-f"))
                   text))
       (is (search (lines "" (tabbed "bar" "" "") "") text))
@@ -1843,11 +1845,13 @@ batch of both taken."
                          (tabbed "themes" "Themes" "")
                          (tabbed "minimap" "" "")
                          (tabbed "cursor" "" "")
-                         (tabbed "title" "Perspectives" "")
-                         (tabbed "item" "Switch Perspective..." "C-x x s"))
+                         (tabbed "title" "Project" "")
+                         (tabbed "item" "Open Project..." "C-x p o")
+                         (tabbed "recent" "Recent Projects" "")
+                         (tabbed "item" "Close Project" "C-x p k"))
                   text))
-      (is (search (lines (tabbed "item" "Restore Perspectives" "C-x x C-l") (tabbed "bar" "" "")
-                         (tabbed "perspectives" "" "")
+      (is (search (lines (tabbed "item" "Move Buffer to Project..." "C-x p a") (tabbed "bar" "" "")
+                         (tabbed "projects" "" "")
                          (tabbed "title" "Buffers" "") (tabbed "buffers" "" "")
                          (tabbed "title" "Help" ""))
                   text))
@@ -2466,7 +2470,7 @@ settled and the tab moved.  The message HOST-DETACH answered."
              (js (host-take-evals w2)))
         ;; The table, every item's state and both groups as the bar shows
         ;; them now, then the theme, before the tab
-        (is (search "CK.setMenus([[\"title\",\"Project\",\"\"]" js))
+        (is (search "CK.setMenus([[\"title\",\"File\",\"\"]" js))
         (is-equal (count-calls "CK.menuEnable(" js)
                   (count :item (menu-entries) :key #'menu-entry-kind))
         (is (search (menu-enable-call 'save-buffer nil) js))
@@ -2592,9 +2596,9 @@ settled and the tab moved.  The message HOST-DETACH answered."
         (is (search (format nil "~%debugger 5 6 400 300~%") text))))
     (delete-file cfg)))
 
-;;; --- perspectives: a tab the page does not draw (phase P2) -----------------
+;;; --- projects: a tab the page does not draw (phase P2) ---------------------
 
-(deftest host-a-perspective-switch-hides-the-tabs-left-and-shows-the-ones-entered
+(deftest host-a-project-switch-hides-the-tabs-left-and-shows-the-ones-entered
   (let* ((editor (host-test-editor))
          (d1 (host-test-document editor "one"))
          (d2 (host-test-document editor "two"))
@@ -2602,11 +2606,11 @@ settled and the tab moved.  The message HOST-DETACH answered."
     (host-take-evals editor)
     (is (hdoc-shown d1))
     (is (hdoc-shown d2))
-    (is-equal (host-panel-state :perspectives editor) "current main of (main) hidden ()")
-    ;; One perspective: the status line names none
+    (is-equal (host-panel-state :projects editor) "current scratch of (scratch) hidden ()")
+    ;; No project: the status line names none
     (is (not (search "[" (status-text d2))))
     (with-entry (editor)
-      (setq work (make-perspective editor "work"))
+      (setq work (make-perspective editor "work" :root "T:work/"))
       (perspective-switch editor work))
     (let ((js (host-take-evals editor))
           (d3 (host-document-by-id editor "doc3")))
@@ -2621,8 +2625,8 @@ settled and the tab moved.  The message HOST-DETACH answered."
       (is (search "CK.showDoc(\"doc2\",false);" js))
       (is (< (search "CK.activateDoc(\"doc3\");" js) (search "CK.showDoc(\"doc1\",false);" js)))
       (is (eq (editor-active-document editor) d3))
-      (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden (doc1 doc2)")
-      ;; The status line names the perspective now that there are two
+      (is-equal (host-panel-state :projects editor) "current work of (scratch|work) hidden (doc1 doc2)")
+      ;; The status line names the project in front
       (is (search "[work]  CL-USER  " (status-text d3)))
       (is (search "[work]  CL-USER  " js))
       ;; The fallback for the active document skips the hidden tabs
@@ -2630,16 +2634,18 @@ settled and the tab moved.  The message HOST-DETACH answered."
       (is (eq (active-document editor) d3))
       (is (eq (editor-active-document editor) d3))
       ;; Back: the two drawn again, the one that had the keyboard when
-      ;; main was left (d2) activated before d3 is hidden
-      (with-entry (editor) (perspective-switch editor (find-perspective editor "main")))
+      ;; the scratch set was left (d2) activated before d3 is hidden, and
+      ;; the status line names no project again
+      (with-entry (editor) (perspective-switch editor (scratch-perspective editor)))
       (let ((js (host-take-evals editor)))
         (is (search "CK.showDoc(\"doc1\",true);" js))
         (is (search "CK.showDoc(\"doc2\",true);" js))
         (is (search "CK.showDoc(\"doc3\",false);" js))
         (is (< (search "CK.activateDoc(\"doc2\");" js) (search "CK.showDoc(\"doc3\",false);" js)))
-        (is (search "[main]  CL-USER  " js)))
+        (is (not (search "[work]" js)))
+        (is (not (search "[scratch]" js))))
       (is (eq (editor-active-document editor) d2))
-      (is-equal (host-panel-state :perspectives editor) "current main of (main|work) hidden (doc3)")
+      (is-equal (host-panel-state :projects editor) "current scratch of (scratch|work) hidden (doc3)")
       ;; Told what it shows already (a restore syncs every document):
       ;; nothing sent
       (with-entry (editor) (doc-set-shown d1 t) (doc-set-shown d3 nil))
@@ -2649,8 +2655,9 @@ settled and the tab moved.  The message HOST-DETACH answered."
       (with-entry (editor) (run-command d2 'kill-buffer))
       (is (eq (editor-active-document editor) d1))
       (is (search "CK.activateDoc(\"doc1\");" (host-take-evals editor)))
-      ;; The last tab of main closed: work comes in front, d3 drawn and
-      ;; active (perspective.lisp's rule), the editor never without a tab
+      ;; The last tab outside the project closed: work comes in front, d3
+      ;; drawn and active (perspective.lisp's rule), the editor never
+      ;; without a tab
       (with-entry (editor) (run-command d1 'kill-buffer))
       (is (eq (editor-perspective editor) work))
       (is (hdoc-shown d3))
@@ -2658,7 +2665,7 @@ settled and the tab moved.  The message HOST-DETACH answered."
       (let ((js (host-take-evals editor)))
         (is (search "CK.showDoc(\"doc3\",true);" js))
         (is (< (search "CK.showDoc(\"doc3\",true);" js) (search "CK.activateDoc(\"doc3\");" js))))
-      (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden ()")
+      (is-equal (host-panel-state :projects editor) "current work of (scratch|work) hidden ()")
       (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc3) active doc3"))))
 
 (deftest host-a-hidden-tab-keeps-its-window-and-is-hidden-wherever-it-is-made
@@ -2666,7 +2673,7 @@ settled and the tab moved.  The message HOST-DETACH answered."
          (d1 (host-test-document editor "one"))
          (d2 (host-test-document editor "two")))
     (declare (ignore d1))
-    (with-entry (editor) (perspective-switch editor (make-perspective editor "work")))
+    (with-entry (editor) (perspective-switch editor (make-perspective editor "work" :root "T:work/")))
     (host-take-evals editor)
     (let ((d3 (host-document-by-id editor "doc3")))
       ;; The hidden d2 shown in a window of its own (a script's ask: there
@@ -2685,8 +2692,8 @@ settled and the tab moved.  The message HOST-DETACH answered."
         (is (eq (editor-active-document editor) d3))
         (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1 doc3) 2 (doc2) active doc3")
         ;; Shown again by a switch, in its own window, and active there
-        ;; (it had the keyboard when main was left)
-        (with-entry (editor) (perspective-switch editor (find-perspective editor "main")))
+        ;; (it had the keyboard when the scratch set was left)
+        (with-entry (editor) (perspective-switch editor (scratch-perspective editor)))
         (is (search "CK.showDoc(\"doc2\",true);" (host-take-evals w2)))
         (is (search "CK.showDoc(\"doc1\",true);" (host-take-evals editor)))
         (is (eq (editor-active-document editor) d2))
@@ -2702,5 +2709,5 @@ settled and the tab moved.  The message HOST-DETACH answered."
           (is (search "CK.makeDoc(\"doc2\"" js))
           (is (< (search "CK.makeDoc(\"doc2\"" js) (search "CK.showDoc(\"doc2\",false);" js))))
         (is (eq (editor-active-document editor) d3))
-        (is-equal (host-panel-state :perspectives editor) "current work of (main|work) hidden (doc1 doc2)")
+        (is-equal (host-panel-state :projects editor) "current work of (scratch|work) hidden (doc1 doc2)")
         (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2 doc3) active doc3")))))

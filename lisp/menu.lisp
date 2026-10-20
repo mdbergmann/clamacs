@@ -67,7 +67,9 @@
     :can-pop                ; `M-.' has been used: there is a place to go back to
     :self                   ; the wire talks to the editor's own Lisp
     :not-self
-    :perspectives))         ; there are two or more perspectives
+    :projects               ; two or more to cycle: the open projects, the
+                            ; buffers outside any while there are some
+    :in-project))           ; a project is in front, not the scratch set
 
 ;;; The ASDF menu -- systems, loaded and tested by their .asd
 ;;; (wire.lisp) -- is for a machine that can carry ASDF, which a 68k Amiga
@@ -78,8 +80,10 @@
 (defun system-menu-wanted-p ()
   (not (member :m68k *features*)))
 
-;;; The order is the order on screen.  Project first, as on any Amiga; the
-;;; key in the shortcut column is the one a user would learn next.
+;;; The order is the order on screen.  File first (it was `Project', the
+;;; Amiga's name for it, until the Project menu below took the word on
+;;; 2026-10-20); the key in the shortcut column is the one a user would
+;;; learn next.
 (defun make-menu-table (&key (systems (system-menu-wanted-p)))
   "The menu strip; with the ASDF menu when SYSTEMS is true."
   (flet ((title (name) (make-menu-entry :title :always nil name nil nil))
@@ -88,7 +92,7 @@
            (make-menu-entry :item rule command label keys map pick)))
     (append
      (list
-     (title "Project")
+     (title "File")
      (item 'clamacs-new-buffer          :always        "New File"               nil       :global)
      (item 'find-file                   :always        "Open File..."           "C-x C-f" :global
            'find-file-requester)
@@ -205,23 +209,22 @@
      (make-menu-entry :dynamic :always :minimap nil nil nil)
      (make-menu-entry :dynamic :always :cursor nil nil nil)
 
-     ;; The perspectives (perspective.lisp): the commands, then one item
-     ;; per perspective at the tail, the one in front ticked.
-     (title "Perspectives")
-     (item 'clamacs-perspective-switch   :always        "Switch Perspective..."  "C-x x s" :global)
-     (item 'clamacs-perspective-next     :perspectives  "Next Perspective"       "C-x x n" :global)
-     (item 'clamacs-perspective-previous :perspectives  "Previous Perspective"   "C-x x p" :global)
+     ;; The projects (perspective.lisp): Open, the recent ones in a
+     ;; submenu, Close; the switching; then one item per open project at
+     ;; the tail -- `(no project)' first while there are buffers outside
+     ;; any -- the one in front ticked.
+     (title "Project")
+     (item 'clamacs-project-open         :always        "Open Project..."        "C-x p o" :global
+           'clamacs-project-open-requester)
+     (make-menu-entry :dynamic :always :recent "Recent Projects" nil nil)
+     (item 'clamacs-project-close        :in-project    "Close Project"          "C-x p k" :global)
      (bar)
-     (item 'clamacs-perspective-open-project  :always   "Open Project Directory..." "C-x x o" :global)
-     (item 'clamacs-perspective-set-directory :always   "Set Project Directory..."  "C-x x d" :global)
-     (item 'clamacs-perspective-move-buffer   :always   "Move Buffer to Perspective..." "C-x x a" :global)
-     (item 'clamacs-perspective-rename   :always        "Rename Perspective..."  "C-x x r" :global)
-     (item 'clamacs-perspective-close    :perspectives  "Close Perspective"      "C-x x c" :global)
+     (item 'clamacs-project-switch       :always        "Switch Project..."      "C-x p p" :global)
+     (item 'clamacs-project-next         :projects      "Next Project"           "C-x p n" :global)
+     (item 'clamacs-project-previous     :projects      "Previous Project"       "C-x p N" :global)
+     (item 'clamacs-project-move-buffer  :always        "Move Buffer to Project..." "C-x p a" :global)
      (bar)
-     (item 'clamacs-perspective-save     :always        "Save Perspectives"      "C-x x C-s" :global)
-     (item 'clamacs-perspective-restore  :always        "Restore Perspectives"   "C-x x C-l" :global)
-     (bar)
-     (make-menu-entry :dynamic :always :perspectives nil nil nil)
+     (make-menu-entry :dynamic :always :projects nil nil nil)
 
      ;; One item per open buffer, made and remade as windows come and go,
      ;; filling the menu.
@@ -270,7 +273,8 @@ kind of entry."
 (defstruct (menu-state (:constructor make-menu-state ()))
   (doc-changed nil) (doc-has-path nil) (connected nil) (repl-window nil)
   (debugging nil) (diagnostics nil) (can-pop nil) (self nil)
-  (perspectives nil))
+  (projects nil)              ; two or more to cycle (PROJECT-CYCLE)
+  (in-project nil))           ; a project in front, not the scratch set
 
 (defun menu-rule-holds-p (rule state)
   (ecase rule
@@ -285,7 +289,8 @@ kind of entry."
     (:can-pop (menu-state-can-pop state))
     (:self (menu-state-self state))
     (:not-self (not (menu-state-self state)))
-    (:perspectives (menu-state-perspectives state))))
+    (:projects (menu-state-projects state))
+    (:in-project (menu-state-in-project state))))
 
 (defun menu-state (editor)
   "The flags the rules are evaluated against, read off EDITOR now."
@@ -301,7 +306,8 @@ kind of entry."
           (menu-state-debugging state) (debugger-active-p editor)
           (menu-state-can-pop state) (> (locstack-depth (editor-locations editor)) 0)
           (menu-state-self state) (wire-self-p wire)
-          (menu-state-perspectives state) (and (rest (editor-perspectives editor)) t))
+          (menu-state-projects state) (and (rest (project-cycle editor)) t)
+          (menu-state-in-project state) (perspective-project-p (current-perspective editor)))
     state))
 
 (defun menu-enabled-items (editor)
@@ -445,7 +451,8 @@ one item, ticked while the cursor is a block (theme.lisp)."
     (:themes (values (theme-menu) (active-theme)))
     (:minimap (values (list (cons "Minimap" :minimap)) (and *minimap* :minimap)))
     (:cursor (values (list (cons "Block Cursor" :cursor)) (and *block-cursor* :cursor)))
-    (:perspectives (values (perspective-menu editor) (current-perspective editor)))))
+    (:projects (values (perspective-menu editor) (current-perspective editor)))
+    (:recent (values (recent-menu editor) nil))))
 
 (defun dynamic-menu-pick (editor which object)
   "Pick OBJECT's item in the group WHICH as the mouse would: a buffer's
@@ -457,7 +464,7 @@ SHOW-MINIMAP and BLOCK-CURSOR do).  True when it was done."
     (:themes (and (find-theme object) (load-theme object) t))
     (:minimap (and (eq object :minimap) (progn (show-minimap (not *minimap*)) t)))
     (:cursor (and (eq object :cursor) (progn (block-cursor (not *block-cursor*)) t)))
-    (:perspectives (perspective-menu-pick editor object))))
+    ((:projects :recent) (perspective-menu-pick editor object))))
 
 (defun dynamic-menu-equal (a b)
   "Whether the groups A and B show the same items for the same objects
@@ -484,9 +491,9 @@ and `-' for a bar."
 title whose menu holds nothing but a group the frontend does not draw
 is left out of its bar (MENU-ENTRY-DRAWN-P), so a frontend that has not
 caught up with a group shows no empty menu.  The buffers, the themes,
-the cursor's shape and the perspectives are every frontend's; the
+the cursor's shape and the two project groups are every frontend's; the
 minimap is the host's.")
-  (:method ((editor editor)) '(:buffers :themes :cursor :perspectives)))
+  (:method ((editor editor)) '(:buffers :themes :cursor :projects :recent)))
 
 (defun menu-entry-drawn-p (editor index)
   "Whether the frontend draws the entry at INDEX: a dynamic group when
@@ -556,11 +563,17 @@ a pick of the item with that label, answering \"\" or MISSING."
 (define-port-verb "CURSOR" (editor arg)
   (dynamic-menu-verb editor :cursor arg "no such item"))
 
-;;; PERSPECTIVES [name]: the Perspectives menu from a macro -- the twin
-;;; of BUFFERS: the perspectives, the one in front ticked, or a pick,
-;;; which switches (perspective.lisp).
-(define-port-verb "PERSPECTIVES" (editor arg)
-  (dynamic-menu-verb editor :perspectives arg "no such perspective"))
+;;; PROJECTS [name]: the Project menu's tail from a macro -- the twin of
+;;; BUFFERS: `(no project)' while there are buffers outside any, the
+;;; open projects, the one in front ticked, or a pick, which switches
+;;; (perspective.lisp).
+(define-port-verb "PROJECTS" (editor arg)
+  (dynamic-menu-verb editor :projects arg "no such project"))
+
+;;; RECENT [name]: the Recent Projects submenu from a macro -- the recent
+;;; projects, none ticked, or a pick, which opens one.
+(define-port-verb "RECENT" (editor arg)
+  (dynamic-menu-verb editor :recent arg "no such project"))
 
 ;;; ------------------------------------------------------------------
 ;;; About

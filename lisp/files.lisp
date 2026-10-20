@@ -30,10 +30,12 @@ This is not an edit: the text is unmodified afterwards."))
 (defgeneric doc-set-title (doc title)
   (:documentation "The window's title."))
 
-(defgeneric doc-ask-file (doc title save initial)
+(defgeneric doc-ask-file (doc title mode initial)
   (:documentation "The file requester: a path, or NIL when the user
-cancelled.  SAVE asks for a file to write.  INITIAL is where it opens --
-a directory, or a file whose directory it shows and whose name it offers
+cancelled.  MODE is NIL for a file to read, T for a file to write and
+:DIRECTORY for a folder (Open Project: the drawers alone are listed, and
+the folder chosen is the answer).  INITIAL is where it opens -- a
+directory, or a file whose directory it shows and whose name it offers
 (what Save As seeds it with); \"\" leaves that to the toolkit."))
 
 (defgeneric doc-ask (doc question choices)
@@ -274,7 +276,7 @@ file is there but cannot be read."
        (let ((from (and (not (doc-shown-p open)) (perspective-bring-over editor open))))
          (doc-activate open)
          (when from
-           (message open "~A brought over from ~A" (doc-name open) (perspective-name from)))))
+           (message open "~A brought over from ~A" (doc-name open) (perspective-label from)))))
       ((and (not other-window) (doc-holds-file-p doc))
        (when (release-text doc)
          (cond ((load-file doc path))
@@ -338,11 +340,12 @@ counts.  A directory that cannot be listed matches nothing."
                         (subseq path (length dir)))
                       matches)))))
 
-(defun ask-file-then (doc title save initial continuation)
-  "The requester, titled TITLE, opening at INITIAL; the path chosen goes
-to CONTINUATION with DOC, and into the file history.  Nothing happens
-when the user cancelled."
-  (let ((path (doc-ask-file doc title save initial)))
+(defun ask-file-then (doc title mode initial continuation)
+  "The requester, titled TITLE, in MODE (DOC-ASK-FILE's: NIL, T or
+:DIRECTORY), opening at INITIAL; the path chosen goes to CONTINUATION
+with DOC, and into the file history.  Nothing happens when the user
+cancelled."
+  (let ((path (doc-ask-file doc title mode initial)))
     (when path
       (hist-add (editor-file-history (doc-editor doc)) path)
       (funcall continuation doc path)
@@ -454,7 +457,7 @@ requester already) and the window stays."
       (repl-closed doc)
       (setq ask nil))
     (when (and ask (doc-modified-p doc))
-      ;; A question about a hidden buffer (a quit, Close Perspective) is
+      ;; A question about a hidden buffer (a quit, Close Project) is
       ;; asked in front of it (perspective.lisp).
       (unless (doc-shown-p doc)
         (let ((p (perspective-of-document (doc-editor doc) doc)))
@@ -558,7 +561,7 @@ unsaved text unless the quit was KILL-EMACS.  A Cancel keeps the editor
 running.  True when every window closed."
   (let ((ask (not (eq (editor-quitting editor) :discard))))
     (setf (editor-quitting editor) nil)
-    ;; The perspectives file kept in step, once the user saved it once
+    ;; The projects file kept in step, once there is a project to record
     ;; (perspective.lisp), and with it the windows' places (snapshot.lisp):
     ;; the session comes back as it was left, where it was left -- while
     ;; the documents are still open.

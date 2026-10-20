@@ -1326,9 +1326,11 @@ while a native dialog runs its own loop."
                  (nth n choices)
                  (car (last choices))))))))
 
-(defmethod doc-ask-file ((doc host-document) title save initial)
+(defmethod doc-ask-file ((doc host-document) title mode initial)
+  "The shim's panel: its mode argument is 0 for a file to read, 1 for
+one to write, 2 for a folder."
   (let ((editor (doc-editor doc)))
-    (push (list :file title save initial) (host-editor-asked editor))
+    (push (list :file title mode initial) (host-editor-asked editor))
     (cond ((null (host-editor-shim editor))
            (pop (host-editor-answers editor)))
           (t
@@ -1337,7 +1339,9 @@ while a native dialog runs its own loop."
                         (ffi:with-foreign-string (finitial initial)
                           (shim editor "clamacs_host_ask_file" :pointer
                                 '(:pointer :pointer :int32 :pointer)
-                                (host-window-win (active-window editor)) ftitle (if save 1 0) finitial))))))
+                                (host-window-win (active-window editor)) ftitle
+                                (case mode ((nil) 0) (:directory 2) (t 1))
+                                finitial))))))
              (unless (ffi:null-pointer-p p)
                (unwind-protect (ffi:foreign-to-string p)
                  (shim editor "clamacs_host_free" :void '(:pointer) p))))))))
@@ -1501,7 +1505,7 @@ behind the page."
 ;;; group by its entry's table index).
 
 (defmethod editor-dynamic-groups ((editor host-editor))
-  '(:buffers :themes :minimap :cursor :perspectives))
+  '(:buffers :themes :minimap :cursor :projects :recent))
 
 (defun dynamic-group-named (editor name)
   "The dynamic group this frontend draws under NAME -- a keyword, or its
@@ -2093,7 +2097,7 @@ verbatim."
 
 (defun host-panel-state (panel &optional (editor *editor*))
   "What the editor told the page to show for PANEL -- :MENU, :THEME,
-:MINIMAP, :CURSOR, :DOCK (the main window's), :WINDOWS, :PERSPECTIVES,
+:MINIMAP, :CURSOR, :DOCK (the main window's), :WINDOWS, :PROJECTS,
 :DIAGNOSTICS, :DEBUGGER or :INSPECTOR -- as one line of words, for a
 script's `EVAL (clamacs::host-panel-state :debugger)' over the port.  A
 panel shown in a window of its own says `window N' at the end."
@@ -2110,9 +2114,10 @@ panel shown in a window of its own says `window N' at the end."
                  (loop for w in (live-windows editor)
                        append (list (host-window-number w) (window-contents-words w)))
                  (if active (hdoc-id active) "none"))))
-      (:perspectives
-       ;; `current main of (main|work) hidden (doc2 doc3)': the perspective
-       ;; in front, every name in the order made, and the tabs the pages
+      (:projects
+       ;; `current scratch of (scratch|work) hidden (doc2 doc3)': the
+       ;; perspective in front, every name in the order made (the scratch
+       ;; set and the recent projects among them), and the tabs the pages
        ;; were told not to draw (the page's report lists them under
        ;; `hidden')
        (format nil "current ~A of (~{~A~^|~}) hidden (~{~A~^ ~})"
@@ -2120,7 +2125,7 @@ panel shown in a window of its own says `window N' at the end."
                (perspective-names editor)
                (mapcar #'hdoc-id (hidden-documents editor))))
       (:menu
-       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~}) perspectives (~{~A~^|~})"
+       (format nil "items ~D disabled (~{~D~^ ~}) buffers (~{~A~^|~}) themes (~{~A~^|~}) minimap (~{~A~^|~}) cursor (~{~A~^|~}) projects (~{~A~^|~}) recent (~{~A~^|~})"
                (count :item (menu-entries) :key #'menu-entry-kind)
                (loop for flag in (host-editor-menu-enabled editor)
                      for index from 0
@@ -2130,7 +2135,8 @@ panel shown in a window of its own says `window N' at the end."
                (editor-dynamic-menu-lines editor :themes)
                (editor-dynamic-menu-lines editor :minimap)
                (editor-dynamic-menu-lines editor :cursor)
-               (editor-dynamic-menu-lines editor :perspectives)))
+               (editor-dynamic-menu-lines editor :projects)
+               (editor-dynamic-menu-lines editor :recent)))
       (:minimap
        ;; The setting, as the page was told it; the page's report says
        ;; what it drew (`minimap' in clamacsPanels)

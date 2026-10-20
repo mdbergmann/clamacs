@@ -1,31 +1,39 @@
-;;;; perspective.lisp -- perspectives: a named set of buffers with their
-;;;; windows, a project, of which one is in front.
+;;;; perspective.lisp -- projects: a folder the user opens, works in and
+;;;; closes, which the editor remembers.
 ;;;;
-;;;; Emacs's perspective.el (`persp-switch', `C-x x') for an editor where
-;;;; a buffer IS a window (MUI) or a tab (the host): switching hides the
-;;;; windows of the perspective left and shows the windows of the one
-;;;; entered, the Buffers menu and `C-x o' see the buffers in front only,
-;;;; a file opened from a perspective belongs to it, and a perspective may
-;;;; have a project directory that `find-file' and the ASDF commands start
-;;;; from (specs/clamacs-perspectives.md).  The set of perspectives is
-;;;; written to a small text file beside the layout file and is LISTED at
-;;;; the next start: the perspectives come back by name with their roots,
-;;;; their files waiting, and the first switch into one opens them
-;;;; (PERSPECTIVE-OPEN-PENDING) -- a start opens the window it always
-;;;; did, no more, in a `scratch' perspective of its own that the file
-;;;; never records, and the user picks the perspective to reopen.
+;;;; Underneath, a project is a PERSPECTIVE -- Emacs's perspective.el, a
+;;;; named set of buffers with their windows, of which one is in front,
+;;;; for an editor where a buffer IS a window (MUI) or a tab (the host) --
+;;;; and this file keeps that word for the mechanism; the user sees
+;;;; `project' everywhere (specs/clamacs-perspectives.md).  Switching
+;;;; hides the windows of the perspective left and shows the windows of
+;;;; the one entered, the Buffers menu and `C-x o' see the buffers in
+;;;; front only, a file opened from a project belongs to it, `find-file'
+;;;; and the ASDF commands start from the project's folder, and a switch
+;;;; tells amilisp the folder.  Buffers outside any project live in the
+;;;; SCRATCH set, a perspective with no root the user never sees named:
+;;;; the status line shows nothing there, and the Project menu lists it as
+;;;; `(no project)' only while it has buffers.  A project is OPEN (listed
+;;;; at the tail of the Project menu, its windows on the screen when it is
+;;;; in front) or RECENT (the Recent Projects submenu; its files waiting
+;;;; to be opened by the first switch into it).  The projects are written
+;;;; to a small text file beside the layout file whenever one is opened or
+;;;; closed and at every quit, and LISTED at the next start: every project
+;;;; comes back recent, the editor opens the window it always did in the
+;;;; scratch set, and the user picks the project to reopen.
 ;;;;
-;;;; Three rules.  A perspective is DATA the frontends read: this file
-;;;; decides which documents are shown (DOC-SHOWN-P), and a frontend only
-;;;; hides or shows a window when told (DOC-SET-SHOWN).  One implementation
-;;;; with three entrances: the Perspectives menu (menu.lisp's :PERSPECTIVES
-;;;; group), the `M-x clamacs-perspective-*' commands on `C-x x' and the
-;;;; port's PERSPECTIVES verb all end in PERSPECTIVE-SWITCH and its
-;;;; siblings.  And the editor is never left without a window: a
-;;;; perspective entered empty gets an unnamed buffer, and closing the
-;;;; last buffer of the one in front brings another in front when one has
-;;;; buffers -- only when none has does the last window's close end the
-;;;; editor, as it always did.
+;;;; Three rules.  A project is DATA the frontends read: this file decides
+;;;; which documents are shown (DOC-SHOWN-P), and a frontend only hides or
+;;;; shows a window when told (DOC-SET-SHOWN).  One implementation with
+;;;; three entrances: the Project menu (menu.lisp's :PROJECTS and :RECENT
+;;;; groups), the `M-x clamacs-project-*' commands on `C-x p' and the
+;;;; port's PROJECTS / RECENT verbs all end in PERSPECTIVE-SWITCH and its
+;;;; siblings.  And the editor is never left without a window: a project
+;;;; entered empty gets an unnamed buffer, closing the last buffer of the
+;;;; one in front brings another with buffers in front, and closing the
+;;;; last open project puts the editor in the scratch set with an unnamed
+;;;; buffer -- only when nothing has buffers does the last window's close
+;;;; end the editor, as it always did.
 ;;;;
 ;;;; Pure: no MUI, no OS types.  The file I/O is Common Lisp's own.
 
@@ -37,33 +45,44 @@
 
 (defstruct (perspective (:constructor %make-perspective (name)))
   name                        ; a string, unique among the editor's
-  (root nil)                  ; the project directory, ending in / or :, or NIL
+  (root nil)                  ; the folder, ending in / or :; NIL for the scratch set
+  (open t)                    ; a project: open (may have windows) or recent
   (documents '())             ; its source documents, oldest first
   (active nil)                ; the document that had the keyboard when
                               ; the perspective was left, or NIL
-  (pending-files '())         ; the files the perspectives file records for
-                              ; it, not opened yet: a start lists, the
-                              ; first switch into it opens
+  (pending-files '())         ; a recent project's files, not opened yet:
+                              ; the first switch into it opens them
   (pending-active nil))       ; ... and the path of its recorded document
 
 (defun perspective-pending-p (p)
-  "Whether P still has the files of the perspectives file waiting to be
-opened: listed at a start and never entered since."
+  "Whether P still has files waiting to be opened: listed from the file
+or closed since, and not entered since."
   (and (perspective-pending-files p) t))
 
-(defparameter *main-perspective-name* "main"
-  "The name of the perspective an editor starts with when it has none.")
-
 (defparameter *scratch-perspective-name* "scratch"
-  "The name of the perspective a start comes up in when the perspectives
-file lists any: Emacs's *scratch*, never written to the file, so the
-listed perspectives stay as the file has them until one is picked, and
-none of them is ticked at the start.  Renaming it makes it an ordinary
-perspective that the file records.")
+  "The name of the perspective the buffers outside any project live in:
+Emacs's *scratch*, never written to the file, with no root, shown as
+`(no project)' in the Project menu while it has buffers and named
+nowhere else.  A project cannot take the name.")
+
+(defparameter *no-project-label* "(no project)"
+  "How the Project menu and the prompts call the scratch set.")
 
 (defun perspective-scratch-p (p)
-  "Whether P is the scratch perspective, which the file leaves out."
+  "Whether P is the scratch set."
   (string= (perspective-name p) *scratch-perspective-name*))
+
+(defun perspective-project-p (p)
+  "Whether P is a project: anything but the scratch set."
+  (not (perspective-scratch-p p)))
+
+(defun perspective-recent-p (p)
+  "Whether P is a recent project: known, not open."
+  (and (perspective-project-p p) (not (perspective-open p))))
+
+(defun perspective-label (p)
+  "P's name as the user sees it: the project's, or `(no project)'."
+  (if (perspective-scratch-p p) *no-project-label* (perspective-name p)))
 
 (defun find-perspective (editor name)
   "The perspective called NAME, or NIL.  Names are exact."
@@ -71,35 +90,60 @@ perspective that the file records.")
        (find name (editor-perspectives editor) :key #'perspective-name :test #'string=)))
 
 (defun perspective-names (editor)
-  "Every perspective's name, in the order made: what the prompts complete over."
+  "Every perspective's name, in the order made: what the reports list."
   (mapcar #'perspective-name (editor-perspectives editor)))
+
+(defun scratch-perspective (editor)
+  (find-perspective editor *scratch-perspective-name*))
+
+(defun open-projects (editor)
+  "The open projects, in the order made."
+  (remove-if-not (lambda (p) (and (perspective-project-p p) (perspective-open p)))
+                 (editor-perspectives editor)))
+
+(defun recent-projects (editor)
+  "The recent projects, in the order made: the Recent Projects submenu."
+  (remove-if-not #'perspective-recent-p (editor-perspectives editor)))
+
+(defun project-cycle (editor)
+  "What Next Project / Previous Project cycle and the Project menu lists
+at its tail: the scratch set while it has open buffers, then the open
+projects."
+  (let ((scratch (scratch-perspective editor)))
+    (append (and scratch (perspective-live-documents scratch) (list scratch))
+            (open-projects editor))))
 
 (defun perspective-name-ok-p (name)
   "A name is one or more characters that are not all blanks."
   (and (stringp name) (string/= (string-trim " " name) "")))
 
-(defun make-perspective (editor name &key root)
-  "A new perspective NAME at the end of EDITOR's list.  An error for a
-name in use, or no name at all."
+(defun make-perspective (editor name &key root (open t))
+  "A new perspective NAME at the end of EDITOR's list -- a project with
+ROOT, open unless OPEN is NIL.  An error for a name in use, or no name
+at all."
   (unless (perspective-name-ok-p name)
-    (error "A perspective needs a name, not ~S." name))
+    (error "A project needs a name, not ~S." name))
   (let ((name (string-trim " " name)))
     (when (find-perspective editor name)
-      (error "There is a perspective called ~A already." name))
+      (error "There is a project called ~A already." name))
     (let ((p (%make-perspective name)))
       (setf (perspective-root p) root
+            (perspective-open p) open
             (editor-perspectives editor) (append (editor-perspectives editor) (list p)))
-      ;; The second perspective puts ` [name]' into the REPL's title.
       (repl-sync-title editor)
       p)))
 
+(defun ensure-scratch-perspective (editor)
+  "The scratch set, made when there is none yet."
+  (or (scratch-perspective editor)
+      (make-perspective editor *scratch-perspective-name* :root nil)))
+
 (defun current-perspective (editor)
-  "The perspective in front, made (`main') when there is none yet -- so
-an editor that never hears of perspectives has one and behaves as before."
+  "The perspective in front, the scratch set (made now) when there is
+none yet -- so an editor that never opens a project has one and behaves
+as before."
   (or (editor-perspective editor)
-      (setf (editor-perspective editor)
-            (or (first (editor-perspectives editor))
-                (make-perspective editor *main-perspective-name*)))))
+      (setf (editor-perspective editor) (ensure-scratch-perspective editor))))
 
 ;;; ------------------------------------------------------------------
 ;;; Who belongs, and what is shown
@@ -136,8 +180,7 @@ active document."
 
 (defun perspective-of-document (editor doc)
   "The perspective DOC is in, as the editor sees it now: P, or NIL for a
-tool buffer.  (The slot, checked against the list: a perspective closed
-since leaves its documents nowhere.)"
+tool buffer.  (The slot, checked against the list.)"
   (let ((p (doc-perspective doc)))
     (and p (member p (editor-perspectives editor)) p)))
 
@@ -148,13 +191,13 @@ since leaves its documents nowhere.)"
       (doc-message doc (apply #'format nil control args)))))
 
 (defun status-perspective (doc)
-  "` [NAME]' after the buffer's name in a status line while the editor
-has more than one perspective: the one in front, which is the one DOC is
-shown in -- a hidden document's status line is never on the screen.
-Both frontends' status lines call it."
-  (let ((editor (doc-editor doc)))
-    (if (rest (editor-perspectives editor))
-        (format nil " [~A]" (perspective-name (current-perspective editor)))
+  "` [NAME]' after the buffer's name in a status line while a project is
+in front -- the one DOC is shown in, since a hidden document's status
+line is never on the screen -- and \"\" in the scratch set.  Both
+frontends' status lines and the REPL's title call it."
+  (let ((p (current-perspective (doc-editor doc))))
+    (if (perspective-project-p p)
+        (format nil " [~A]" (perspective-name p))
         "")))
 
 ;;; ------------------------------------------------------------------
@@ -168,20 +211,20 @@ last told."
   (format nil "(cl:setf cl:*default-pathname-defaults* (cl:pathname ~S))" root))
 
 (defun perspective-tell-root (editor p)
-  "Tell amilisp P's project directory -- when P has one and the wire is
-connected: one EVAL on the handler thread, nothing waited for, the reply
-dropped (wire-dispatch has no continuation for :TELL-ROOT), so a
-relative path typed at the REPL means the project's.  Emacs's
-`default-directory' is buffer-local and SLIME's `,cd' does this by hand;
-here the perspective does it.  An open REPL transcript gets a note.
-Never starts an amilisp.  True when the EVAL went out."
+  "Tell amilisp P's folder -- when P has one and the wire is connected:
+one EVAL on the handler thread, nothing waited for, the reply dropped
+\(wire-dispatch has no continuation for :TELL-ROOT), so a relative path
+typed at the REPL means the project's.  Emacs's `default-directory' is
+buffer-local and SLIME's `,cd' does this by hand; here the project does
+it.  An open REPL transcript gets a note.  Never starts an amilisp.
+True when the EVAL went out."
   (let ((wire (editor-wire editor))
         (root (perspective-root p)))
     (when (and wire root (wire-connected wire)
                (wire-request wire nil :tell-root (concatenate 'string "EVAL " (root-form root))))
       (let ((repl (repl-doc editor)))
         (when repl
-          (repl-note repl "default directory ~A (perspective ~A)" root (perspective-name p))))
+          (repl-note repl "default directory ~A (project ~A)" root (perspective-name p))))
       t)))
 
 (defun perspective-open-files (editor p files active-path)
@@ -189,8 +232,7 @@ Never starts an amilisp.  True when the EVAL went out."
 open elsewhere is moved over, one that is not there or cannot be read
 is skipped.  The document showing ACTIVE-PATH, when it is P's, becomes
 P's active one.  Three values: the files opened, the files skipped, the
-files that were open already.  What a restore does per entry, and what
-a listed perspective does at its first switch."
+files that were open already."
   (let ((opened 0) (skipped 0) (moved 0))
     (dolist (path files)
       (let ((open (find-document-by-path editor path)))
@@ -204,10 +246,10 @@ a listed perspective does at its first switch."
     (values opened skipped moved)))
 
 (defun perspective-open-pending (editor p)
-  "P's waiting files (PERSPECTIVE-LIST-AT-START) opened into P, which must
-be in front, and P waits no more.  Two values, the files P has open now
-for it (the ones brought over from elsewhere counted) and the files
-skipped; NIL and 0 when none waited."
+  "P's waiting files opened into P, which must be in front, and P waits
+no more.  Two values, the files P has open now for it (the ones brought
+over from elsewhere counted) and the files skipped; NIL and 0 when none
+waited."
   (let ((files (perspective-pending-files p))
         (active-path (perspective-pending-active p)))
     (cond (files
@@ -219,35 +261,43 @@ skipped; NIL and 0 when none waited."
           (t (values nil 0)))))
 
 (defun perspective-root-note (p)
-  "` (ROOT)' after P's name in the switch's message when P has a project
-directory -- where a relative path at the REPL and a file prompt start
-now -- and \"\" when it has none."
+  "` (ROOT)' after P's name in the switch's message when P has a folder,
+and \"\" when it has none."
   (if (perspective-root p)
       (format nil " (~A)" (perspective-root p))
       ""))
 
 (defun perspective-opened-note (opened skipped)
   "`, N file(s) opened[, M missing]' after the switch's message when the
-switch opened a listed perspective's files; \"\" otherwise."
+switch opened a project's waiting files; \"\" otherwise."
   (if opened
       (format nil ", ~D file(s) opened~A" opened
               (if (> skipped 0) (format nil ", ~D missing" skipped) ""))
       ""))
 
+(defun perspective-switch-message (p opened skipped)
+  "What a switch into P says: `Project: NAME (ROOT)[, N file(s) opened]',
+or `No project' for the scratch set."
+  (if (perspective-scratch-p p)
+      "No project"
+      (format nil "Project: ~A~A~A" (perspective-name p)
+              (perspective-root-note p)
+              (perspective-opened-note opened skipped))))
+
 (defun perspective-switch (editor p &key (say t))
   "Bring P in front.  The active document of the perspective left is
-remembered on it; P's documents are shown, the remembered one -- or the
-first -- activated, and only then the old perspective's hidden, so the
-frontend never has a moment without a shown active document.  A
-perspective entered empty gets an unnamed buffer.  amilisp is told P's
-project directory (PERSPECTIVE-TELL-ROOT).  A perspective listed at a
-start opens its recorded files first (PERSPECTIVE-OPEN-PENDING) -- also
-when it is the one in front already, which a switch otherwise leaves
-alone.  Says `Perspective: NAME (ROOT)' -- the project directory, when P
-has one (PERSPECTIVE-ROOT-NOTE) -- with the files opened, unless SAY is
-NIL.  P."
+remembered on it; P is open from now on; its waiting files, if any, are
+opened into it (PERSPECTIVE-OPEN-PENDING); its documents are shown, the
+remembered one -- or the first -- activated, and only then the old
+perspective's hidden, so the frontend never has a moment without a shown
+active document.  A perspective entered empty gets an unnamed buffer.
+amilisp is told P's folder (PERSPECTIVE-TELL-ROOT).  A switch into the
+perspective in front opens its waiting files and otherwise does nothing.
+Says PERSPECTIVE-SWITCH-MESSAGE unless SAY is NIL.  Three values: P, the
+files opened (NIL when none waited), the files skipped."
   (let ((old (editor-perspective editor))
         (opened nil) (skipped 0))
+    (setf (perspective-open p) t)
     (cond ((eq old p)
            ;; In front already: only the waiting files, if any, and the
            ;; recorded document to the keyboard, since each file took it
@@ -281,24 +331,26 @@ NIL.  P."
            (perspective-tell-root editor p)))
     (repl-sync-title editor)
     (when say
-      (perspective-note editor "Perspective: ~A~A~A" (perspective-name p)
-                        (perspective-root-note p)
-                        (perspective-opened-note opened skipped)))
-    p))
+      (perspective-note editor "~A" (perspective-switch-message p opened skipped)))
+    (values p opened skipped)))
 
 (defun perspective-sync-shown (editor)
   "Every open document shown or hidden as DOC-SHOWN-P says now: what a
-restore runs before it brings the recorded perspective in front, since
-the documents it opened came up shown."
+restore runs before it brings the recorded project in front, since the
+documents it opened came up shown."
   (dolist (doc (live-documents editor))
     (doc-set-shown doc (doc-shown-p doc))))
 
 (defun perspective-neighbour (editor delta)
-  "The perspective DELTA places after the one in front, cyclically."
-  (let* ((all (editor-perspectives editor))
+  "The perspective DELTA places after the one in front in the cycle
+\(PROJECT-CYCLE); the cycle's first when the one in front is not in it
+\(the scratch set without buffers); NIL for an empty cycle."
+  (let* ((all (project-cycle editor))
          (n (length all))
          (pos (position (current-perspective editor) all)))
-    (nth (mod (+ pos delta) n) all)))
+    (cond ((= n 0) nil)
+          ((null pos) (first all))
+          (t (nth (mod (+ pos delta) n) all)))))
 
 (defun perspective-with-documents (editor from)
   "The nearest perspective before FROM in the list, cyclically, that has
@@ -317,8 +369,8 @@ open documents; NIL when no other has any."
 (defun perspective-forget (doc)
   "DOC's window went (CLOSE-DOCUMENT): out of its perspective.  When that
 emptied the perspective in front and another has documents, that one
-comes in front -- the one rule that keeps a window on the screen.  When
-no other has any, nothing happens here and the frontend's loop sees the
+comes in front -- the rule that keeps a window on the screen.  When no
+other has any, nothing happens here and the frontend's loop sees the
 last window go, as before."
   (let ((p (doc-perspective doc))
         (editor (doc-editor doc)))
@@ -360,26 +412,41 @@ was here already."
          from)))
 
 (defun perspective-close (editor p)
-  "P closed: the editor switches away first when P is in front, then P's
-buffers are closed (each asking about unsaved changes), then P is
-forgotten.  T when it went; :ONLY for the only perspective, which stays;
-:CANCELLED when a question was cancelled, P staying with what is left."
-  (cond ((null (rest (editor-perspectives editor)))
-         :only)
+  "The project P closed: the editor switches away first when P is in front
+\(to the previous in the cycle, else to the scratch set, which gets an
+unnamed buffer), P's buffers are closed (each asking about unsaved
+changes), P's file list is remembered on it and P is recent from then
+on.  T when it went; :SCRATCH for the scratch set, which cannot be
+closed; :CANCELLED when a question was cancelled, P staying open with
+what is left.  The file is kept in step."
+  (cond ((perspective-scratch-p p) :scratch)
         (t
-         (when (eq p (editor-perspective editor))
-           (perspective-switch editor (perspective-neighbour editor -1) :say nil))
-         (dolist (doc (perspective-live-documents p))
-           (unless (close-document doc)
-             (return-from perspective-close :cancelled)))
-         (setf (editor-perspectives editor) (remove p (editor-perspectives editor)))
-         (when (eq (editor-perspective editor) p)
-           (setf (editor-perspective editor) nil))
-         (repl-sync-title editor)
-         t)))
+         (let ((files (loop for doc in (perspective-live-documents p)
+                            when (doc-path doc) collect (doc-path doc)))
+               (active (let ((a (perspective-active-now editor p)))
+                         (and a (not (doc-closing a)) (doc-path a)))))
+           (when (eq p (editor-perspective editor))
+             (let ((next (perspective-neighbour editor -1)))
+               (perspective-switch editor (if (or (null next) (eq next p))
+                                              (ensure-scratch-perspective editor)
+                                              next)
+                                   :say nil)))
+           (dolist (doc (perspective-live-documents p))
+             (unless (close-document doc)
+               (return-from perspective-close :cancelled)))
+           (setf (perspective-open p) nil
+                 (perspective-pending-files p) files
+                 (perspective-pending-active p) active)
+           ;; The question about an unsaved buffer brought P in front
+           ;; again: out of it, now that it is empty.
+           (when (eq p (editor-perspective editor))
+             (perspective-switch editor (ensure-scratch-perspective editor) :say nil))
+           (repl-sync-title editor)
+           (perspective-autosave editor)
+           t))))
 
 ;;; ------------------------------------------------------------------
-;;; The project directory
+;;; Opening a project: the folder, the name
 ;;; ------------------------------------------------------------------
 
 (defun normalize-directory (text)
@@ -399,7 +466,7 @@ two spellings are not the same to every file system."
              (and (string/= bare "") (ignore-errors (probe-file bare)))))
        t))
 
-(defun project-name-from-directory (dir)
+(defun directory-last-component (dir)
   "The last component of DIR: `src' for `Work:src/', `Work' for `Work:',
 DIR itself when nothing is left."
   (let* ((trimmed (string-right-trim "/" dir))
@@ -409,19 +476,66 @@ DIR itself when nothing is left."
                      (t (path-basename trimmed)))))
     (if (string= name "") dir name)))
 
-(defun perspective-open-project (editor dir)
-  "The perspective of the project at DIR: made and named after the
-directory when there is none, its root DIR when it had none, brought in
-front.  Two values: the perspective, and whether it was made now."
-  (let* ((name (project-name-from-directory dir))
-         (p (find-perspective editor name))
-         (new (null p)))
-    (when new
-      (setq p (make-perspective editor name)))
-    (unless (perspective-root p)
-      (setf (perspective-root p) dir))
-    (perspective-switch editor p :say nil)
-    (values p new)))
+(defun project-directory (path)
+  "PATH as a project's folder: a .asd's directory (`Work:sento/' for
+`Work:sento/sento.asd', with or without a `/' typed after it), else PATH
+itself as a directory; NIL for nothing."
+  (let ((bare (string-right-trim "/" (string-trim " " path))))
+    (if (system-path-p bare)
+        (path-directory bare)
+        (normalize-directory path))))
+
+(defun project-name-from-directory (dir)
+  "The project's name for the folder DIR: the system of the one .asd in
+it (`sento' for `Work:sento/sento.asd' -- what a Lisp programmer calls
+the project), else the folder's own name (DIRECTORY-LAST-COMPONENT)."
+  (let ((systems (directory-system-files dir)))
+    (if (= (length systems) 1)
+        (system-name (first systems))
+        (directory-last-component dir))))
+
+(defun unique-project-name (editor name dir)
+  "NAME when no perspective of EDITOR's has it (the scratch set's name
+counts as taken); else NAME with the folder above DIR in parentheses,
+`src (sento)'; else numbered, `src (2)'."
+  (flet ((taken-p (n)
+           (or (string= n *scratch-perspective-name*) (find-perspective editor n))))
+    (if (not (taken-p name))
+        name
+        (let* ((parent (path-parent-directory dir))
+               (qualified (and parent
+                               (format nil "~A (~A)" name (directory-last-component parent)))))
+          (if (and qualified (not (taken-p qualified)))
+              qualified
+              (loop for i from 2
+                    for n = (format nil "~A (~D)" name i)
+                    unless (taken-p n) return n))))))
+
+(defun find-project-by-root (editor dir)
+  "The project whose folder is DIR, or NIL.  Folders are compared without
+regard to case: AmigaDOS has none, and a folder typed twice in two
+spellings is one project."
+  (find-if (lambda (p) (and (perspective-root p) (string-equal (perspective-root p) dir)))
+           (editor-perspectives editor)))
+
+(defun perspective-open-project (editor path)
+  "The project of the folder PATH (or of the .asd PATH) opened: made and
+named after the folder when there is none (UNIQUE-PROJECT-NAME), brought
+in front -- a recent one's files opened -- and the file kept in step.
+Four values: the project, what it was (:NEW, :RECENT or :OPEN), the
+files opened and the files skipped."
+  (let* ((dir (project-directory path))
+         (p (find-project-by-root editor dir))
+         (was (cond ((null p) :new)
+                    ((perspective-open p) :open)
+                    (t :recent))))
+    (unless p
+      (setq p (make-perspective editor (unique-project-name editor (project-name-from-directory dir) dir)
+                                :root dir)))
+    (multiple-value-bind (p opened skipped) (perspective-switch editor p :say nil)
+      (when (eq was :new)
+        (perspective-autosave editor))
+      (values p was opened skipped))))
 
 ;;; ------------------------------------------------------------------
 ;;; The file
@@ -433,16 +547,16 @@ front.  Two values: the perspective, and whether it was made now."
 ;;; settles it again at run time.
 (defun default-perspective-files ()
   (if (member :amigaos *features*)
-      (list "ENV:Clamacs/perspectives.cfg" "ENVARC:Clamacs/perspectives.cfg")
-      (list (namestring (merge-pathnames ".clamacs-perspectives.cfg"
+      (list "ENV:Clamacs/projects.cfg" "ENVARC:Clamacs/projects.cfg")
+      (list (namestring (merge-pathnames ".clamacs-projects.cfg"
                                          (user-homedir-pathname))))))
 
 (defparameter *perspective-files* (default-perspective-files)
-  "The files the perspectives are written to, the first of them read at
-a start without files (the second when the first is missing).")
+  "The files the projects are written to, the first of them read at a
+start (the second when the first is missing).")
 
 (defparameter *perspectives-header*
-  "; clamacs perspectives -- perspective NAME, then its root and files; current NAME")
+  "; clamacs projects -- project NAME, then its root and files; current NAME")
 
 (defun perspective-active-now (editor p)
   "The document P would come back to: the active one while P is in front,
@@ -453,21 +567,20 @@ else the one remembered when P was left."
       (perspective-active p)))
 
 (defun recorded-perspectives (editor)
-  "The perspectives the file records: all but the scratch one."
+  "The projects the file records: every perspective but the scratch set."
   (remove-if #'perspective-scratch-p (editor-perspectives editor)))
 
 (defun perspectives-text (editor)
-  "The perspectives as the file holds them: one keyword and the rest of
-the line.  Unnamed buffers are not recorded, nor is the scratch
-perspective (RECORDED-PERSPECTIVES; the `current' line names none when
-it is in front).  A perspective listed at the start and never entered
-keeps the files it was listed with: the quit's write must not lose what
-this session never opened."
+  "The projects as the file holds them: one keyword and the rest of the
+line.  Unnamed buffers are not recorded, nor is the scratch set
+\(RECORDED-PERSPECTIVES; the `current' line names none when it is in
+front).  A recent project keeps the files it was listed or closed with:
+the write must not lose what this session never opened."
   (with-output-to-string (out)
     (write-string *perspectives-header* out)
     (terpri out)
     (dolist (p (recorded-perspectives editor))
-      (format out "perspective ~A~%" (perspective-name p))
+      (format out "project ~A~%" (perspective-name p))
       (when (perspective-root p)
         (format out "root ~A~%" (perspective-root p)))
       (dolist (doc (perspective-live-documents p))
@@ -499,7 +612,9 @@ blank line.  The value is the rest of the line, trimmed."
 (defun perspectives-parse (text)
   "TEXT, the file, as a list of plists (:NAME :ROOT :FILES :ACTIVE) in file
 order, and as second value the name the `current' line gives, or NIL.  A
-line that does not parse, or names a perspective nothing, is skipped."
+line that does not parse, or names a project nothing, is skipped.
+`perspective NAME' is read as `project NAME' (the file's keyword before
+2026-10-20)."
   (let ((entries '()) (entry nil) (current nil)
         (start 0) (n (length text)))
     (flet ((finish ()
@@ -512,7 +627,7 @@ line that does not parse, or names a perspective nothing, is skipped."
                (line (subseq text start end)))
           (multiple-value-bind (keyword value) (perspectives-parse-line line)
             (when keyword
-              (cond ((string= keyword "perspective")
+              (cond ((or (string= keyword "project") (string= keyword "perspective"))
                      (finish)
                      (when (perspective-name-ok-p value)
                        (setq entry (list :name value :root nil :files '() :active nil))))
@@ -533,32 +648,36 @@ line that does not parse, or names a perspective nothing, is skipped."
     (values (nreverse entries) current)))
 
 (defun perspectives-read ()
-  "The text of the first perspectives file that is there, or NIL."
+  "The text of the first projects file that is there, or NIL."
   (dolist (path *perspective-files* nil)
     (let ((text (read-file-text path)))
       (when text (return text)))))
 
 (defun perspective-save (editor)
-  "The perspectives into every file: the paths that could not be written."
+  "The projects into every file: the paths that could not be written."
   (let ((text (perspectives-text editor)))
     (remove-if (lambda (path) (snapshot-write-file path text))
                *perspective-files*)))
 
 (defun perspective-autosave (editor)
-  "At a quit: the file kept in step once it exists -- saving once opts
-in, for this file and for the layout file (QUIT-REQUESTED writes that
-one next, through SNAPSHOT-AUTOSAVE).  True when it was written."
-  (when (some (lambda (path) (ignore-errors (probe-file path))) *perspective-files*)
+  "The file kept in step on the editor's own: after Open Project, Close
+Project and a rename, and at a quit (QUIT-REQUESTED, which writes the
+layout file next through SNAPSHOT-AUTOSAVE) -- whenever there is a
+project to record or the file exists already.  The first Open Project
+creates it; an editor that never opens a project writes nothing.  True
+when it was written."
+  (when (or (recorded-perspectives editor)
+            (some (lambda (path) (ignore-errors (probe-file path))) *perspective-files*))
     (null (perspective-save editor))))
 
 (defun perspective-restore (editor &optional (text (perspectives-read)))
-  "The perspectives of TEXT (the file's, by default) into the running
-editor: each made when missing, its root set, its files opened into it
--- a file open elsewhere moved, one that is not there or cannot be read
-skipped -- the recorded document made its active one, and the recorded
-perspective (or the first) brought in front.  Three values: the
-perspectives made, the files opened, the files skipped; NIL when there
-is no file."
+  "The projects of TEXT (the file's, by default) into the running editor,
+eagerly: each made when missing and open, its root set, its files opened
+into it -- a file open elsewhere moved, one that is not there or cannot
+be read skipped -- the recorded document made its active one, and the
+recorded project (or the first) brought in front.  Three values: the
+projects made, the files opened, the files skipped; NIL when there is no
+file."
   (when text
     (multiple-value-bind (entries current-name) (perspectives-parse text)
       (let ((original (editor-perspective editor))
@@ -570,9 +689,9 @@ is no file."
               (incf made))
             (when (getf e :root)
               (setf (perspective-root p) (getf e :root)))
-            ;; The file's files are opened now, so none wait (a
-            ;; perspective listed at the start).
-            (setf (perspective-pending-files p) '()
+            ;; The file's files are opened now, so none wait.
+            (setf (perspective-open p) t
+                  (perspective-pending-files p) '()
                   (perspective-pending-active p) nil)
             ;; In front while its files open, so they join it.
             (setf (editor-perspective editor) p)
@@ -596,45 +715,47 @@ is no file."
         (values made opened skipped)))))
 
 (defun perspective-list-at-start (editor &optional (text (perspectives-read)))
-  "A start: the perspectives of TEXT (the file's, by default) made by
-name with their roots, their files and recorded document kept WAITING on
-them -- nothing opened, none of them brought in front -- so the editor
-comes up with the window it always did (the files named on the command
-line, else an unnamed buffer) in the SCRATCH perspective, made first and
-put in front when the file lists anything, and the user picks the
-perspective to reopen from the menu, at `C-x x s' or over the port; that
-first switch opens its files (PERSPECTIVE-OPEN-PENDING).  The file's
-`current' line is not honoured: no perspective is restored.  (A file
-that lists `scratch' itself, which the editor never writes, is skipped
-like any name in use.)  The number of perspectives listed, or NIL when
-there is no file."
+  "A start: the projects of TEXT (the file's, by default) made RECENT, by
+name with their roots, their files and recorded document waiting on them
+-- nothing opened, none brought in front -- so the editor comes up with
+the window it always did (the files named on the command line, else an
+unnamed buffer) in the scratch set, made first and put in front when the
+file lists anything, and the user picks the project to reopen from
+Recent Projects, at `C-x p p' or over the port; that first switch opens
+its files.  The file's `current' line is not honoured.  A `scratch'
+entry, which the editor never writes, is skipped like any name in use.
+The number of projects listed, or NIL when there is no file."
   (when text
     (let ((entries (perspectives-parse text))
           (made 0))
       (when entries
-        (setf (editor-perspective editor)
-              (or (find-perspective editor *scratch-perspective-name*)
-                  (make-perspective editor *scratch-perspective-name*))))
+        (setf (editor-perspective editor) (ensure-scratch-perspective editor)))
       (dolist (e entries)
         (unless (find-perspective editor (getf e :name))
-          (let ((p (make-perspective editor (getf e :name) :root (getf e :root))))
+          (let ((p (make-perspective editor (getf e :name) :root (getf e :root) :open nil)))
             (setf (perspective-pending-files p) (getf e :files)
                   (perspective-pending-active p) (getf e :active))
             (incf made))))
       made)))
 
 ;;; ------------------------------------------------------------------
-;;; The menu's group
+;;; The menu's groups
 ;;; ------------------------------------------------------------------
 
 (defun perspective-menu (editor)
-  "The Perspectives menu as it should be now: (NAME . PERSPECTIVE) for
-each, in the order made; the one in front is the ticked object."
-  (mapcar (lambda (p) (cons (perspective-name p) p)) (editor-perspectives editor)))
+  "The Project menu's tail as it should be now: (LABEL . PERSPECTIVE) for
+the scratch set while it has buffers and for each open project, in the
+order made; the one in front is the ticked object."
+  (mapcar (lambda (p) (cons (perspective-label p) p)) (project-cycle editor)))
+
+(defun recent-menu (editor)
+  "The Recent Projects submenu as it should be now: (NAME . PERSPECTIVE)
+for each recent project, in the order made; nothing ticked."
+  (mapcar (lambda (p) (cons (perspective-name p) p)) (recent-projects editor)))
 
 (defun perspective-menu-pick (editor p)
-  "Bring P in front, as its item does.  True when P is a perspective of
-the editor's."
+  "Bring P in front, as its item in either group does -- a recent project
+opened.  True when P is a perspective of the editor's."
   (when (and (perspective-p p) (member p (editor-perspectives editor)))
     (perspective-switch editor p)
     t))
@@ -643,185 +764,212 @@ the editor's."
 ;;; The commands
 ;;; ------------------------------------------------------------------
 
-(defun perspective-completer (editor)
-  (lambda (prefix) (complete (perspective-names editor) prefix)))
+(defun project-choices (editor &key recent)
+  "The names a prompt offers: `(no project)' while the scratch set has
+buffers, the open projects, and the recent ones when RECENT."
+  (append (mapcar #'perspective-label (project-cycle editor))
+          (and recent (mapcar #'perspective-name (recent-projects editor)))))
 
-(defun perspective-named-or-new (editor name)
-  "The perspective NAME, made when there is none: two values, the
-perspective and whether it was made now; NIL for no name."
+(defun project-completer (editor &key recent)
+  (lambda (prefix) (complete (project-choices editor :recent recent) prefix)))
+
+(defun project-named (editor name &key recent)
+  "The perspective a prompt's answer NAME means: the scratch set for
+`(no project)', an open project by name, a recent one too when RECENT;
+NIL for no name or an unknown one."
   (let ((name (string-trim " " name)))
     (cond ((string= name "") nil)
-          ((find-perspective editor name))
-          (t (values (make-perspective editor name) t)))))
+          ((string= name *no-project-label*) (ensure-scratch-perspective editor))
+          (t (let ((p (find-perspective editor name)))
+               (and p (perspective-project-p p) (or recent (perspective-open p)) p))))))
 
-(define-command clamacs-perspective-switch (doc arg)
-  "Switch to a perspective by name, with completion.  A name no
-perspective has makes a new, empty one and switches to it, where an
-unnamed buffer opens.  The name of the one in front opens its files when
-they are still waiting from the start, and is refused otherwise."
+(defun refuse-project-name (doc answer)
+  "The message for a prompt's answer that names no project."
+  (if (string= (string-trim " " answer) "")
+      (message doc "A project needs a name")
+      (message doc "No project called ~A" (string-trim " " answer)))
+  (doc-beep doc))
+
+(define-command clamacs-project-switch (doc arg)
+  "Switch to a project by name, with completion over the open projects,
+the recent ones and `(no project)'.  A recent project is opened, its
+files with it; the one in front opens its waiting files, if any, and is
+refused otherwise; an unknown name is refused."
   (declare (ignore arg))
   (let ((editor (doc-editor doc)))
-    (prompt doc "Perspective: "
+    (prompt doc "Project: "
             (lambda (doc answer)
-              (multiple-value-bind (p new) (perspective-named-or-new editor answer)
+              (let ((p (project-named editor answer :recent t)))
                 (cond ((null p)
-                       (message doc "A perspective needs a name")
-                       (doc-beep doc))
+                       (refuse-project-name doc answer))
                       ((and (eq p (current-perspective editor))
                             (not (perspective-pending-p p)))
-                       (message doc "Already in ~A" (perspective-name p)))
-                      (new
-                       (perspective-switch editor p :say nil)
-                       (perspective-note editor "New perspective: ~A" (perspective-name p)))
+                       (message doc "Already in ~A" (perspective-label p)))
                       (t (perspective-switch editor p)))))
-            :completer (perspective-completer editor))))
+            :completer (project-completer editor :recent t))))
 
 (defun perspective-step (doc delta)
   (let ((editor (doc-editor doc)))
-    (if (rest (editor-perspectives editor))
+    (if (rest (project-cycle editor))
         (perspective-switch editor (perspective-neighbour editor delta))
-        (message doc "Only one perspective (~A)" (perspective-name (current-perspective editor))))))
+        (message doc "No other project"))))
 
-(define-command clamacs-perspective-next (doc arg)
-  "Switch to the next perspective, in the order they were made."
+(define-command clamacs-project-next (doc arg)
+  "Switch to the next open project, in the order they were opened -- the
+buffers outside any project among them, while there are some."
   (declare (ignore arg))
   (perspective-step doc 1))
 
-(define-command clamacs-perspective-previous (doc arg)
-  "Switch to the previous perspective, in the order they were made."
+(define-command clamacs-project-previous (doc arg)
+  "Switch to the previous open project, in the order they were opened."
   (declare (ignore arg))
   (perspective-step doc -1))
 
-(define-command clamacs-perspective-rename (doc arg)
-  "Rename the perspective in front; the prompt offers its name."
+(define-command clamacs-project-rename (doc arg)
+  "Rename the project in front; the prompt offers its name.  Refused
+outside a project."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (p (current-perspective editor)))
-    (prompt doc "Rename perspective to: "
-            (lambda (doc answer)
-              (let* ((name (string-trim " " answer))
-                     (taken (find-perspective editor name)))
-                (cond ((string= name "")
-                       (message doc "A perspective needs a name")
-                       (doc-beep doc))
-                      ((and taken (not (eq taken p)))
-                       (message doc "There is a perspective called ~A already" name)
-                       (doc-beep doc))
-                      (t
-                       (let ((old (perspective-name p)))
-                         (setf (perspective-name p) name)
-                         (repl-sync-title editor)
-                         (message doc "Renamed ~A to ~A" old name))))))
-            :initial (perspective-name p))))
+    (if (perspective-scratch-p p)
+        (progn (message doc "Not in a project") (doc-beep doc))
+        (prompt doc "Rename project to: "
+                (lambda (doc answer)
+                  (let* ((name (string-trim " " answer))
+                         (taken (find-perspective editor name)))
+                    (cond ((string= name "")
+                           (message doc "A project needs a name")
+                           (doc-beep doc))
+                          ((or (string= name *scratch-perspective-name*)
+                               (and taken (not (eq taken p))))
+                           (message doc "There is a project called ~A already" name)
+                           (doc-beep doc))
+                          (t
+                           (let ((old (perspective-name p)))
+                             (setf (perspective-name p) name)
+                             (repl-sync-title editor)
+                             (perspective-autosave editor)
+                             (message doc "Renamed ~A to ~A" old name))))))
+                :initial (perspective-name p)))))
 
-(define-command clamacs-perspective-close (doc arg)
-  "Close the perspective in front: the editor switches to the previous
-one, the buffers of this one are closed -- each unsaved one asks -- and
-the perspective is forgotten.  The only perspective cannot be closed."
+(define-command clamacs-project-close (doc arg)
+  "Close the project in front: the editor switches to the previous one
+\(or to the buffers outside any project), the project's buffers are
+closed -- each unsaved one asks -- and the project is recent from then
+on, its files remembered.  Refused outside a project."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (p (current-perspective editor))
          (name (perspective-name p)))
     (case (perspective-close editor p)
-      (:only
-       (message doc "~A is the only perspective" name)
+      (:scratch
+       (message doc "Not in a project")
        (doc-beep doc))
       (:cancelled
-       (perspective-note editor "Cancelled; ~A stays" name))
+       (perspective-note editor "Cancelled; ~A stays open" name))
       (t
-       (perspective-note editor "Closed perspective ~A" name)))))
+       (perspective-note editor "Closed project ~A" name)))))
 
-(define-command clamacs-perspective-move-buffer (doc arg)
-  "Move this buffer into a perspective named at the prompt (made when
-new), where its window is shown; here it is hidden.  When that leaves
-the perspective in front empty, the editor follows the buffer."
+(define-command clamacs-project-move-buffer (doc arg)
+  "Move this buffer into an open project named at the prompt (or out of
+any, as `(no project)'), where its window is shown; here it is hidden.
+When that leaves the project in front empty, the editor follows the
+buffer."
   (declare (ignore arg))
   (let ((editor (doc-editor doc)))
     (if (tool-document-p doc)
         (progn
-          (message doc "~A is a tool buffer, shown in every perspective" (doc-name doc))
+          (message doc "~A is a tool buffer, shown in every project" (doc-name doc))
           (doc-beep doc))
-        (prompt doc "Move buffer to perspective: "
+        (prompt doc "Move buffer to project: "
                 (lambda (doc answer)
-                  (let ((p (perspective-named-or-new editor answer))
-                        (from (current-perspective editor)))
+                  (let* ((p (project-named editor answer))
+                         (current (current-perspective editor))
+                         (from (or (perspective-of-document editor doc) current)))
                     (cond ((null p)
-                           (message doc "A perspective needs a name")
-                           (doc-beep doc))
+                           (refuse-project-name doc answer))
                           ((eq p from)
-                           (message doc "~A is in ~A already" (doc-name doc) (perspective-name p)))
+                           (message doc "~A is in ~A already" (doc-name doc) (perspective-label p)))
                           (t
                            (perspective-move doc p)
                            ;; Where P comes back to: this buffer.
                            (setf (perspective-active p) doc)
-                           (let ((left (perspective-live-documents from)))
-                             (if left
-                                 (doc-activate (first left))
-                                 (perspective-switch editor p :say nil)))
+                           (cond ((eq p current)
+                                  ;; Brought into the one in front (a script
+                                  ;; moving a hidden buffer): to the keyboard.
+                                  (doc-activate doc))
+                                 ((eq from current)
+                                  (let ((left (perspective-live-documents from)))
+                                    (if left
+                                        (doc-activate (first left))
+                                        (perspective-switch editor p :say nil)))))
                            (perspective-note editor "~A moved to ~A" (doc-name doc)
-                                             (perspective-name p))))))
-                :completer (perspective-completer editor)))))
+                                             (perspective-label p))))))
+                :completer (project-completer editor)))))
 
-(defun prompt-for-directory (doc label initial continuation)
-  "Prompt for a directory with LABEL, path completion on TAB (which
-descends into a directory), seeded with INITIAL.  CONTINUATION gets DOC
-and the directory, normalized (a `/' after it), when it is there; an
-empty answer hands NIL; a directory that is not there is refused."
-  (prompt doc label
-          (lambda (doc answer)
-            (let ((dir (normalize-directory answer)))
-              (cond ((null dir)
-                     (funcall continuation doc nil))
-                    ((not (directory-exists-p dir))
-                     (message doc "No such directory: ~A" dir)
-                     (doc-beep doc))
-                    (t (funcall continuation doc dir)))))
-          :initial initial
-          :completer #'complete-path
-          :history (editor-file-history (doc-editor doc))))
+(defun prompt-for-directory (doc label title initial continuation)
+  "Prompt for a directory with LABEL, seeded with INITIAL.  TAB completes
+a name typed after the directory; on a bare directory (the seed as it
+came, or one typed with its `/' or `:') TAB opens the folder requester
+TITLE there, as a file prompt's does, and so does RET on an empty line
+-- where INITIAL points.  CONTINUATION gets DOC and the directory,
+normalized (a `/' after it); a directory typed that is not there is
+refused, and nothing happens when the requester was cancelled."
+  (flet ((requester (text)
+           ;; From the completer the prompt is still open: it goes before
+           ;; the continuation, which may open the next one.
+           (ask-file-then doc title :directory (if (string= text "") initial text)
+                          (lambda (doc path)
+                            (when (minibuffer-open-p doc)
+                              (minibuffer-finish doc))
+                            (funcall continuation doc (normalize-directory path))))))
+    (prompt doc label
+            (lambda (doc answer)
+              (let ((dir (normalize-directory answer)))
+                (cond ((null dir)
+                       (requester ""))
+                      ((not (directory-exists-p dir))
+                       (message doc "No such directory: ~A" dir)
+                       (doc-beep doc))
+                      (t (funcall continuation doc dir)))))
+            :initial initial
+            :completer (lambda (text)
+                         (if (directory-only-p text)
+                             (progn (requester text) :handled)
+                             (complete-path text)))
+            :history (editor-file-history (doc-editor doc)))))
 
-(define-command clamacs-perspective-set-directory (doc arg)
-  "Set the project directory of the perspective in front: where a file
-prompt starts in a buffer without a file, and where the ASDF commands
-look for the system.  An empty answer takes it away."
-  (declare (ignore arg))
-  (let* ((editor (doc-editor doc))
-         (p (current-perspective editor)))
-    (prompt-for-directory doc "Project directory: " (or (perspective-root p) "")
-                          (lambda (doc dir)
-                            (setf (perspective-root p) dir)
-                            (cond (dir
-                                   (message doc "~A: project directory ~A" (perspective-name p) dir)
-                                   ;; The directory of the perspective in front
-                                   ;; changed: amilisp follows, as at a switch.
-                                   (when (eq p (editor-perspective editor))
-                                     (perspective-tell-root editor p)))
-                                  (t
-                                   (message doc "~A has no project directory now" (perspective-name p))))))))
-
-(define-command clamacs-perspective-open-project (doc arg)
-  "Open a project: a directory asked for at the prompt becomes a
-perspective named after it, with the directory as its project directory,
-and the editor switches to it.  A perspective of that name is switched to."
-  (declare (ignore arg))
+(defun open-project-path (doc path)
+  "PATH -- a folder, or its .asd -- opened as a project
+\(PERSPECTIVE-OPEN-PROJECT), DOC's echo area told what happened."
   (let ((editor (doc-editor doc)))
-    (prompt-for-directory doc "Project directory: " (doc-directory doc)
-                          (lambda (doc dir)
-                            (cond ((null dir)
-                                   (message doc "A project needs a directory")
-                                   (doc-beep doc))
-                                  (t
-                                   (multiple-value-bind (p new) (perspective-open-project editor dir)
-                                     (perspective-note editor "~A ~A (~A)"
-                                                       (if new "New project" "Project")
-                                                       (perspective-name p)
-                                                       (perspective-root p)))))))))
+    (multiple-value-bind (p was opened skipped) (perspective-open-project editor path)
+      (perspective-note editor "~A"
+                        (if (eq was :new)
+                            (format nil "New project: ~A~A"
+                                    (perspective-name p) (perspective-root-note p))
+                            (perspective-switch-message p opened skipped))))))
 
-(define-command clamacs-perspective-save (doc arg)
-  "Save the perspectives -- each with its project directory and its
-files, the scratch one left out -- to the perspectives file, which the
-next start lists and every later quit keeps in step, the windows' places
-with it."
+(define-command clamacs-project-open (doc arg)
+  "Open a project: a folder asked for at the prompt -- or its .asd; TAB
+on a bare directory browses from there, RET on an empty line from the
+buffer's -- is the project, named
+after the one .asd in it or after the folder, its files opened when it
+is a recent one, and the editor switches to it."
+  (declare (ignore arg))
+  (prompt-for-directory doc "Open project (folder or .asd; TAB: browse): " "Open Project"
+                        (doc-directory doc) #'open-project-path))
+
+(define-command clamacs-project-open-requester (doc arg)
+  "Open the project of a folder chosen in the requester, as
+`clamacs-project-open' opens one typed: the menu's Open Project..."
+  (declare (ignore arg))
+  (ask-file-then doc "Open Project" :directory (doc-directory doc) #'open-project-path))
+
+(define-command clamacs-project-save (doc arg)
+  "Write the projects file now -- every project with its folder and its
+files, the buffers outside any project left out.  The editor keeps the
+file in step on its own; this is for a script."
   (declare (ignore arg))
   (let* ((editor (doc-editor doc))
          (failed (perspective-save editor)))
@@ -829,20 +977,21 @@ with it."
            (message doc "Cannot write ~{~A~^ or ~}" failed)
            (doc-beep doc))
           (t
-           (message doc "Saved ~D perspective(s) to ~A"
+           (message doc "Saved ~D project(s) to ~A"
                     (length (recorded-perspectives editor))
                     (car (last *perspective-files*)))))))
 
-(define-command clamacs-perspective-restore (doc arg)
-  "Restore the perspectives from the file into the running editor: the
-ones missing are made, their files opened, the recorded one switched to."
+(define-command clamacs-project-restore (doc arg)
+  "Reopen every project of the projects file at once into the running
+editor: the ones missing are made, their files opened, the recorded one
+switched to."
   (declare (ignore arg))
   (let ((editor (doc-editor doc)))
     (multiple-value-bind (made opened skipped) (perspective-restore editor)
       (cond ((null made)
-             (message doc "No perspectives file (~A)" (first *perspective-files*))
+             (message doc "No projects file (~A)" (first *perspective-files*))
              (doc-beep doc))
             (t
-             (perspective-note editor "Restored: ~D perspective(s) made, ~D file(s) opened~A"
+             (perspective-note editor "Reopened: ~D project(s) made, ~D file(s) opened~A"
                                made opened
                                (if (> skipped 0) (format nil ", ~D missing" skipped) "")))))))
