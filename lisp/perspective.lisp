@@ -218,6 +218,14 @@ skipped; NIL and 0 when none waited."
              (values (+ opened moved) skipped)))
           (t (values nil 0)))))
 
+(defun perspective-root-note (p)
+  "` (ROOT)' after P's name in the switch's message when P has a project
+directory -- where a relative path at the REPL and a file prompt start
+now -- and \"\" when it has none."
+  (if (perspective-root p)
+      (format nil " (~A)" (perspective-root p))
+      ""))
+
 (defun perspective-opened-note (opened skipped)
   "`, N file(s) opened[, M missing]' after the switch's message when the
 switch opened a listed perspective's files; \"\" otherwise."
@@ -235,7 +243,8 @@ perspective entered empty gets an unnamed buffer.  amilisp is told P's
 project directory (PERSPECTIVE-TELL-ROOT).  A perspective listed at a
 start opens its recorded files first (PERSPECTIVE-OPEN-PENDING) -- also
 when it is the one in front already, which a switch otherwise leaves
-alone.  Says `Perspective: NAME', with the files opened, unless SAY is
+alone.  Says `Perspective: NAME (ROOT)' -- the project directory, when P
+has one (PERSPECTIVE-ROOT-NOTE) -- with the files opened, unless SAY is
 NIL.  P."
   (let ((old (editor-perspective editor))
         (opened nil) (skipped 0))
@@ -272,7 +281,8 @@ NIL.  P."
            (perspective-tell-root editor p)))
     (repl-sync-title editor)
     (when say
-      (perspective-note editor "Perspective: ~A~A" (perspective-name p)
+      (perspective-note editor "Perspective: ~A~A~A" (perspective-name p)
+                        (perspective-root-note p)
                         (perspective-opened-note opened skipped)))
     p))
 

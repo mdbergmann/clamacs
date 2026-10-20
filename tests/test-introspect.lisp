@@ -844,3 +844,90 @@ preceded by -- spelled as the buffer's (in-package ...) spells it."
   (is (null (sexp-mentions-in-package-p "(in-packag")))
   (is (null (sexp-mentions-in-package-p "")))
   (is (null (sexp-mentions-in-package-p "(defun in-pack age ())"))))
+
+;;; --- the status line's package -------------------------------------------------
+
+(deftest the-status-line-shows-the-package-at-the-cursor
+  ;; A Lisp buffer: the package of the form at the cursor, upcased as
+  ;; amilisp names it -- what C-c C-c and the arglist ask in.
+  (let ((doc (package-doc 8)))
+    (is-equal (doc-status-package doc) "BETA")
+    (doc-set-point doc (doc-line-index doc 3))
+    (is-equal (doc-status-package doc) "ALPHA")
+    ;; The cursor's line handed in saves the lookup of it.
+    (is-equal (doc-status-package doc 3) "ALPHA")
+    (doc-set-point doc 0)
+    (is-equal (doc-status-package doc) "CL-USER")
+    ;; Not a Lisp buffer: no package, and no field in the line.
+    (set-lisp-mode doc nil)
+    (is (null (doc-status-package doc)))
+    (is-equal (status-line-text nil "notes.txt" "" nil 0 4 "")
+              " notes.txt  1:5")
+    (set-lisp-mode doc t))
+  ;; The line itself: the flag, the perspective, the package, the arglist.
+  (is-equal (status-line-text nil "(unnamed)" "" "CL-USER" 0 0 "")
+            " (unnamed)  CL-USER  1:1")
+  (is-equal (status-line-text t "a.lisp" " [work]" "FOO" 11 2 "(bar x)")
+            "*a.lisp [work]  FOO  12:3  (bar x)")
+  ;; The REPL window shows the prompt's package.
+  (let* ((doc (make-fake "|"))
+         (repl (repl-open (doc-editor doc) doc)))
+    (is-equal (doc-status-package repl) "CL-USER")
+    (repl-set-package repl "EXT.DEV")
+    (is-equal (doc-status-package repl) "EXT.DEV")))
+
+;;; --- a package amilisp has not got ------------------------------------------------
+
+(deftest the-idle-timer-is-told-once-of-a-package-amilisp-lacks
+  ;; The user connects to a fresh amilisp with a system's test file in
+  ;; front: the file's package is not there until the system is loaded.
+  ;; The arglist tick's IN-PACKAGE is refused -- said once, in the
+  ;; editor's words, not amilisp's ERROR line at every rest of the cursor
+  ;; -- the ARGLIST is asked where the port stands, and the package is not
+  ;; asked for again until something ran.
+  (multiple-value-bind (doc tr wire) (make-wired-fake (lines "(in-package :sento.tasks-test)"
+                                                            ""
+                                                            "(defun f ()"
+                                                            "  (twice 2|1))"))
+    (doc-activate doc)
+    (wire-find-port wire)
+    (setf (fake-messages doc) '())
+    (arglist-idle doc)
+    (arglist-idle doc)
+    (is-equal (fake-last-sent tr) "IN-PACKAGE sento.tasks-test")
+    (fake-deliver tr 10 "")
+    (is-equal (fake-last-sent tr) "LASTRESULT")
+    (fake-deliver tr 0 "ERROR: no such package: SENTO.TASKS-TEST")
+    (is-equal (fake-last-message doc)
+              "amilisp has no package SENTO.TASKS-TEST yet (load its system first)")
+    (is-equal (wire-missing-packages wire) '("SENTO.TASKS-TEST"))
+    ;; The arglist went out all the same, and is shown.
+    (is-equal (fake-last-sent tr) "ARGLIST twice")
+    (fake-deliver tr 0 "(n)")
+    (is-equal (fake-arglist doc) "(twice n)")
+    (is-equal (symcache-get (editor-arglists (doc-editor doc)) "sento.tasks-test|twice") "(n)")
+    ;; Another operator: no IN-PACKAGE, no message, the ARGLIST alone.
+    (setf (fake-messages doc) '())
+    (doc-set-point doc (+ (doc-line-index doc 2) 7))
+    (arglist-idle doc)
+    (arglist-idle doc)
+    (is-equal (fake-last-sent tr) "ARGLIST defun")
+    (is (null (fake-messages doc)))
+    (fake-deliver tr 0 "(name lambda-list &body body)")
+    (is-equal (length (fake-sent-commands tr)) 4)
+    ;; A LOAD ran (the system, say): the package is asked for again, and the
+    ;; arglists answered meanwhile -- where the port stood -- are forgotten.
+    (wire-request wire doc :load "LOAD T:sento.lisp")
+    (fake-deliver tr 0 (lines "; loading T:sento.lisp" "0 error(s), 0 warning(s)"))
+    (is (null (wire-missing-packages wire)))
+    (is (null (symcache-get (editor-arglists (doc-editor doc)) "sento.tasks-test|twice")))
+    (setf (fake-messages doc) '())
+    (doc-set-point doc (+ (doc-line-index doc 3) 9))
+    (arglist-idle doc)
+    (arglist-idle doc)
+    (is-equal (fake-last-sent tr) "IN-PACKAGE sento.tasks-test")
+    (fake-deliver tr 0 "Package is now SENTO.TASKS-TEST")
+    (is-equal (fake-last-sent tr) "ARGLIST twice")
+    (fake-deliver tr 0 "(n)")
+    (is-equal (fake-arglist doc) "(twice n)")
+    (is (null (wire-inflight wire)))))

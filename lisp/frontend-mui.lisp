@@ -518,9 +518,8 @@ init file may open what it likes.")
    (complist :initform nil :accessor mdoc-complist)
    (completions :initform nil :accessor mdoc-completions)
    (comp-selecting :initform nil :accessor mdoc-comp-selecting)
-   ;; The package the status line shows; the wire (phase 2) tracks it
-   (package :initform "CL-USER" :accessor mdoc-package)
    ;; The arglist of the operator at point, at the end of the status line
+   ;; (the package there is DOC-STATUS-PACKAGE's, introspect.lisp)
    (arglist :initform "" :accessor mdoc-arglist)
    ;; The class's marked block is the region, put there by SHOW-REGION
    (region-shown :initform nil :accessor mdoc-region-shown)
@@ -1958,20 +1957,18 @@ text would stay on the standard background."
 
 (defun status-text (doc)
   "`*name [perspective]  PACKAGE  line:column  (arglist)', the status
-line's text: the perspective's name only when there is more than one
-\(STATUS-PERSPECTIVE, perspective.lisp); the arglist of the operator at
-point rides at the end, where a long one is cut off rather than pushing
-the rest out of view."
-  (let ((arglist (mdoc-arglist doc)))
-    (format nil "~A~A~A  ~A  ~D:~D~A~A"
-            (if (doc-modified-p doc) "*" " ")
-            (doc-name doc)
-            (status-perspective doc)
-            (mdoc-package doc)
-            (1+ (te-get doc +tea-cursor-y+))
-            (1+ (te-get doc +tea-cursor-x+))
-            (if (string= arglist "") "" "  ")
-            arglist)))
+line's text (STATUS-LINE-TEXT, introspect.lisp): the perspective's name
+only when there is more than one (STATUS-PERSPECTIVE, perspective.lisp),
+the package of the form at the cursor (DOC-STATUS-PACKAGE, handed the
+cursor's line the widget knows), the arglist of the operator at point."
+  (let ((y (te-get doc +tea-cursor-y+)))
+    (status-line-text (doc-modified-p doc)
+                      (doc-name doc)
+                      (status-perspective doc)
+                      (doc-status-package doc y)
+                      y
+                      (te-get doc +tea-cursor-x+)
+                      (mdoc-arglist doc))))
 
 (defun update-status (doc)
   "STATUS-TEXT into the status line."
@@ -2140,8 +2137,10 @@ with ACCEPT a double click, which takes it."
   (update-status doc))
 
 (defmethod doc-set-title ((doc mui-document) title)
+  "The window's title bar: the file's full path for a file window, TITLE
+otherwise (DOC-WINDOW-TITLE, files.lisp)."
   (mui:set-attrs (mdoc-window doc) m:+muia-window-title+
-                 (store-string (mdoc-title-buf doc) title)))
+                 (store-string (mdoc-title-buf doc) (doc-window-title doc title))))
 
 (defmethod doc-ask-file ((doc mui-document) title save initial)
   "The ASL file requester, through MUI so it opens on the editor's screen,

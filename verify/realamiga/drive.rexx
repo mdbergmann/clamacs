@@ -990,8 +990,9 @@ ELSE DO
         'PERSPECTIVES work'
         R = RESULT
         'STATUS'
-        IF R = '' & POS('Perspective: work, 1 file(s) opened', RESULT) > 0 THEN
-            SAY 'OK the first switch into work brought sample2.lisp over:' RESULT
+        /* ... and the message names work's project directory. */
+        IF R = '' & POS('Perspective: work (Clamacs:verify/', RESULT) > 0 & POS('), 1 file(s) opened', RESULT) > 0 THEN
+            SAY 'OK the first switch into work brought sample2.lisp over and names its directory:' RESULT
         ELSE
             SAY 'FAIL PERSPECTIVES work gave' R', status' RESULT
         'EVAL (clamacs::shown-report clamacs::*editor*)'
@@ -1021,8 +1022,8 @@ ELSE DO
         'PERSPECTIVES work'
         R = RESULT
         'STATUS'
-        IF R = '' & RESULT = 'Perspective: work' THEN
-            SAY 'OK the second switch into work is a plain switch'
+        IF R = '' & POS('Perspective: work (Clamacs:verify/', RESULT) > 0 & POS('opened', RESULT) = 0 THEN
+            SAY 'OK the second switch into work is a plain switch:' RESULT
         ELSE
             SAY 'FAIL the second PERSPECTIVES work gave' R', status' RESULT
         'GETFILE'

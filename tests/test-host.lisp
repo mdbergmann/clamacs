@@ -902,6 +902,32 @@ each, with the KeyboardEvent fields a real key would carry."
     (is (doc-closing doc))
     (is (search "CK.removeDoc(\"doc1\");" (host-take-evals editor)))))
 
+(deftest host-status-line-package-and-window-title-path
+  (let* ((editor (host-test-editor))
+         (path (temp-file "host-status.lisp"))
+         (doc (host-test-document editor "" path)))
+    ;; A file window's title bar shows the full path; its tab the name.
+    (is-equal (host-window-shown-title (hdoc-window doc)) path)
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.setTitle(\"doc1\",\"clamacs-test-host-status.lisp\");" js))
+      (is (search "CK.setStatus(\" clamacs-test-host-status.lisp  CL-USER  1:1\");" js)))
+    ;; The status line's package is the form's at the cursor.
+    (host-type-text editor "(in-package :foo)")
+    (host-type editor "RET")
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.setStatus(\"*clamacs-test-host-status.lisp  FOO  2:1\");" js)))
+    (is-equal (status-text doc) "*clamacs-test-host-status.lisp  FOO  2:1")
+    ;; Above the form: CL-USER again.
+    (host-type editor "C-p")
+    (is-equal (status-text doc) "*clamacs-test-host-status.lisp  CL-USER  1:1")
+    ;; A buffer without a file keeps its title in the title bar, and a
+    ;; buffer that is not Lisp has no package field.
+    (let ((other (host-test-document editor "notes" (temp-file "host-status.txt"))))
+      (is-equal (host-window-shown-title (hdoc-window other)) (doc-path other))
+      (is-equal (status-text other) " clamacs-test-host-status.txt  1:1"))
+    (let ((unnamed (host-test-document editor "" nil)))
+      (is-equal (host-window-shown-title (hdoc-window unnamed)) "(unnamed)"))))
+
 (deftest host-save-and-quit
   (let* ((editor (host-test-editor))
          (path (temp-file "host-save.lisp"))

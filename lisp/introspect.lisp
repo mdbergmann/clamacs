@@ -152,15 +152,48 @@ line, and kept with the line that names it."
               (intro-package-serial state) (doc-edit-serial doc)
               (intro-package-verify state) nil)))))
 
-(defun doc-package-cached (doc)
+(defun doc-package-cached (doc &optional y)
   "The package the cursor's form is in -- DOC-CURRENT-PACKAGE's answer,
 without reading the buffer again while nothing that could change it
-happened (see above)."
+happened (see above).  Y is the cursor's line when the caller has it
+already (the MUI status line reads it off the widget), saving the lookup
+of it -- it must be the line the cursor IS on, since a scan reads the
+buffer down to the cursor."
   (let ((state (doc-intro doc))
-        (y (doc-index-line doc (doc-point doc))))
+        (y (or y (doc-index-line doc (doc-point doc)))))
     (unless (package-cache-holds-p doc state y)
       (package-scan doc state y))
     (intro-package state)))
+
+;;; ------------------------------------------------------------------
+;;; The status line
+;;; ------------------------------------------------------------------
+
+(defun doc-status-package (doc &optional y)
+  "What the status line says the package is: in the REPL window the
+prompt's package, in a Lisp-mode buffer the package of the form at the
+cursor (DOC-PACKAGE-CACHED, upcased as amilisp names it -- the package
+`C-c C-c' and the arglist ask in), and NIL in any other buffer, which has
+no package.  Y as for DOC-PACKAGE-CACHED."
+  (cond ((doc-repl doc) (repl-window-package (doc-repl doc)))
+        ((doc-lisp-mode doc) (string-upcase (doc-package-cached doc y)))
+        (t nil)))
+
+(defun status-line-text (modified name perspective package y x arglist)
+  "`*name [perspective]  PACKAGE  line:column  (arglist)', both frontends'
+status line: MODIFIED a flag, NAME the buffer's, PERSPECTIVE what
+STATUS-PERSPECTIVE answers, PACKAGE what DOC-STATUS-PACKAGE answers (its
+field left out with NIL), Y and X the cursor's line and column from 0,
+ARGLIST the operator's or \"\" -- it rides at the end, where a long one
+is cut off rather than pushing the rest out of view."
+  (format nil "~A~A~A~@[  ~A~]  ~D:~D~A~A"
+          (if modified "*" " ")
+          name
+          perspective
+          package
+          (1+ y) (1+ x)
+          (if (string= arglist "") "" "  ")
+          arglist))
 
 ;;; ------------------------------------------------------------------
 ;;; What is at point

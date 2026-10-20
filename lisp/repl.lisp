@@ -177,10 +177,14 @@ shows the first value for a moment, the transcript keeps the record."
 
 (defun repl-wire-package (editor package)
   "amilisp's *COMMAND-PACKAGE* moved: a buffer eval that follows must not
-assume the port is still where it last put it."
+assume the port is still where it last put it.  Called with every RESULT,
+so a form ran: a package amilisp lacked may be there now
+\(WIRE-FORGET-MISSING-PACKAGES)."
   (let ((wire (editor-wire editor)))
-    (when (and wire package (string/= package ""))
-      (setf (wire-package wire) package))))
+    (when wire
+      (wire-forget-missing-packages wire)
+      (when (and package (string/= package ""))
+        (setf (wire-package wire) package)))))
 
 (defun repl-set-package (doc package)
   "The prompt's package.  Only a form typed at the prompt moves it: a

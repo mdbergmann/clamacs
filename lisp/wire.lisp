@@ -147,6 +147,11 @@ LASTRESULT; else the command itself."
   ;; from a buffer in the same package does not repeat it.  NIL when a port
   ;; is (re)found: a fresh amilisp starts in CL-USER.
   (package nil)
+  ;; The packages amilisp said it has none of (an IN-PACKAGE refused: a
+  ;; buffer of a system not loaded yet), upcased.  Said once each, and not
+  ;; asked for again until something ran that may have defined one -- a
+  ;; LOAD, an EVAL, a form at the REPL -- or the port is (re)found.
+  (missing-packages '())
   (diags (make-diaglist))
   ;; The diagnostic `C-x `' last visited: -1 for a fresh list.
   (error-row -1)
@@ -193,6 +198,7 @@ gone -- it is announced, and the package is forgotten."
                  (wire-connected wire) t)
            (unless was
              (setf (wire-package wire) nil)
+             (wire-forget-missing-packages wire)
              (wire-message wire nil "amilisp found on ~A" name)
              ;; A REPL window that lost its thread gets a new one.
              (repl-reconnected (wire-editor wire)))
@@ -318,6 +324,7 @@ new one."
           (wire-connected wire) nil
           (wire-port-name wire) nil
           (wire-package wire) nil
+          (wire-missing-packages wire) '()
           (wire-version wire) nil)
     (symcache-clear (editor-arglists editor))
     (let ((name (transport-find-port to)))
@@ -353,11 +360,22 @@ new one."
        (when text (setf (wire-version wire) text))
        (when doc (doc-message doc (or (wire-version wire) ""))))
       (:in-package
-       (when (and (/= rc +rc-ok+) doc)
-         (doc-message doc (if (and text (string/= text "")) text "IN-PACKAGE failed"))))
+       (when (/= rc +rc-ok+)
+         ;; The port stayed where it was, which is not known here: told
+         ;; afresh next time.  A package amilisp lacks is remembered and
+         ;; said once -- an arglist tick asks after every rest, and a
+         ;; buffer of a system not loaded yet is the normal case.
+         (let ((name (string-upcase (subject-arg (request-subject req)))))
+           (setf (wire-package wire) nil)
+           (unless (member name (wire-missing-packages wire) :test #'string=)
+             (push name (wire-missing-packages wire))
+             (when doc
+               (doc-message doc (missing-package-text name text)))))))
       ((:load :compile-file)
+       (wire-forget-missing-packages wire)
        (wire-diagnostics wire doc text))
       (:eval
+       (wire-forget-missing-packages wire)
        (cond ((= rc +rc-ok+)
               (when doc
                 (let ((line (first-line text)))
@@ -371,7 +389,10 @@ new one."
        ;; The REPL window's own requests (repl.lisp).
        (repl-reply wire kind doc rc text))
       ((:dbg-backtrace :dbg-frame :dbg-frame-eval :dbg-restart)
-       ;; The debugger's (debugger.lisp).
+       ;; The debugger's (debugger.lisp).  An eval in a frame or a restart
+       ;; ran code.
+       (when (member kind '(:dbg-frame-eval :dbg-restart))
+         (wire-forget-missing-packages wire))
        (debug-reply wire kind doc rc text))
       (:inspect
        (inspect-reply wire doc rc text))
@@ -468,11 +489,31 @@ stays once another buffer has spoken, so it is always said."
 
 (defun wire-ensure-package (wire doc &optional package)
   "Tell amilisp's port DOC's package (PACKAGE when the caller has it
-already), unless it was told already."
+already), unless it was told already -- or amilisp said it has no such
+package (WIRE-MISSING-PACKAGES): the request that follows is asked where
+the port stands, and the package is tried again once something ran."
   (let ((package (or package (doc-current-package doc))))
-    (unless (and (wire-package wire) (string-equal package (wire-package wire)))
+    (unless (or (and (wire-package wire) (string-equal package (wire-package wire)))
+                (member package (wire-missing-packages wire) :test #'string-equal))
       (when (wire-request wire doc :in-package (format nil "IN-PACKAGE ~A" package))
         (setf (wire-package wire) package)))))
+
+(defun wire-forget-missing-packages (wire)
+  "Something ran that may have defined a package amilisp lacked (a LOAD,
+an EVAL, a form at the REPL), or the port is new: the packages refused
+are asked for again -- and the arglists cached meanwhile under their
+names, answered where the port stood, go with them."
+  (when (wire-missing-packages wire)
+    (setf (wire-missing-packages wire) '())
+    (symcache-clear (editor-arglists (wire-editor wire)))))
+
+(defun missing-package-text (name reply)
+  "What the echo area says of an IN-PACKAGE amilisp refused: the editor's
+own line for a package amilisp has not got (the buffer's system is not
+loaded yet, the usual case), amilisp's REPLY for anything else."
+  (if (search "no such package" (or reply "") :test #'char-equal)
+      (format nil "amilisp has no package ~A yet (load its system first)" name)
+      (if (and reply (string/= reply "")) reply "IN-PACKAGE failed")))
 
 (defun wire-eval (doc text &optional package)
   "Send TEXT, one or more forms, for evaluation in DOC's package (in

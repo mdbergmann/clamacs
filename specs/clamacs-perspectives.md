@@ -83,7 +83,10 @@ or the first -- activated, and only then the old perspective's hidden,
 so the frontend never has a moment without a shown active document; an
 empty perspective gets an unnamed buffer (`open-document editor nil`),
 which joins it because it is current by then.  The echo area says
-`Perspective: NAME`.
+`Perspective: NAME (ROOT)` -- the project directory in the parentheses
+when the perspective has one (`perspective-root-note`, 2026-10-20: the
+one place the directory a switch puts the user in is shown; `C-x x d`'s
+prompt offers it too), nothing after the name otherwise.
 
 **Closing** (`close-document`): a document leaves its perspective when
 its window goes.  When that was the last document of the perspective
@@ -224,7 +227,7 @@ as ever.  The user picks the perspective
 to reopen: the first `perspective-switch` into a waiting perspective
 opens its files (`perspective-open-pending`, with the perspective in
 front so they join it; a file open elsewhere is brought over), makes
-the recorded document its active one and says `Perspective: NAME, N
+the recorded document its active one and says `Perspective: NAME (ROOT), N
 file(s) opened[, M missing]` -- also when it is the one in front
 already, which a switch otherwise leaves alone (`C-x x s` refuses the
 name in front only once nothing waits).  Until then the quit's write

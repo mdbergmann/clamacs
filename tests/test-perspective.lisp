@@ -455,11 +455,12 @@ editor a b)."
       ;; A failed reply is fetched and dropped: nothing is said about it.
       (perspective-switch editor work)
       (let ((u (editor-active-document editor)))
-        (is-equal (fake-last-message u) "Perspective: work")
+        ;; The switch's message names the directory the user is in now.
+        (is-equal (fake-last-message u) "Perspective: work (T:work/)")
         (fake-deliver tr 10 "")
         (is-equal (fake-last-sent tr) "LASTRESULT")
         (fake-deliver tr 0 "No such directory")
-        (is-equal (fake-last-message u) "Perspective: work")
+        (is-equal (fake-last-message u) "Perspective: work (T:work/)")
         (is (null (wire-inflight wire)))
         ;; Setting the directory of the perspective in front tells it too.
         (let* ((dir (temp-path "persp-tell"))
@@ -696,7 +697,7 @@ editor a b)."
                  (is-equal (mapcar #'doc-path (live-documents editor)) (list nil two))
                  (is-equal (doc-path (editor-active-document editor)) two)
                  (is-equal (fake-last-message (editor-active-document editor))
-                           "Perspective: work, 1 file(s) opened")
+                           "Perspective: work (/tmp/), 1 file(s) opened")
                  (is-equal (shown-names editor) '("clamacs-test-persp-start-two.lisp"))
                  (is-equal (fake-shown-names editor) '("clamacs-test-persp-start-two.lisp"))
                  (is (not (fake-shown u)))

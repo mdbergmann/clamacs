@@ -195,15 +195,75 @@
     (fake-deliver tr 0 "Package is now FOO")
     (is-equal (fake-last-sent tr) "REPL-EVAL (bar)")))
 
-(deftest a-failing-in-package-is-reported
+(deftest a-failing-in-package-is-reported-once-and-not-asked-again
   (multiple-value-bind (doc tr wire) (make-wired-fake (lines "(in-package :nope)" "(bar)|"))
-    (declare (ignore wire))
     (run-command doc 'clamacs-eval-last-sexp)
     (fake-answer-attach tr)
+    (is-equal (fake-last-sent tr) "IN-PACKAGE nope")
     (fake-deliver tr 10 "")
     (is-equal (fake-last-sent tr) "LASTRESULT")
     (fake-deliver tr 0 "ERROR: no such package: NOPE")
-    (is-equal (fake-last-message doc) "ERROR: no such package: NOPE")))
+    ;; The editor's own line, not amilisp's ERROR: a buffer of a system
+    ;; not loaded yet is the normal case.
+    (is-equal (fake-last-message doc) "amilisp has no package NOPE yet (load its system first)")
+    (is-equal (wire-missing-packages wire) '("NOPE"))
+    ;; The port stayed where it was, which the editor does not know.
+    (is (null (wire-package wire)))
+    ;; The eval still went out, where the port stands.
+    (is-equal (fake-last-sent tr) "REPL-EVAL (bar)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "1"))
+    ;; A form ran: the package may be there now, so it is asked for again --
+    ;; and refused again, which is news again (the form did not define it).
+    (is (null (wire-missing-packages wire)))
+    (setf (fake-messages doc) '())
+    (run-command doc 'clamacs-eval-last-sexp)
+    (is-equal (fake-last-sent tr) "IN-PACKAGE nope")
+    (fake-deliver tr 10 "")
+    (fake-deliver tr 0 "ERROR: no such package: NOPE")
+    (is-equal (fake-last-message doc) "amilisp has no package NOPE yet (load its system first)")
+    (is-equal (wire-missing-packages wire) '("NOPE"))
+    ;; Not asked for again before anything ran: the next eval goes
+    ;; straight out, and nothing is said.
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "1"))
+    (setf (wire-missing-packages wire) '("NOPE")
+          (fake-messages doc) '())
+    (run-command doc 'clamacs-eval-last-sexp)
+    (is-equal (fake-last-sent tr) "REPL-EVAL (bar)")
+    (is (null (fake-messages doc)))
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "1"))
+    ;; Any other refusal is amilisp's text, as before.
+    (run-command doc 'clamacs-eval-last-sexp)
+    (fake-deliver tr 10 "")
+    (fake-deliver tr 0 "ERROR: something else")
+    (is-equal (fake-last-message doc) "ERROR: something else")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "1"))
+    ;; A port found afresh starts afresh.
+    (setf (wire-missing-packages wire) '("NOPE"))
+    (wire-request wire doc :ping "PING")
+    (fake-deliver tr 20 "no such port" :lost t)
+    (is (not (wire-connected wire)))
+    (wire-request wire doc :ping "PING")
+    (is (wire-connected wire))
+    (is (null (wire-missing-packages wire)))))
+
+(deftest a-missing-package-is-not-asked-for-while-nothing-ran
+  (multiple-value-bind (doc tr wire) (make-wired-fake (lines "(in-package :nope)" "(bar)|"))
+    (wire-find-port wire)
+    (setf (wire-missing-packages wire) '("NOPE"))
+    ;; Told where the port stands, so the IN-PACKAGE would have gone.
+    (setf (wire-package wire) "CL-USER")
+    (wire-ensure-package wire doc)
+    (is (null (fake-transport-sent tr)))
+    ;; A LOAD's reply, a successful or a failed EVAL's: tried again after.
+    (wire-request wire doc :load "LOAD x.lisp")
+    (fake-deliver tr 0 (lines "; loading x.lisp" "0 error(s), 0 warning(s)"))
+    (is (null (wire-missing-packages wire)))
+    (wire-ensure-package wire doc)
+    (is-equal (fake-last-sent tr) "IN-PACKAGE nope")))
 
 (deftest eval-last-sexp-without-an-expression
   (multiple-value-bind (doc tr wire) (make-wired-fake "|   ")

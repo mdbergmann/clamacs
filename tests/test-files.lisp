@@ -71,6 +71,10 @@
     (is-equal (doc-path doc) path)
     (is-equal (doc-name doc) "clamacs-test-one.lisp")
     (is-equal (fake-title doc) "clamacs-test-one.lisp")
+    ;; The title bar of a file window shows the full path, a buffer
+    ;; without a file its title (both frontends' DOC-SET-TITLE).
+    (is-equal (doc-window-title doc (fake-title doc)) path)
+    (is-equal (doc-window-title (make-fake "|") "(unnamed)") "(unnamed)")
     (is (not (doc-modified-p doc)))
     ;; Coloured on the way in.
     (is-equal (fake-line-colours doc 0) '((1 6 :defining)))

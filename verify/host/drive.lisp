@@ -2266,8 +2266,9 @@ wrote: it must come up where the file said, then quit."
     ;; brought over from scratch, which has nothing left to hide
     (cmd "PERSPECTIVES work")
     (cmd "STATUS")
-    (if (result-has "Perspective: work, 1 file(s) opened")
-        (ok "the first switch into work opened its file: ~A" *result*)
+    ;; ... and the message names work's project directory
+    (if (and (result-has "Perspective: work (") (result-has "drivesys/), 1 file(s) opened"))
+        (ok "the first switch into work opened its file and names its directory: ~A" *result*)
         (fail "PERSPECTIVES work said ~A" *result*))
     (cmd "GETNAME")
     (if (result-has "sample2.lisp")
@@ -2300,8 +2301,9 @@ wrote: it must come up where the file said, then quit."
     ;; Back to work: opened already, a plain switch
     (cmd "PERSPECTIVES work")
     (cmd "STATUS")
-    (if (result-is "Perspective: work")
-        (ok "the second switch into work is a plain switch")
+    (if (and (result-has "Perspective: work (") (result-has "drivesys/)")
+             (not (result-has "opened")))
+        (ok "the second switch into work is a plain switch: ~A" *result*)
         (fail "the second PERSPECTIVES work said ~A" *result*))
     (cmd "GETNAME")
     (if (result-has "sample2.lisp")

@@ -237,7 +237,6 @@ a window a tab was shown in separately (see \"Detached windows\")."
    ;; names as given, and the row the cursor is on
    (mini-completions :initform nil :accessor hdoc-mini-completions)
    (mini-completion-index :initform -1 :accessor hdoc-mini-completion-index)
-   (package :initform "CL-USER" :accessor hdoc-package)
    (arglist :initform "" :accessor hdoc-arglist)
    (title :initform "" :accessor hdoc-title)
    ;; Whether the page made this document a tab of the dock.  Decided once,
@@ -727,18 +726,16 @@ anything else, as the class answers FALSE."
 
 (defun status-text (doc)
   "`*name [perspective]  PACKAGE  line:column  arglist', the MUI status
-line's, the perspective's name only when there is more than one
-\(STATUS-PERSPECTIVE, perspective.lisp)."
+line's (STATUS-LINE-TEXT, introspect.lisp): the perspective's name only
+when there is more than one (STATUS-PERSPECTIVE, perspective.lisp), the
+package of the form at the cursor (DOC-STATUS-PACKAGE)."
   (multiple-value-bind (y x) (doc-index-line doc (doc-point doc))
-    (let ((arglist (hdoc-arglist doc)))
-      (format nil "~A~A~A  ~A  ~D:~D~A~A"
-              (if (doc-modified-p doc) "*" " ")
-              (doc-name doc)
-              (status-perspective doc)
-              (hdoc-package doc)
-              (1+ y) (1+ x)
-              (if (string= arglist "") "" "  ")
-              arglist))))
+    (status-line-text (doc-modified-p doc)
+                      (doc-name doc)
+                      (status-perspective doc)
+                      (doc-status-package doc y)
+                      y x
+                      (hdoc-arglist doc))))
 
 (defun update-status (doc)
   "The status line and the title of DOC's window, when DOC is the active
@@ -749,19 +746,22 @@ document and they changed."
       (unless (equal text (host-window-shown-status window))
         (setf (host-window-shown-status window) text)
         (ck doc "setStatus" text))
-      ;; The title DOC-SET-TITLE last gave: the REPL's names the
-      ;; perspective in front, which its name does not.
-      (set-window-title window (hdoc-title doc)))))
+      ;; The window's title: the file's full path, else the title
+      ;; DOC-SET-TITLE last gave -- the REPL's names the perspective in
+      ;; front, which its name does not.
+      (set-window-title window (doc-window-title doc (hdoc-title doc))))))
 
 (defmethod doc-show-arglist ((doc host-document) text)
   (setf (hdoc-arglist doc) text)
   (update-status doc))
 
 (defmethod doc-set-title ((doc host-document) title)
+  "TITLE on the tab; the window's title bar shows the file's full path
+for a file window (DOC-WINDOW-TITLE, files.lisp), TITLE otherwise."
   (setf (hdoc-title doc) title)
   (ck doc "setTitle" (hdoc-id doc) title)
   (when (host-active-p doc)
-    (set-window-title (hdoc-window doc) title)))
+    (set-window-title (hdoc-window doc) (doc-window-title doc title))))
 
 (defun show-echo-state (doc)
   "The echo row of DOC's window as DOC has it -- its prompt when one is

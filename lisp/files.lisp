@@ -87,6 +87,15 @@ prompt stays empty, so a macro that types a whole path there is
 unaffected."
   (if (doc-path doc) "" (doc-directory doc)))
 
+(defun doc-window-title (doc title)
+  "What DOC's window shows in its title bar when DOC is titled TITLE (its
+name, or the REPL's title naming the perspective): the file's FULL PATH
+for a file window, since the name alone -- `tasks-test.lisp' -- says
+nothing of which project's it is, and TITLE for a buffer without a file.
+Both frontends' DOC-SET-TITLE go through it; a tab or the Buffers menu
+keeps the name."
+  (or (doc-path doc) title))
+
 (defun lisp-path-p (path)
   (let ((dot (position #\. path :from-end t)))
     (and dot

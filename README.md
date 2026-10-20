@@ -403,6 +403,14 @@ and the requester start there, the ASDF commands look for the `.asd`
 there, and a switch to the perspective makes it amilisp's default
 directory (an open REPL notes it), so a relative path typed at the
 REPL means the project's -- SLIME's `,cd`, done by the perspective.
+The switch's message names it, `Perspective: sento (Work:sento/)`, and
+`C-x x d` offers it at its prompt.  A file window's title bar shows the
+file's full path (the tab and the Buffers menu keep the name), and the
+status line shows the package of the form at the cursor -- the one
+`C-c C-c` and the arglist ask amilisp in -- after the buffer's name.
+A buffer whose package amilisp has not got yet (its system not loaded)
+is told so once in the echo area, and asked for again once something
+has run.
 There is one amilisp and one REPL, shown in every perspective, as
 `perspective.el` shows the one SLIME REPL everywhere; the REPL window's
 title names the perspective in front once there are two, as the status
