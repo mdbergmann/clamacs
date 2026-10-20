@@ -598,7 +598,12 @@ On a Mac or a Linux desktop the editor is one native window with the
 buffers as tabs (webview + CodeMirror 6; `specs/clamacs-host.md`).  The
 keys are the Amiga's: Option is Meta on the Mac, Alt on Linux, ESC
 everywhere; of the Command keys the editor takes copy, cut, paste,
-select all and undo, the rest stay the system's.  The document window
+select all and undo, the rest stay the system's.  On the Mac the two
+Option keys differ, as they do in Emacs: the left one is Meta, the
+right one composes the character the key types under Option on your
+layout -- so on a German keyboard right-Option-8 types a `{`,
+left-Option + right-Option-8 is `M-{`, and right-Option-N then a space
+is a `~`.  The document window
 has files, editing, colouring, search, the minibuffer and the status
 line with the arglist, and the minimap at its right edge; the Lisp
 behind it -- the REPL, the debugger, the inspector, introspection and

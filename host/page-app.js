@@ -266,19 +266,23 @@
   // from `code' (M-n) when a browser reports a dead key.  On macOS an
   // Option key never gets this far as a real event: the shim takes it
   // before WebKit can start a composition from it and sends it through
-  // simulateKey below (clamacs-host.m, take_option_key).  A key with the
+  // simulateKey below (clamacs-host.m, take_option_key) -- but for a
+  // dead key under the RIGHT Option alone, which composes there as it
+  // does without Option (Option-N then a space is a `~'), so on a Mac a
+  // dead key stays the widget's under Alt too.  A key with the
   // Command key is the OS's -- but the platform's editing keys, Cmd-C, X,
   // V, A and Z, which Lisp runs as the commands the Emacs keys run (a
   // webview without an Edit menu of Cocoa's own does nothing for them).
   // Everything else goes to Lisp.
   const MODIFIERS = ["Shift", "Control", "Alt", "Meta", "CapsLock"];
   const COMMAND_KEYS = ["c", "x", "v", "a", "z"];
+  const MAC = /Mac/.test(navigator.platform || "");
   function commandKey(ev) {
     return ev.metaKey && !ev.ctrlKey && !ev.altKey
       && typeof ev.key === "string" && COMMAND_KEYS.includes(ev.key.toLowerCase());
   }
   function keyToLisp(doc, ev, target) {
-    if (ev.isComposing || (ev.metaKey && !commandKey(ev)) || (ev.key === "Dead" && !ev.altKey)) return;
+    if (ev.isComposing || (ev.metaKey && !commandKey(ev)) || (ev.key === "Dead" && (MAC || !ev.altKey))) return;
     if (MODIFIERS.includes(ev.key)) return;
     ev.preventDefault();
     lisp("clamacsKey", doc.id, ev.key, ev.code, ev.ctrlKey, ev.altKey, ev.metaKey, ev.shiftKey, target);

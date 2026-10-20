@@ -66,29 +66,75 @@ static WKWebView *web_view_of(NSResponder *responder)
  * no code, which the decoder reads as that character (host-decode-key).
  * Only a key typing a printable Latin-1 character is taken: Option with
  * an arrow, Return, Backspace or a function key composes nothing and goes
- * its usual way.  True when the event was taken. */
+ * its usual way.
+ *
+ * The two Option keys differ, as Emacs's ns-right-alternate-modifier has
+ * it: the LEFT one is Meta, the RIGHT one composes the character the key
+ * types under Option (`characters', the layout's Option level: `{' for
+ * Option-8 on a German keyboard, where no key types a brace without it).
+ * The right Option alone types that character, both together are Meta
+ * with it -- left Option + right Option + 8 is M-{ -- and a dead key
+ * under the right Option alone (Option-N, the tilde accent) goes to
+ * WebKit for the composition the user asked for (the page leaves a dead
+ * key alone, keyToLisp).  True when the event was taken. */
+#define CLAMACS_LEFT_OPTION_MASK  0x00000020u  /* NX_DEVICELALTKEYMASK */
+#define CLAMACS_RIGHT_OPTION_MASK 0x00000040u  /* NX_DEVICERALTKEYMASK */
+
+static BOOL latin1_printable(unichar c)
+{
+    return c >= 0x20 && c != 0x7f && c <= 0xff;
+}
+
+/* The JavaScript that types an Option key into the page: MODS are the
+ * event's device-independent flags, LEFT and RIGHT which Option keys are
+ * down (an Option of unknown side is the left one), COMPOSED what the
+ * key types under Option (`characters') and PLAIN what it types with
+ * Shift alone (`charactersIgnoringModifiers').  Nil for a key the shim
+ * leaves to Cocoa, the empty string for one it swallows: a character
+ * the right Option composes that no Latin-1 buffer can hold. */
+static NSString *option_key_js(NSEventModifierFlags mods, BOOL left, BOOL right,
+                               NSString *composed, NSString *plain)
+{
+    if (mods & NSEventModifierFlagControl)
+        right = NO;                  /* Control names a key, not a character: C-M-x */
+    BOOL meta = left || !right;
+    NSString *chars = right ? composed : plain;
+    unichar c = chars.length == 1 ? [chars characterAtIndex:0] : 0;
+    if (right && !latin1_printable(c)) {
+        if (!left)
+            return chars.length == 0 ? nil : @"";   /* a dead key composes; the rest is nothing */
+        chars = plain;                              /* Meta with the key's own character */
+        c = chars.length == 1 ? [chars characterAtIndex:0] : 0;
+    }
+    if (!latin1_printable(c))
+        return nil;
+    return [NSString stringWithFormat:
+        @"simulateKey(\"\\u%04x\",{code:\"\",ctrlKey:%@,altKey:%@,shiftKey:%@})",
+        (unsigned)c,
+        (mods & NSEventModifierFlagControl) ? @"true" : @"false",
+        meta ? @"true" : @"false",
+        (mods & NSEventModifierFlagShift) ? @"true" : @"false"];
+}
+
 static BOOL take_option_key(NSEvent *ev)
 {
     if (ev.type != NSEventTypeKeyDown)
         return NO;
-    NSEventModifierFlags mods = ev.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    NSEventModifierFlags all = ev.modifierFlags;
+    NSEventModifierFlags mods = all & NSEventModifierFlagDeviceIndependentFlagsMask;
     if (!(mods & NSEventModifierFlagOption) || (mods & NSEventModifierFlagCommand))
         return NO;
     WKWebView *web = web_view_of(ev.window.firstResponder);
     if (web == nil)
         return NO;
-    NSString *chars = ev.charactersIgnoringModifiers;
-    if (chars.length != 1)
+    NSString *js = option_key_js(mods,
+                                 (all & CLAMACS_LEFT_OPTION_MASK) != 0,
+                                 (all & CLAMACS_RIGHT_OPTION_MASK) != 0,
+                                 ev.characters, ev.charactersIgnoringModifiers);
+    if (js == nil)
         return NO;
-    unichar c = [chars characterAtIndex:0];
-    if (c < 0x20 || c == 0x7f || c > 0xff)
-        return NO;
-    NSString *js = [NSString stringWithFormat:
-        @"simulateKey(\"\\u%04x\",{code:\"\",ctrlKey:%@,altKey:true,shiftKey:%@})",
-        (unsigned)c,
-        (mods & NSEventModifierFlagControl) ? @"true" : @"false",
-        (mods & NSEventModifierFlagShift) ? @"true" : @"false"];
-    [web evaluateJavaScript:js completionHandler:nil];
+    if (js.length > 0)
+        [web evaluateJavaScript:js completionHandler:nil];
     return YES;
 }
 

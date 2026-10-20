@@ -1193,7 +1193,18 @@ with the memory note updated.
   `;` for Shift+Comma on a German keyboard, so `M-;` is M-; rather than
   M-<, which the US table made of it), no `code`, and the Ctrl and Shift
   flags.  Keys typing no printable character (arrows, Return, Backspace,
-  function keys) go their usual way.  Behind that, for a browser that
+  function keys) go their usual way.  The two Option keys differ since
+  2026-10-20, as Emacs's `ns-right-alternate-modifier` has it (the
+  device-dependent flag bits `NX_DEVICELALTKEYMASK` / `NX_DEVICERALTKEYMASK`
+  tell them apart): the left is Meta, the right composes the character
+  the key types under Option (`characters`): right-Option-8 on a German
+  keyboard types `{`, with the left Option held too it is `M-{` -- the
+  only way to a `M-{` on a layout whose braces live on the Option level
+  -- and a dead key under the right Option alone goes to WebKit for its
+  composition (`keyToLisp` leaves a dead key alone on a Mac even under
+  Alt, since no other Alt key reaches the page there).  A composed
+  character outside Latin-1 under the right Option alone is swallowed,
+  and Control makes the right Option the left (C-M-x).  Behind that, for a browser that
   delivers Alt keys as real events (GTK), the decoder *learns* the layout:
   every character typed without Alt records what its `code` types with
   and without Shift (`*host-layout*`), a key under Alt is read by that

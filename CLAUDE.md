@@ -39,7 +39,10 @@ macOS the shim takes every Option key before WebKit sees it and types it
 through `simulateKey` with the layout's character, `take_option_key` in
 `host/clamacs-host.m`, because a dead key under Option started a WebKit
 composition that `M-n` could not stop: a `~` in the text, the mirror
-wrong), the
+wrong; the LEFT Option is Meta and the RIGHT one composes the layout's
+Option-level character, Emacs's `ns-right-alternate-modifier`, so
+left-Option + right-Option-8 is `M-{` on a German keyboard --
+`verify/host/option-keys.sh` is that table), the
 batch (one `webview_eval` per entry into Lisp, colour runs coalesced per
 line), the stepped loop, the requesters through the shim; `lisp/clamacs.lisp`
 picks it on a non-Amiga host and `host/run.sh` starts it.
