@@ -118,7 +118,7 @@ The two Alt keys differ on a character key, as the two Option keys do on
 the Mac host (Emacs's `ns-right-alternate-modifier'): the LEFT Alt is
 Meta over the key's plain character, and the RIGHT Alt composes -- held
 alone it is the class's key, which types the layout's Alt level (`{' on
-Alt-Shift-Ü of a German MorphOS keymap, an accent on a dead key), and
+Alt-Shift-U-umlaut of a German MorphOS keymap, an accent on a dead key), and
 held with the left one it is Meta over that character, `M-{'.  With
 Control the right Alt is Meta like the left (C-M-x).  A key without a
 character takes either Alt as Meta."
