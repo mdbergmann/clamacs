@@ -950,21 +950,35 @@ refused, and nothing happens when the requester was cancelled."
                                     (perspective-name p) (perspective-root-note p))
                             (perspective-switch-message p opened skipped))))))
 
+(defun project-home-directory ()
+  "Where Open Project starts: the user's home directory, with its `/'
+after it.  An Amiga has none -- amilisp's USER-HOMEDIR-PATHNAME answers
+PROGDIR:, the editor's own drawer -- so there it is the HOME variable
+when the user set one, else SYS:.  Asked when the prompt opens, never at
+load: a heap image would hold the saving machine's home."
+  (if (member :amigaos *features*)
+      (let ((home (ext:getenv "HOME")))
+        (or (and home (normalize-directory home)) "SYS:"))
+      (namestring (user-homedir-pathname))))
+
 (define-command clamacs-project-open (doc arg)
-  "Open a project: a folder asked for at the prompt -- or its .asd; TAB
-on a bare directory browses from there, RET on an empty line from the
-buffer's -- is the project, named
-after the one .asd in it or after the folder, its files opened when it
-is a recent one, and the editor switches to it."
+  "Open a project: a folder asked for at the prompt -- or its .asd; the
+line is seeded with the home directory, TAB on a bare directory browses
+from there, RET on an empty line from the home directory -- is the
+project, named after the one .asd in it or after the folder, its files
+opened when it is a recent one, and the editor switches to it.  The
+menu's Open Project... is this prompt too, as the key's is: the
+requester is one TAB away, never the first thing shown."
   (declare (ignore arg))
   (prompt-for-directory doc "Open project (folder or .asd; TAB: browse): " "Open Project"
-                        (doc-directory doc) #'open-project-path))
+                        (project-home-directory) #'open-project-path))
 
 (define-command clamacs-project-open-requester (doc arg)
-  "Open the project of a folder chosen in the requester, as
-`clamacs-project-open' opens one typed: the menu's Open Project..."
+  "Open the project of a folder chosen in the requester, opened at the
+home directory, as `clamacs-project-open' opens one typed.  M-x and a
+script reach it; the menu prompts."
   (declare (ignore arg))
-  (ask-file-then doc "Open Project" :directory (doc-directory doc) #'open-project-path))
+  (ask-file-then doc "Open Project" :directory (project-home-directory) #'open-project-path))
 
 (define-command clamacs-project-save (doc arg)
   "Write the projects file now -- every project with its folder and its

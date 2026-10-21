@@ -379,11 +379,11 @@ name, each entry also shows its directory. A macro can read the menu with
 
 ### Projects
 
-A project is a folder.  **Open Project...** in the menu asks for one in
-the folder requester; `C-x p o` asks at the prompt -- a folder or its
-`.asd`, with path completion, TAB on a bare directory browsing from
-there -- and
-either opens it: the project is named after the one `.asd` in the folder (`sento`
+A project is a folder.  **Open Project...** in the menu and `C-x p o`
+ask for one at the prompt -- a folder or its `.asd`, the line seeded
+with your home directory, with path completion, TAB on a bare directory
+opening the folder requester there -- and
+open it: the project is named after the one `.asd` in the folder (`sento`
 for `Work:sento/sento.asd`), else after the folder, and the editor
 switches to it.  Every file you open from then on belongs to the project
 in front, the **Buffers** menu and `C-x o` see only its buffers, and

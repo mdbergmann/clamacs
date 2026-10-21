@@ -261,12 +261,15 @@
                   (find-file-other-window . find-file-other-window-requester)
                   (save-buffer . save-buffer-requester)
                   (write-file . write-file-requester)
-                  (clamacs-load-file . clamacs-load-file-requester)
-                  (clamacs-project-open . clamacs-project-open-requester)))
+                  (clamacs-load-file . clamacs-load-file-requester)))
     (let ((e (menu-entry (menu-find (car pair)))))
       (is-equal (menu-entry-pick e) (cdr pair))
       (is-equal (menu-entry-picks e) (cdr pair))))
   (is (null (menu-entry-pick (menu-entry (menu-find 'kill-buffer)))))
+  ;; Open Project... prompts from the menu too (TAB there opens the
+  ;; folder requester); the requester command is M-x's alone.
+  (is (null (menu-entry-pick (menu-entry (menu-find 'clamacs-project-open)))))
+  (is (null (menu-find 'clamacs-project-open-requester)))
   ;; MENU-FIND goes by the key's command, which is what a macro names.
   (is (null (menu-find 'find-file-requester))))
 

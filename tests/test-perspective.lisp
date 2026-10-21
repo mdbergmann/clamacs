@@ -596,12 +596,16 @@ joins a perspective or, as a tool buffer, none."
                    (is (eq (current-perspective editor) p))
                    (is-equal (length (open-projects editor)) 2))
                  ;; An empty answer opens the folder requester where the
-                 ;; prompt started; cancelled, nothing happens.
+                 ;; prompt started -- the home directory, whatever the
+                 ;; buffer's own is; cancelled, nothing happens.
                  (let ((u (editor-active-document editor)))
+                   (is-equal (doc-directory u) dir2/)
                    (setf (fake-answers u) (list nil))
                    (run-command u 'clamacs-project-open)
+                   (is-equal (fake-mini-text u) (project-home-directory))
                    (answer-prompt u "")
-                   (is-equal (first (fake-asked u)) (list :file "Open Project" :directory dir2/))
+                   (is-equal (first (fake-asked u))
+                             (list :file "Open Project" :directory (project-home-directory)))
                    (is (not (minibuffer-open-p u)))
                    (is-equal (length (open-projects editor)) 2))
                  ;; The file holds both, their roots, the current one.
@@ -615,19 +619,25 @@ joins a perspective or, as a tool buffer, none."
             (delete-temp-dir dir2)))))))
 
 (deftest open-project-from-the-requester-and-from-tab-on-an-empty-line
-  ;; The menu's Open Project... asks in the folder requester, as Open
-  ;; File... does in the file one; at the key's prompt TAB on an empty
-  ;; line opens the same requester.
-  (let ((file (temp-path "persp-open-req.cfg")))
+  ;; M-x clamacs-project-open-requester asks in the folder requester, at
+  ;; the home directory (the menu's Open Project... prompts, as the key
+  ;; does); at the prompt TAB on the seed opens the same requester.
+  (let ((file (temp-path "persp-open-req.cfg"))
+        (home (project-home-directory)))
     (multiple-value-bind (dir dir/) (make-temp-dir "persp-open-requester")
       (let ((*perspective-files* (list file)))
         (unwind-protect
              (multiple-value-bind (editor a b) (persp-fixture)
                (declare (ignore b))
+               ;; The home directory, with its `/', is the start -- not
+               ;; the buffer's T:.
+               (is (string/= home ""))
+               (is (char= (char home (1- (length home))) #\/))
+               (is-equal (doc-directory a) "T:")
                ;; Cancelled: no project, no prompt, no message.
                (setf (fake-answers a) (list nil))
                (run-command a 'clamacs-project-open-requester)
-               (is-equal (first (fake-asked a)) '(:file "Open Project" :directory "T:"))
+               (is-equal (first (fake-asked a)) (list :file "Open Project" :directory home))
                (is (null (open-projects editor)))
                (is (not (minibuffer-open-p a)))
                (is (null (fake-last-message a)))
@@ -642,14 +652,14 @@ joins a perspective or, as a tool buffer, none."
                  (is-equal (fake-last-message (editor-active-document editor))
                            (format nil "New project: clamacs-test-persp-open-requester (~A)" dir/))
                  (is (probe-file file))
-                 ;; TAB on the prompt's seed, a bare directory: the requester
-                 ;; there, and the prompt is closed by the choice.
+                 ;; TAB on the prompt's seed, the home directory: the
+                 ;; requester there, and the prompt is closed by the choice.
                  (perspective-switch editor (scratch-perspective editor))
                  (setf (fake-answers a) (list dir/))
                  (run-command a 'clamacs-project-open)
-                 (is-equal (fake-mini-text a) "T:")
+                 (is-equal (fake-mini-text a) home)
                  (type-keys a "TAB")
-                 (is-equal (first (fake-asked a)) '(:file "Open Project" :directory "T:"))
+                 (is-equal (first (fake-asked a)) (list :file "Open Project" :directory home))
                  (is (not (minibuffer-open-p a)))
                  (is (eq (current-perspective editor) p))
                  (is-equal (fake-last-message (editor-active-document editor))

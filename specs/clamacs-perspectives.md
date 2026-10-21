@@ -130,7 +130,7 @@ there is no Set Directory; one opens another folder.
 
 | Command | Key | Menu | What |
 |---|---|---|---|
-| `clamacs-project-open` | `C-x p o` | Open Project... | a folder, or its `.asd`, at the prompt (path completion; TAB on a bare directory opens the folder requester there, RET on an empty line where the prompt started); the project of that folder opened: made and entered when new, entered (its files opened) when recent, switched to when open.  The menu item itself opens the folder requester (`clamacs-project-open-requester`, `doc-ask-file` in `:directory` mode: ASL's `DrawersOnly`, the host's folder panel), as Open File... opens the file one |
+| `clamacs-project-open` | `C-x p o` | Open Project... | a folder, or its `.asd`, at the prompt, seeded with the user's home directory (`project-home-directory`: `user-homedir-pathname` on the host; on an Amiga, which has none, the `HOME` variable when set, else `SYS:`), with path completion; TAB on a bare directory opens the folder requester there (`doc-ask-file` in `:directory` mode: ASL's `DrawersOnly`, the host's folder panel), RET on an empty line at the home directory; the project of that folder opened: made and entered when new, entered (its files opened) when recent, switched to when open.  The menu item is the same prompt -- the requester is one TAB away, never the first thing shown (decided 2026-10-21; the item opened the requester for a day).  `M-x clamacs-project-open-requester` opens the requester straight away, at the home directory |
 | `clamacs-project-switch` | `C-x p p` | Switch Project... | a name with completion over the open projects, the recent ones and `(no project)`; a recent one is opened; an unknown name is refused |
 | `clamacs-project-close` | `C-x p k` | Close Project | the project in front: the editor switches away (the previous in the cycle, else the scratch set, which gets an unnamed buffer), its buffers are closed (each unsaved one asking; a cancel keeps it open with what is left), its file list is remembered and it is recent again; refused outside a project |
 | `clamacs-project-next` / `-previous` | `C-x p n` / `C-x p N` | Next / Previous Project | cycle the open projects, the scratch set among them while it has buffers; dimmed with fewer than two |
@@ -155,7 +155,7 @@ between View and Buffers:
 
 ```
 Project
-  Open Project...             C-x p o   the folder requester; the key prompts
+  Open Project...             C-x p o   the prompt, as the key; TAB there browses
   Recent Projects          >            the :recent group, a submenu
   Close Project               C-x p k   enabled in a project (:in-project)
   --------------------------

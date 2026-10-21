@@ -212,10 +212,11 @@
      ;; The projects (perspective.lisp): Open, the recent ones in a
      ;; submenu, Close; the switching; then one item per open project at
      ;; the tail -- `(no project)' first while there are buffers outside
-     ;; any -- the one in front ticked.
+     ;; any -- the one in front ticked.  Open Project... has no pick: the
+     ;; menu prompts as the key does, seeded with the home directory, and
+     ;; TAB there opens the folder requester.
      (title "Project")
-     (item 'clamacs-project-open         :always        "Open Project..."        "C-x p o" :global
-           'clamacs-project-open-requester)
+     (item 'clamacs-project-open         :always        "Open Project..."        "C-x p o" :global)
      (make-menu-entry :dynamic :always :recent "Recent Projects" nil nil)
      (item 'clamacs-project-close        :in-project    "Close Project"          "C-x p k" :global)
      (bar)

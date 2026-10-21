@@ -344,10 +344,15 @@ project looks as it did before.  A project is `open` or recent
 (`perspective-open`): Open Project (`perspective-open-project`, a folder
 or its `.asd`, found by root case-insensitively, named after the one
 `.asd` in the folder else the folder, `unique-project-name` on a
-clash) makes or enters it -- the menu item opens the FOLDER requester
-(`clamacs-project-open-requester`; `doc-ask-file`'s mode `:directory`
-is ASL's `DrawersOnly`, the host shim's mode 2) and `C-x p o` prompts,
-TAB on a bare directory browsing there, as the File menu's pairs do;
+clash) makes or enters it -- the menu item and `C-x p o` both PROMPT
+(the item has no pick, unlike the File menu's pairs; decided
+2026-10-21), the line seeded with the user's home directory
+(`project-home-directory`, asked when the prompt opens: on an Amiga the
+`HOME` variable else `SYS:`, since amilisp's `user-homedir-pathname`
+answers `PROGDIR:` there), TAB on a bare directory opening the FOLDER
+requester there (`doc-ask-file`'s mode `:directory` is ASL's
+`DrawersOnly`, the host shim's mode 2; `M-x
+clamacs-project-open-requester` opens it straight away);
 Close Project (`perspective-close`) switches
 away -- the previous in `project-cycle`, else the scratch set with an
 unnamed buffer -- closes its buffers, remembers their paths on it
