@@ -394,10 +394,12 @@ separator."
       (delete-file path))))
 
 (deftest a-failed-write-says-so-and-stays-modified
+  ;; A name that is a directory (the completion fixture's `sub/').
   (let ((doc (make-fake "|"))
-        (path (temp-path "no-such-dir/x.lisp")))
+        (path (concatenate 'string (completion-fixture) "sub")))
     (type-keys doc "x C-x C-w")
     (answer-prompt doc path)
+    (is-equal (fake-asked doc) '())
     (is-equal (fake-last-message doc)
               (concatenate 'string "Cannot write " path))
     (is (doc-modified-p doc))
@@ -460,13 +462,124 @@ separator."
     (delete-file path)))
 
 (deftest kill-buffer-save-stays-open-when-the-write-fails
-  (let ((doc (make-fake "|")))
+  ;; A name that is a directory: nothing to ask, and the write fails.
+  (let ((doc (make-fake "|"))
+        (dir (completion-fixture)))
     (type-keys doc "x")
-    (setf (fake-answers doc) (list :save (temp-path "no-such-dir/x.lisp")))
+    (setf (fake-answers doc) (list :save (concatenate 'string dir "sub")))
     (type-keys doc "C-x k")
     (is (fake-window-open doc))
     (is (doc-modified-p doc))
-    (is (search "Cannot write" (fake-last-message doc)))))
+    (is-equal (length (fake-asked doc)) 2)
+    (is (search "Cannot write" (fake-last-message doc))))
+  ;; A name in a directory that is not there: asked whether to make it,
+  ;; and a No keeps the window and the text.
+  (let ((doc (make-fake "|"))
+        (path (temp-path "no-such-dir/x.lisp")))
+    (type-keys doc "x")
+    (setf (fake-answers doc) (list :save path :no))
+    (type-keys doc "C-x k")
+    (is (fake-window-open doc))
+    (is (doc-modified-p doc))
+    (is-equal (first (fake-asked doc))
+              (list (format nil "Directory ~A does not exist; create?"
+                            (temp-path "no-such-dir/"))
+                    '(:yes :no)))
+    (is-equal (fake-last-message doc)
+              (format nil "Not saved: ~A does not exist" (temp-path "no-such-dir/")))
+    (is (not (probe-file path)))))
+
+;;; --- saving into a directory that does not exist yet ------------------------
+
+(defun missing-dir-fixture ()
+  "A path two directories deep under the temp path, neither of them
+there: (values path dir/ parent/).  What `C-x C-f src/foo.lisp' names in
+a project opened on an empty folder.  The runtime has no way to remove a
+directory on the host (DELETE-FILE is unlink there), so a run that made
+the directories leaves them, and the next run takes the first name that
+is free: newproj, newproj-1, ..."
+  (let ((parent (loop for n from 0
+                      for name = (if (zerop n)
+                                     "newproj/"
+                                     (format nil "newproj-~D/" n))
+                      for dir = (temp-path name)
+                      unless (directory-exists-p dir)
+                        return dir)))
+    (let* ((dir (concatenate 'string parent "src/"))
+           (path (concatenate 'string dir "foo.lisp")))
+      (is (not (directory-exists-p dir)))
+      (values path dir parent))))
+
+(defun delete-missing-dir-fixture (path dir parent)
+  "What can be taken away: the file everywhere, the directories where
+DELETE-FILE removes an empty one (AmigaDOS)."
+  (ignore-errors (delete-file path))
+  (ignore-errors (delete-file (string-right-trim "/" dir)))
+  (ignore-errors (delete-file (string-right-trim "/" parent))))
+
+(deftest find-file-says-when-the-new-files-directory-is-missing
+  (multiple-value-bind (path dir parent) (missing-dir-fixture)
+    (let ((doc (make-fake "|")))
+      (type-keys doc "C-x C-f")
+      (answer-prompt doc path)
+      (is-equal (doc-path doc) path)
+      (is-equal (fake-last-message doc) "(New file; its directory does not exist yet)")
+      ;; Nothing is made by opening.
+      (is (not (directory-exists-p parent)))
+      ;; The same through a window of its own.
+      (let ((other (make-fake "|" :editor (doc-editor doc))))
+        (type-keys other "C-x 2")
+        (answer-prompt other path)
+        (let ((new (first (last (live-documents (doc-editor doc))))))
+          (is-equal (doc-path new) path)
+          (is-equal (fake-last-message new) "(New file; its directory does not exist yet)"))))
+    (delete-missing-dir-fixture path dir parent)))
+
+(deftest save-offers-to-make-the-missing-directory
+  (multiple-value-bind (path dir parent) (missing-dir-fixture)
+    (let ((doc (make-fake "|")))
+      (type-keys doc "C-x C-f")
+      (answer-prompt doc path)
+      (type-text doc "(defun foo)")
+      ;; No: nothing written, the buffer still modified, and the message
+      ;; names the directory.
+      (setf (fake-answers doc) '(:no))
+      (type-keys doc "C-x C-s")
+      (is-equal (first (fake-asked doc))
+                (list (format nil "Directory ~A does not exist; create?" dir)
+                      '(:yes :no)))
+      (is (doc-modified-p doc))
+      (is (not (probe-file path)))
+      (is (not (directory-exists-p parent)))
+      (is-equal (fake-last-message doc)
+                (format nil "Not saved: ~A does not exist" dir))
+      ;; Yes: both levels made, the file written, the flag cleared.
+      (setf (fake-answers doc) '(:yes))
+      (type-keys doc "C-x C-s")
+      (is (directory-exists-p parent))
+      (is (directory-exists-p dir))
+      (is-equal (read-file-text path) "(defun foo)")
+      (is (not (doc-modified-p doc)))
+      (is-equal (fake-last-message doc) (concatenate 'string "Wrote " path))
+      ;; The next save asks nothing: the directory is there.
+      (type-keys doc "x C-x C-s")
+      (is-equal (length (fake-asked doc)) 2)
+      (is-equal (read-file-text path) "(defun foo)x"))
+    (delete-missing-dir-fixture path dir parent)))
+
+(deftest write-file-into-a-missing-directory-asks-too
+  ;; C-x C-w and the menu's Save As go through the same save.
+  (multiple-value-bind (path dir parent) (missing-dir-fixture)
+    (let ((doc (make-fake "(text)|")))
+      (setf (fake-answers doc) '(:yes))
+      (type-keys doc "C-x C-w")
+      (answer-prompt doc path)
+      (is-equal (read-file-text path) "(text)")
+      (is-equal (doc-path doc) path)
+      (is-equal (first (fake-asked doc))
+                (list (format nil "Directory ~A does not exist; create?" dir)
+                      '(:yes :no))))
+    (delete-missing-dir-fixture path dir parent)))
 
 (deftest closed-windows-are-out-of-the-rotation
   (let* ((one (make-fake "|"))

@@ -174,9 +174,31 @@ read."
   (let ((text (read-file-text path)))
     (and text (show-file-text doc path text))))
 
+(defun ensure-file-directory (doc path)
+  "The directory PATH is in, made when it is not there yet -- after asking,
+as Emacs's save does: `C-x C-f src/foo.lisp' in a project opened on an
+empty folder names a directory nobody made.  True when the directory is
+there to write into; a refusal, or a directory that could not be made,
+says so and answers NIL.  A path without a directory part is the current
+directory's, which exists."
+  (let ((dir (path-directory path)))
+    (cond ((or (string= dir "") (directory-exists-p dir)) t)
+          ((not (eq (doc-ask doc (format nil "Directory ~A does not exist; create?" dir)
+                              '(:yes :no))
+                    :yes))
+           (message doc "Not saved: ~A does not exist" dir)
+           nil)
+          ((progn (ignore-errors (ensure-directories-exist path))
+                  (directory-exists-p dir))
+           t)
+          (t
+           (message doc "Cannot create ~A" dir)
+           nil))))
+
 (defun save-file (doc path)
   "Write DOC's text to PATH, which becomes its file.  Says what happened."
-  (cond ((write-file-text path (doc-text doc 0 (doc-end doc)))
+  (cond ((not (ensure-file-directory doc path)) nil)
+        ((write-file-text path (doc-text doc 0 (doc-end doc)))
          (unless (equal path (doc-path doc))
            (let ((point (doc-point doc)) (mark (doc-mark doc))
                  (shown (doc-paren-shown doc)))
@@ -246,6 +268,15 @@ is none, in LISP-MODE or not.  NIL when no window could be made."
           (t
            (editor-make-document editor :name name :lisp-mode lisp-mode)))))
 
+(defun new-file-note (doc path)
+  "What a buffer for a file nobody wrote yet says: `(New file)', and that
+its directory is missing too when it is -- the save will offer to make it
+(ENSURE-FILE-DIRECTORY)."
+  (let ((dir (path-directory path)))
+    (doc-message doc (if (or (string= dir "") (directory-exists-p dir))
+                         "(New file)"
+                         "(New file; its directory does not exist yet)"))))
+
 (defun open-document (editor path)
   "A new window showing PATH (NIL: an unnamed Lisp buffer; a name no file
 has yet: a new buffer with that name, exactly as in Emacs).  NIL when the
@@ -262,7 +293,7 @@ file is there but cannot be read."
                                            :lisp-mode (lisp-path-p path))))
             (cond (text (show-file-text doc path text))
                   (t (visit-path doc path)
-                     (doc-message doc "(New file)")))
+                     (new-file-note doc path)))
             doc)))))
 
 (defun find-file-named (doc path other-window)
@@ -285,7 +316,7 @@ file is there but cannot be read."
                (t
                 (doc-set-text doc "")
                 (visit-path doc path)
-                (doc-message doc "(New file)")))))
+                (new-file-note doc path)))))
       ((null (open-document editor path))
        (message doc "Cannot open ~A" path)))))
 
