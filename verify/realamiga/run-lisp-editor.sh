@@ -34,6 +34,12 @@
 # height of the font the text area draws with (TEXT-FONT-SIZE-SHOWN),
 # which must be the size asked for, and the screenshot shows it.
 #
+# FONT_STEP=1 is the live path of the same setting: View > Bigger Text
+# picked once the window is open, the marker's height the default's plus
+# one step.  ABOUT=1 opens the About window (without the focus) before the
+# typing: photographed, and disposed of at the exit like the other
+# auxiliary windows.
+#
 # PERSPECTIVE=1 is the perspectives' MUI leg (specs/clamacs-perspectives.md,
 # P3): before the typing, the start hook makes a second perspective and
 # switches to it -- the file's window must be CLOSED by the loop's
@@ -58,6 +64,8 @@ LEG="${1:-040}"
 THEME="${THEME:-}"
 SWITCH="${SWITCH:-}"
 FONT_SIZE="${FONT_SIZE:-}"
+FONT_STEP="${FONT_STEP:-}"
+ABOUT="${ABOUT:-}"
 PERSPECTIVE="${PERSPECTIVE:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
@@ -125,6 +133,24 @@ if [ -n "$FONT_SIZE" ]; then
 else
 	FONT_FORM=""
 fi
+# ABOUT=1: the About window opened by the start hook, without the focus
+# (the typing must still land in the document), left open -- the
+# screen-grab helper photographs it, the marker says whether it opened,
+# and the exit must dispose of it like the other auxiliary windows.
+if [ -n "$ABOUT" ]; then
+	ABOUT_FORM='(setq cl-user::*about* (if (clamacs::window-open-p (clamacs::show-about-window editor :activate nil)) "open" "closed"))'
+else
+	ABOUT_FORM=""
+fi
+# FONT_STEP=1: the LIVE path -- View > Bigger Text picked once the window
+# is open (the command with `C-u', so the init file is left alone), the
+# repaint the loop's housekeeping would run, and the marker must read the
+# default height plus one step.
+if [ -n "$FONT_STEP" ]; then
+	STEP_FORM="(clamacs::run-command (first (clamacs::live-documents editor)) 'clamacs::clamacs-increase-font-size 4)"
+else
+	STEP_FORM=""
+fi
 # PERSPECTIVE=1: a second perspective entered and left, the windows
 # closed and opened by SHOWN-SYNC in between (the hook runs it as START
 # does, outside any MUI hook), the second perspective closed again.  The
@@ -153,15 +179,18 @@ cat > "$OUT/lisp-editor-driver.lisp" <<PRE
 (load "Clamacs:lisp/load.lisp")
 (setf clamacs::*exit-trace* t)
 (defvar cl-user::*persp* "none")
+(defvar cl-user::*about* "none")
 $THEME_FORM
 $FONT_FORM
 (push (lambda (editor)
         $SWITCH_FORM
         $PERSP_FORM
+        $STEP_FORM
         (clamacs::theme-repaint editor)
+        $ABOUT_FORM
         (with-open-file (s "Clamacs:build/amiga/lisp-editor-ready"
                            :direction :output :if-exists :supersede)
-          (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A persp ~A~%"
+          (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A persp ~A about ~A~%"
                   (clamacs::theme-name (clamacs::mui-theme editor))
                   (clamacs::mui-editor-screen-depth editor)
                   (clamacs::mui-editor-text-pen-p editor)
@@ -169,7 +198,8 @@ $FONT_FORM
                   (clamacs::mui-editor-font-name editor)
                   (clamacs::mui-editor-font-default-size editor)
                   (clamacs::text-font-size-shown (first (clamacs::live-documents editor)))
-                  cl-user::*persp*)))
+                  cl-user::*persp*
+                  cl-user::*about*)))
       clamacs::*after-start-hooks*)
 (clamacs::start :files ext:*command-line-args*)
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
@@ -337,10 +367,27 @@ if [ -n "$FONT_SIZE" ]; then
 	*) echo "=== FAIL: FONT_SIZE=$FONT_SIZE, but the marker says: $ready ==="; exit 1 ;;
 	esac
 fi
+if [ -n "$FONT_STEP" ]; then
+	ready=$(grep '^ready ' "$RUNLOG" | head -1)
+	default=$(echo "$ready" | sed -n 's/.* default \([0-9]*\) .*/\1/p')
+	want=$((default + 2))
+	case "$ready" in
+	*" shown $want "*) echo "=== PASS: Bigger Text took the text area from $default to $want pixels ($ready) ===" ;;
+	*) echo "=== FAIL: FONT_STEP=1 wanted $want pixels, but the marker says: $ready ==="; exit 1 ;;
+	esac
+fi
+if [ -n "$ABOUT" ]; then
+	ready=$(grep '^ready ' "$RUNLOG" | head -1)
+	case "$ready" in
+	*" about open") echo "=== PASS: the About window opened beside the document ($ready) ===" ;;
+	*) echo "=== FAIL: ABOUT=1, but the marker says: $ready ==="; exit 1 ;;
+	esac
+	ls "$SHOTS" | grep -qi about || { echo "=== FAIL: no screenshot of the About window under $SHOTS ==="; exit 1; }
+fi
 if [ -n "$PERSPECTIVE" ]; then
 	ready=$(grep '^ready ' "$RUNLOG" | head -1)
 	case "$ready" in
-	*" persp closed-then-open") echo "=== PASS: a perspective switch closed the file's window and the switch back opened it again ($ready) ===" ;;
+	*" persp closed-then-open"*) echo "=== PASS: a perspective switch closed the file's window and the switch back opened it again ($ready) ===" ;;
 	*) echo "=== FAIL: PERSPECTIVE=1, but the marker says: $ready ==="; exit 1 ;;
 	esac
 fi

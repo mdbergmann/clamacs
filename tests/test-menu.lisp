@@ -641,20 +641,33 @@
     (let ((editor (doc-editor doc)))
       (let ((text (about-text editor)))
         (is (search (format nil "clamacs ~A" *clamacs-version*) text))
+        (is (search *clamacs-tagline* text))
+        ;; Whose it is: the copyright names the author, the licence is named.
+        (is (search *clamacs-copyright* text))
+        (is (search *clamacs-author* *clamacs-copyright*))
+        (is (search "Apache License" text))
         (is (search "fake frontend 1.0" text))
-        (is (search "amilisp: not connected" text)))
+        (is (search "amilisp: not connected" text))
+        ;; In that order: the name first, the connection last.
+        (is (< (search "clamacs " text) (search *clamacs-copyright* text)
+               (search "fake frontend" text) (search "amilisp:" text))))
+      (is-equal (about-amilisp-line editor) "amilisp: not connected")
       ;; Connected but the version not asked yet: the port's name.
       (setf (fake-transport-port tr) "AMILISP.1")
       (wire-find-port wire)
       (is (search "amilisp: AMILISP.1" (about-text editor)))
       (setf (wire-version wire) "amilisp 0.11")
       (is (search "amilisp: amilisp 0.11" (about-text editor)))
-      ;; The command puts it in a requester with one button.
+      (is-equal (about-amilisp-line editor) "amilisp: amilisp 0.11")
+      ;; The command shows it the frontend's way; the default is a
+      ;; requester with one button holding the whole text.
       (setf (fake-answers doc) '(:ok))
       (run-command doc 'clamacs-about)
       (let ((asked (first (fake-asked doc))))
         (is-equal (second asked) '(:ok))
-        (is (search "amilisp 0.11" (first asked))))))
+        (is-equal (first asked) (about-text editor))
+        (is (search "amilisp 0.11" (first asked)))
+        (is (search *clamacs-copyright* (first asked))))))
   ;; Without a wire (the bare fake): not connected, no error.
   (is (search "not connected" (about-text (make-fake-editor)))))
 

@@ -308,7 +308,21 @@ per-application settings window (`MUIM_Application_OpenConfigWindow`)
 was tried the same day and taken out again: the TextEditor page's font
 did not reach the text area for the user, and the window offers far more
 than the editor honours.  `FONT_SIZE=24 verify/realamiga/run-lisp-editor.sh`
-is the Amiga run (the marker's `shown` must be the size).
+is the Amiga run (the marker's `shown` must be the size); `FONT_STEP=1`
+is the live path (the command picked once the window is open, `shown`
+the default plus a step) -- both PASS on FS-UAE's MUI 3.8 on 2026-10-22,
+when the user reported the setting not working "on MUI": a report from
+real hardware needs the font name and the echo area's message (`Cannot
+open <font> at N pixels` names a diskfont that would not open).
+**About** (2026-10-22) is `editor-show-about`: a requester with
+`about-text` by default (the host), on MUI a window of its own
+(`ensure-about-window`: the name in MUI's big font, version, tagline,
+copyright and licence, a framed group with the toolkit lines and the
+connection, an OK button; made on first use, disposed of at exit with the
+other auxiliary windows); the application object carries
+`MUIA_Application_Author` / `_Copyright`.  `ABOUT=1
+verify/realamiga/run-lisp-editor.sh` opens it before the typing and
+photographs it.
 **The cursor's shape** (2026-10-13): `*block-cursor*` / `block-cursor`
 in `theme.lisp`, kept the minimap's way (View > Block Cursor as a fourth
 dynamic group that EVERY frontend lists -- the default

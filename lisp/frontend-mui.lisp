@@ -406,6 +406,9 @@ acting, exactly as TextEditor.mcc does before its own self-insert."
   ;; The inspector window (inspector.lisp), made on first use
   insp-window insp-object-obj insp-parts insp-back-btn
   insp-title-buf insp-object-buf
+  ;; The About window (menu.lisp), made on first use: the connection's
+  ;; line is the one that changes between two shows, so it has a buffer
+  about-window about-amilisp-obj about-amilisp-buf
   ;; The menu strip (menu.lisp): the Menuitem object of each table entry
   ;; (NIL for a title or a bar) and the enable state last set on it, so
   ;; MENU-UPDATE touches only what changed.  NIL when no strip was built.
@@ -957,7 +960,14 @@ echo area says."
                    (mui-editor-font-name editor)
                    (/= *font-size* (or (mui-editor-font-default-size editor) 0))
                    *font-size*)))
-    (cond ((eql want (mui-editor-font-size editor))
+    (cond ((and *font-size* (null (mui-editor-font-name editor)))
+           ;; No Setup has told us MUI's fixed font yet (or it had no
+           ;; name): nothing can be sized, and silence here would look
+           ;; like a setting that does nothing.
+           (setf (mui-editor-theme-note editor)
+                 "The text area's font is not known yet; the text size stays")
+           (values nil nil nil))
+          ((eql want (mui-editor-font-size editor))
            (values nil nil nil))
           ((null want)
            (values t nil (mui-editor-font editor)))
@@ -2606,6 +2616,97 @@ the old one when the MenuAction hook runs."
           (format nil "TextEditor.mcc ~D.~D"
                   (mui-editor-te-version editor) (mui-editor-te-revision editor)))))
 
+;;; About is a window of its own rather than MUI_Request's text: the name
+;;; in MUI's big font, the version, the tagline, the copyright and the
+;;; licence centred above a framed group naming what the editor runs on,
+;;; and an OK button.  Made on first use and kept, like the debugger's and
+;;; the inspector's windows (a window is never disposed of from a hook);
+;;; only the connection's line can differ from one show to the next, so
+;;; it alone has a buffer.  ESC is MUI's close request on any window.
+
+(defun make-about-text (text &key font bold)
+  "A centred Text object showing TEXT, in MUI's FONT (MUIV_Font_*) when
+one is named, bold when BOLD."
+  (let ((esc (code-char 27)))
+    (apply #'mui:new-object :text
+           m:+muia-text-contents+ text
+           m:+muia-text-pre-parse+ (format nil "~Cc~:[~;~Cb~]" esc bold esc)
+           (and font (list m:+muia-font+ font)))))
+
+(defun make-about-line (text)
+  "A left-aligned Text object showing TEXT, for the lines of the framed
+group."
+  (mui:new-object :text m:+muia-text-contents+ text))
+
+(defun ensure-about-window (editor)
+  (or (mui-editor-about-window editor)
+      (let* ((amilisp-buf (ffi:alloc-foreign +string-buffer-size+))
+             (amilisp (make-about-line (store-string amilisp-buf "")))
+             (ok-btn (make-button "OK" #\o))
+             (window (mui:new-object
+                      :window
+                      m:+muia-window-title+ "About Clamacs"
+                      m:+muia-window-size-gadget+ nil
+                      m:+muia-window-left-edge+ m:+muiv-window-left-edge-centered+
+                      m:+muia-window-top-edge+ m:+muiv-window-top-edge-centered+
+                      m:+muia-window-root-object+
+                      (mui:new-object
+                       :group
+                       m:+muia-group-child+ (make-about-text "Clamacs" :font m:+muiv-font-big+ :bold t)
+                       m:+muia-group-child+ (make-about-text (format nil "Version ~A" *clamacs-version*))
+                       m:+muia-group-child+ (make-about-text *clamacs-tagline*)
+                       m:+muia-group-child+ (mui:make-object :v-space 4)
+                       m:+muia-group-child+ (make-about-text *clamacs-copyright*)
+                       m:+muia-group-child+ (make-about-text *clamacs-license*)
+                       m:+muia-group-child+ (mui:make-object :v-space 4)
+                       m:+muia-group-child+
+                       (apply #'mui:new-object :group
+                              m:+muia-frame+ m:+muiv-frame-group+
+                              m:+muia-frame-title+ "Running on"
+                              m:+muia-background+ m:+muii-text-back+
+                              (append (loop for line in (editor-toolkit-lines editor)
+                                            append (list m:+muia-group-child+ (make-about-line line)))
+                                      (list m:+muia-group-child+ amilisp)))
+                       m:+muia-group-child+
+                       (mui:new-object :group m:+muia-group-horiz+ t
+                                       m:+muia-group-child+ (mui:make-object :h-space 0)
+                                       m:+muia-group-child+ ok-btn
+                                       m:+muia-group-child+ (mui:make-object :h-space 0))))))
+        (setf (mui-editor-about-window editor) window
+              (mui-editor-about-amilisp-obj editor) amilisp
+              (mui-editor-about-amilisp-buf editor) amilisp-buf)
+        (mui:do-method (mui-editor-app editor) intui:+om-addmember+ window)
+        ;; The close gadget, ESC and OK all just close it.
+        (mui:notify window m:+muia-window-close-request+ t
+                    window m:+muim-set+ m:+muia-window-open+ nil)
+        (mui:notify ok-btn m:+muia-pressed+ nil
+                    window m:+muim-set+ m:+muia-window-open+ nil)
+        window)))
+
+(defun show-about-window (editor &key (activate t))
+  "The About window opened, its connection line current; ACTIVATE NIL
+leaves the keyboard where it was (the smoke run types on)."
+  (let ((window (ensure-about-window editor)))
+    (mui:set-attrs (mui-editor-about-amilisp-obj editor) m:+muia-text-contents+
+                   (store-string (mui-editor-about-amilisp-buf editor)
+                                 (about-amilisp-line editor)))
+    (mui:set-attrs window m:+muia-window-activate+ (and activate t))
+    (mui:set-attrs window m:+muia-window-open+ t)
+    window))
+
+(defmethod editor-show-about ((editor mui-editor) doc)
+  (declare (ignore doc))
+  (show-about-window editor))
+
+(defun dispose-about-window (editor)
+  (let ((window (mui-editor-about-window editor)))
+    (when window
+      (setf (mui-editor-about-window editor) nil
+            (mui-editor-about-amilisp-obj editor) nil)
+      (dispose-aux-window editor window "about window")
+      (ffi:free-foreign (mui-editor-about-amilisp-buf editor))
+      (setf (mui-editor-about-amilisp-buf editor) nil))))
+
 (defmethod editor-memory-lines ((editor mui-editor))
   (flet ((avail (flags) (amiga.exec:avail-mem flags)))
     (list (format nil "Free:  ~:D bytes (chip ~:D, fast ~:D)"
@@ -3556,6 +3657,8 @@ function: an image is saved before it runs and restores into it."
                           m:+muia-application-title+ "Clamacs"
                           m:+muia-application-version+ (format nil "$VER: Clamacs ~A" *clamacs-version*)
                           m:+muia-application-description+ "Emacs-flavoured Common Lisp IDE"
+                          m:+muia-application-author+ *clamacs-author*
+                          m:+muia-application-copyright+ *clamacs-copyright*
                           (and strip (list m:+muia-application-menustrip+ strip)))))
            (attach-menustrip editor)
            (setup-mailbox editor)
@@ -3603,7 +3706,8 @@ function: an image is saved before it runs and restores into it."
              (exit-note "diagnostics window disposed")
              (dispose-debugger-window editor)
              (dispose-inspector-window editor)
-             (exit-note "debugger and inspector windows disposed")
+             (dispose-about-window editor)
+             (exit-note "debugger, inspector and about windows disposed")
              ;; The strip belongs to the application and goes with it.
              (setf (mui-editor-menu-items editor) nil)
              (mui:dispose-object (mui-editor-app editor))

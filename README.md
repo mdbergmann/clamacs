@@ -507,7 +507,8 @@ one `(font-size 20)` form in your init file, nothing else touched;
 the echo area and the panels keep their own fonts.  See
 `tests/test-theme.lisp` (the setting and the steps) and
 `tests/test-host.lisp`; `FONT_SIZE=24 verify/realamiga/run-lisp-editor.sh`
-is the Amiga run.
+is the Amiga run of a size set before the first window, `FONT_STEP=1`
+of a Bigger Text picked in the running editor.
 
 ### Minimap
 
@@ -630,9 +631,10 @@ environment keeps it in the window instead), on Linux and Windows a bar
 at the top of the window drawn by the page (the toolkit has no native
 one) -- the same menus either way, the Emacs key beside each item, items
 dimmed by the same rules, the Buffers menu with the active buffer ticked,
-the View menu's Themes submenu, About with the toolkit lines (the
-platform's toolkit, webview, WebKit) and Help > Common Lisp HyperSpec
-opening the system's browser.
+the View menu's Themes submenu, About (the version, the copyright and
+licence, the toolkit lines -- the platform's toolkit, webview, WebKit --
+and the amilisp connected; on the Amiga a window of its own) and Help >
+Common Lisp HyperSpec opening the system's browser.
 
 **The dock.**  What the Amiga opens as windows of their own lives below
 the splitter: the tool buffers (the REPL, a description, an apropos) as

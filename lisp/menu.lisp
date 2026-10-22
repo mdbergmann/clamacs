@@ -581,26 +581,47 @@ a pick of the item with that label, answering \"\" or MISSING."
 ;;; ------------------------------------------------------------------
 
 (defparameter *clamacs-version* "0.2 (Lisp)")
+(defparameter *clamacs-tagline* "An Emacs-flavoured Common Lisp IDE for AmiLisp")
+(defparameter *clamacs-author* "Manfred Bergmann")
+(defparameter *clamacs-copyright* "(c) 2026 Manfred Bergmann")
+(defparameter *clamacs-license* "Apache License 2.0")
 
 (defgeneric editor-toolkit-lines (editor)
   (:documentation "What the frontend runs on, one string per line, for the
-About requester: the MUI and TextEditor.mcc versions.")
+About window: the MUI and TextEditor.mcc versions.")
   (:method ((editor editor)) '()))
 
-(defun about-text (editor)
+(defun about-amilisp-line (editor)
+  "The connection's line of About: the amilisp's version once asked, else
+its port, else `not connected'."
   (let ((wire (editor-wire editor)))
-    (format nil "clamacs ~A~%An Emacs-flavoured Common Lisp IDE for AmiLisp~%~%~{~A~%~}amilisp: ~A"
-            *clamacs-version*
-            (editor-toolkit-lines editor)
+    (format nil "amilisp: ~A"
             (cond ((null wire) "not connected")
                   ((not (wire-connected wire)) "not connected")
                   ((wire-version wire))
                   (t (wire-port-name wire))))))
 
+(defun about-text (editor)
+  "About as one text, for a requester: the name and version, the tagline,
+the copyright and the licence, then what it runs on and the connection."
+  (format nil "clamacs ~A~%~A~%~%~A~%~A~%~%~{~A~%~}~A"
+          *clamacs-version* *clamacs-tagline*
+          *clamacs-copyright* *clamacs-license*
+          (editor-toolkit-lines editor)
+          (about-amilisp-line editor)))
+
+(defgeneric editor-show-about (editor doc)
+  (:documentation "Show About, from DOC's window: the name and version,
+the tagline, the copyright and the licence, the toolkit lines and the
+connection.  The default is a requester with ABOUT-TEXT; the MUI
+frontend has a window of its own.")
+  (:method ((editor editor) doc)
+    (doc-ask doc (about-text editor) '(:ok))))
+
 (define-command clamacs-about (doc arg)
-  "Show the About requester: versions, the toolkit, the connection."
+  "Show About: version, copyright, the toolkit, the connection."
   (declare (ignore arg))
-  (doc-ask doc (about-text (doc-editor doc)) '(:ok)))
+  (editor-show-about (doc-editor doc) doc))
 
 ;;; ------------------------------------------------------------------
 ;;; The HyperSpec
