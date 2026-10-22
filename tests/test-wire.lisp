@@ -359,30 +359,45 @@
       ;; Saved first, so amilisp loads what is on screen.
       (is (not (doc-modified-p doc)))
       (is (starts-with-p ";; edited;;; errors.lisp" (read-file-text path)))
-      (is-equal (fake-last-sent tr) (format nil "LOAD ~A" path))
       (is-equal (fake-last-message doc) "Loading clamacs-test-errors.lisp ...")
-      ;; The reply: rc 10, the text through LASTRESULT.
-      (fake-deliver tr 10 "")
-      (is-equal (fake-last-sent tr) "LASTRESULT")
-      (fake-deliver tr 0 (lines (format nil "; loading ~A" path)
-                                (format nil "~A:7: ERROR: first deliberate error" path)
-                                (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path)
-                                "2 error(s), 0 warning(s)"
-                                "--- log ---"
-                                "ERROR: SIMPLE-ERROR: first deliberate error"
-                                ""))
-      (is-equal (fake-last-message doc) "2 error(s), 0 warning(s)")
+      ;; The load runs on amilisp's REPL thread (REPL-LOAD, repl.lisp): the
+      ;; first one attaches the REPL, whose window opens behind the buffer.
       (let ((editor (doc-editor doc)))
+        (is (eq (editor-active-document editor) doc))
+        (is (repl-doc editor))
+        (fake-answer-attach tr)
+        (is-equal (fake-last-sent tr) (format nil "REPL-LOAD ~A" path))
+        (fake-deliver tr 0 "")
+        ;; What the file prints streams into the transcript as it loads --
+        ;; amilisp's `; loading' line first, then LOAD's own report of the
+        ;; first error -- above the prompt.
+        (fake-inbound editor (format nil "OUTPUT ; loading ~A~%" path))
+        (fake-inbound editor (format nil "OUTPUT ERROR: SIMPLE-ERROR: first deliberate error~%"))
+        (is-equal (transcript (repl-doc editor))
+                  (lines "; REPL attached to AMILISP"
+                         (format nil "; loading ~A" path)
+                         "ERROR: SIMPLE-ERROR: first deliberate error"
+                         "CL-USER> |"))
+        (is-equal (fake-last-message doc) "Loading clamacs-test-errors.lisp ...")
+        ;; RESULT carries the rows and the summary, as the port's LOAD reply
+        ;; did: the rows go to the error list, the summary to the echo area
+        ;; and under the file's output in the transcript.
+        (fake-inbound editor (lines "RESULT 10 CL-USER"
+                                    (format nil "~A:7: ERROR: first deliberate error" path)
+                                    (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path)
+                                    "2 error(s), 0 warning(s)"))
+        (is-equal (fake-last-message doc) "2 error(s), 0 warning(s)")
+        (is-equal (fake-beeps doc) 0)
         (is-equal (length (fake-editor-diag-rows editor)) 2)
         (is (fake-editor-diag-open editor))
-        ;; What the load printed opened the REPL window behind the buffer
-        ;; (test-repl.lisp has the rest), and its attach went out.
         (is (eq (editor-active-document editor) doc))
         (is-equal (transcript (repl-doc editor))
-                  (lines (format nil "; loading ~A" path)
+                  (lines "; REPL attached to AMILISP"
+                         (format nil "; loading ~A" path)
                          "ERROR: SIMPLE-ERROR: first deliberate error"
-                         "|"))
-        (fake-answer-attach tr)
+                         "; 2 error(s), 0 warning(s)"
+                         "CL-USER> |"))
+        (is (null (repl-session-origin (repl-session editor))))
         ;; `C-x `' shares its position and its jump with the list.
         (run-command doc 'clamacs-next-error)
         (is-equal (doc-index-line doc (doc-point doc)) 6)
@@ -399,20 +414,38 @@
         (run-command doc 'clamacs-previous-error)
         (is-equal (fake-last-message doc) "No previous diagnostic")
         ;; A fresh load starts a fresh list; the window shows it with the
-        ;; reply.
+        ;; result.
         (run-command doc 'clamacs-load-buffer)
+        (is-equal (fake-last-sent tr) (format nil "REPL-LOAD ~A" path))
         (is-equal (diaglist-count (wire-diags wire)) 0)
         (is-equal (wire-error-row wire) -1)
-        (fake-deliver tr 0 (lines (format nil "; loading ~A" path) "0 error(s), 0 warning(s)"))
+        (fake-deliver tr 0 "")
+        (fake-inbound editor (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)"))
         (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
         (is-equal (fake-editor-diag-rows editor) '())))
     (delete-file path)))
 
+(deftest load-buffer-while-the-repl-is-busy-is-refused
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (doc-activate repl)
+    (send-input repl tr "(sleep 6)")
+    (doc-activate doc)
+    (load-file-into-lisp doc "T:other.lisp")
+    (is-equal (fake-last-message doc) "The REPL is busy (C-c C-b interrupts)")
+    (is-equal (fake-beeps doc) 1)
+    (is-equal (fake-last-sent tr) "REPL-EVAL (sleep 6)")))
+
 (deftest the-jump-opens-the-file-when-it-has-no-window
   (multiple-value-bind (doc tr wire) (make-wired-fake "|")
-    (wire-request wire doc :load "LOAD T:other.lisp")
-    (fake-deliver tr 10 "")
-    (fake-deliver tr 0 (lines "T:other.lisp:2: ERROR: boom" "1 error(s), 0 warning(s)" ""))
+    (declare (ignore wire))
+    (load-file-into-lisp doc "T:other.lisp")
+    (fake-answer-attach tr)
+    (is-equal (fake-last-sent tr) "REPL-LOAD T:other.lisp")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc)
+                  (lines "RESULT 10 CL-USER" "T:other.lisp:2: ERROR: boom" "1 error(s), 0 warning(s)"))
+    (is-equal (fake-last-message doc) "1 error(s), 0 warning(s)")
     (run-command doc 'clamacs-next-error)
     (let ((other (find-document-by-path (doc-editor doc) "T:other.lisp")))
       (is other)
@@ -450,10 +483,13 @@
     (is-equal (fake-prompt doc) "Load file (TAB: browse): ")
     (type-text doc "T:x.lisp")
     (type-keys doc "RET")
-    (is-equal (fake-last-sent tr) "LOAD T:x.lisp")
+    ;; On the REPL thread (REPL-LOAD): the first load attaches first.
+    (fake-answer-attach tr)
+    (is-equal (fake-last-sent tr) "REPL-LOAD T:x.lisp")
     (is-equal (fake-last-message doc) "Loading T:x.lisp ...")
-    (fake-deliver tr 0 "; loading T:x.lisp
-0 error(s), 0 warning(s)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
     (run-command doc 'clamacs-compile-file)
     (is-equal (fake-last-message doc) "Save the buffer to a file first")
     (setf (doc-path doc) "T:y.lisp")
@@ -470,17 +506,22 @@
     (run-command doc 'clamacs-load-file-requester)
     (is-equal (fake-asked doc) '((:file "Load File" nil "")))
     (is (not (minibuffer-open-p doc)))
-    (is-equal (fake-sent-commands tr) '("LOAD T:chosen.lisp"))
+    ;; On the REPL thread: the first load attaches the REPL first.
+    (fake-answer-attach tr)
+    (is-equal (fake-sent-commands tr) '("REPL-ATTACH CLAMACS DEBUG" "REPL-LOAD T:chosen.lisp"))
     (is-equal (fake-last-message doc) "Loading T:chosen.lisp ...")
-    (fake-deliver tr 0 "0 error(s), 0 warning(s)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)"))
+    (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
     ;; A named buffer starts the requester in its own directory.
     (setf (doc-path doc) "Work:src/a.lisp"
           (fake-answers doc) (list "T:second.lisp"))
     (run-command doc 'clamacs-load-file-requester)
     (is-equal (first (fake-asked doc)) '(:file "Load File" nil "Work:src/"))
-    (is-equal (fake-last-sent tr) "LOAD T:second.lisp")
+    (is-equal (fake-last-sent tr) "REPL-LOAD T:second.lisp")
     (is-equal (fake-last-message doc) "Loading T:second.lisp ...")
-    (fake-deliver tr 0 "0 error(s), 0 warning(s)")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc) (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)"))
     ;; Both choices are in the file history, the newest first.
     (let ((history (editor-file-history (doc-editor doc))))
       (is-equal (history-items history) '("T:second.lisp" "T:chosen.lisp"))
@@ -489,7 +530,8 @@
       (run-command doc 'clamacs-load-file-requester)
       (is (not (minibuffer-open-p doc)))
       (is-equal (length (fake-asked doc)) 3)
-      (is-equal (fake-sent-commands tr) '("LOAD T:chosen.lisp" "LOAD T:second.lisp"))
+      (is-equal (fake-sent-commands tr)
+                '("REPL-ATTACH CLAMACS DEBUG" "REPL-LOAD T:chosen.lisp" "REPL-LOAD T:second.lisp"))
       (is-equal (history-items history) '("T:second.lisp" "T:chosen.lisp")))))
 
 (deftest connect-and-run-lisp

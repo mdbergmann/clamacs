@@ -1092,13 +1092,18 @@ fake transport that finds AMILISP: (values editor doc tr wire)."
                                 "(no-such-function)" ""))))
     (multiple-value-bind (editor doc tr wire) (host-wired-editor "" path)
       (with-entry (editor) (run-command doc 'clamacs-load-buffer))
-      (is-equal (fake-last-sent tr) (format nil "LOAD ~A" path))
+      ;; The load runs on the REPL thread: the first one attaches the REPL
+      ;; (its tab opens in the dock behind the buffer), then REPL-LOAD goes
+      ;; out, and the rows arrive with RESULT.
+      (with-entry (editor) (fake-answer-attach tr))
+      (is-equal (fake-last-sent tr) (format nil "REPL-LOAD ~A" path))
       (host-take-evals editor)
-      (host-deliver editor tr 10 "")
-      (is-equal (fake-last-sent tr) "LASTRESULT")
-      (host-deliver editor tr 0 (lines (format nil "~A:7: ERROR: first deliberate error" path)
-                                       (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path)
-                                       "2 error(s), 0 warning(s)" ""))
+      (host-deliver editor tr 0 "")
+      (with-entry (editor)
+        (fake-inbound editor (lines "RESULT 10 CL-USER"
+                                    (format nil "~A:7: ERROR: first deliberate error" path)
+                                    (format nil "~A:9: ERROR: Undefined function: NO-SUCH-FUNCTION" path)
+                                    "2 error(s), 0 warning(s)")))
       (is-equal (doc-message-text doc) "2 error(s), 0 warning(s)")
       ;; The rows went to the panel, which opened without a selection
       (let ((js (host-take-evals editor)))
@@ -1109,6 +1114,7 @@ fake transport that finds AMILISP: (values editor doc tr wire)."
       (is-equal (host-panel-state :diagnostics editor) "open rows 2 selected none")
       (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
       (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200) ("errors" 0 400 800 200)))
+      (is (eq (editor-active-document editor) doc))
       ;; C-x ` selects the row it jumps to
       (with-entry (editor) (run-command doc 'clamacs-next-error))
       (is-equal (doc-index-line doc (doc-point doc)) 6)
@@ -1124,18 +1130,22 @@ fake transport that finds AMILISP: (values editor doc tr wire)."
       (with-entry (editor) (host-diag-pick editor nil))
       (with-entry (editor) (host-diag-pick editor 7))
       (is-equal (doc-index-line doc (doc-point doc)) 8)
-      ;; The panel's close only takes it off the screen; the rows stay
+      ;; The panel's close only takes it off the screen; the rows stay,
+      ;; and the dock shows its other tab, the REPL the load attached.
       (with-entry (editor) (host-panel-close editor "diagnostics"))
       (is-equal (host-panel-state :diagnostics editor) "closed rows 2 selected none")
-      (is-equal (host-panel-state :dock editor) "closed height 200 shown nothing")
-      (is-equal (editor-aux-windows editor) '())
+      (is-equal (host-panel-state :dock editor) "open height 200 shown doc2")
+      (is-equal (editor-aux-windows editor) '(("dock" 0 400 800 200)))
       ;; C-c ! l shows it again, rows or no rows
       (with-entry (editor) (run-command doc 'clamacs-show-errors))
       (is (search "CK.showDiagnostics([" (host-take-evals editor)))
       (is-equal (host-panel-state :dock editor) "open height 200 shown diagnostics")
       ;; A fresh load empties the list; with nothing to show it stays open
       (with-entry (editor) (run-command doc 'clamacs-load-buffer))
-      (host-deliver editor tr 0 (lines (format nil "; loading ~A" path) "0 error(s), 0 warning(s)"))
+      (is-equal (fake-last-sent tr) (format nil "REPL-LOAD ~A" path))
+      (host-deliver editor tr 0 "")
+      (with-entry (editor)
+        (fake-inbound editor (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)")))
       (is (search "CK.showDiagnostics([],false);" (host-take-evals editor)))
       (is-equal (host-panel-state :diagnostics editor) "open rows 0 selected none"))
     (delete-file path)))

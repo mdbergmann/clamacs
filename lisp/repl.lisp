@@ -37,10 +37,12 @@
   (doc nil)                 ; the REPL window, or NIL
   (attached nil)            ; amilisp's REPL thread sends to our port
   (attaching nil)           ; a REPL-ATTACH is on the wire
-  (origin nil)              ; the document whose buffer eval is running
+  (origin nil)              ; the document whose buffer eval or load is running
+  (origin-kind nil)         ; ... and which: :EVAL or :LOAD (REPL-SUBMIT)
   (pending nil)             ; a buffer eval waiting for the attach: its text
   (pending-origin nil)      ; ... and its document
-  (pending-package nil))    ; ... and its package, when not the document's
+  (pending-package nil)     ; ... and its package, when not the document's
+  (pending-kind nil))       ; ... and whether it is an :EVAL or a :LOAD
 
 ;;; The listener state of the REPL window itself.
 (defstruct (repl-window (:constructor make-repl-window ()))
@@ -208,12 +210,18 @@ the port in between."
 (defun repl-clear-pending (session)
   (setf (repl-session-pending session) nil
         (repl-session-pending-origin session) nil
-        (repl-session-pending-package session) nil))
+        (repl-session-pending-package session) nil
+        (repl-session-pending-kind session) nil))
 
-(defun repl-set-pending (session from text &optional package)
+(defun repl-set-pending (session from kind text &optional package)
   (setf (repl-session-pending session) text
         (repl-session-pending-origin session) from
-        (repl-session-pending-package session) package))
+        (repl-session-pending-package session) package
+        (repl-session-pending-kind session) kind))
+
+(defun repl-clear-origin (session)
+  (setf (repl-session-origin session) nil
+        (repl-session-origin-kind session) nil))
 
 ;;; ------------------------------------------------------------------
 ;;; Attaching
@@ -278,11 +286,13 @@ about to show came from FROM, so that is where the user stays."
           (doc-activate from))
         repl)))
 
-(defun repl-eval-from (from text &optional package)
-  "A buffer eval on the REPL thread.  Before the REPL is attached the form
-waits for the REPL-ATTACH reply; the REPL window opens for that, but the
-user stays in the buffer.  The form is read in PACKAGE, in the buffer's
-own without one.  True when the form was sent or waits for the attach."
+(defun repl-submit (from kind text &optional package)
+  "A buffer eval (KIND :EVAL, TEXT the forms) or a buffer load (:LOAD,
+TEXT the file's path) on the REPL thread.  Before the REPL is attached
+the job waits for the REPL-ATTACH reply; the REPL window opens for that,
+but the user stays in the buffer.  A form is read in PACKAGE, in the
+buffer's own without one; a file binds its own.  True when the job was
+sent or waits for the attach."
   (let* ((editor (doc-editor from))
          (session (repl-session editor))
          (repl (repl-doc editor))
@@ -293,8 +303,8 @@ own without one.  True when the form was sent or waits for the attach."
          (when (null repl)
            (setq repl (repl-open-behind editor from))
            (when (null repl)
-             (return-from repl-eval-from nil)))
-         (repl-set-pending session from text package)
+             (return-from repl-submit nil)))
+         (repl-set-pending session from kind text package)
          (repl-attach repl)
          (cond ((repl-session-attaching session) t)
                (t (repl-clear-pending session)   ; the attach never left
@@ -305,10 +315,24 @@ own without one.  True when the form was sent or waits for the attach."
          nil)
         (t
          ;; The buffer's package, not the prompt's.
-         (wire-ensure-package wire from package)
-         (when (wire-request wire from :repl-eval (concatenate 'string "REPL-EVAL " text))
-           (setf (repl-session-origin session) from)
+         (when (eq kind :eval)
+           (wire-ensure-package wire from package))
+         (when (if (eq kind :load)
+                   (wire-request wire from :repl-load (concatenate 'string "REPL-LOAD " text))
+                   (wire-request wire from :repl-eval (concatenate 'string "REPL-EVAL " text)))
+           (setf (repl-session-origin session) from
+                 (repl-session-origin-kind session) kind)
            t))))))
+
+(defun repl-eval-from (from text &optional package)
+  "A buffer eval on the REPL thread (REPL-SUBMIT)."
+  (repl-submit from :eval text package))
+
+(defun repl-load-from (from path)
+  "A buffer load on the REPL thread (REPL-SUBMIT): amilisp's REPL-LOAD,
+whose output streams into the transcript and whose RESULT carries the
+rows the port's LOAD reply carried (REPL-LOAD-RESULT)."
+  (repl-submit from :load path))
 
 ;;; ------------------------------------------------------------------
 ;;; The commands
@@ -585,21 +609,25 @@ attaches, as a buffer eval's does, so the log is not shown to nobody."
        ;; A buffer eval: the values are that buffer's news, the transcript
        ;; keeps its prompt (any output already went above it, and the
        ;; outcome goes there too, as a `; Evaluated:' line), and the
-       ;; prompt's package is not touched.
-       (setf (repl-session-origin session) nil)
-       (repl-wire-package editor package)
-       (when (debugger-active-p editor)
-         (debug-left editor))
-       (when doc
-         (repl-eval-note doc rc values))
-       (let ((from (live-doc origin))
-             (line (first-line values)))
-         (when from
-           (cond ((/= rc +rc-ok+)
-                  (doc-message from (if (string/= line "") line "Evaluation failed"))
-                  (doc-beep from))
-                 (t
-                  (doc-message from (if (string/= line "") line "; No values")))))))
+       ;; prompt's package is not touched.  A buffer load: the rows.
+       (let ((kind (repl-session-origin-kind session)))
+         (repl-clear-origin session)
+         (repl-wire-package editor package)
+         (when (debugger-active-p editor)
+           (debug-left editor))
+         (cond ((eq kind :load)
+                (repl-load-result editor origin values doc))
+               (t
+                (when doc
+                  (repl-eval-note doc rc values))
+                (let ((from (live-doc origin))
+                      (line (first-line values)))
+                  (when from
+                    (cond ((/= rc +rc-ok+)
+                           (doc-message from (if (string/= line "") line "Evaluation failed"))
+                           (doc-beep from))
+                          (t
+                           (doc-message from (if (string/= line "") line "; No values"))))))))))
       ((null doc))
       (t
        (let ((state (doc-repl doc)))
@@ -622,6 +650,19 @@ attaches, as a buffer eval's does, so the log is not shown to nobody."
                   (doc-beep doc)))
                (t (doc-message doc "")))
          (repl-prompt doc))))))
+
+(defun repl-load-result (editor origin text repl)
+  "A buffer load (REPL-LOAD-FROM) is done: TEXT, RESULT's body, is what
+the port's LOAD reply carried without its log -- the rows and the
+summary -- so it goes where that went (WIRE-DIAGNOSTICS: the error list,
+and the echo area of ORIGIN, the buffer that asked), and the summary
+goes into the transcript REPL under the file's output, above the prompt."
+  (let ((wire (editor-wire editor)))
+    (when wire
+      (wire-diagnostics wire (live-doc origin) text)
+      (when repl
+        (repl-insert-above-prompt
+         repl (format nil "; ~A~%" (diaglist-report (wire-diags wire) text)))))))
 
 (defun repl-debugger (editor level package text)
   "DEBUGGER <level> <pkg>.  The form is still running -- parked in the
@@ -708,27 +749,30 @@ document it was about (NIL once closed)."
           (repl-note doc "REPL attached to ~A" (wire-port-name wire))
           (message doc "REPL attached to ~A" (wire-port-name wire))
           (repl-prompt doc)
-          ;; Now the buffer eval that asked for the attach.
+          ;; Now the buffer eval or load that asked for the attach.
           (let ((form (repl-session-pending session))
                 (from (live-doc (repl-session-pending-origin session)))
-                (package (repl-session-pending-package session)))
+                (package (repl-session-pending-package session))
+                (kind (repl-session-pending-kind session)))
             (repl-clear-pending session)
             (when (and form from)
-              (repl-eval-from from form package))))))
-      (:repl-eval
+              (repl-submit from (or kind :eval) form package))))))
+      ((:repl-eval :repl-load)
        (when (and (/= rc +rc-ok+) doc)
          ;; Refused: the REPL thread is gone (amilisp restarted) or still busy.
          (when (search "no REPL attached" text)
            (setf (repl-session-attached session) nil))
-         (doc-message doc (if (string/= line "") line "REPL-EVAL failed"))
+         (doc-message doc (if (string/= line "")
+                              line
+                              (if (eq kind :repl-load) "REPL-LOAD failed" "REPL-EVAL failed")))
          (doc-beep doc)
          (cond ((eq doc (repl-doc editor))
                 ;; Typed at the prompt: the prompt comes back.
                 (setf (repl-window-busy (doc-repl doc)) nil)
                 (repl-prompt doc))
                ((eq (repl-session-origin session) doc)
-                ;; A buffer eval that never started.
-                (setf (repl-session-origin session) nil)))))
+                ;; A buffer eval or load that never started.
+                (repl-clear-origin session)))))
       (:repl-input
        (when (and (/= rc +rc-ok+) doc)
          (doc-message doc (if (string/= line "") line "REPL-INPUT failed"))

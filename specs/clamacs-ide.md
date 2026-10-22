@@ -380,7 +380,7 @@ other event.  Rules:
 | `PING` | port health check after connect / launch |
 | `VERSION` | shown in the status line; the editor refuses versions older than it knows |
 | `IN-PACKAGE <pkg>` | sent before an eval when the buffer's package changed since the last request |
-| `LOAD <file>` | `C-c C-k` after saving the buffer; `C-c C-l` for another file |
+| `LOAD <file>` | the macros (`load-current-file.rexx`); `C-c C-k` (after saving the buffer) and `C-c C-l` use `REPL-LOAD <file>` since 2026-10-22 -- the same LOAD on the REPL thread, its output streamed as it is printed, its rows and summary in `RESULT` |
 | `COMPILE-FILE <file>` | `M-x compile-file` |
 | `EVAL <form>` | macros (`clamacs.rexx`); the keys `C-c C-c`, `C-x C-e`, `C-c C-r`, `C-c C-e` use `REPL-EVAL` (phase 3) since 2026-09-14, so an error opens the debugger |
 | `LASTRESULT` | automatic after a non-zero rc |

@@ -290,11 +290,14 @@ values to the buffer's echo area and, as a `; Evaluated: ...` line above
 the prompt, into the transcript, and an error opens the debugger window
 with the erring stack still there.  The REPL window is opened and
 attached the first time you evaluate; `C-c C-b` interrupts.
-Loading (`C-c C-k`, `C-c C-l`) runs on amilisp's handler thread instead:
-every error in the file becomes a row in the diagnostics window, and
-whatever the file printed while loading lands in the `*clamacs-repl*`
-transcript afterwards, under a `; loading ...` line (the window opens
-behind the buffer if it was not open yet).
+Loading (`C-c C-k`, `C-c C-l`) runs on the REPL thread too, as a LOAD:
+whatever the file prints goes to the `*clamacs-repl*` transcript as it is
+printed, under a `; loading ...` line -- a file whose last form opens a
+window and runs it shows what it loaded while the window is up, and
+`C-c C-b` interrupts it -- but its errors do not open the debugger: every
+error in the file becomes a row in the diagnostics window, the load goes
+on with the next form, and the summary ends the transcript's account.
+(The window opens behind the buffer if it was not open yet.)
 
 ### ASDF systems
 
@@ -569,7 +572,10 @@ empty line says how many commands there are and names the first of them.
 When no command starts with what was typed, the ones that contain it are
 offered instead (`eval-` finds `clamacs-eval-defun` and its kin), the
 line left as typed; `M-TAB` on a symbol does the same, amilisp's
-`COMPLETE` falling back to the names that contain the text.
+`COMPLETE` falling back to the names that contain the text.  On MUI,
+Alt-TAB is the toolkit's own Next Window key and never reaches the
+editor, so there `complete-symbol` is `ESC TAB` or `C-M-i`, the key the
+menu shows.
 **Help > List Commands** (`M-x clamacs-list-commands`) opens a window
 listing every command with its keys and what it does -- the ones from
 the init file included.  `bind-key` refuses a key sequence that clashes with a binding

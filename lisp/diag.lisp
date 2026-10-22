@@ -34,6 +34,7 @@
   (warnings 0)
   (summary nil)            ; the `N error(s), M warning(s)' line, or NIL
   (aborted nil)            ; `; aborted -- ...' was seen
+  (interrupted nil)        ; `; interrupted -- ...' was seen: a REPL-LOAD cut short
   (truncated nil)          ; `[truncated at ...]' was seen
   (log nil))               ; what the command printed, or NIL: the lines
                            ; after `--- log ---', newline-terminated
@@ -57,9 +58,22 @@
         (diaglist-warnings list) 0
         (diaglist-summary list) nil
         (diaglist-aborted list) nil
+        (diaglist-interrupted list) nil
         (diaglist-truncated list) nil
         (diaglist-log list) nil)
   list)
+
+(defun diaglist-report (list text)
+  "What the echo area says of a reply parsed into LIST: the summary line
+with its marks (aborted, interrupted, truncated), else TEXT's first line
+-- a reply without a summary is an error message."
+  (if (diaglist-summary-seen list)
+      (format nil "~A~:[~; (aborted)~]~:[~; (interrupted)~]~:[~; (reply truncated)~]"
+              (diaglist-summary list)
+              (diaglist-aborted list)
+              (diaglist-interrupted list)
+              (diaglist-truncated list))
+      (first-line text)))
 
 ;;; Longest match first, so STYLE-WARNING is not read as an unknown word
 ;;; that happens to begin with nothing.
@@ -175,6 +189,8 @@ sees where the cut was) in DIAGLIST-LOG for the REPL transcript."
                   ((starts-with-p "[truncated a" line))
                   ((starts-with-p "; aborted -" line)
                    (setf (diaglist-aborted list) t))
+                  ((starts-with-p "; interrupted -" line)
+                   (setf (diaglist-interrupted list) t))
                   (t
                    (let ((d (parse-diagnostic-line line)))
                      (when d

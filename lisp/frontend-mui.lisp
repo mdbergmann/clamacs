@@ -258,19 +258,28 @@
 
 ;;; The window keys switched off while the text has the focus: RET must
 ;;; not fire a default gadget, TAB not cycle, ESC neither deactivate nor
-;;; close -- and Alt-TAB not go to the application's next window, MUI's
-;;; default for it: it is M-TAB, `complete-symbol'.  The minibuffer keeps
-;;; TAB for completion, and ESC as well:
+;;; close.  The minibuffer keeps TAB for completion, and ESC as well:
 ;;; ESC is both GADGET_OFF and WINDOW_CLOSE to MUI, and with only
 ;;; GADGET_NEXT off (as the C editor had it) one ESC at a prompt first
 ;;; deactivated the String and then, the mini's GoInactive having
 ;;; re-enabled every key, reached the window as WINDOW_CLOSE -- which
 ;;; with one document open was the editor's exit.  The mini keeps RET:
 ;;; that is how the String accepts the input.
+;;;
+;;; Not in the mask, because the mask has no say over it: Alt-TAB, MUI's
+;;; Next Window key.  MUI takes it before the window's event handlers see
+;;; the RAWKEY, with MUIKEYF_WINDOW_NEXT in MUIA_Window_DisableKeys or
+;;; without (FS-UAE, MUI 3.8, 2026-10-22: the other document's window came
+;;; up either way, and the text class's handler saw the Alt press, the
+;;; TAB release and the Alt release, never the TAB press -- *TEXT-TRACE*
+;;; records it; a MUIA_Window_InputEvent notification on `alt tab' did
+;;; not fire for it either).  So on MUI, as under a window manager that
+;;; owns M-TAB, `complete-symbol' is ESC TAB or C-M-i, and the menu strip
+;;; shows the latter (*MUI-MENU-KEYS*); drive.rexx's raw-key leg checks
+;;; both spellings.
 (defparameter *text-window-keys*
   (logior m:+muikeyf-press+ m:+muikeyf-gadget-next+ m:+muikeyf-gadget-prev+
-          m:+muikeyf-gadget-off+ m:+muikeyf-window-close+
-          m:+muikeyf-window-next+ m:+muikeyf-window-prev+))
+          m:+muikeyf-gadget-off+ m:+muikeyf-window-close+))
 (defparameter *mini-window-keys*
   (logior m:+muikeyf-gadget-next+ m:+muikeyf-gadget-off+
           m:+muikeyf-window-close+))
@@ -1310,6 +1319,16 @@ stays."
     (setf (mdoc-region-shown doc) nil))
   (setf (doc-mark-active doc) nil))
 
+(defvar *text-trace* nil
+  "When true, every RAWKEY event MUI hands the text class's handler is
+recorded in *TEXT-TRACE-LOG*, newest first -- (:EVENT code qualifier) as
+it arrived, and for a key press on the active object (:KEY key command
+taken) -- the text class's twin of *MINI-TRACE*, switchable from the
+running editor (`EVAL (setf clamacs::*text-trace* t)' over the port, the
+log read back the same way).  What a key MUI keeps for itself looks like
+from here: no :EVENT at all.")
+(defvar *text-trace-log* '())
+
 (defun text-handle-event (editor object message)
   "Invoked only through the class's own node, so it does not chain to the
 superclass: when the Emacs layer does not take the key it returns 0 and
@@ -1319,6 +1338,10 @@ is looked at: they were half of what a typed character sent here, each
 one decoded, asked for the window's active object and counted as editor
 activity, which held the display back for a key nobody typed."
   (let ((imsg (handle-event-imsg message)))
+    (when (and *text-trace* imsg)
+      (push (list :event (ffi:peek-u16 imsg +imsg-code-offset+)
+                  (ffi:peek-u16 imsg +imsg-qualifier-offset+))
+            *text-trace-log*))
     (if (and imsg (rawkey-press-p (ffi:peek-u16 imsg +imsg-code-offset+)))
         (let ((doc (object-document editor object)))
           (if (and doc (active-object-p object))
@@ -1329,6 +1352,8 @@ activity, which held the display back for a key nobody typed."
                                    (run-command doc command)
                                    t)
                                   (key (handle-key doc key)))))
+                (when *text-trace*
+                  (push (list :key key command taken) *text-trace-log*))
                 (count-key)
                 (cond (taken (show-region doc))
                       (key (hide-region doc)))
@@ -2317,6 +2342,14 @@ window; NIL when it is NIL or not open."
 ;;; NM_BARLABEL, (STRPTR)-1: a separator, as libraries/gadtools.h spells it.
 (defconstant +nm-barlabel+ #xFFFFFFFF)
 
+;;; The key the strip shows for an item whose table key MUI keeps for
+;;; itself: M-TAB is MUI's Next Window (see *TEXT-WINDOW-KEYS*), so the
+;;; Complete Symbol item names the binding that works here.
+(defparameter *mui-menu-keys* '(("M-TAB" . "C-M-i")))
+
+(defun mui-menu-keys (keys)
+  (or (cdr (assoc keys *mui-menu-keys* :test #'string=)) keys))
+
 ;;; The dynamic groups this frontend makes items for: the open buffers,
 ;;; the themes (phase T3 of specs/clamacs-themes.md), the cursor's
 ;;; shape and the two project groups (the open projects at the tail of
@@ -2372,7 +2405,7 @@ when MUI would not build it: the editor still runs, keys and port intact."
                        (let ((item (if (menu-entry-keys e)
                                       (mui:new-object :menuitem
                                                       m:+muia-menuitem-title+ (menu-entry-title e)
-                                                      m:+muia-menuitem-shortcut+ (menu-entry-keys e)
+                                                      m:+muia-menuitem-shortcut+ (mui-menu-keys (menu-entry-keys e))
                                                       m:+muia-menuitem-command-string+ t
                                                       m:+muia-user-data+ (menu-item-id i))
                                       (mui:new-object :menuitem

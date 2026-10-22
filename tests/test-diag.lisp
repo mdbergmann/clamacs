@@ -157,7 +157,23 @@
                                    ""))
     (is (diaglist-aborted list))
     (is (diaglist-truncated list))
+    (is (not (diaglist-interrupted list)))
     (is-equal (diaglist-count list) 1)))
+
+(deftest an-interrupted-load-is-marked-as-such
+  ;; What a REPL-LOAD cut short by REPL-INTERRUPT answers (RESULT's body):
+  ;; the rows so far, the summary, and the interrupt's own line in place
+  ;; of the aborted one.
+  (let ((list (make-diaglist)))
+    (parse-diagnostics list (lines "0 error(s), 0 warning(s)"
+                                   "; interrupted -- the remaining forms were not processed"
+                                   ""))
+    (is (diaglist-interrupted list))
+    (is (not (diaglist-aborted list)))
+    (is-equal (diaglist-count list) 0)
+    (is-equal (diaglist-report list "") "0 error(s), 0 warning(s) (interrupted)")
+    (diaglist-clear list)
+    (is (not (diaglist-interrupted list)))))
 
 (deftest crlf-and-missing-final-newline
   (let ((list (make-diaglist)))

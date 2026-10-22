@@ -731,6 +731,49 @@ ELSE DO
     ELSE
         SAY 'FAIL raw C-x C-q gave' RESULT
 
+    /* Alt-TAB is MUI's own Next Window key.  MUI takes it before the
+    ** window's event handlers see the RAWKEY, whatever the window's
+    ** MUIA_Window_DisableKeys says (FS-UAE, MUI 3.8, 2026-10-22: with
+    ** two document windows open, Intuition's active window moved to the
+    ** other one, and the text class's handler saw the Alt press, the TAB
+    ** release and the Alt release -- never the TAB press; *TEXT-TRACE*
+    ** in frontend-mui.lisp shows it), and a MUIA_Window_InputEvent
+    ** notification on `alt tab' does not fire for it either.  So M-TAB
+    ** is MUI's on the Amiga, as it is the window manager's under X, and
+    ** complete-symbol is reached by its two other spellings, ESC TAB and
+    ** C-M-i -- the MUI menu shows C-M-i.  Recorded, not failed: */
+    'OPEN FILE Clamacs:verify/realamiga/sample2.lisp'
+    'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+    CALL pause 25
+    ADDRESS COMMAND SENDKEY '"M-TAB"'
+    CALL pause 25
+    ADDRESS COMMAND SENDKEY 'TEXT ""'
+    SAY 'INFO raw M-TAB is MUI''s Next Window key; the line above says where it went'
+
+    /* The two spellings that reach the editor.  At the end of the buffer
+    ** there is no symbol before point, which is the command's own report
+    ** -- a check that needs no amilisp.  C-g in between resets the echo
+    ** area, so the second report is the second key's. */
+    'OPEN FILE Clamacs:verify/realamiga/sample.lisp'
+    CALL pause 25
+    'EVAL end-of-buffer'
+    ADDRESS COMMAND SENDKEY 'ESC TAB'
+    CALL pause 10
+    'STATUS'
+    IF POS('No symbol before point', RESULT) > 0 THEN
+        SAY 'OK raw ESC TAB ran complete-symbol:' RESULT
+    ELSE
+        SAY 'FAIL raw ESC TAB gave' RESULT
+    'KEY C-g'
+    'EVAL end-of-buffer'
+    ADDRESS COMMAND SENDKEY 'C-M-i'
+    CALL pause 10
+    'STATUS'
+    IF POS('No symbol before point', RESULT) > 0 THEN
+        SAY 'OK raw C-M-i ran complete-symbol:' RESULT
+    ELSE
+        SAY 'FAIL raw C-M-i gave' RESULT
+
     /* The minibuffer is NOT driven by injected keys under FS-UAE.  MUI
     ** there deactivates a programmatically-activated string gadget once the
     ** injected input stream falls idle -- it holds the focus for a single

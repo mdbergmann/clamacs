@@ -216,6 +216,8 @@ OK raw C-n ran next-line
 OK raw M-< (Alt as Meta) reached the top
 OK raw ESC > acted as Meta
 OK raw C-x C-q went through the prefix map
+OK raw ESC TAB ran complete-symbol
+OK raw C-M-i ran complete-symbol
 OK raw RET indented the new line
 OK raw typing self-inserted
 OK eval-last-sexp on (+ 1 2) echoed 3

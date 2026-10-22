@@ -670,7 +670,15 @@ Phase 2 added `ARGLIST`, `COMPLETE`, `DESCRIBE`, `APROPOS`,
 added `REPL-ATTACH <port>`, `REPL-EVAL`, `REPL-INPUT`, `REPL-INTERRUPT`,
 `REPL-DETACH`, with amilisp's REPL thread sending `OUTPUT`, `READLINE` and
 `RESULT <rc> <pkg>` commands *to the editor's port* -- see the spec's
-phase 3 section for why the editor never holds a reply.  Phase 4
+phase 3 section for why the editor never holds a reply.  `REPL-LOAD
+<file>` (2026-10-22) is `C-c C-k` / `C-c C-l`: a LOAD on the REPL thread,
+so what the file prints streams into the transcript while it loads (the
+port's `LOAD` captured it and the editor saw it only when the file's last
+form returned -- after a window the file opened was closed again) and the
+port stays free for the arglist and `C-c C-b`; its errors stay rows,
+LOAD going on with the next form, never the debugger, and `RESULT`
+carries them as the `LOAD` reply did (`repl-load-from` in `repl.lisp`,
+`%repl-run-load` in AmiLisp's `lib/dev-repl.lisp`).  Phase 4
 (2026-09-11) added `REPL-ATTACH <port> DEBUG`, under which an unhandled
 error parks the REPL thread on the erring stack and sends `DEBUGGER
 <level> <pkg>` (condition and restarts in the body) to the editor, which

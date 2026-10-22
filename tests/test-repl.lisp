@@ -634,6 +634,121 @@
                      "and again"
                      "CL-USER> |"))))
 
+;;; --- a buffer load (C-c C-k) on the REPL thread -----------------------------
+;;;
+;;; Since 2026-10-22 C-c C-k and C-c C-l are REPL-LOAD: a LOAD on amilisp's
+;;; REPL thread (REPL-LOAD-FROM).  What the file prints streams into the
+;;; transcript as it is printed -- a file that opens a window and runs it
+;;; shows what it loaded WHILE it runs, where the port's LOAD showed it
+;;; after the window closed -- and RESULT carries the rows and the summary
+;;; the port's LOAD reply carried, which go to the error list and the echo
+;;; area as before; the port stays free meanwhile.
+
+(deftest a-buffer-load-streams-the-file-s-output-and-the-rows-come-with-result
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (load-file-into-lisp doc "T:hello.lisp")
+    (is-equal (fake-last-sent tr) "REPL-LOAD T:hello.lisp")
+    (is-equal (fake-last-message doc) "Loading T:hello.lisp ...")
+    (let ((editor (doc-editor doc)))
+      (is (eq (repl-session-origin (repl-session editor)) doc))
+      (fake-deliver tr 0 "")
+      ;; A buffer eval meanwhile is refused: the thread is busy with it.
+      (run-command doc 'clamacs-eval-last-sexp)
+      (is-equal (fake-last-message doc) "The REPL is busy (C-c C-b interrupts)")
+      ;; The output goes above the prompt as it comes.
+      (fake-inbound editor (format nil "OUTPUT ; loading T:hello.lisp~%"))
+      (fake-inbound editor (format nil "OUTPUT ; Loading \"amiga/mui\" ...~%"))
+      (is-equal (transcript repl)
+                (lines "; REPL attached to AMILISP"
+                       "; loading T:hello.lisp"
+                       "; Loading \"amiga/mui\" ..."
+                       "CL-USER> |"))
+      (is (not (doc-modified-p repl)))
+      ;; Done: the summary in the echo area and the transcript, no rows.
+      (fake-inbound editor (lines "RESULT 0 CL-USER" "0 error(s), 0 warning(s)"))
+      (is-equal (fake-last-message doc) "0 error(s), 0 warning(s)")
+      (is-equal (fake-editor-diag-rows editor) '())
+      (is (null (repl-session-origin (repl-session editor))))
+      (is-equal (transcript repl)
+                (lines "; REPL attached to AMILISP"
+                       "; loading T:hello.lisp"
+                       "; Loading \"amiga/mui\" ..."
+                       "; 0 error(s), 0 warning(s)"
+                       "CL-USER> |"))
+      ;; The prompt works after it.
+      (doc-activate repl)
+      (send-input repl tr "(+ 1 2)")
+      (fake-inbound editor (lines "RESULT 0 CL-USER" "3"))
+      (is-equal (transcript repl)
+                (lines "; REPL attached to AMILISP"
+                       "; loading T:hello.lisp"
+                       "; Loading \"amiga/mui\" ..."
+                       "; 0 error(s), 0 warning(s)"
+                       "CL-USER> (+ 1 2)"
+                       "3"
+                       "CL-USER> |")))))
+
+(deftest an-interrupted-buffer-load-says-so
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore wire))
+    (load-file-into-lisp doc "T:loop.lisp")
+    (fake-deliver tr 0 "")
+    (run-command doc 'clamacs-interrupt)
+    (is-equal (fake-last-sent tr) "REPL-INTERRUPT")
+    (fake-deliver tr 0 "")
+    (fake-inbound (doc-editor doc)
+                  (lines "RESULT 10 CL-USER" "0 error(s), 0 warning(s)"
+                         "; interrupted -- the remaining forms were not processed"))
+    (is-equal (fake-last-message doc) "0 error(s), 0 warning(s) (interrupted)")
+    (is-equal (transcript repl)
+              (lines "; REPL attached to AMILISP"
+                     "; 0 error(s), 0 warning(s) (interrupted)"
+                     "CL-USER> |"))
+    (is (null (repl-session-origin (repl-session (doc-editor doc)))))))
+
+(deftest a-refused-repl-load-frees-the-buffer-again
+  (multiple-value-bind (doc repl tr wire) (repl-fixture)
+    (declare (ignore repl wire))
+    (load-file-into-lisp doc "T:hello.lisp")
+    ;; amilisp refuses (its REPL is busy with something the editor did
+    ;; not know of): the echo area says so and no load is pending.
+    (fake-deliver tr 10 "")
+    (is-equal (fake-last-sent tr) "LASTRESULT")
+    (fake-deliver tr 0 "ERROR: the REPL is busy (REPL-INTERRUPT aborts the running form)")
+    (is-equal (fake-last-message doc)
+              "ERROR: the REPL is busy (REPL-INTERRUPT aborts the running form)")
+    (is-equal (fake-beeps doc) 1)
+    (is (null (repl-session-origin (repl-session (doc-editor doc)))))
+    (load-file-into-lisp doc "T:hello.lisp")
+    (is-equal (fake-last-sent tr) "REPL-LOAD T:hello.lisp")))
+
+(deftest a-buffer-load-before-the-attach-waits-for-it
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+    (declare (ignore wire))
+    (doc-activate doc)
+    (load-file-into-lisp doc "T:hello.lisp")
+    (is-equal (fake-last-sent tr) "REPL-ATTACH CLAMACS DEBUG")
+    (let* ((editor (doc-editor doc))
+           (repl (repl-doc editor)))
+      ;; The REPL window opened behind the buffer for it.
+      (is repl)
+      (is (eq (editor-active-document editor) doc))
+      (fake-deliver tr 0 "CL-USER")
+      (is-equal (fake-last-sent tr) "REPL-LOAD T:hello.lisp")
+      (is (eq (repl-session-origin (repl-session editor)) doc))
+      (is (eq (editor-active-document editor) doc)))))
+
+(deftest a-failed-attach-drops-the-pending-load
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|")
+    (declare (ignore wire))
+    (load-file-into-lisp doc "T:hello.lisp")
+    (fake-deliver tr 10 "")
+    (fake-deliver tr 0 "ERROR: no ARexx transport in this image")
+    (is-equal (fake-last-message doc) "ERROR: no ARexx transport in this image")
+    (is (null (repl-session-pending (repl-session (doc-editor doc)))))
+    (is-equal (fake-sent-commands tr) '("REPL-ATTACH CLAMACS DEBUG" "LASTRESULT"))))
+
 (deftest a-failed-eval-s-output-has-no-header-line
   ;; A handler-thread EVAL (the port's, a macro's) that failed answers with
   ;; its rows first, not with `; ...': the log goes in as it is.

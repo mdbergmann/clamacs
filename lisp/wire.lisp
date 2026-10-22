@@ -385,7 +385,7 @@ new one."
         :source-location :describe :apropos :macroexpand)
        ;; The questions about a symbol (introspect.lisp).
        (intro-reply wire kind doc (request-subject req) rc text))
-      ((:repl-attach :repl-eval :repl-input :repl-interrupt :repl-detach)
+      ((:repl-attach :repl-eval :repl-load :repl-input :repl-interrupt :repl-detach)
        ;; The REPL window's own requests (repl.lisp).
        (repl-reply wire kind doc rc text))
       ((:dbg-backtrace :dbg-frame :dbg-frame-eval :dbg-restart)
@@ -420,13 +420,7 @@ Work:foo.lisp'."
                   (and (starts-with-p "; " line) (subseq line 2))
                   (diaglist-log list))))
     (when doc
-      (doc-message doc
-                   (if (diaglist-summary-seen list)
-                       (format nil "~A~:[~; (aborted)~]~:[~; (reply truncated)~]"
-                               (diaglist-summary list)
-                               (diaglist-aborted list)
-                               (diaglist-truncated list))
-                       (first-line text))))))
+      (doc-message doc (diaglist-report list text)))))
 
 ;;; ------------------------------------------------------------------
 ;;; The error list
@@ -526,11 +520,20 @@ or waits for the REPL to attach."
     (repl-eval-from doc text package)))
 
 (defun wire-load (doc path)
+  "LOAD PATH in amilisp -- on its REPL thread (REPL-LOAD, repl.lisp), so
+what the file prints streams into the transcript as it is printed: a
+file whose last form opens a window and runs it shows what it loaded
+WHILE it runs, where the port's LOAD (`LOAD <file>', the handler
+thread's) captured everything and answered when the window closed, the
+port dead to the arglist and C-c C-b meanwhile.  The file's errors come
+back as rows all the same, with RESULT: LOAD goes on with the next form,
+and the debugger is not entered.  True when the load was sent or waits
+for the REPL to attach; a fresh list for its rows either way."
   (let ((wire (require-wire doc)))
-    (when wire
+    (when (and wire (repl-load-from doc path))
       (diaglist-clear (wire-diags wire))
       (setf (wire-error-row wire) -1)
-      (wire-request wire doc :load (format nil "LOAD ~A" path)))))
+      t)))
 
 (define-command clamacs-load-buffer (doc arg)
   "Save the buffer and LOAD its file in amilisp."
