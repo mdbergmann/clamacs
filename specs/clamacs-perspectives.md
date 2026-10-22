@@ -211,6 +211,15 @@ the opt-in that also turns on the layout file's autosave at quit
 -- a session is its buffers and its windows.  An editor that never
 opens a project writes nothing.
 
+**Forgetting a project.**  Recent Projects has no cap and the editor
+has no command that drops a project (Close Project makes it recent,
+never unknown): the user deletes its `project` line with the `root`,
+`file` and `active` lines under it, with the editor NOT running --
+the quit's write would put them back -- on the Amiga in `ENVARC:` and
+`ENV:` both.  The README says so.  A Forget command was considered
+small (take the recent perspective off `editor-perspectives`, then
+`perspective-autosave`) and not done.
+
 **When it is read.**  At every start when the file is there -- and a
 start LISTS, it does not restore (decided 2026-10-18): every project in
 the file is made recent, by name with its root, its files and its

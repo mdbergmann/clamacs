@@ -436,9 +436,14 @@ with its folder and its files -- one pick, and it is back, the file
 that had the keyboard first.  A project never opened keeps its files in
 the file across the quit; a buffer outside any project is not recorded.
 The file is plain text, one `project NAME` line followed by its `root`
-and `file` lines; edit it or delete it to start over (`M-x
-clamacs-project-restore` reopens every project of the file at once, `M-x
-clamacs-project-rename` renames the one in front).  A macro reads the
+and `file` lines.  Recent Projects has no limit and no command takes a
+project off it: to forget one, quit the editor, delete its `project`
+line with the `root` and `file` lines under it (on the Amiga from both
+`ENVARC:` and `ENV:`), and start again -- the editor rewrites the file
+at every quit, so an edit made while it runs is lost.  Delete the file
+to start over.  (`M-x clamacs-project-restore` reopens every project of
+the file at once, `M-x clamacs-project-rename` renames the one in
+front.)  A macro reads the
 menu with `PROJECTS` and `RECENT` and picks with `PROJECTS <name>` /
 `RECENT <name>`.  On the host a buffer of a project not in front is a
 tab the page does not draw -- its text and its undo stay -- and a window
