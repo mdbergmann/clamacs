@@ -80,8 +80,11 @@
 (defconstant +tea-fixed-font+        (+ +te-base+ #x0a))
 (defconstant +tea-has-changed+       (+ +te-base+ #x0c))
 (defconstant +tea-import-hook+       (+ +te-base+ #x0e))
+(defconstant +tea-prop-delta-factor+ (+ +te-base+ #x0d)) ; read: the font's height
 (defconstant +tea-prop-entries+      (+ +te-base+ #x15))
+(defconstant +tea-prop-visible+      (+ +te-base+ #x16)) ; read: the rows the view shows
 (defconstant +tea-quiet+             (+ +te-base+ #x17))
+(defconstant +tea-prop-first+        (+ +te-base+ #x20)) ; the first row shown, in pixels
 (defconstant +tea-slider+            (+ +te-base+ #x1a))
 (defconstant +tea-color-map+         (+ +te-base+ #x2f))
 (defconstant +tea-undo-levels+       (+ +te-base+ #x38))
@@ -1759,14 +1762,17 @@ counts pixels and the font is fixed-width."
   (hscroll-into-view doc))
 
 (defmethod doc-end ((doc mui-document))
-  ;; No attribute for the length; POSITION EOF and a read of the index
-  ;; answer it, the cursor put back afterwards.
-  (let ((was (doc-point doc)))
-    (te-command doc "POSITION EOF")
-    (let ((end (doc-point doc)))
-      (when (/= end was)
-        (mui:set-attrs (mdoc-text doc) +tea-cursor-index+ was))
-      end)))
+  ;; No attribute for the length.  CursorXYToIndex sums the lines'
+  ;; lengths before the line asked for, each line's newline counted:
+  ;; asked for the line past the last one it answers the whole text's
+  ;; length (and says FALSE, the index written all the same), and the
+  ;; end is the index of the last line's newline, one less.  POSITION
+  ;; EOF and a read of the cursor answered it until 2026-10-23, the
+  ;; cursor put back afterwards -- a scroll to the end of the text and
+  ;; back on EVERY call, after which the cursor's line sat on the first
+  ;; row: the MorphOS flashing, since a key inside an iedit session asks
+  ;; the end several times.
+  (max 0 (1- (xy-to-index doc 0 (doc-line-count doc)))))
 
 (defmethod doc-line-count ((doc mui-document))
   (max 1 (te-get doc +tea-prop-entries+)))
@@ -1980,10 +1986,68 @@ text would stay on the standard background."
             (set-block-colour doc y 0 (length line) 0))
           (incf y))))))
 
+;;; The view: the class shows PROP-VISIBLE rows from the line PROP-FIRST
+;;; names in pixels (the font's height per row, PROP-DELTA-FACTOR), and
+;;; moves it only as far as a cursor set needs -- the line on the first
+;;; row when it was above the view, on the last when it was below
+;;; (ScrollIntoDisplay).  Under MUIA_TextEditor_Quiet the move is made
+;;; and nothing is painted; the end of the quiet pushes one redraw of
+;;; the view as it is then.
+
+(defun view-rows (doc)
+  "The view's first line, its number of rows and the font's height; NIL
+before the object is set up (no font yet)."
+  (let ((height (te-get doc +tea-prop-delta-factor+))
+        (rows (te-get doc +tea-prop-visible+)))
+    (when (and (> height 0) (> rows 0))
+      (values (floor (te-get doc +tea-prop-first+) height) rows height))))
+
+(defun view-top-row (doc)
+  "The line on the view's first row, for the drive's checks."
+  (or (view-rows doc) 0))
+
+(defun settle-view (doc top rows)
+  "The view back to the lines TOP to TOP+ROWS-1 it showed, using nothing
+but cursor sets -- the one scroll the class makes without painting under
+Quiet, as a MUIA_TextEditor_Prop_First set would -- and the cursor back
+where it was.  Line TOP first (it becomes the first row when the view is
+below it, the last when above), then the view's last line (the last row
+when the view is above): the two together are the old view, except when
+it hung past the text's end, where the text's last page stands in."
+  (let ((cursor (te-get doc +tea-cursor-index+))
+        (last (last-line doc)))
+    (mui:set-attrs (mdoc-text doc) +tea-cursor-index+ (doc-line-index doc top))
+    (mui:set-attrs (mdoc-text doc) +tea-cursor-index+
+                   (doc-line-index doc (min last (+ top rows -1))))
+    (mui:set-attrs (mdoc-text doc) +tea-cursor-index+ cursor)))
+
 (defmethod doc-call-quietly ((doc mui-document) function)
-  (mui:set-attrs (mdoc-text doc) +tea-quiet+ t)
-  (unwind-protect (funcall function)
-    (mui:set-attrs (mdoc-text doc) +tea-quiet+ nil)))
+  "FUNCTION with the class's painting held; a cursor FUNCTION left in the
+view it started with finds the view there afterwards, however far its
+cursor sets scrolled in between -- iedit's mirrors into occurrences out of
+view, an undo inside the session -- so the one redraw that ends the hold
+shows the lines where they were, instead of the last mirror's place and
+then, when the caller puts the cursor back, the old view again: the back
+and forth the MorphOS run reported as flashing (2026-10-23).  A cursor
+left outside the old view keeps the class's choice."
+  (multiple-value-bind (top rows) (view-rows doc)
+    (mui:set-attrs (mdoc-text doc) +tea-quiet+ t)
+    (unwind-protect
+         (prog1 (funcall function)
+           (when top
+             (multiple-value-bind (now now-rows) (view-rows doc)
+               (when (and now (/= now top) (= now-rows rows))
+                 (let ((y (te-get doc +tea-cursor-y+)))
+                   (when (<= top y (+ top rows -1))
+                     (settle-view doc top rows)))))))
+      (mui:set-attrs (mdoc-text doc) +tea-quiet+ nil))))
+
+(defmethod doc-reveal-point ((doc mui-document))
+  (multiple-value-bind (top rows height) (view-rows doc)
+    (when top
+      (let ((new (reveal-top top rows (te-get doc +tea-cursor-y+) (last-line doc))))
+        (when (/= new top)
+          (mui:set-attrs (mdoc-text doc) +tea-prop-first+ (* new height)))))))
 
 (defun status-text (doc)
   "`*name [perspective]  PACKAGE  line:column  (arglist)', the status

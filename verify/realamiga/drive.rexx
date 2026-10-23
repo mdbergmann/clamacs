@@ -604,11 +604,22 @@ IF PHASE >= 5 THEN DO
         SAY 'OK the echo area says so'
     ELSE
         SAY 'FAIL STATUS gave' RESULT
+    /* The view's first row before and after the mirrored key: the
+    ** class scrolls to each occurrence the mirror edits, under Quiet,
+    ** and the frontend settles the view back before the hold ends --
+    ** the view must not have moved (the MorphOS flashing). */
+    'EVAL (clamacs::view-top-row (clamacs::active-document clamacs::*editor*))'
+    TOPROW = RESULT
     'KEY z'
     IF GetLine() = '  (let ((zy (* x 2)))' THEN
         SAY 'OK typing z went into the cursor''s y'
     ELSE
         SAY 'FAIL after z the line is' GetLine()
+    'EVAL (clamacs::view-top-row (clamacs::active-document clamacs::*editor*))'
+    IF RC = 0 & RESULT = TOPROW THEN
+        SAY 'OK the view stayed on row' RESULT 'over the mirrored key'
+    ELSE
+        SAY 'FAIL the view moved from row' TOPROW 'to' RESULT 'over the mirrored key'
     'GOTOLINE 8'
     IF GetLine() = '    zy))' THEN
         SAY 'OK ... and into the last y of the defun'

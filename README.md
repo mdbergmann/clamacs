@@ -344,8 +344,9 @@ them: typing, Backspace, Delete, `M-d`, `C-y`.  That is how a parameter
 or a local is renamed.  Every whole symbol counts, in code, in a string
 or in a comment -- a docstring's mention of the parameter follows the
 rename -- while `foobar` never matches, and `FOO` is `foo`, as it is to
-the reader.  `M-n` and `M-p` move between the occurrences,
-`M-;` drops the one at point out of the set, `M-{` and `M-}` widen the
+the reader.  `M-n` and `M-p` move between the occurrences (one off the
+screen comes into view with a few lines around it, not on the top
+row), `M-;` drops the one at point out of the set, `M-{` and `M-}` widen the
 scope by one line at the top and at the bottom (the occurrences on it
 join), `M-H` narrows it to the cursor's defun again (a session of one
 occurrence stays on there, to be widened), undo takes an edit

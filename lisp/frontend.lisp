@@ -336,6 +336,31 @@ operation that touches many lines.")
 (defmacro with-quiet-display ((doc) &body body)
   `(doc-call-quietly ,doc (lambda () ,@body)))
 
+(defgeneric doc-reveal-point (doc)
+  (:documentation "The cursor was put somewhere by a JUMP -- the next
+occurrence, a definition -- and DOC-SET-POINT kept it in view: give it
+context, a few lines above and below it where the text has them, so the
+line is not the view's first or last row.  The default is nothing, for a
+frontend whose view does that itself.")
+  (:method ((doc document))
+    nil))
+
+(defconstant +reveal-margin+ 3
+  "The lines DOC-REVEAL-POINT wants on either side of the cursor's line.")
+
+(defun reveal-top (top rows y last)
+  "The first line of a view of ROWS lines that shows line Y with
++REVEAL-MARGIN+ lines of context on either side (as many as fit in a
+small view), given that it starts at line TOP now and the text ends at
+line LAST: TOP itself when Y already has its context, else the nearest
+start that gives it -- never before line 0, and never past the end
+further than the view is already."
+  (let* ((margin (min +reveal-margin+ (floor (1- rows) 2)))
+         (new (cond ((< y (+ top margin)) (- y margin))
+                    ((> y (- (+ top rows) 1 margin)) (- (+ y margin 1) rows))
+                    (t top))))
+    (max 0 (min new (max top (- (1+ last) rows))))))
+
 (defun message (doc control &rest args)
   "FORMAT into the echo area."
   (doc-message doc (apply #'format nil control args)))

@@ -489,6 +489,17 @@ the table `*iedit-bindings*` in `bindings.lisp`, which the command
 listing shows marked `[iedit]` and `iedit-key-command` reads.  `C-g`
 ends it with the mark, the `IEDIT` verb answers the set for a drive,
 and `drive.lisp` / `drive.rexx` have an iedit leg after the keys.
+Two display rules since 2026-10-23 (the MorphOS run saw the window
+flash on every key and `M-n` land the occurrence on the top row):
+TextEditor.mcc scrolls to every occurrence a mirror edits even under
+Quiet, so the MUI `doc-call-quietly` settles the view back to the
+lines it showed before the hold ends (`settle-view`, cursor sets
+only, since a `Prop_First` set paints), which needs the mirror's
+cursor restore INSIDE the quiet call (`iedit-mirror`); and `M-n` /
+`M-p` call the generic `doc-reveal-point` after the move -- the MUI
+method gives the line `+reveal-margin+` lines of context through
+`reveal-top` (pure, `frontend.lisp`), the host page does that itself.
+`view-top-row` is the drive's read of the view.
 
 ## The Lisp port (decided 2026-09-16, in progress)
 

@@ -297,6 +297,7 @@ OK the menu saved the buffer
 OK Save dimmed after the menu saved
 OK Close Buffer closed it
 OK the menu ran beginning-of-defun
+OK the view stayed on row
 OK Clear Transcript is dimmed outside the REPL
 OK the Help menu has the HyperSpec
 OK the Buffers menu lists the files, sample.lisp ticked

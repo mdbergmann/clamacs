@@ -415,10 +415,15 @@ The cursor is put back where the user's edit left it."
                           (doc-set-point doc (+ start rel-from))
                           (doc-insert doc insert)
                           (incf steps))
-                        (push j kept))))))
-    ;; The user's cursor, moved by the mirrors below it.
-    (let ((below (count-if (lambda (j) (< j k)) kept)))
-      (doc-set-point doc (+ point (* below delta))))
+                        (push j kept)))))
+      ;; The user's cursor, moved by the mirrors below it -- put back
+      ;; while the display is still held: a frontend that scrolled to
+      ;; the occurrences out of view settles its view once, around the
+      ;; cursor as it finds it, when the hold ends (the MUI frontend's
+      ;; DOC-CALL-QUIETLY); put back after it, the view would show the
+      ;; last mirror and then jump back, once per key typed.
+      (let ((below (count-if (lambda (j) (< j k)) kept)))
+        (doc-set-point doc (+ point (* below delta)))))
     ;; The set after: the kept ones, each moved by the edits above it.
     (let ((new-starts '())
           (n 0))
@@ -643,6 +648,9 @@ defun again; `C-;' again or C-g ends the session."
                                (or (position-if (lambda (s) (< s point)) starts :from-end t)
                                    (1- n))))))
              (doc-set-point doc (nth next starts))
+             ;; A jump: the occurrence with lines around it, not on the
+             ;; view's first row with nothing above
+             (doc-reveal-point doc)
              (iedit-note-point doc)
              (message doc "iedit: occurrence ~D of ~D" (1+ next) n))))))
 

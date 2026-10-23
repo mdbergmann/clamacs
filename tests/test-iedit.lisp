@@ -184,6 +184,23 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (is-equal (iedit-marks doc 0) '((10 15 :occurrence-current)))
     (is-equal (iedit-marks doc 2) '((9 14 :occurrence) (16 21 :occurrence)))))
 
+(deftest iedit-mirror-puts-the-cursor-back-while-the-display-is-held
+  ;; The MUI frontend settles its view when the quiet call ends, around
+  ;; the cursor as it finds it then: the mirror's cursor restore must
+  ;; happen INSIDE the quiet call, or the view would show the last
+  ;; mirror and jump back after it, once per key (the MorphOS flashing)
+  (let ((doc (iedit-fake)))
+    (type-keys doc "C-;")
+    (let ((quiet (fake-quiet-calls doc)))
+      (type-keys doc "x")
+      (is-equal (fake-quiet-calls doc) (1+ quiet))
+      (is-equal (fake-quiet-end-point doc) (fake-point doc))
+      (is-equal (fake-point doc) 11))
+    ;; The same for the undo inside the session
+    (type-keys doc "C-/")
+    (is-equal (fake-quiet-end-point doc) (fake-point doc))
+    (is-equal (fake-point doc) 10)))
+
 (deftest iedit-edits-at-the-end-and-inside-mirror
   (let ((doc (make-fake "(let ((foo 1)) (* foo| foo))")))
     (type-keys doc "C-; s")
@@ -301,6 +318,44 @@ occurrence of SYMBOL in it (counted from 0, every occurrence, code or not)."
     (doc-set-point doc 30)
     (type-keys doc "M-p")
     (is-equal (fake-point doc) 24)))
+
+(deftest iedit-next-and-previous-are-jumps-that-ask-for-context
+  ;; DOC-REVEAL-POINT after every move -- the MUI view would otherwise
+  ;; show the occurrence on its first row with nothing above it
+  (let ((doc (iedit-fake)))
+    (type-keys doc "C-;")
+    (is-equal (fake-reveals doc) 0)
+    (type-keys doc "M-n")
+    (is-equal (fake-reveals doc) 1)
+    (type-keys doc "M-p M-p")
+    (is-equal (fake-reveals doc) 3)
+    ;; Not for a key that is no jump
+    (type-keys doc "x C-/")
+    (is-equal (fake-reveals doc) 3)))
+
+(deftest reveal-top-gives-a-jump-its-context
+  ;; A view of 20 rows starting at line 100: a line on the first row
+  ;; gets three lines above it, one on the last row three below, and
+  ;; one inside with its context leaves the view alone
+  (is-equal (reveal-top 100 20 100 500) 97)
+  (is-equal (reveal-top 100 20 101 500) 98)
+  (is-equal (reveal-top 100 20 102 500) 99)
+  (is-equal (reveal-top 100 20 103 500) 100)
+  (is-equal (reveal-top 100 20 110 500) 100)
+  (is-equal (reveal-top 100 20 116 500) 100)
+  (is-equal (reveal-top 100 20 117 500) 101)
+  (is-equal (reveal-top 100 20 119 500) 103)
+  ;; Never before the text's start
+  (is-equal (reveal-top 1 20 1 500) 0)
+  (is-equal (reveal-top 0 20 0 500) 0)
+  ;; Never further past the end than the view is: the text ends at
+  ;; line 119, the view's last row
+  (is-equal (reveal-top 100 20 119 119) 100)
+  ;; ... but a view that hangs past the end already may stay past it
+  (is-equal (reveal-top 110 20 112 119) 109)
+  ;; A small view keeps what margin fits (two rows: none)
+  (is-equal (reveal-top 100 5 100 500) 98)
+  (is-equal (reveal-top 100 2 100 500) 100))
 
 (deftest iedit-toggle-drops-the-occurrence-at-point
   (let ((doc (make-fake "(defun f (|foo) (+ foo foo))")))

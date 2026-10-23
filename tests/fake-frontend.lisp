@@ -18,6 +18,11 @@
    (colours :initform '() :accessor fake-colours)   ; (y x0 x1 colour) ...
    (clipboard :initform nil :accessor fake-clipboard)
    (quiet-calls :initform 0 :accessor fake-quiet-calls)
+   ;; Where the cursor was when the last quiet call's function returned:
+   ;; what a frontend that settles its view then (the MUI one) sees
+   (quiet-end-point :initform nil :accessor fake-quiet-end-point)
+   ;; How often DOC-REVEAL-POINT was asked for context around the cursor
+   (reveals :initform 0 :accessor fake-reveals)
    ;; The input line: NIL while hidden, else its contents; and its label.
    (mini-text :initform nil :accessor fake-mini-text)
    (mini-label :initform nil :accessor fake-mini-label)
@@ -289,7 +294,11 @@ POSITIONs.  NIL for anything else, as the class answers FALSE."
 
 (defmethod doc-call-quietly ((doc fake-document) function)
   (incf (fake-quiet-calls doc))
-  (funcall function))
+  (prog1 (funcall function)
+    (setf (fake-quiet-end-point doc) (doc-point doc))))
+
+(defmethod doc-reveal-point ((doc fake-document))
+  (incf (fake-reveals doc)))
 
 (defun fake-line-colours (doc y)
   "What line Y looks like after every DOC-COLOUR so far: (x0 x1 colour) for
