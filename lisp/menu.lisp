@@ -580,7 +580,7 @@ a pick of the item with that label, answering \"\" or MISSING."
 ;;; About
 ;;; ------------------------------------------------------------------
 
-(defparameter *clamacs-version* "0.2 (Lisp)")
+(defparameter *clamacs-version* "0.5")
 (defparameter *clamacs-tagline* "An Emacs-flavoured Common Lisp IDE for AmiLisp")
 (defparameter *clamacs-author* "Manfred Bergmann")
 (defparameter *clamacs-copyright* "(c) 2026 Manfred Bergmann")
