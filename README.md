@@ -681,7 +681,10 @@ the message maps to the editor's ("Yes = Save, No = Discard").
 ## Requirements on the Amiga
 
 MUI 3.8 or newer (`muimaster.library` 19+) and `TextEditor.mcc` 15.29 or
-newer installed in `MUI:Libs/mui/`; the editor checks both at startup.
+newer installed in `MUI:Libs/mui/`; the editor checks both at startup,
+and a missing or too old `TextEditor.mcc` is reported in a requester
+(the Workbench icon starts the editor without a console, so nothing
+else would be seen).
 Verified against MUI 3.8 and TextEditor.mcc 15.56.  MorphOS ships
 `TextEditor.mcc`, so nothing else is needed there.
 

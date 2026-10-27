@@ -1668,15 +1668,26 @@ or NIL."
   (let ((v (mui-editor-te-version editor)) (r (mui-editor-te-revision editor)))
     (or (> v version) (and (= v version) (>= r revision)))))
 
+(defun startup-failure (format &rest args)
+  "A startup check failed before the first window: show the message in a
+requester, then signal it.  From the Workbench icon the editor runs with
+`Run >NIL:' and WINDOW=NIL:, so a plain error is seen by nobody -- the
+editor just does not come up.  No application object yet, so this is the
+system requester (MUI_Request with NULL app); when even that fails, the
+error alone goes out."
+  (let ((message (apply #'format nil format args)))
+    (ignore-errors (mui:request nil nil "Clamacs" "OK" "%s" message))
+    (error "~A" message)))
+
 (defun create-classes (editor)
   (multiple-value-bind (version revision) (texteditor-version)
     (unless version
-      (error "Clamacs needs TextEditor.mcc (MUI:Libs/mui/TextEditor.mcc), which did not open."))
+      (startup-failure "Clamacs needs TextEditor.mcc (MUI:Libs/mui/TextEditor.mcc), which did not open."))
     (setf (mui-editor-te-version editor) version
           (mui-editor-te-revision editor) revision)
     (unless (texteditor-at-least editor +te-min-version+ +te-min-revision+)
-      (error "Clamacs needs TextEditor.mcc ~D.~D or newer; this one is ~D.~D."
-             +te-min-version+ +te-min-revision+ version revision))
+      (startup-failure "Clamacs needs TextEditor.mcc ~D.~D or newer; this one is ~D.~D."
+                       +te-min-version+ +te-min-revision+ version revision))
     (setf (mui-editor-textclass editor)
           (mui:create-custom-class "TextEditor.mcc" (make-text-dispatcher editor)
                                    :data-size +text-data-size+
