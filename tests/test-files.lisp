@@ -59,6 +59,98 @@
   (is-equal (read-file-text (temp-file "missing.txt")) nil)
   (is-equal (write-file-text (temp-path "no-such-dir/x.txt") "x") nil))
 
+;;; --- version cookies ------------------------------------------------------
+
+(defun temp-binary (name bytes)
+  "A file of BYTES (a list) under TMPDIR."
+  (let ((path (temp-file name)))
+    (with-open-file (out path :direction :output :element-type '(unsigned-byte 8))
+      (write-sequence (coerce bytes '(vector (unsigned-byte 8))) out))
+    path))
+
+(defun ascii-bytes (text)
+  (map 'list #'char-code text))
+
+(defconstant +te-cookie+ "TextEditor.mcc 15.56 (08.06.2021) Copyright (C) 2005-2021 TextEditor.mcc Open Source Team [OS3/m68k]")
+
+(deftest file-version-string-reads-the-cookie-across-a-chunk-boundary
+  ;; 4089 bytes of filler, a decoy "$VE", then "$VER:" at 4092-4096: the
+  ;; marker itself straddles the 4096-byte read edge ("$VER" before it, ":"
+  ;; after), and the text ends at a NUL with more cookie-like bytes after it.
+  (let ((path (temp-binary "cookie.bin"
+                           (append (make-list 4089 :initial-element 7)
+                                   (ascii-bytes "$VE$VER:  ")
+                                   (ascii-bytes +te-cookie+)
+                                   (list 0)
+                                   (ascii-bytes "$VER: other 1.2")
+                                   (list 10)))))
+    (is-equal (file-version-string path) +te-cookie+)
+    (delete-file path)))
+
+(deftest file-version-string-ends-at-a-newline-or-the-file
+  (let ((lf (temp-binary "cookie-lf.bin"
+                         (append (ascii-bytes "junk $VER: amilisp 0.12.0 (27.10.2026)")
+                                 (list 10) (ascii-bytes "tail"))))
+        (eof (temp-binary "cookie-eof.bin" (ascii-bytes "$VER: amilisp 0.12.0")))
+        (none (temp-binary "cookie-none.bin" (ascii-bytes "$VER $ VER: nothing")))
+        (empty (temp-binary "cookie-empty.bin" (append (ascii-bytes "$VER:") (list 0)))))
+    (is-equal (file-version-string lf) "amilisp 0.12.0 (27.10.2026)")
+    (is-equal (file-version-string eof) "amilisp 0.12.0")
+    (is-equal (file-version-string none) nil)
+    (is-equal (file-version-string empty) nil)
+    (is-equal (file-version-string (temp-file "cookie-missing.bin")) nil)
+    (dolist (path (list lf eof none empty)) (delete-file path))))
+
+(deftest file-version-string-caps-a-runaway-cookie
+  (let ((path (temp-binary "cookie-long.bin"
+                           (append (ascii-bytes "$VER: ")
+                                   (make-list 500 :initial-element (char-code #\x))))))
+    (is-equal (length (file-version-string path)) 200)
+    (delete-file path)))
+
+(deftest parse-version-string-takes-the-first-dotted-number
+  (is-equal (multiple-value-list (parse-version-string +te-cookie+)) '(15 56))
+  (is-equal (multiple-value-list (parse-version-string "amilisp 0.12.0 (27.10.2026)")) '(0 12))
+  (is-equal (multiple-value-list (parse-version-string "15.29")) '(15 29))
+  ;; "v2." has no revision; the date after it does.
+  (is-equal (multiple-value-list (parse-version-string "thing v2. (1.4.2000)")) '(1 4))
+  (is-equal (parse-version-string "no digits here") nil)
+  (is-equal (parse-version-string "15") nil)
+  (is-equal (parse-version-string "") nil))
+
+(deftest texteditor-check-message-is-nil-for-a-class-that-will-do
+  (is-equal (texteditor-check-message 15 29 t nil) nil)
+  (is-equal (texteditor-check-message 15 56 t +te-cookie+) nil)
+  (is-equal (texteditor-check-message 16 0 nil nil) nil))
+
+(deftest texteditor-check-message-names-the-installed-and-the-needed-version
+  ;; A class that opened but is too old.
+  (let ((message (texteditor-check-message 15 28 t nil)))
+    (is (search "too old" message))
+    (is (search "TextEditor.mcc 15.28 is installed" message))
+    (is (search "at least TextEditor.mcc 15.29" message)))
+  ;; No object, and the cookie on disk says why: too old to open.
+  (let ((message (texteditor-check-message nil nil t "TextEditor.mcc 15.10 (1.1.2000)")))
+    (is (search "too old" message))
+    (is (search "15.10 is installed, and it did not open" message))
+    (is (search "at least TextEditor.mcc 15.29" message))))
+
+(deftest texteditor-check-message-tells-a-missing-file-from-one-that-will-not-open
+  (let ((message (texteditor-check-message nil nil nil nil)))
+    (is (search "not installed" message))
+    (is (search "MUI:Libs/mui/TextEditor.mcc" message))
+    (is (search "at least TextEditor.mcc 15.29" message)))
+  ;; Installed, new enough by its cookie, and still no object.
+  (let ((message (texteditor-check-message nil nil t +te-cookie+)))
+    (is (search "did not open" message))
+    (is (search +te-cookie+ message))
+    (is (search "Avail flush" message))
+    (is (not (search "too old" message))))
+  ;; Installed without a cookie to read.
+  (let ((message (texteditor-check-message nil nil t nil)))
+    (is (search "did not open" message))
+    (is (search "MUI:Libs/mui/TextEditor.mcc is installed." message))))
+
 ;;; --- find-file ------------------------------------------------------------------
 
 (deftest find-file-loads-into-this-window

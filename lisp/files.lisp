@@ -160,6 +160,113 @@ belonged to the old text."
 scratch files)."
   (ignore-errors (when (probe-file path) (delete-file path))))
 
+;;; ------------------------------------------------------------------
+;;; Version cookies, and what the startup check says about TextEditor.mcc
+;;; ------------------------------------------------------------------
+;;;
+;;; An Amiga binary names its version in a `$VER:' cookie (`TextEditor.mcc
+;;; 15.56 (08.06.2021) ...'), which `Version FILE full' prints.  The MUI
+;;; frontend reads it off the class FILE when MUI would not make an object
+;;; of the class: a bare object's MUIA_Version is the version of a class
+;;; that OPENS, and one that is too old for MUI, built for another system
+;;; or short of a library it needs answers nothing -- so a requester that
+;;; said only "did not open" over an installed file was no help (2026-10-27).
+
+(defconstant +te-min-version+ 15)
+(defconstant +te-min-revision+ 29)
+(defparameter *texteditor-file* "MUI:Libs/mui/TextEditor.mcc"
+  "Where MUI loads the class from.")
+
+(defun version-at-least (version revision min-version min-revision)
+  (or (> version min-version)
+      (and (= version min-version) (>= revision min-revision))))
+
+(defun file-version-string (path)
+  "The text of the first `$VER:' cookie in the file at PATH, up to the end
+of its line (a NUL, LF or CR) and without the blanks around it; NIL when
+the file cannot be read or carries none.  Read in pieces -- a class library
+is a few hundred KB -- with the cookie's own text capped at 200 characters."
+  (handler-case
+      (with-open-file (in path :element-type '(unsigned-byte 8))
+        (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
+              (cookie (map 'vector #'char-code "$VER:"))
+              (matched 0)
+              (collecting nil)
+              (text (make-array 32 :element-type 'character
+                                   :adjustable t :fill-pointer 0)))
+          (flet ((done ()
+                   (let ((trimmed (string-right-trim '(#\Space #\Tab) text)))
+                     (return-from file-version-string
+                       (and (plusp (length trimmed)) trimmed)))))
+            (loop
+              (let ((end (read-sequence buffer in)))
+                (when (zerop end)
+                  (return (and collecting (done))))
+                (dotimes (i end)
+                  (let ((byte (aref buffer i)))
+                    (cond (collecting
+                           (when (or (zerop byte) (= byte 10) (= byte 13)
+                                     (>= (length text) 200))
+                             (done))
+                           ;; The blanks after the colon are not the text.
+                           (unless (and (zerop (length text))
+                                        (or (= byte 32) (= byte 9)))
+                             (vector-push-extend (code-char byte) text)))
+                          ((= byte (aref cookie matched))
+                           (incf matched)
+                           (when (= matched (length cookie))
+                             (setf collecting t)))
+                          (t
+                           (setf matched (if (= byte (aref cookie 0)) 1 0)))))))))))
+    (error () nil)))
+
+(defun parse-version-string (text)
+  "The version and revision named in a cookie's TEXT -- the first `N.M' of
+digits, 15 and 56 for `TextEditor.mcc 15.56 (08.06.2021)' -- as two values,
+or NIL when there is none."
+  (let ((length (length text)) (i 0))
+    (flet ((digits (start)
+             (let ((end start))
+               (loop while (and (< end length) (digit-char-p (char text end)))
+                     do (incf end))
+               end)))
+      (loop while (< i length)
+            do (let ((end (digits i)))
+                 (if (and (> end i) (< end length) (char= (char text end) #\.)
+                          (> (digits (1+ end)) (1+ end)))
+                     (return-from parse-version-string
+                       (values (parse-integer text :start i :end end)
+                               (parse-integer text :start (1+ end)
+                                                   :end (digits (1+ end)))))
+                     (setf i (1+ (max i (1- end))))))))
+    nil))
+
+(defun texteditor-check-message (version revision file-found-p file-cookie)
+  "What the startup requester says about TextEditor.mcc, or NIL when the
+class will do.  VERSION and REVISION are what a bare object of the class
+answered, VERSION NIL when MUI made none; then FILE-FOUND-P says whether
+the class file is there and FILE-COOKIE is its version cookie's text (NIL
+without one)."
+  (let ((need (format nil "You need at least TextEditor.mcc ~D.~D (Aminet dev/mui/MCC_TextEditor.lha)."
+                      +te-min-version+ +te-min-revision+)))
+    (flet ((too-old (v r &optional tail)
+             (format nil "The TextEditor MUI component is too old: TextEditor.mcc ~D.~D is installed~@[~A~].~%~A"
+                     v r tail need)))
+      (cond ((and version
+                  (version-at-least version revision +te-min-version+ +te-min-revision+))
+             nil)
+            (version (too-old version revision))
+            ((not file-found-p)
+             (format nil "The TextEditor MUI component is not installed: there is no ~A.~%~A"
+                     *texteditor-file* need))
+            (t
+             (multiple-value-bind (fv fr)
+                 (and file-cookie (parse-version-string file-cookie))
+               (if (and fv (not (version-at-least fv fr +te-min-version+ +te-min-revision+)))
+                   (too-old fv fr ", and it did not open")
+                   (format nil "The TextEditor MUI component did not open, though ~A is installed~@[ (~A)~].  Either it is a build for another system, a library it needs is missing (locale, layers, keymap, rexxsyslib, diskfont, iffparse), or an older copy is still in memory: try `Avail flush' and start Clamacs again.~%~A"
+                           *texteditor-file* file-cookie need))))))))
+
 (defun show-file-text (doc path text)
   (doc-set-text doc text)
   (visit-path doc path)

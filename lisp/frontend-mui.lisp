@@ -133,10 +133,9 @@
 (defconstant +gci-id-offset+ 4)
 (defconstant +gci-storage-offset+ 8)
 
-;;; The oldest TextEditor.mcc the editor works with: SetBlock arrived in
-;;; 15.29 (vendor/texteditor/ChangeLog); the horizontal slider in 15.48.
-(defconstant +te-min-version+ 15)
-(defconstant +te-min-revision+ 29)
+;;; The oldest TextEditor.mcc the editor works with is +te-min-version+ .
+;;; +te-min-revision+ in files.lisp: SetBlock arrived in 15.29
+;;; (vendor/texteditor/ChangeLog); the horizontal slider in 15.48.
 
 ;;; The editor's private methods, the C editor's (TAG_USER | 0x0C1A000n):
 ;;; CKM_IdleTick, fired on the text object by its own MUI timer input
@@ -1665,8 +1664,8 @@ or NIL."
         (mui:dispose-object probe)))))
 
 (defun texteditor-at-least (editor version revision)
-  (let ((v (mui-editor-te-version editor)) (r (mui-editor-te-revision editor)))
-    (or (> v version) (and (= v version) (>= r revision)))))
+  (version-at-least (mui-editor-te-version editor) (mui-editor-te-revision editor)
+                    version revision))
 
 (defun startup-failure (format &rest args)
   "A startup check failed before the first window: show the message in a
@@ -1681,13 +1680,20 @@ error alone goes out."
 
 (defun create-classes (editor)
   (multiple-value-bind (version revision) (texteditor-version)
-    (unless version
-      (startup-failure "Clamacs needs TextEditor.mcc (MUI:Libs/mui/TextEditor.mcc), which did not open."))
+    ;; The class file is looked at only when MUI made no object of it: its
+    ;; $VER: cookie names a version too old to open, or a build for another
+    ;; system (texteditor-check-message, files.lisp).  MUI: is assigned on
+    ;; any system whose muimaster.library opened, so the probe raises no
+    ;; "please insert volume" requester.
+    (let ((message (texteditor-check-message
+                    version revision
+                    (and (null version)
+                         (ignore-errors (probe-file *texteditor-file*)) t)
+                    (and (null version) (file-version-string *texteditor-file*)))))
+      (when message
+        (startup-failure "~A" message)))
     (setf (mui-editor-te-version editor) version
           (mui-editor-te-revision editor) revision)
-    (unless (texteditor-at-least editor +te-min-version+ +te-min-revision+)
-      (startup-failure "Clamacs needs TextEditor.mcc ~D.~D or newer; this one is ~D.~D."
-                       +te-min-version+ +te-min-revision+ version revision))
     (setf (mui-editor-textclass editor)
           (mui:create-custom-class "TextEditor.mcc" (make-text-dispatcher editor)
                                    :data-size +text-data-size+

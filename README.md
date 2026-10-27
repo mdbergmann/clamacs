@@ -684,7 +684,11 @@ MUI 3.8 or newer (`muimaster.library` 19+) and `TextEditor.mcc` 15.29 or
 newer installed in `MUI:Libs/mui/`; the editor checks both at startup,
 and a missing or too old `TextEditor.mcc` is reported in a requester
 (the Workbench icon starts the editor without a console, so nothing
-else would be seen).
+else would be seen).  The requester names the installed version and the
+one needed; when the class file is there but MUI cannot open it (a build
+for another system, a library it needs missing, an older copy still in
+memory) the version is read off the file's `$VER:` cookie, as `Version
+MUI:Libs/mui/TextEditor.mcc full` shows it.
 Verified against MUI 3.8 and TextEditor.mcc 15.56.  MorphOS ships
 `TextEditor.mcc`, so nothing else is needed there.
 
