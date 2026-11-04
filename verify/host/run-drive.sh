@@ -69,9 +69,12 @@ fi
 # bundle's launcher (which starts from the bundled image).
 img="$root/build/host-frontend/clamacs.img"
 launcher="$root/build/host-frontend/Clamacs.app/Contents/MacOS/Clamacs"
+drive_app=""
 if [ "${APP:-0}" = 1 ]; then
     "$root/host/make-app.sh" || exit 1
     [ -x "$launcher" ] || { echo "no launcher at $launcher"; exit 1; }
+    # The FINDER leg hands a file to the running bundle with `open -a'.
+    drive_app="$root/build/host-frontend/Clamacs.app"
 elif [ "${IMAGE:-0}" = 1 ]; then
     AMILISP="$amilisp" "$root/host/make-image.sh" || exit 1
 fi
@@ -160,6 +163,7 @@ run_drive() {
     CLAMACS_DRIVE_TMP="$out/scratch/" CLAMACS_DRIVE_CFG="$cfg" \
     CLAMACS_DRIVE_RC="$out/home/.clamacsrc" \
     CLAMACS_DRIVE_PERSP="$out/home/.clamacs-projects.cfg" \
+    CLAMACS_DRIVE_APP="${drive_app:-}" \
         "$amilisp" --no-userinit --heap 16M --non-interactive \
         --load "$here/drive.lisp" -- "$2" </dev/null >"$out/drive-$2.out" 2>&1 &
     drive_pid=$!

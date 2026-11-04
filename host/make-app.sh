@@ -27,11 +27,16 @@
 #   Contents/Info.plist
 #
 # Cocoa takes the bundle from the running executable's path, so amilisp
-# started by the launcher shows as "Clamacs" in the Dock with the icon.
-# Files dropped on the icon are not opened (a shell launcher gets no Apple
-# Events): start it with them as arguments, `open -a Clamacs.app --args
-# file.lisp', or open them from inside.  Not signed: a first start of a
-# bundle copied from elsewhere needs the usual right-click > Open.
+# started by the launcher shows as "Clamacs" in the Dock with the icon,
+# and the open-documents Apple Event of a file dropped on that icon (or
+# opened with Clamacs, or `open -a Clamacs.app file') reaches the process
+# the launcher exec'd into -- the shim's application hook opens the files
+# (clamacs_host_on_open).  The document types below are what the Finder
+# offers Clamacs for: Lisp sources and every text file by type, and any
+# file at all for the Dock icon (rank None: accepted, never listed under
+# Open With), all as an alternative to the user's own default.  Not
+# signed: a first start of a bundle copied from elsewhere needs the usual
+# right-click > Open.
 #
 # verify/host/run-drive.sh APP=1 drives an editor started from the bundle.
 set -eu
@@ -98,6 +103,36 @@ cat > "$app/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Clamacs, the Common Lisp editor of AmiLisp</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Lisp source</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>lisp</string><string>lsp</string><string>cl</string>
+        <string>asd</string><string>el</string><string>scm</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Text</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.plain-text</string><string>public.source-code</string>
+        <string>public.text</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Any file</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>None</string>
+      <key>LSItemContentTypes</key>
+      <array><string>public.data</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 EOF

@@ -18,8 +18,10 @@
 
 (defun host-test-document (editor &optional (text "") path)
   "A document opened as START opens the first one, holding TEXT, the
-batch flushed."
+batch flushed; the editor has started then, as far as the Finder's hooks
+are concerned."
   (let ((doc nil))
+    (setf (host-editor-started editor) t)
     (with-entry (editor)
       (setq doc (open-document editor path))
       (when (string/= text "")
@@ -2721,3 +2723,156 @@ settled and the tab moved.  The message HOST-DETACH answered."
         (is (eq (editor-active-document editor) d3))
         (is-equal (host-panel-state :projects editor) "current work of (scratch|work) hidden (doc1 doc2)")
         (is-equal (host-panel-state :windows editor) "windows 1: 1 (doc1 doc2 doc3) active doc3")))))
+
+;;; --- files dropped on a window, and the Finder's -------------------------
+
+(deftest host-dropped-files-get-tabs-and-the-last-the-keyboard
+  ;; Two files dropped on the main window: a tab each, in order, the
+  ;; last one active; dropped again, the open one is activated and no
+  ;; second tab is made.  The hook's text is one path per line.
+  (let* ((editor (host-test-editor))
+         (a (temp-file "host-drop-a.lisp" "(defun a ())"))
+         (b (temp-file "host-drop-b.txt" "notes"))
+         (first (host-test-document editor "scratch")))
+    (host-take-evals editor)
+    (host-files-hook editor (host-editor-main editor) (format nil "~A~%~A~%" a b))
+    (let ((docs (live-documents editor)))
+      (is (= 3 (length docs)))
+      (is (eq (first docs) first))
+      (is-equal (doc-path (second docs)) a)
+      (is-equal (doc-path (third docs)) b)
+      (is (eq (editor-active-document editor) (third docs)))
+      (is (doc-lisp-mode (second docs)))
+      (is (not (doc-lisp-mode (third docs))))
+      (is-equal (host-text (second docs)) "(defun a ())")
+      (let ((js (host-take-evals editor)))
+        (is (search "CK.makeDoc(\"doc2\"" js))
+        (is (search "CK.makeDoc(\"doc3\"" js))
+        (is (search "CK.activateDoc(\"doc3\")" js)))
+      ;; The first one again: no new tab, the keyboard moves to it
+      (host-files-hook editor (host-editor-main editor) a)
+      (is (= 3 (length (live-documents editor))))
+      (is (eq (editor-active-document editor) (second docs)))
+      (is (search "CK.activateDoc(\"doc2\")" (host-take-evals editor))))))
+
+(deftest host-dropped-folder-and-empty-lines-open-nothing
+  (let* ((editor (host-test-editor))
+         (doc (host-test-document editor "scratch"))
+         (dir (or (ext:getenv "TMPDIR") "/tmp/")))
+    (is (folder-path-p dir))
+    (is (not (folder-path-p (temp-file "host-drop-none.lisp"))))
+    (with-entry (editor)
+      (is (null (host-files-opened editor (host-editor-main editor) (list "" dir)))))
+    (is (= 1 (length (live-documents editor))))
+    (is (eq (editor-active-document editor) doc))
+    (is (search "is a folder" (doc-message-text doc)))
+    ;; Nothing at all is opened while a requester runs its own loop
+    (setf (host-editor-in-modal editor) t)
+    (host-files-hook editor (host-editor-main editor) (temp-file "host-drop-c.txt" "c"))
+    (setf (host-editor-in-modal editor) nil)
+    (is (= 1 (length (live-documents editor))))
+    ;; A path no file has yet is a new buffer with that name, as find-file
+    ;; makes one
+    (let ((new (temp-file "host-drop-new.lisp")))
+      (host-files-hook editor (host-editor-main editor) new)
+      (is (= 2 (length (live-documents editor))))
+      (is-equal (doc-path (editor-active-document editor)) new)
+      (is-equal (doc-message-text (editor-active-document editor)) "(New file)"))))
+
+(deftest host-dropped-file-lands-in-the-window-it-was-dropped-on
+  ;; A drop on a detached window makes the tab there, not where the
+  ;; active document is; a file open in a hidden perspective is brought
+  ;; over and activated where it is.
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (c (temp-file "host-drop-d.lisp" "(d)"))
+         (w2 nil))
+    (with-entry (editor) (setq w2 (open-window editor "doc2")))
+    (is (host-window-ready w2))
+    (host-take-evals editor)
+    (host-files-hook editor w2 c)
+    (let ((dropped (editor-active-document editor)))
+      (is (not (eq dropped d1)))
+      (is-equal (doc-path dropped) c)
+      (is (eq (hdoc-window dropped) w2))
+      (is (search "CK.makeDoc(\"doc2\"" (host-take-evals w2)))
+      ;; Hidden by a switch to a new project, then dropped on the main
+      ;; window: brought over, shown again in its own window, active
+      (with-entry (editor)
+        (perspective-switch editor (make-perspective editor "work" :root "T:work/")))
+      (is (not (doc-shown-p dropped)))
+      (host-take-evals w2)
+      (host-files-hook editor (host-editor-main editor) c)
+      (is (doc-shown-p dropped))
+      (is (eq (hdoc-window dropped) w2))
+      (is (eq (editor-active-document editor) dropped))
+      (is (search "CK.showDoc(\"doc2\",true);" (host-take-evals w2))))))
+
+(deftest host-drop-test-needs-a-native-window
+  ;; The script entry: without a page there is no native window to drop on.
+  (let ((editor (host-test-editor)))
+    (host-test-document editor)
+    (is-equal (host-drop-test "/nowhere.lisp" 1 editor) "no such window")
+    (is-equal (host-drop-test '("/a" "/b") 7 editor) "no such window")))
+
+(deftest host-files-handed-over-before-the-start-wait-for-its-first-documents
+  ;; A Finder start's own files arrive on the loop's first step, before
+  ;; START made a document: the hook keeps them, OPEN-FIRST-DOCUMENTS
+  ;; opens them after the command line's files, and an unnamed buffer is
+  ;; made only when nothing else was.
+  (let* ((editor (host-test-editor))
+         (a (temp-file "host-handed-a.lisp" "(a)"))
+         (b (temp-file "host-handed-b.lisp" "(b)")))
+    (is (not (host-editor-started editor)))
+    (host-files-hook editor (host-editor-main editor) (format nil "~A~%~A" a b))
+    (is (null (live-documents editor)))
+    (is-equal (host-editor-pending-files editor) (list a b))
+    (with-entry (editor) (open-first-documents editor '()))
+    (is (host-editor-started editor))
+    (is (null (host-editor-pending-files editor)))
+    (is-equal (mapcar #'doc-path (live-documents editor)) (list a b))
+    (is-equal (doc-path (editor-active-document editor)) b)
+    ;; From now on the hook opens at once
+    (host-files-hook editor (host-editor-main editor) (temp-file "host-handed-c.txt" "c"))
+    (is (= 3 (length (live-documents editor)))))
+  ;; Handed a folder only: the unnamed buffer, as a start without files
+  (let ((editor (host-test-editor)))
+    (host-files-hook editor (host-editor-main editor) (or (ext:getenv "TMPDIR") "/tmp/"))
+    (with-entry (editor) (open-first-documents editor '()))
+    (is (= 1 (length (live-documents editor))))
+    (is (null (doc-path (editor-active-document editor)))))
+  ;; The command line's files first, the Finder's after, no unnamed buffer
+  (let* ((editor (host-test-editor))
+         (a (temp-file "host-handed-a.lisp" "(a)"))
+         (b (temp-file "host-handed-b.lisp" "(b)")))
+    (host-files-hook editor (host-editor-main editor) b)
+    (with-entry (editor) (open-first-documents editor (list a)))
+    (is-equal (mapcar #'doc-path (live-documents editor)) (list a b))))
+
+(deftest host-a-windows-focus-never-switches-its-tabs
+  ;; The page's report of a window's focus names the tab it shows; it is
+  ;; honoured for another window, or for the active document itself, and
+  ;; ignored for another tab of the active document's own window -- the
+  ;; report may be older than the activation Lisp made meanwhile.
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (w2 nil)
+         (d3 nil))
+    (is (eq (editor-active-document editor) d2))
+    (with-entry (editor) (host-window-focus editor "doc1"))
+    (is (eq (editor-active-document editor) d2))
+    (with-entry (editor) (host-window-focus editor "doc2"))
+    (is (eq (editor-active-document editor) d2))
+    (with-entry (editor) (host-window-focus editor "doc9"))
+    (is (eq (editor-active-document editor) d2))
+    (with-entry (editor) (setq w2 (open-window editor "doc3")))
+    (setq d3 (host-test-document editor "three"))
+    (with-entry (editor) (move-document d3 w2))
+    (is (eq (editor-active-document editor) d3))
+    (with-entry (editor) (host-window-focus editor "doc1"))
+    (is (eq (editor-active-document editor) d1))
+    (with-entry (editor) (host-window-focus editor "doc3"))
+    (is (eq (editor-active-document editor) d3))
+    (with-entry (editor) (host-window-focus editor "doc2"))
+    (is (eq (editor-active-document editor) d2))))

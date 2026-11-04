@@ -2195,6 +2195,54 @@ go."
         (ok "C-c C-z went back to the REPL: ~A" *result*)
         (fail "after clamacs-repl the active window is ~A" *result*))))
 
+(defun leg-finder ()
+  ;; Files from the Finder (H11).  A drop on the main window through the
+  ;; shim's hook (host-drop-test: the hook on the native window, the
+  ;; callback, the entry -- short of the pasteboard), the dropped file
+  ;; the active document after; a folder refused with a note.  Then,
+  ;; when run-drive.sh started the editor through the bundle (APP=1,
+  ;; CLAMACS_DRIVE_APP names it), a file handed to the running
+  ;; application by `open -a' -- the Dock icon's path: Launch Services,
+  ;; the Apple Event, application:openFiles: on the shim's delegate --
+  ;; must become the active document too, and the window's focus the
+  ;; Finder gave back must not switch to the old tab.
+  (let ((file (scratch "finder-drop.lisp"))
+        (app (ext:getenv "CLAMACS_DRIVE_APP")))
+    (write-file file (format nil "(defun finder-drop () :dropped)~%"))
+    (cmd (format nil "EVAL (clamacs::host-drop-test ~S)" file))
+    (cond ((result-is "\"no drop hook on this host\"")
+           (ok "no drops on this host's shim; files are opened from inside"))
+          ((not (result-is "\"dropped\""))
+           (fail "host-drop-test answered ~A" *result*))
+          (t
+           (cmd "EVAL (clamacs::doc-path (clamacs::editor-active-document clamacs::*editor*))")
+           (if (result-has "finder-drop.lisp")
+               (ok "a file dropped on the window is the active document: ~A" *result*)
+               (fail "after the drop the active document is ~A" *result*))
+           (cmd (format nil "EVAL (clamacs::host-drop-test ~S)" *tmp*))
+           (cmd "EVAL (clamacs::doc-message-text (clamacs::editor-active-document clamacs::*editor*))")
+           (if (result-has "is a folder")
+               (ok "a folder dropped is refused with a note: ~A" *result*)
+               (fail "a folder dropped left the echo area saying ~A" *result*))))
+    (cond ((or (null app) (string= app ""))
+           (info "not started through the bundle: the Finder's open is not tried"))
+          (t
+           (let ((handed (scratch "finder-open.lisp")))
+             (write-file handed (format nil "(defun finder-open () :opened)~%"))
+             (ext:system-command (format nil "open -a ~S ~S" app handed))
+             (if (string/= (wait-eval "(clamacs::doc-path (clamacs::editor-active-document clamacs::*editor*))"
+                                      "finder-open.lisp" 40)
+                           "")
+                 (ok "a file handed to the running bundle by open -a is the active document")
+                 (fail "after open -a the active document is ~A" *result*))
+             ;; And it stays so: the window's focus the Finder gave back
+             ;; must not switch to the tab it showed before.
+             (pause 25)
+             (cmd "EVAL (clamacs::doc-path (clamacs::editor-active-document clamacs::*editor*))")
+             (if (result-has "finder-open.lisp")
+                 (ok "the Finder's file keeps the keyboard after the window's focus came back")
+                 (fail "the window's focus switched back to ~A" *result*)))))))
+
 (defun main ()
   (setq *port* (connect 60))
   (cond ((null *port*)
@@ -2222,6 +2270,7 @@ go."
   (leg-own-lisp)
   (leg-detach)
   (leg-projects)
+  (leg-finder)
   ;; Leave the errors file active, as the Amiga run does.
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (pause 25)

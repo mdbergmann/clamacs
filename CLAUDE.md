@@ -343,6 +343,30 @@ dynamic groups in one menu (View's minimap and cursor items) made the
 Cocoa shim anchor a titleless group on the one before it, by name: both
 anchored on the menu's last item at build time and their order depended
 on which was filled last.
+**Files from the Finder** (2026-11-03, macOS, spec section H11): a file
+dragged onto a window and a file opened through the Finder (the Dock
+icon, Open With, `open -a`) both come through the shim --
+`clamacs_host_on_drop` swaps the web view's class for a subclass that
+takes a drag of file URLs and leaves every other drag to WKWebView
+(WebKit's own answer to a file drop is to navigate the page to the
+file), `clamacs_host_on_open` wraps webview's application delegate for
+`application:openFiles:`, `make-app.sh` declares the document types --
+and land in `host-files-opened` (`frontend-host.lisp`): visited as
+`find-file` visits them, a tab in the window dropped on, the last one
+active, a folder refused.  Two rules: the files a Finder START was given
+are delivered DURING the launch -- inside the first `webview_create` --
+so the hook goes on before it, wraps webview's delegate at
+`willFinishLaunching`, and the editor keeps the paths until
+`open-first-documents` makes START's documents (at a shell launch AppKit
+hands over the command line's first file -- the heap image -- which the
+shim leaves out); and the
+page's window-focus report is its own binding, `clamacsWindowFocus`,
+which never switches tabs within the active document's window -- the
+Finder activates the application before it hands the file over, and the
+old tab's report arrived after the new tab was active.  `host-drop-test`
+is the script's drop; the drive's FINDER leg runs it and, under `APP=1`,
+`open -a` against the running bundle.  GTK and Win32 take no drops yet.
+
 **Projects** (`specs/clamacs-perspectives.md`; 2026-10-14 as
 perspectives, the project UI 2026-10-20): `lisp/perspective.lisp` -- a
 project is a folder, and underneath a PERSPECTIVE (perspective.el's

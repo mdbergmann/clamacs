@@ -1244,10 +1244,14 @@
   // The window itself gaining the keyboard (the user came back to it
   // from another of the editor's windows): the document it displays is
   // the active one again, which Lisp's echo row and status line follow.
-  // An element's focus does not bubble; the window's own is the target.
+  // Its own binding, not clamacsActivate: Lisp may have activated
+  // another tab of this window since (a file the Finder opened as it
+  // brought the application to the front), and takes a window's focus
+  // for a tab switch never.  An element's focus does not bubble; the
+  // window's own is the target.
   window.addEventListener("focus", (ev) => {
     if ((ev.target === window || ev.target === document) && activeId !== null)
-      lisp("clamacsActivate", activeId);
+      lisp("clamacsWindowFocus", activeId);
   });
 
   // Ready, with the system's colour scheme: what the default theme follows.

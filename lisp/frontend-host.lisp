@@ -173,6 +173,12 @@ a window a tab was shown in separately (see \"Detached windows\")."
   (windows '())
   (next-window 0)
   (panel-windows '())            ; panel name -> window
+  ;; Files the Finder handed over before START had made its first
+  ;; documents (a Finder start's own files arrive on the loop's first
+  ;; step, inside HOST-OPEN), and whether it has: see "Files dropped on a
+  ;; window, and files the Finder opens"
+  (started nil)
+  (pending-files '())
   ;; The pending colour records of one document (see DOC-COLOUR)
   (colour-doc nil)
   (colour-runs '())              ; run records, newest first
@@ -2264,6 +2270,7 @@ Without a page (the tests) it is ready at once."
         ;; The close button: the documents back into the main window, the
         ;; panels closed (ATTACH-ALL).
         (install-close-hook window (lambda () (setf (host-window-closing window) :attach)))
+        (install-drop-hook window)
         (wv-str window "webview_set_html" (host-editor-page-html editor))))
     (setf (host-window-dock-height window) (host-window-dock-height (host-editor-main editor)))
     (place-window window role)
@@ -2448,6 +2455,8 @@ frees its engine, and the page's next message runs on freed memory
           (host-window-win window) nil)
     (when (and win (host-editor-shim editor))
       (shim editor "clamacs_host_on_close" :void '(:pointer :pointer :pointer)
+            win (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0))
+      (shim editor "clamacs_host_on_drop" :int32 '(:pointer :pointer :pointer)
             win (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0)))
     (when w
       (wv editor "webview_destroy" :int32 '(:pointer) w))
@@ -2565,6 +2574,164 @@ editor is done."
     (shim editor "clamacs_host_on_close" :void '(:pointer :pointer :pointer)
           (host-window-win window) cb (ffi:make-foreign-pointer 0))))
 
+;;; ------------------------------------------------------------------
+;;; Files dropped on a window, and files the Finder opens
+;;; ------------------------------------------------------------------
+
+;;; Two ways a file arrives from outside the editor on a Mac, both the
+;;; shim's: dropped from the Finder on a window (clamacs_host_on_drop --
+;;; WebKit's own answer to a file drop is to navigate the page to the
+;;; file), or opened THROUGH the Finder -- dropped on the Dock icon,
+;;; double-clicked with Clamacs as its application, `open -a Clamacs
+;;; file' -- which Launch Services sends the running application
+;;; (clamacs_host_on_open; the files a Finder start was given come the
+;;; same way, on the first turn of the loop).  Both end in
+;;; HOST-FILES-OPENED: each file is visited as `find-file' visits it -- one
+;;; open already is activated where it is (brought over from another
+;;; perspective first), a new one gets a tab in the window it was dropped
+;;; on (the main window for the Finder's) -- and the last gets the
+;;; keyboard.  A folder is not a file to open: the echo area says so.
+;;; The paths arrive one per line, as the file system spells them.
+
+(defun folder-path-p (path)
+  "Whether PATH names a directory that is there."
+  (let ((found (probe-file path)))
+    (and found (directory-only-p (namestring found)))))
+
+(defun host-note (editor control &rest args)
+  "A line for the echo area of the active document, or the console when
+there is none."
+  (let ((doc (active-document editor))
+        (text (apply #'format nil control args)))
+    (if doc
+        (doc-message doc text)
+        (format *error-output* "clamacs: ~A~%" text))))
+
+(defun host-open-file-in (editor window path)
+  "PATH visited: the document that has it already, brought over when
+hidden, else a new one with its tab in WINDOW.  NIL, with a note, when
+the file cannot be read."
+  (let ((open (find-document-by-path editor path)))
+    (cond (open
+           (unless (doc-shown-p open)
+             (perspective-bring-over editor open))
+           open)
+          (t
+           (let ((doc (open-document editor path)))
+             (cond ((null doc)
+                    (host-note editor "Cannot open ~A" path)
+                    nil)
+                   (t
+                    (when (and window (not (eq (hdoc-window doc) window)))
+                      (move-document doc window :activate nil))
+                    doc)))))))
+
+(defun host-files-opened (editor window paths)
+  "PATHS, dropped on WINDOW (NIL: wherever a new tab goes) or handed over
+by the Finder, visited in order; the last one visited gets the keyboard."
+  (let ((last nil))
+    (dolist (path paths)
+      (cond ((string= path ""))
+            ((folder-path-p path)
+             (host-note editor "~A is a folder (Open Project opens one)" path))
+            (t
+             (let ((doc (host-open-file-in editor window path)))
+               (when doc
+                 (setq last doc))))))
+    (when last
+      (doc-activate last))
+    last))
+
+(defun host-files-hook (editor window text)
+  "The two hooks' common landing: TEXT's lines opened inside an entry.
+Before START has made its first documents they are kept for it
+(OPEN-FIRST-DOCUMENTS): the files a Finder start was given arrive during
+the launch, inside HOST-OPEN's first webview_create, with no window and
+no page to open them in.  Dropped while a requester runs its own loop (a
+drop cannot happen then; an Apple Event can)."
+  (cond ((not (host-editor-started editor))
+         (setf (host-editor-pending-files editor)
+               (append (host-editor-pending-files editor) (split-lines text))))
+        ((host-editor-in-modal editor))
+        (t
+         (with-entry (editor)
+           (host-files-opened editor window (split-lines text))))))
+
+(defun open-first-documents (editor files)
+  "START's documents, inside its first entry: FILES from the command
+line, then what the Finder handed over while the window came up, and an
+unnamed buffer when there were no files at all (or none the Finder's
+could open: a folder).  From here on the hooks open files as they come."
+  (let ((handed (shiftf (host-editor-pending-files editor) '())))
+    (setf (host-editor-started editor) t)
+    (dolist (path files)
+      (unless (open-document editor path)
+        (format *error-output* "clamacs: cannot open ~A~%" path)))
+    (host-files-opened editor (host-editor-main editor) handed)
+    (unless (or files (live-documents editor))
+      (open-document editor nil))))
+
+(defun install-drop-hook (window)
+  "Files dropped on WINDOW's native window come to HOST-FILES-OPENED for
+that window (the shim's hook; taken off again by DESTROY-WINDOW)."
+  (let* ((editor (host-window-editor window))
+         (cb (ffi:make-callback :void '(:pointer :pointer)
+                                (lambda (arg paths)
+                                  (declare (ignore arg))
+                                  (host-files-hook editor window (ffi:foreign-to-string paths))))))
+    (push cb (host-window-callbacks window))
+    (shim editor "clamacs_host_on_drop" :int32 '(:pointer :pointer :pointer)
+          (host-window-win window) cb (ffi:make-foreign-pointer 0))))
+
+(defun install-open-hook (editor)
+  "Files the Finder opens come to HOST-FILES-OPENED for the main window
+(the shim's application hook; taken off again by HOST-CLOSE).  Installed
+before the first webview_create, which runs the launch: the files a
+Finder start was given are delivered during it."
+  (let ((cb (ffi:make-callback :void '(:pointer :pointer)
+                               (lambda (arg paths)
+                                 (declare (ignore arg))
+                                 (host-files-hook editor (host-editor-main editor)
+                                                  (ffi:foreign-to-string paths))))))
+    (push cb (host-window-callbacks (host-editor-main editor)))
+    (shim editor "clamacs_host_on_open" :void '(:pointer :pointer)
+          cb (ffi:make-foreign-pointer 0))))
+
+(defun host-drop-test (paths &optional (window-number 1) (editor *editor*))
+  "For a script: PATHS (a list, or one path) dropped on the window numbered
+WINDOW-NUMBER as the Finder drops them, through the shim -- the hook on
+the native window, the callback, the entry; short of the pasteboard.
+Answers \"dropped\", \"no such window\", or \"no drop hook on this host\"
+where the shim takes no drops (GTK, Win32)."
+  (let ((window (and editor (host-window editor window-number)))
+        (text (format nil "~{~A~^~%~}" (if (listp paths) paths (list paths)))))
+    (cond ((or (null window) (null (host-window-win window)))
+           "no such window")
+          ((not (host-editor-shim editor))
+           "no drop hook on this host")
+          ((/= 0 (ffi:with-foreign-string (ftext text)
+                   (shim editor "clamacs_host_drop_test" :int32 '(:pointer :pointer)
+                         (host-window-win window) ftext)))
+           "dropped")
+          (t "no drop hook on this host"))))
+
+(defun host-window-focus (editor doc-id)
+  "The clamacsWindowFocus binding: a window of the editor's got the
+keyboard back and its page names the document it shows.  Activated,
+unless it is another tab of the window the active document is in
+already: a window's focus never switches tabs, and the report may be
+older than an activation Lisp made meanwhile -- the Finder brings the
+application to the front BEFORE it hands over a file to open, and the
+page's report of the old tab arrived after the new one was active
+(2026-11-03)."
+  (let ((doc (host-document-by-id editor doc-id))
+        (active (editor-active-document editor)))
+    (when (and doc
+               (or (null active)
+                   (eq doc active)
+                   (not (eq (hdoc-window doc) (hdoc-window active)))))
+      (doc-activate doc))))
+
 (defun host-log (editor text)
   "The clamacsLog binding: the page reports a JavaScript error."
   (format *error-output* "clamacs: the page reported: ~A~%" text)
@@ -2601,6 +2768,7 @@ height, the report -- goes to the window."
           (lambda (doc-id)
             (let ((doc (host-document-by-id editor doc-id)))
               (when doc (doc-activate doc)))))
+    (bind window "clamacsWindowFocus" (lambda (doc-id) (host-window-focus editor doc-id)))
     (bind window "clamacsCloseTab"
           (lambda (doc-id)
             (let ((doc (host-document-by-id editor doc-id)))
@@ -2715,6 +2883,12 @@ the page has reported ready."
           (host-editor-shim editor) (or (ffi:load-library shim)
                                         (error "Clamacs: ~A did not load." shim))
           (host-editor-page-html editor) (read-page page))
+    ;; Files the Finder hands to the application: the hook goes on BEFORE
+    ;; the first webview_create, which runs the launch, since a Finder
+    ;; start's own files are delivered during it (the shim keeps them
+    ;; back until the delegate is there; the editor keeps the paths until
+    ;; it has started).
+    (install-open-hook editor)
     (let ((w (wv editor "webview_create" :pointer '(:int32 :pointer) 0 (ffi:make-foreign-pointer 0))))
       (when (ffi:null-pointer-p w)
         (error "Clamacs: webview_create failed."))
@@ -2729,6 +2903,8 @@ the page has reported ready."
     ;; The close button asks the editor: `save-buffers-kill-emacs', which
     ;; the loop carries out.
     (install-close-hook main (lambda () (setf (editor-quitting editor) t)))
+    ;; Files from the Finder dropped on the window
+    (install-drop-hook main)
     (wv-str main "webview_set_html" (host-editor-page-html editor))
     (let ((deadline (+ (get-internal-real-time) (* 20 internal-time-units-per-second))))
       (loop until (host-window-ready main)
@@ -2742,6 +2918,11 @@ callbacks, the libraries: nothing OS-owned outlives START."
   (when (and (host-editor-shim editor) (host-editor-native-menu editor))
     (shim editor "clamacs_host_menu_clear" :void '())
     (setf (host-editor-native-menu editor) nil))
+  ;; The application's open hook off before the main window goes: its
+  ;; callback is among that window's.
+  (when (host-editor-shim editor)
+    (shim editor "clamacs_host_on_open" :void '(:pointer :pointer)
+          (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0)))
   (dolist (window (reverse (host-editor-windows editor)))
     (destroy-window window))
   (when (host-editor-shim editor)
@@ -2786,11 +2967,7 @@ last tab closes."
                     ;; for the user's pick (perspective.lisp); the window
                     ;; a start always opened.
                     (perspective-list-at-start editor)
-                    (if files
-                        (dolist (path files)
-                          (unless (open-document editor path)
-                            (format *error-output* "clamacs: cannot open ~A~%" path)))
-                        (open-document editor nil)))
+                    (open-first-documents editor files))
                   (when (live-documents editor)
                     (when *wire-starter*
                       (handler-case (funcall *wire-starter* editor)

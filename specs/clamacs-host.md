@@ -200,6 +200,9 @@ frameworks; no other toolchain).  Its C API, called through
 | `int clamacs_host_open_url(const char *url)` | `doc-open-url`: `NSWorkspace` |
 | `void clamacs_host_get_frame(void *win, int32_t out[4])` / `set_frame(win, l, t, w, h)` | `doc-geometry`, `layout-place` (top-left origin, flipped from Cocoa's) |
 | `void clamacs_host_on_close(void *win, void (*fn)(void *), void *arg)` | the window's close button asks the editor (`save-buffers-kill-emacs`) instead of ending the loop; a delegate that forwards everything else to webview's |
+| `int clamacs_host_on_drop(void *win, void (*fn)(void *, const char *), void *arg)` | files dropped on the window from the Finder: `fn(arg, paths)`, one path per line (WebKit's own answer to a file drop is to navigate the page to it: the web view's class is swapped for a subclass that takes a drag carrying file URLs and leaves every other drag to WKWebView); a NULL `fn` takes the hook off before `webview_destroy`; 0 where the host takes no drops (GTK, Win32) |
+| `int clamacs_host_drop_test(void *win, const char *paths)` | for a script: `paths` delivered to the window's hook as a drop is, short of the pasteboard (`host-drop-test`) |
+| `void clamacs_host_on_open(void (*fn)(void *, const char *), void *arg)` | files the Finder opens -- dropped on the Dock icon, opened with Clamacs, `open -a Clamacs file`, and the files a Finder start was given -- through `application:openFiles:` on a delegate that wraps webview's -- put on before the first `webview_create`, which runs the launch, and wrapping at `applicationWillFinishLaunching`, since a Finder start's own files are delivered during the launch; a NULL `fn` gives the application its previous delegate back |
 | `const char *clamacs_host_toolkit(void)` | the toolkit line for About ("Cocoa/WebKit on macOS 27.0.0") |
 
 The Linux (GTK 3, `CLAMACS_HOST_GTK`) and Windows (Win32, `_WIN32`)
@@ -379,6 +382,7 @@ to the `clamacsLog` binding, registered before the bundle runs.
 | `clamacsMiniInput` | `text` | the input line changed on its own (paste) |
 | `clamacsPickCompletion` | `row, accept` | a row of the completion list clicked (`accept` 0: the candidate into the line) or double-clicked (1: and taken, as RET) |
 | `clamacsActivate` | `docId` | a tab was clicked / a view focused |
+| `clamacsWindowFocus` | `docId` | the window itself got the keyboard back, showing this tab: activated unless it is another tab of the window the active document is in -- a window's focus never switches tabs, and the report may be older than an activation Lisp made meanwhile (the Finder brings the application to the front before it hands a file over) |
 | `clamacsCloseTab` | `docId` | a tab's close button |
 | `clamacsMenu` | `index` | a menu item picked (the table index): `menu-pick` on the active document, refused when the item is dimmed by now |
 | `clamacsDynamic` | `which, n` | an item of a dynamic group (`"buffers"`, `"themes"`) picked, by its position in what `setDynamic(which, ...)` last gave (the bar counts) |
@@ -1127,6 +1131,65 @@ with the memory note updated.
   a later window), `test-theme.lisp` (the form's rewrite beside the
   theme's and the minimap's); the drive's CURSOR leg and the View menu
   leg of `drive.rexx` (the drawn width before and after the pick).
+
+### H11 -- files from the Finder: a drop on the window, the Dock icon
+
+- **Done 2026-11-03, macOS only.**  Two ways a file arrives from outside
+  the editor, both the shim's.  A file dragged from the Finder onto a
+  window: WebKit's own answer to a file drop is to NAVIGATE the web
+  view to the file, which replaced the editor's page, so
+  `clamacs_host_on_drop` swaps the web view's class for a subclass
+  (`object_setClass`, as key-value observing does; no storage added)
+  whose dragging-destination methods take a drag that carries file URLs
+  -- decided when the drag enters and kept for the session, so WebKit
+  sees all of a session or none of it -- and leave every other drag,
+  text dragged inside the page, to WKWebView; the hook is kept on the
+  window like the close hook and taken off before `webview_destroy`.
+  A file opened THROUGH the Finder -- dropped on the Dock icon,
+  double-clicked with Clamacs as its application, `open -a Clamacs
+  file` -- is an open-documents Apple Event to the running application,
+  which NSApplication turns into `application:openFiles:` on its
+  delegate: `clamacs_host_on_open` wraps webview's delegate the way the
+  window's is wrapped (one hook, the application's).  The launcher being
+  a shell script that `exec`s amilisp was no obstacle, as the bundle's
+  comment feared: the process keeps its pid and Launch Services knows it
+  as the bundle.  `make-app.sh` declares the document types (Lisp
+  sources and text by type as an alternative to the user's default,
+  `public.data` at rank None so any file may be dropped on the icon).
+  Both land in `host-files-opened`: each file visited as `find-file`
+  visits it (one open already is activated where it is, brought over
+  from another perspective first; a new one gets a tab in the window it
+  was dropped on, the main window for the Finder's), the last one gets
+  the keyboard, a folder is refused with a note.  Two things the Finder
+  taught: the files a Finder START was given are delivered DURING the
+  launch, between `applicationWillFinishLaunching` and
+  `applicationDidFinishLaunching` -- inside the first `webview_create`,
+  whose `[NSApp run]` the launch is -- and a delegate without
+  `openFiles:` at that moment sends them to NSDocumentController, whose
+  "cannot open files of this type" alert then ran modal inside the
+  editor's first loop step (the port never came up; `sample` found the
+  alert).  So the hook goes on before that `webview_create`, wraps
+  webview's delegate at `willFinishLaunching`, and the Lisp callback,
+  running inside `webview_create` with no window yet, keeps the paths
+  (`pending-files`) until `open-first-documents` makes START's documents
+  (the command line's first, then the Finder's, the unnamed buffer only
+  when there were none at all).  At a launch from a SHELL AppKit reads
+  the command line itself and hands the delegate its first argument
+  that names a file -- the heap image of `amilisp --image clamacs.img`,
+  which opened as a buffer -- so a file handed over during the launch
+  that is among the process's arguments is left out.  And the Finder brings
+  the application to the front BEFORE it hands the file over, so the
+  page's window-focus report of the old tab arrived after the new one was
+  active and switched back -- that report is its own binding now,
+  `clamacsWindowFocus`, which never switches tabs within the active
+  document's window.  `host-drop-test` (the shim's
+  `clamacs_host_drop_test`) is the script's drop, through the hook on
+  the native window; the drive's FINDER leg uses it and, under `APP=1`,
+  hands a file to the running bundle with `open -a`.  GTK and Win32
+  answer 0 and keep opening files from inside.  Tests: `test-host.lisp`
+  (the tabs, the order, the keyboard, a folder, a drop on a detached
+  window, a hidden document brought over, the files kept for START, the
+  window-focus rule).
 
 ## Runtime items (commits in AmiLisp, each under every gate)
 

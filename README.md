@@ -109,7 +109,7 @@ candidates listed above the status line:
 - A checkout of AmiLisp with the `clamacs` submodule, and a built host
   `amilisp` (`make host` in the superproject).
 - macOS: nothing else; `make host-app` in the submodule builds a
-  `Clamacs.app` you can keep in the Dock.
+  `Clamacs.app` you can keep in the Dock and drop files on.
 - Linux: GTK 3 and WebKitGTK 4.1 (see [docs/developing.md](docs/developing.md)
   for the packages).
 - Windows is not supported yet.
@@ -148,9 +148,11 @@ make host-app                    # macOS: build/host-frontend/Clamacs.app
 open -a build/host-frontend/Clamacs.app --args file.lisp
 ```
 
-The application bundle is not signed, and files dropped on its icon are
-not opened (a shell launcher gets no Apple Events): open them from
-inside the editor.
+Files dragged from the Finder onto the editor's window open as tabs, and
+so do files dropped on the Dock icon, opened with `Open With > Clamacs`
+or given to `open -a Clamacs.app` -- each file once, the last one active.
+The application bundle is not signed: a bundle copied to another Mac
+needs the usual right-click > Open the first time.
 
 ### The first start
 

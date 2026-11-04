@@ -9,7 +9,9 @@
  * tab, so what is per window is kept ON the window, never in a static)
  * -- and on macOS the menu bar, the screen's, built from the editor's
  * menu table (the page draws its own where the host has no menu of its
- * own).  Built into libclamacs-host.{dylib,so,dll} by host/build.sh and
+ * own), the files dropped on a window (WebKit would navigate to them)
+ * and the files the Finder opens (the Dock icon's Apple Event).  Built
+ * into libclamacs-host.{dylib,so,dll} by host/build.sh and
  * called through ffi:call-foreign; every entry is plain C, and the same
  * on every host:
  *
@@ -427,6 +429,315 @@ void clamacs_host_raise(void *win)
     @autoreleasepool {
         NSWindow *window = (__bridge NSWindow *)win;
         [window makeKeyAndOrderFront:nil];
+    }
+}
+
+/* ---- files dropped on a window ---------------------------------------- */
+
+/* A file from the Finder dropped on a window is a file to open, and
+ * nothing else.  WebKit's own answer to a file drop is to NAVIGATE the
+ * web view to the file, which replaces the editor's page; so the web
+ * view's class is swapped for a subclass of ours (object_setClass, as
+ * key-value observing does it -- the subclass adds no storage to the
+ * instance) whose dragging-destination methods take a drag that carries
+ * file URLs and hand everything else, text dragged inside the page, to
+ * WKWebView.  Whether the drag in progress is ours is decided when it
+ * enters and kept for the session (one drag at a time on a Mac), so
+ * WebKit sees either all of a session or none of it; and a method the
+ * superclass does not implement is not called on it.  The hook is kept
+ * ON the window, as the close hook is: FN(ARG, PATHS), the paths one
+ * per line, UTF-8, valid for the call. */
+typedef void (*clamacs_files_fn)(void *, const char *);
+
+@interface ClamacsDropHook : NSObject
+@property (nonatomic, assign) clamacs_files_fn fn;
+@property (nonatomic, assign) void *arg;
+@end
+
+@implementation ClamacsDropHook
+@end
+
+static const void *drop_hook_key = &drop_hook_key;
+
+/* The file URLs a drag carries, or nil for a drag of anything else. */
+static NSArray<NSURL *> *drag_file_urls(id<NSDraggingInfo> info)
+{
+    NSArray<NSURL *> *urls = [info.draggingPasteboard
+        readObjectsForClasses:@[[NSURL class]]
+                      options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+    return urls.count > 0 ? urls : nil;
+}
+
+/* PATHS as one string, a path per line. */
+static NSString *paths_text(NSArray<NSString *> *paths)
+{
+    return [paths componentsJoinedByString:@"\n"];
+}
+
+/* WINDOW's hook called with the paths of URLS; 1 when it had one. */
+static int deliver_drop(NSWindow *window, NSArray<NSURL *> *urls)
+{
+    ClamacsDropHook *hook = objc_getAssociatedObject(window, drop_hook_key);
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    if (hook == nil || hook.fn == NULL)
+        return 0;
+    for (NSURL *url in urls) {
+        if (url.isFileURL && url.path != nil)
+            [paths addObject:url.path];
+    }
+    if (paths.count == 0)
+        return 0;
+    const char *text = [paths_text(paths) UTF8String];
+    if (text != NULL)
+        hook.fn(hook.arg, text);
+    return 1;
+}
+
+/* The drag in progress carries files and the window has a hook: ours. */
+static BOOL drop_taking;
+
+/* WKWebView's own implementation, when it has one (NSView has none of
+ * these: a super call without the check would be an unrecognised
+ * selector). */
+#define SUPER_HAS(sel) [WKWebView instancesRespondToSelector:(sel)]
+
+@interface ClamacsDropWebView : WKWebView
+@end
+
+@implementation ClamacsDropWebView
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info
+{
+    drop_taking = drag_file_urls(info) != nil
+        && objc_getAssociatedObject(self.window, drop_hook_key) != nil;
+    if (drop_taking)
+        return NSDragOperationCopy;
+    return SUPER_HAS(_cmd) ? [super draggingEntered:info] : NSDragOperationNone;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info
+{
+    if (drop_taking)
+        return NSDragOperationCopy;
+    return SUPER_HAS(_cmd) ? [super draggingUpdated:info] : NSDragOperationNone;
+}
+- (void)draggingExited:(id<NSDraggingInfo>)info
+{
+    if (!drop_taking && SUPER_HAS(_cmd))
+        [super draggingExited:info];
+}
+- (void)draggingEnded:(id<NSDraggingInfo>)info
+{
+    if (drop_taking)
+        drop_taking = NO;
+    else if (SUPER_HAS(_cmd))
+        [super draggingEnded:info];
+}
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)info
+{
+    if (drop_taking)
+        return YES;
+    return SUPER_HAS(_cmd) ? [super prepareForDragOperation:info] : NO;
+}
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)info
+{
+    if (!drop_taking)
+        return SUPER_HAS(_cmd) ? [super performDragOperation:info] : NO;
+    NSArray<NSURL *> *urls = drag_file_urls(info);
+    return urls != nil && deliver_drop(self.window, urls) != 0;
+}
+- (void)concludeDragOperation:(id<NSDraggingInfo>)info
+{
+    if (!drop_taking && SUPER_HAS(_cmd))
+        [super concludeDragOperation:info];
+}
+@end
+
+/* The web view in VIEW's hierarchy, or nil. */
+static WKWebView *web_view_in(NSView *view)
+{
+    if ([view isKindOfClass:[WKWebView class]])
+        return (WKWebView *)view;
+    for (NSView *sub in view.subviews) {
+        WKWebView *found = web_view_in(sub);
+        if (found != nil)
+            return found;
+    }
+    return nil;
+}
+
+/* Files dropped on WIN go to FN(ARG, PATHS); a NULL FN takes the hook
+ * off (before webview_destroy, as the close hook is).  1 when the window
+ * has a web view to take drops on, 0 otherwise. */
+int clamacs_host_on_drop(void *win, clamacs_files_fn fn, void *arg)
+{
+    @autoreleasepool {
+        NSWindow *window = (__bridge NSWindow *)win;
+        ClamacsDropHook *hook = objc_getAssociatedObject(window, drop_hook_key);
+        if (fn == NULL) {
+            if (hook != nil) {
+                hook.fn = NULL;
+                hook.arg = NULL;
+                objc_setAssociatedObject(window, drop_hook_key, nil,
+                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            return 1;
+        }
+        if (hook == nil) {
+            WKWebView *view = web_view_in(window.contentView);
+            if (view == nil)
+                return 0;
+            if (object_getClass(view) == [WKWebView class])
+                object_setClass(view, [ClamacsDropWebView class]);
+            hook = [[ClamacsDropHook alloc] init];
+            objc_setAssociatedObject(window, drop_hook_key, hook,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        hook.fn = fn;
+        hook.arg = arg;
+        return 1;
+    }
+}
+
+/* For a script: PATHS (one per line) delivered to WIN's hook as a drop
+ * of those files is, short of the pasteboard -- the hook on the window,
+ * the callback, the entry.  1 when the window had a hook. */
+int clamacs_host_drop_test(void *win, const char *paths)
+{
+    @autoreleasepool {
+        NSWindow *window = (__bridge NSWindow *)win;
+        NSString *text = path_arg(paths);
+        NSMutableArray<NSURL *> *urls = [NSMutableArray array];
+        if (text == nil)
+            return 0;
+        for (NSString *path in [text componentsSeparatedByString:@"\n"]) {
+            if (path.length > 0)
+                [urls addObject:[NSURL fileURLWithPath:path]];
+        }
+        return deliver_drop(window, urls);
+    }
+}
+
+/* ---- files the Finder opens ------------------------------------------- */
+
+/* A file dropped on the Dock icon, double-clicked with Clamacs as its
+ * application, or `open -a Clamacs file': Launch Services sends the
+ * application an open-documents Apple Event, which NSApplication turns
+ * into application:openFiles: on its delegate -- the files that STARTED
+ * the application come the same way, during the launch itself (see
+ * clamacs_host_on_open below for when that is and what it took).
+ * webview's delegate knows nothing of it, so it is wrapped the way the
+ * window's is: a delegate of ours that answers openFiles: and forwards
+ * everything else.  One hook, the application's: FN(ARG, PATHS) as for
+ * a drop.  (The Info.plist's document types decide what the Finder
+ * offers: host/make-app.sh.) */
+@interface ClamacsAppDelegate : NSObject <NSApplicationDelegate>
+@property (nonatomic, strong) id inner;
+@property (nonatomic, assign) clamacs_files_fn fn;
+@property (nonatomic, assign) void *arg;
+@end
+
+@implementation ClamacsAppDelegate
+/* At a launch from a shell AppKit reads the command line itself and hands
+ * the delegate its first argument that names a file -- the heap image of
+ * `amilisp --image clamacs.img ...', the editor's own source of a
+ * `--load' -- as a document to open (found 2026-11-03: the image opened
+ * as a buffer).  A file handed over DURING the launch that is among the
+ * process's arguments is that, not the Finder's, and is left out. */
+- (void)application:(NSApplication *)app openFiles:(NSArray<NSString *> *)files
+{
+    BOOL launching = ![[NSRunningApplication currentApplication] isFinishedLaunching];
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    NSMutableSet<NSString *> *arguments = [NSMutableSet set];
+    const char *text;
+    if (launching) {
+        for (NSString *arg in [[NSProcessInfo processInfo] arguments])
+            [arguments addObject:[arg stringByStandardizingPath]];
+    }
+    for (NSString *file in files) {
+        if (!(launching && [arguments containsObject:[file stringByStandardizingPath]]))
+            [paths addObject:file];
+    }
+    text = paths.count > 0 ? [paths_text(paths) UTF8String] : NULL;
+    if (self.fn != NULL && text != NULL)
+        self.fn(self.arg, text);
+    [app replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
+}
+- (BOOL)respondsToSelector:(SEL)sel
+{
+    return [super respondsToSelector:sel] || [self.inner respondsToSelector:sel];
+}
+- (id)forwardingTargetForSelector:(SEL)sel
+{
+    (void)sel;
+    return self.inner;
+}
+@end
+
+static ClamacsAppDelegate *app_delegate;
+static id launch_observer;      /* until the application has launched */
+
+/* Our delegate in front of whatever the application has now. */
+static void wrap_app_delegate(void)
+{
+    NSApplication *app = [NSApplication sharedApplication];
+    if (app_delegate != nil && app.delegate != app_delegate) {
+        app_delegate.inner = app.delegate;
+        app.delegate = app_delegate;
+    }
+}
+
+/* Files the Finder opens go to FN(ARG, PATHS); a NULL FN takes the hook
+ * off and gives the application its previous delegate back.
+ *
+ * The files a Finder start was given are delivered DURING the launch,
+ * between applicationWillFinishLaunching and applicationDidFinishLaunching
+ * -- which webview's first webview_create runs ([NSApp run], stopped
+ * from its own delegate's didFinishLaunching) -- and a delegate without
+ * openFiles: at that moment sends them to NSDocumentController, whose
+ * "cannot open files of this type" alert then runs modal inside the
+ * editor's first loop step and nothing else ever happens (2026-11-03).
+ * So the hook is put on before that webview_create, and when the
+ * application has not launched yet it waits for willFinishLaunching to
+ * wrap the delegate webview will have set by then; the callback runs
+ * inside webview_create, which is why the editor only keeps the paths
+ * until it has started.  An application that has launched is wrapped
+ * at once. */
+void clamacs_host_on_open(clamacs_files_fn fn, void *arg)
+{
+    @autoreleasepool {
+        NSApplication *app = [NSApplication sharedApplication];
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+        if (fn == NULL) {
+            if (launch_observer != nil) {
+                [center removeObserver:launch_observer];
+                launch_observer = nil;
+            }
+            if (app_delegate != nil) {
+                if (app.delegate == app_delegate)
+                    app.delegate = (id<NSApplicationDelegate>)app_delegate.inner;
+                app_delegate.inner = nil;
+                app_delegate = nil;
+            }
+            return;
+        }
+        if (app_delegate == nil)
+            app_delegate = [[ClamacsAppDelegate alloc] init];
+        app_delegate.fn = fn;
+        app_delegate.arg = arg;
+        if ([[NSRunningApplication currentApplication] isFinishedLaunching]) {
+            wrap_app_delegate();
+        } else if (launch_observer == nil) {
+            launch_observer = [center addObserverForName:NSApplicationWillFinishLaunchingNotification
+                                                  object:nil
+                                                   queue:nil
+                                              usingBlock:^(NSNotification *note) {
+                (void)note;
+                wrap_app_delegate();
+                if (launch_observer != nil) {
+                    [[NSNotificationCenter defaultCenter] removeObserver:launch_observer];
+                    launch_observer = nil;
+                }
+            }];
+        }
     }
 }
 
@@ -1117,6 +1428,12 @@ const char *clamacs_host_toolkit(void)
     return line;
 }
 
+/* No drops and no Finder here yet: the editor opens files from inside. */
+int clamacs_host_on_drop(void *win, void (*fn)(void *, const char *), void *arg)
+{ (void)win; (void)fn; (void)arg; return 0; }
+int clamacs_host_drop_test(void *win, const char *paths) { (void)win; (void)paths; return 0; }
+void clamacs_host_on_open(void (*fn)(void *, const char *), void *arg) { (void)fn; (void)arg; }
+
 /* No menu bar of the host's here: the page draws the editor's. */
 int clamacs_host_menu_set(void *win, const char *table,
                           void (*fn)(int32_t, int32_t, void *), void *arg)
@@ -1573,6 +1890,12 @@ char *clamacs_host_menu_report(void) { return NULL; }
 int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
 void clamacs_host_menu_clear(void) {}
 
+/* No drops and no Finder here yet: the editor opens files from inside. */
+int clamacs_host_on_drop(void *win, void (*fn)(void *, const char *), void *arg)
+{ (void)win; (void)fn; (void)arg; return 0; }
+int clamacs_host_drop_test(void *win, const char *paths) { (void)win; (void)paths; return 0; }
+void clamacs_host_on_open(void (*fn)(void *, const char *), void *arg) { (void)fn; (void)arg; }
+
 #else /* another host: every entry says "not available" */
 
 int clamacs_host_step(void *w, int ms) { (void)w; (void)ms; return -1; }
@@ -1602,5 +1925,9 @@ void clamacs_host_menu_dynamic(const char *which, const char *lines) { (void)whi
 char *clamacs_host_menu_report(void) { return NULL; }
 int clamacs_host_menu_click(int which, int n) { (void)which; (void)n; return 0; }
 void clamacs_host_menu_clear(void) {}
+int clamacs_host_on_drop(void *win, void (*fn)(void *, const char *), void *arg)
+{ (void)win; (void)fn; (void)arg; return 0; }
+int clamacs_host_drop_test(void *win, const char *paths) { (void)win; (void)paths; return 0; }
+void clamacs_host_on_open(void (*fn)(void *, const char *), void *arg) { (void)fn; (void)arg; }
 
 #endif
