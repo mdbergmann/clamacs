@@ -33,7 +33,8 @@
 # the launcher exec'd into -- the shim's application hook opens the files
 # (clamacs_host_on_open).  The document types below are what the Finder
 # offers Clamacs for: Lisp sources and every text file by type, and any
-# file at all for the Dock icon (rank None: accepted, never listed under
+# file at all -- or a folder, which the editor opens as a window of its
+# text files -- for the Dock icon (rank None: accepted, never listed under
 # Open With), all as an alternative to the user's own default.  Not
 # signed: a first start of a bundle copied from elsewhere needs the usual
 # right-click > Open.
@@ -130,7 +131,7 @@ cat > "$app/Contents/Info.plist" <<EOF
       <key>CFBundleTypeRole</key><string>Viewer</string>
       <key>LSHandlerRank</key><string>None</string>
       <key>LSItemContentTypes</key>
-      <array><string>public.data</string></array>
+      <array><string>public.data</string><string>public.folder</string></array>
     </dict>
   </array>
 </dict>

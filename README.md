@@ -151,6 +151,10 @@ open -a build/host-frontend/Clamacs.app --args file.lisp
 Files dragged from the Finder onto the editor's window open as tabs, and
 so do files dropped on the Dock icon, opened with `Open With > Clamacs`
 or given to `open -a Clamacs.app` -- each file once, the last one active.
+A folder arriving the same way gets a window of its own with a tab for
+each text file directly in it (not the folders below it, no hidden or
+binary files, a hundred at most).  It is not made a project: **Project >
+Open Project...** does that.
 The application bundle is not signed: a bundle copied to another Mac
 needs the usual right-click > Open the first time.
 

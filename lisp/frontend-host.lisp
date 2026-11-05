@@ -1209,15 +1209,22 @@ that selects nothing takes the shown region down."
 (defun doc-kind-string (doc)
   (if (hdoc-dock-p doc) "tool" "source"))
 
+(defvar *tab-window* nil
+  "The window a document made now gets its tab in, when not the active
+document's: a folder's files are made in the folder's own window
+\(OPEN-FOLDER-INTO).")
+
 (defmethod editor-make-document ((editor host-editor) &key path name lisp-mode)
-  "A new document as a tab of the window the active document is in: a
-source tab, or a tab of that window's dock for a tool buffer."
+  "A new document as a tab of the window the active document is in (or of
+*TAB-WINDOW*): a source tab, or a tab of that window's dock for a tool
+buffer."
   (let* ((id (format nil "doc~D" (incf (host-editor-next-id editor))))
          (doc (make-instance 'host-document :editor editor :path path
                                             :name (or name *unnamed*)
                                             :lisp-mode lisp-mode
                                             :id id
-                                            :window (active-window editor))))
+                                            :window (or *tab-window*
+                                                        (active-window editor)))))
     (setf (gethash id (host-editor-docs editor)) doc
           (hdoc-dock-p doc) (tool-document-p doc))
     (ck doc "makeDoc" id (doc-name doc) (doc-kind-string doc))
@@ -2295,12 +2302,15 @@ detached mark to it, then what was waiting to move in."
   (note-window-emptied window))
 
 (defun move-into (window item)
-  "ITEM -- a document, or a panel's name -- into WINDOW: now when its
-page is up, else once it is."
+  "ITEM -- a document, a panel's name, or a folder's files still to be
+opened (the list OPEN-FOLDER-INTO takes after the window) -- into WINDOW:
+now when its page is up, else once it is."
   (cond ((not (host-window-settled window))
          (push item (host-window-pending window)))
         ((typep item 'host-document)
          (move-document item window))
+        ((consp item)
+         (apply #'open-folder-into window item))
         (t
          (move-panel (host-window-editor window) item window))))
 
@@ -2590,7 +2600,17 @@ editor is done."
 ;;; open already is activated where it is (brought over from another
 ;;; perspective first), a new one gets a tab in the window it was dropped
 ;;; on (the main window for the Finder's) -- and the last gets the
-;;; keyboard.  A folder is not a file to open: the echo area says so.
+;;; keyboard.  A FOLDER is opened as a window of its own holding the text
+;;; files directly in it (FOLDER-TEXT-FILES: nothing below it, no dot
+;;; file, nothing binary, a hundred at most), the first of them with the
+;;; keyboard.  It is not made a project -- Open Project does that -- so
+;;; the files join the perspective in front like any others.  The window's
+;;; page is not up when the folder arrives, so the files are OPENED only
+;;; once it is (the window's PENDING list, as a detached tab waits): made
+;;; in the active window first they would be drawn twice.  Files of the
+;;; folder that are open already stay where they are, and a folder handed
+;;; to an editor that has no document yet -- a start from the Finder --
+;;; fills the main window instead of leaving it to an unnamed buffer.
 ;;; The paths arrive one per line, as the file system spells them.
 
 (defun folder-path-p (path)
@@ -2626,14 +2646,54 @@ the file cannot be read."
                       (move-document doc window :activate nil))
                     doc)))))))
 
+(defun open-folder-into (window dir files more)
+  "FILES, the folder DIR's, as tabs of WINDOW -- its page is up -- the
+first one opened getting the keyboard and saying what came (MORE: how
+many files the limit left out).  A file opened meanwhile stays where it
+is; a window that got none is closed by the next turn."
+  (let ((editor (host-window-editor window))
+        (opened '()))
+    (let ((*tab-window* window))
+      (dolist (path files)
+        (unless (find-document-by-path editor path)
+          (let ((doc (open-document editor path)))
+            (when doc
+              (push doc opened))))))
+    ;; OPENED is newest first: its last is the folder's first file.
+    (let ((lead (car (last opened))))
+      (when lead
+        (doc-activate lead)
+        (doc-message lead
+                     (format nil "~A: ~D file~:P~@[, ~D more left out~]"
+                             dir (length opened) (and (> more 0) more)))))
+    (note-window-emptied window)))
+
+(defun host-folder-opened (editor path)
+  "The folder PATH handed over: the text files directly in it that are not
+open yet, in a window of their own -- in the main window while the editor
+has no document at all.  A folder with nothing to open says so."
+  (multiple-value-bind (files more) (folder-text-files path)
+    (let ((new (remove-if (lambda (file) (find-document-by-path editor file)) files)))
+      (cond ((null files)
+             (host-note editor "~A holds no text files (Open Project opens a folder as a project)"
+                        path))
+            ((null new)
+             (host-note editor "The files of ~A are open already" path))
+            ((null (live-documents editor))
+             (open-folder-into (host-editor-main editor) path new more))
+            (t
+             (move-into (open-window editor (next-document-role editor (first new) nil))
+                        (list path new more)))))))
+
 (defun host-files-opened (editor window paths)
   "PATHS, dropped on WINDOW (NIL: wherever a new tab goes) or handed over
-by the Finder, visited in order; the last one visited gets the keyboard."
+by the Finder, visited in order; the last file visited gets the keyboard.
+A folder among them is opened as a window of its own (HOST-FOLDER-OPENED)."
   (let ((last nil))
     (dolist (path paths)
       (cond ((string= path ""))
             ((folder-path-p path)
-             (host-note editor "~A is a folder (Open Project opens one)" path))
+             (host-folder-opened editor path))
             (t
              (let ((doc (host-open-file-in editor window path)))
                (when doc
@@ -2661,7 +2721,8 @@ drop cannot happen then; an Apple Event can)."
   "START's documents, inside its first entry: FILES from the command
 line, then what the Finder handed over while the window came up, and an
 unnamed buffer when there were no files at all (or none the Finder's
-could open: a folder).  From here on the hooks open files as they come."
+could open: a folder without text files).  From here on the hooks open
+files as they come."
   (let ((handed (shiftf (host-editor-pending-files editor) '())))
     (setf (host-editor-started editor) t)
     (dolist (path files)

@@ -2195,11 +2195,57 @@ go."
         (ok "C-c C-z went back to the REPL: ~A" *result*)
         (fail "after clamacs-repl the active window is ~A" *result*))))
 
+(defun leg-finder-folder (how hand-over)
+  ;; A folder handed over by HAND-OVER, a function of its path (HOW says
+  ;; which way, for the log): a window of its own with a tab for each text
+  ;; file directly in it -- opened once that window's page is up, so the
+  ;; page must report them -- the first with the keyboard, the file below
+  ;; the folder left alone.  Closing the two buffers takes the window down.
+  (let* ((folder (scratch "finder-folder/"))
+         (a (concatenate 'string folder "a.lisp"))
+         (b (concatenate 'string folder "b.txt"))
+         (inner (concatenate 'string folder "sub/inner.lisp")))
+    (ensure-directories-exist inner)
+    (write-file a (format nil "(defun folder-a () :a)~%"))
+    (write-file b (format nil "notes~%"))
+    (write-file inner (format nil "(defun inner () :inner)~%"))
+    (funcall hand-over folder)
+    (if (string/= (wait-eval "(clamacs::doc-path (clamacs::editor-active-document clamacs::*editor*))"
+                             "finder-folder/a.lisp" 40)
+                  "")
+        (ok "a folder ~A opened its first file with the keyboard: ~A" how *result*)
+        (fail "after a folder was ~A the active document is ~A" how *result*))
+    (flet ((id (path)
+             (cmd (format nil "EVAL (clamacs::hdoc-id (clamacs::find-document-by-path clamacs::*editor* ~S))"
+                          path))
+             (string-trim "\"" *result*)))
+      (let ((ida (id a))
+            (idb (id b)))
+        (if (string/= (window-state (format nil " (~A ~A)" ida idb)) "")
+            (ok "the folder's two files have a window of their own: ~A" *result*)
+            (fail "after a folder was ~A the windows are ~A" how *result*))
+        (cmd "EVAL (clamacs::host-window-number (clamacs::hdoc-window (clamacs::editor-active-document clamacs::*editor*)))")
+        (let ((page (wait-eval (format nil "(clamacs::host-page-panels clamacs::*editor* ~A)" *result*)
+                               (escape-quotes (format nil "\"source\":[\"~A\",\"~A\"]" ida idb)) 20)))
+          (if (string/= page "")
+              (ok "the folder's window's page holds both tabs")
+              (fail "the folder's window's page reports ~A" *result*)))
+        (cmd (format nil "EVAL (clamacs::find-document-by-path clamacs::*editor* ~S)" inner))
+        (if (result-is "NIL")
+            (ok "the file below the folder was left alone")
+            (fail "the file below the folder is open: ~A" *result*))
+        (cmd "EVAL kill-buffer")
+        (cmd "EVAL kill-buffer")
+        (if (string/= (wait-eval-without "(clamacs::host-panel-state :windows)" idb 20) "")
+            (ok "closing the two buffers took the folder's window down: ~A" *result*)
+            (fail "after closing the folder's buffers the windows are ~A" *result*))))))
+
 (defun leg-finder ()
   ;; Files from the Finder (H11).  A drop on the main window through the
   ;; shim's hook (host-drop-test: the hook on the native window, the
   ;; callback, the entry -- short of the pasteboard), the dropped file
-  ;; the active document after; a folder refused with a note.  Then,
+  ;; the active document after; a folder dropped opened as a window of its
+  ;; own (LEG-FINDER-FOLDER).  Then,
   ;; when run-drive.sh started the editor through the bundle (APP=1,
   ;; CLAMACS_DRIVE_APP names it), a file handed to the running
   ;; application by `open -a' -- the Dock icon's path: Launch Services,
@@ -2219,11 +2265,9 @@ go."
            (if (result-has "finder-drop.lisp")
                (ok "a file dropped on the window is the active document: ~A" *result*)
                (fail "after the drop the active document is ~A" *result*))
-           (cmd (format nil "EVAL (clamacs::host-drop-test ~S)" *tmp*))
-           (cmd "EVAL (clamacs::doc-message-text (clamacs::editor-active-document clamacs::*editor*))")
-           (if (result-has "is a folder")
-               (ok "a folder dropped is refused with a note: ~A" *result*)
-               (fail "a folder dropped left the echo area saying ~A" *result*))))
+           (leg-finder-folder "dropped on the window"
+                              (lambda (folder)
+                                (cmd (format nil "EVAL (clamacs::host-drop-test ~S)" folder))))))
     (cond ((or (null app) (string= app ""))
            (info "not started through the bundle: the Finder's open is not tried"))
           (t
@@ -2241,7 +2285,11 @@ go."
              (cmd "EVAL (clamacs::doc-path (clamacs::editor-active-document clamacs::*editor*))")
              (if (result-has "finder-open.lisp")
                  (ok "the Finder's file keeps the keyboard after the window's focus came back")
-                 (fail "the window's focus switched back to ~A" *result*)))))))
+                 (fail "the window's focus switched back to ~A" *result*))
+             ;; A folder the same way: a window of its own
+             (leg-finder-folder "handed to the running bundle by open -a"
+                                (lambda (folder)
+                                  (ext:system-command (format nil "open -a ~S ~S" app folder)))))))))
 
 (defun main ()
   (setq *port* (connect 60))

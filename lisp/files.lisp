@@ -478,6 +478,46 @@ counts.  A directory that cannot be listed matches nothing."
                         (subseq path (length dir)))
                       matches)))))
 
+;;; ------------------------------------------------------------------
+;;; A folder opened as a whole
+;;; ------------------------------------------------------------------
+
+;;; What a folder handed to the editor stands for (a drop on a window, the
+;;; Finder's open): the text files directly in it.  Not what is below it
+;;; -- that is a project's, and Open Project is the way to one -- and not
+;;; what an editor cannot show.
+
+(defparameter *folder-file-limit* 100
+  "The most files a folder opened as a whole brings up: a Downloads folder
+dropped by mistake must not be a thousand tabs.")
+
+(defun text-file-p (path)
+  "Whether PATH can be read and reads as text: no NUL among its first
+1024 characters (what git and grep go by).  An empty file is text."
+  (handler-case
+      (with-open-file (in path :external-format :latin-1)
+        (let* ((head (make-string 1024))
+               (n (read-sequence head in)))
+          (not (find (code-char 0) head :end n))))
+    (error () nil)))
+
+(defun folder-text-files (dir)
+  "The text files directly in the folder DIR, by name: no subfolder, no
+dot file (DIRECTORY's `*' matches none), nothing that is not text
+\(TEXT-FILE-P).  At most *FOLDER-FILE-LIMIT* of them; the second value is
+how many more there were.  A folder that cannot be listed has none."
+  (let* ((dir (normalize-directory dir))
+         (files (sort (remove-if-not
+                       #'text-file-p
+                       (remove-if #'directory-only-p
+                                  (ignore-errors
+                                   (mapcar #'namestring
+                                           (directory (concatenate 'string dir "*"))))))
+                      #'string<))
+         (more (max 0 (- (length files) *folder-file-limit*))))
+    (values (if (> more 0) (subseq files 0 *folder-file-limit*) files)
+            more)))
+
 (defun ask-file-then (doc title mode initial continuation)
   "The requester, titled TITLE, in MODE (DOC-ASK-FILE's: NIL, T or
 :DIRECTORY), opening at INITIAL; the path chosen goes to CONTINUATION

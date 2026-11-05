@@ -96,6 +96,21 @@
       (is (write-file-text path contents)))
     path))
 
+(defun folder-fixture (name)
+  "A folder NAME under TMPDIR holding what a folder handed to the editor
+may: two text files, a dot file, a file with a NUL in it and a subfolder
+with a file of its own.  Its path, with the separator."
+  (let ((dir (temp-path (concatenate 'string name "/"))))
+    (flet ((file (name contents)
+             (is (write-file-text (concatenate 'string dir name) contents))))
+      (ensure-directories-exist (concatenate 'string dir "sub/"))
+      (file "b.txt" "notes")
+      (file "a.lisp" "(defun a ())")
+      (file ".hidden" "h")
+      (file "image.bin" (format nil "x~Cy" (code-char 0)))
+      (file "sub/inner.lisp" "(inner)"))
+    dir))
+
 ;;; The user's files, out of the suite's reach.  A quit (QUIT-REQUESTED,
 ;;; which several tests reach) writes the perspectives file and the layout
 ;;; file when the perspectives file exists -- and the defaults are THIS

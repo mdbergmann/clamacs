@@ -353,7 +353,17 @@ file), `clamacs_host_on_open` wraps webview's application delegate for
 `application:openFiles:`, `make-app.sh` declares the document types --
 and land in `host-files-opened` (`frontend-host.lisp`): visited as
 `find-file` visits them, a tab in the window dropped on, the last one
-active, a folder refused.  Two rules: the files a Finder START was given
+active.  A FOLDER among them (since 2026-11-05; refused before) is a NEW
+window with a tab for each text file directly in it
+(`folder-text-files` in `files.lisp`: no subfolder, no dot file, nothing
+with a NUL in its first 1024 characters, `*folder-file-limit*` = 100),
+the first with the keyboard -- not a project, the files join the
+perspective in front.  The files are opened only once that window's page
+is up: the folder waits on the window's `pending` list as one item and
+`open-folder-into` makes the documents with `*tab-window*` bound, which
+`editor-make-document` reads before the active document's window; files
+open already stay where they are, and a folder handed to an editor with
+no document yet (a Finder start) fills the main window.  Two rules: the files a Finder START was given
 are delivered DURING the launch -- inside the first `webview_create` --
 so the hook goes on before it, wraps webview's delegate at
 `willFinishLaunching`, and the editor keeps the paths until

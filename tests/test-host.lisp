@@ -2755,17 +2755,89 @@ settled and the tab moved.  The message HOST-DETACH answered."
       (is (eq (editor-active-document editor) (second docs)))
       (is (search "CK.activateDoc(\"doc2\")" (host-take-evals editor))))))
 
-(deftest host-dropped-folder-and-empty-lines-open-nothing
+(deftest host-dropped-folder-opens-its-text-files-in-a-window-of-its-own
+  ;; A folder dropped: a second window, and -- once its page is up -- a tab
+  ;; there for each text file directly in the folder, by name, made in
+  ;; that page and never in the main one's, the first with the keyboard.
+  (let* ((editor (host-test-editor))
+         (first (host-test-document editor "scratch"))
+         (dir (folder-fixture "host-folder"))
+         (a (concatenate 'string dir "a.lisp"))
+         (b (concatenate 'string dir "b.txt")))
+    (host-take-evals editor)
+    (host-files-hook editor (host-editor-main editor) (string-right-trim "/" dir))
+    (let ((w2 (host-window editor 2)))
+      (is w2)
+      ;; Nothing is opened before the window's page is settled
+      (is (= 1 (length (live-documents editor))))
+      (is (eq (editor-active-document editor) first))
+      (with-entry (editor) (housekeeping editor))
+      (let ((docs (live-documents editor)))
+        (is-equal (mapcar #'doc-path (rest docs)) (list a b))
+        (is (eq (hdoc-window (second docs)) w2))
+        (is (eq (hdoc-window (third docs)) w2))
+        (is (eq (editor-active-document editor) (second docs)))
+        (is (doc-lisp-mode (second docs)))
+        (is-equal (host-text (second docs)) "(defun a ())")
+        (is (search "2 files" (doc-message-text (second docs))))
+        (is (not (search "left out" (doc-message-text (second docs)))))
+        (is (not (search "CK.makeDoc(" (host-take-evals editor))))
+        (let ((js (host-take-evals w2)))
+          (is (search "CK.makeDoc(\"doc2\"" js))
+          (is (search "CK.makeDoc(\"doc3\"" js)))
+        (is-equal (host-panel-state :windows editor)
+                  "windows 2: 1 (doc1) 2 (doc2 doc3) active doc2")
+        ;; The window stays: it holds tabs
+        (with-entry (editor) (housekeeping editor))
+        (is (host-window editor 2))
+        ;; The same folder again: its files are open, no third window
+        (host-files-hook editor (host-editor-main editor) dir)
+        (is (null (host-window editor 3)))
+        (is (= 3 (length (live-documents editor))))
+        (is (search "open already" (doc-message-text (second docs))))))))
+
+(deftest host-dropped-folder-leaves-open-files-where-they-are-and-honours-the-limit
+  (let* ((editor (host-test-editor))
+         (dir (folder-fixture "host-folder-open"))
+         (a (concatenate 'string dir "a.lisp"))
+         (b (concatenate 'string dir "b.txt"))
+         (open (host-test-document editor "" a)))
+    ;; a.lisp is a tab of the main window: the folder's window gets b.txt
+    (host-files-hook editor (host-editor-main editor) dir)
+    (with-entry (editor) (housekeeping editor))
+    (let ((docs (live-documents editor)))
+      (is (= 2 (length docs)))
+      (is (eq (first docs) open))
+      (is (main-window-p (hdoc-window open)))
+      (is-equal (doc-path (second docs)) b)
+      (is (eq (hdoc-window (second docs)) (host-window editor 2)))
+      (is (eq (editor-active-document editor) (second docs)))
+      (is (search "1 file" (doc-message-text (second docs))))))
+  ;; More files than the limit: the first ones, and the count of the rest
+  (let* ((editor (host-test-editor))
+         (dir (folder-fixture "host-folder-limit"))
+         (*folder-file-limit* 1))
+    (host-test-document editor "scratch")
+    (host-files-hook editor (host-editor-main editor) dir)
+    (with-entry (editor) (housekeeping editor))
+    (let ((docs (live-documents editor)))
+      (is (= 2 (length docs)))
+      (is-equal (doc-path (second docs)) (concatenate 'string dir "a.lisp"))
+      (is (search "1 file, 1 more left out" (doc-message-text (second docs)))))))
+
+(deftest host-dropped-folder-without-text-files-and-empty-lines-open-nothing
   (let* ((editor (host-test-editor))
          (doc (host-test-document editor "scratch"))
-         (dir (or (ext:getenv "TMPDIR") "/tmp/")))
+         (dir (temp-path "host-empty-folder/")))
+    (ensure-directories-exist (concatenate 'string dir "sub/"))
     (is (folder-path-p dir))
     (is (not (folder-path-p (temp-file "host-drop-none.lisp"))))
     (with-entry (editor)
       (is (null (host-files-opened editor (host-editor-main editor) (list "" dir)))))
     (is (= 1 (length (live-documents editor))))
+    (is (null (host-window editor 2)))
     (is (eq (editor-active-document editor) doc))
-    (is (search "is a folder" (doc-message-text doc)))
+    (is (search "holds no text files" (doc-message-text doc)))
     ;; Nothing at all is opened while a requester runs its own loop
     (setf (host-editor-in-modal editor) t)
     (host-files-hook editor (host-editor-main editor) (temp-file "host-drop-c.txt" "c"))
@@ -2835,9 +2907,23 @@ settled and the tab moved.  The message HOST-DETACH answered."
     ;; From now on the hook opens at once
     (host-files-hook editor (host-editor-main editor) (temp-file "host-handed-c.txt" "c"))
     (is (= 3 (length (live-documents editor)))))
-  ;; Handed a folder only: the unnamed buffer, as a start without files
-  (let ((editor (host-test-editor)))
-    (host-files-hook editor (host-editor-main editor) (or (ext:getenv "TMPDIR") "/tmp/"))
+  ;; Handed a folder only: its files fill the main window -- no second
+  ;; window, no unnamed buffer -- and the first has the keyboard
+  (let* ((editor (host-test-editor))
+         (dir (folder-fixture "host-handed-folder")))
+    (host-files-hook editor (host-editor-main editor) dir)
+    (with-entry (editor) (open-first-documents editor '()))
+    (is (null (host-window editor 2)))
+    (is-equal (mapcar #'doc-path (live-documents editor))
+              (list (concatenate 'string dir "a.lisp") (concatenate 'string dir "b.txt")))
+    (is (every (lambda (doc) (main-window-p (hdoc-window doc))) (live-documents editor)))
+    (is-equal (doc-path (editor-active-document editor)) (concatenate 'string dir "a.lisp")))
+  ;; Handed a folder with nothing to open: the unnamed buffer, as a start
+  ;; without files
+  (let ((editor (host-test-editor))
+        (dir (temp-path "host-handed-empty/")))
+    (ensure-directories-exist dir)
+    (host-files-hook editor (host-editor-main editor) dir)
     (with-entry (editor) (open-first-documents editor '()))
     (is (= 1 (length (live-documents editor))))
     (is (null (doc-path (editor-active-document editor)))))

@@ -1160,7 +1160,8 @@ with the memory note updated.
   visits it (one open already is activated where it is, brought over
   from another perspective first; a new one gets a tab in the window it
   was dropped on, the main window for the Finder's), the last one gets
-  the keyboard, a folder is refused with a note.  Two things the Finder
+  the keyboard, a folder is opened as a window of its own (below; it
+  was refused with a note until 2026-11-05).  Two things the Finder
   taught: the files a Finder START was given are delivered DURING the
   launch, between `applicationWillFinishLaunching` and
   `applicationDidFinishLaunching` -- inside the first `webview_create`,
@@ -1190,6 +1191,34 @@ with the memory note updated.
   (the tabs, the order, the keyboard, a folder, a drop on a detached
   window, a hidden document brought over, the files kept for START, the
   window-focus rule).
+- **A folder is a window of its text files** (2026-11-05).  A folder
+  among the paths -- dropped on a window, on the Dock icon (the bundle's
+  "Any file" type lists `public.folder` beside `public.data`), given to
+  `open -a` -- opens a NEW window holding a tab for each text file
+  directly in it: `folder-text-files` (`files.lisp`, pure) lists them by
+  name, without the subfolders and what is below them, without dot files
+  (`DIRECTORY`'s `*` matches none), without anything that has a NUL
+  among its first 1024 characters (`text-file-p`), and at most
+  `*folder-file-limit*` (100) of them, the rest counted in the echo
+  area.  The first file gets the keyboard and says `DIR: N files`.  The
+  folder is NOT made a project (Open Project does that, and a project
+  hides the other buffers): the files join the perspective in front like
+  any others.  Three rules.  The files are OPENED only once the new
+  window's page is up: the folder waits on the window's `pending` list
+  as one item (`(dir files more)`, which `move-into` hands to
+  `open-folder-into`) and the documents are made with `*tab-window*`
+  bound to that window, which `editor-make-document` reads before the
+  active document's -- made in the active window first and moved, each
+  text would be pushed and coloured twice and the tabs would flash
+  there.  A file of the folder that is open already stays where it is
+  (a folder whose files are all open opens no window and says so).  And
+  a folder handed to an editor that has no document yet -- a Finder
+  start -- fills the MAIN window, instead of a second window beside an
+  unnamed buffer.  Tests: `test-files.lisp` (the listing),
+  `test-host.lisp` (the window, the page the tabs are made in, the
+  keyboard, open files left, the limit, the start); the drive's FINDER
+  leg drops a folder through the shim's hook and, under `APP=1`, hands
+  one to the running bundle with `open -a`.
 
 ## Runtime items (commits in AmiLisp, each under every gate)
 

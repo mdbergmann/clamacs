@@ -305,6 +305,32 @@ separator."
       (is-equal (fake-text doc) "a")
       (is-equal (doc-path doc) (concatenate 'string dir "alpha.lisp")))))
 
+;;; --- a folder opened as a whole ---------------------------------------------------
+
+(deftest a-folders-text-files-are-the-ones-directly-in-it-by-name
+  ;; No subfolder and nothing below it, no dot file, nothing with a NUL in
+  ;; it; sorted, and the same with or without the separator typed.
+  (let* ((dir (folder-fixture "folder-files"))
+         (a (concatenate 'string dir "a.lisp"))
+         (b (concatenate 'string dir "b.txt")))
+    (is (text-file-p a))
+    (is (text-file-p (temp-file "folder-empty.txt" "")))
+    (is (not (text-file-p (concatenate 'string dir "image.bin"))))
+    (is (not (text-file-p (temp-file "folder-none.txt"))))
+    (multiple-value-bind (files more) (folder-text-files dir)
+      (is-equal files (list a b))
+      (is-equal more 0))
+    (is-equal (folder-text-files (string-right-trim "/" dir)) (list a b))
+    ;; The limit cuts the list and counts the rest
+    (let ((*folder-file-limit* 1))
+      (multiple-value-bind (files more) (folder-text-files dir)
+        (is-equal files (list a))
+        (is-equal more 1)))
+    ;; No such folder: nothing, not an error
+    (multiple-value-bind (files more) (folder-text-files (temp-path "no-such-folder/"))
+      (is-equal files '())
+      (is-equal more 0))))
+
 (deftest tab-keeps-what-was-typed-when-matches-differ-in-case
   ;; The name is matched without regard to case but COMPLETE's common
   ;; prefix is not: `alpha.lisp' and `Alps.txt' share nothing past the
