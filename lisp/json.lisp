@@ -14,10 +14,11 @@
 ;;;;
 ;;;; The input string holds the UTF-8 BYTES as characters 0-255, which is
 ;;;; how FFI:FOREIGN-TO-STRING hands a C string over; a multi-byte sequence
-;;;; and a \uXXXX escape decode to their code point, kept when it fits the
-;;;; editor's 8-bit text and turned into `?' otherwise -- as STORE-TEXT does
-;;;; for MUI.  JSON-STRING writes a JavaScript string literal: every code
-;;;; above 127 as \u00XX, so the C string given to webview_eval is ASCII.
+;;;; and a \uXXXX escape decode to their code point, kept when it is one
+;;;; UTF-16 unit on the page (the host's text holds any such character
+;;;; since files are UTF-8 there, 2026-11-06) and turned into `?' above
+;;;; that.  JSON-STRING writes a JavaScript string literal: every code
+;;;; above 127 as \uXXXX, so the C string given to webview_eval is ASCII.
 ;;;; JSON-ENCODE writes a value the way JSON-PARSE reads it, except that
 ;;;; NIL is `false' (a list is an array, so an empty array is #()).
 ;;;;
@@ -48,8 +49,15 @@
     i))
 
 (defun json-code-char (code)
-  "The character for a decoded code point: itself below 256, `?' above."
-  (if (< code 256) (code-char code) #\?))
+  "The character for a decoded code point: itself in the Basic
+Multilingual Plane -- one UTF-16 unit on the page, one character here, so
+the two texts count alike -- and `?' above it (an astral character, two
+units there, or a lone surrogate, which is no character; CHAR-CODE-LIMIT
+is 1114112 on the host, 256 on the Amiga, where the MUI frontend never
+reads JSON)."
+  (if (and (< code #x10000) (< code char-code-limit) (not (<= #xD800 code #xDFFF)))
+      (code-char code)
+      #\?))
 
 (defun json-utf8-char (s i)
   "Decode the UTF-8 sequence starting at S[I] (a byte above 127): the

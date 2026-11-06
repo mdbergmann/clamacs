@@ -58,8 +58,9 @@ no command, no test and no port verb knows which frontend answered:
     too, later.
 
 Not parity, and not planned: split windows of one buffer (the MUI
-editor has none either), non-Latin-1 text (the editor is 8-bit
-everywhere).  The menu bar is native where the host has one of its own
+editor has none either), text beyond the Basic Multilingual Plane (the
+editor is 8-bit on the Amiga and holds one character per UTF-16 unit of
+the page on the host; see "Text encoding across the boundary").  The menu bar is native where the host has one of its own
 -- macOS, where the shim builds the screen's menu from the table
 (webview has no API for one) -- and drawn by the page elsewhere; see
 "The menu bar" under H4.
@@ -347,13 +348,28 @@ refuses a connection to the machine's non-loopback address, and that
 
 ### Text encoding across the boundary
 
-The page speaks UTF-16, the bindings carry UTF-8 JSON, the editor is
-8-bit.  JS → Lisp: the JSON reader (`lisp/json.lisp`, a small full reader:
-arrays, objects, strings with escapes, numbers, the three literals)
-decodes UTF-8 to code points, keeps 0-255 and turns the rest into `?`,
-as `store-text` does for MUI.  Lisp → JS: the JS string writer escapes
-every code above 127 as `\u00XX`, so the C string handed to
-`webview_eval` is ASCII.  Files stay Latin-1 (`files.lisp`).
+The page speaks UTF-16, the bindings carry UTF-8 JSON, the editor's
+text is 8-bit on the Amiga and -- since 2026-11-06, when a German umlaut
+in a file showed as two characters -- any Basic Multilingual Plane
+character on the host.  JS → Lisp: the JSON reader (`lisp/json.lisp`, a
+small full reader: arrays, objects, strings with escapes, numbers, the
+three literals) decodes UTF-8 to code points and keeps every one that is
+a single UTF-16 unit on the page (so the two texts count alike), `?` for
+an astral character or a lone surrogate -- and `?` above 255 on an
+Amiga, where `char-code-limit` is 256, as `store-text` does for MUI.
+Lisp → JS: the JS string writer escapes every code above 127 as
+`\uXXXX`, so the C string handed to `webview_eval` is ASCII.  Files
+(`files.lisp`) are read and written in `*text-external-format*`: Latin-1
+on an Amiga, UTF-8 on the host, decided when the file loads (never with
+`#+amigaos`, the release's FASLs being compiled on the host); a file on
+the host that is not valid UTF-8 is read as Latin-1 (the runtime's
+decoder puts U+FFFD where a byte starts no sequence) and the document
+remembers it (`doc-coding`), so a save writes it back as Latin-1 -- a
+source shared with an Amiga is not converted by a save on the Mac.  The
+string a file is read into is made with `:element-type 'character`: the
+runtime's plain `make-string` is 8-bit, and a code point above 255 stored
+into it keeps its low byte.  The shim's own strings -- messages, button
+names, the clipboard -- stay Latin-1.
 
 The **page itself is pure ASCII**, and `host/build.sh` fails the build
 otherwise.  Found in H0: `ffi:foreign-string` writes one byte per
@@ -724,8 +740,10 @@ with the memory note updated.
   from the table -- `menu-table-text`, one `kind<TAB>title<TAB>keys`
   line per entry in table order, so an item's position is its table
   index -- behind the one application menu Cocoa expects (Hide, Hide
-  Others, Show All, Quit = `performClose:` on the window, the close
-  button's path, so the editor decides); a pick is `fn(0, index)` for a
+  Others, Show All, Quit = `fn(-1, 0)`, `save-buffers-kill-emacs` --
+  it was `performClose:` on the main window until 2026-11-06, when that
+  button stopped being the quit while another window is up); a pick is
+  `fn(0, index)` for a
   table item and `fn(1, n)` for the n-th Buffers line, run inside an
   entry through `host-menu-pick` / `host-buffers-pick` exactly as the
   page's bindings are, and dropped while a requester runs its own loop.
@@ -954,8 +972,32 @@ with the memory note updated.
   CLOSED as their tabs' close buttons close them (`host-panel-close`;
   since 2026-09-28 -- a panel that came back as a tab in the main
   window, to be closed a second time, was the complaint).  The main
-  window's close button is the quit, as before; `host-close` takes the
-  detached windows down first.  The shim keeps the close hook ON the
+  window's close button is the quit only while no other window holds a
+  tab, a panel or something on its way in (since 2026-11-06: with a
+  folder's window beside it, closing the first window closed the
+  editor).  Otherwise `window-close-requested` -- the one close hook
+  every window has -- marks it `:attach` like any other, and
+  `windows-housekeeping` hands the role to the oldest such window first
+  (`successor-window`, `promote-window`: the panel records rewritten,
+  since they name the windows other than main; `setDetached(false)` to
+  its page, at its settling when it is not up yet), then closes the old
+  main as a detached window -- its tabs move over, its panels close.
+  What depends on the main window asks at call time: the tick binding,
+  `host-drop-test`'s default, `host-close` (which takes the main window
+  down last).  The callbacks that are the application's, not a
+  window's -- the Finder's open hook, the native menu's pick -- are on
+  `host-editor-app-callbacks` now, freed after the last window; on the
+  main window's list they would have been freed under the shim with it.
+  And webview's FIRST instance owns the application's delegate: its
+  destructor sets `NSApp.delegate` to nil and releases it, so
+  `destroy-window` puts the Finder's open hook back after every
+  `webview_destroy` (`host-editor-open-hook`; the shim re-wraps whatever
+  delegate is there).  Without that, the first drive run after the
+  change found the promoted window's native window gone by the Finder
+  leg -- no drop hook, a zero frame, a crash in `clamacs_host_on_close`
+  at exit -- and with it the run is green.
+  Cmd-Q is `fn(-1, 0)` to the pick callback, the quit itself, no longer
+  `performClose:` on the main window.  The shim keeps the close hook ON the
   window now (an associated object on Cocoa, object data on GTK, a
   window property on Win32) instead of in a static -- and
   `destroy-window` takes the hook off (`clamacs_host_on_close` with a

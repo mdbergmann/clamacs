@@ -1849,7 +1849,40 @@ follows a change by a turn); \"\" after TICKS half-seconds."
   (check-panels '(:diagnostics "back in the main window") "open rows" "\"diagnostics\":{\"open\":true")
   (if (string/= (window-state "windows 1:") "")
       (ok "the panel's window went with it: ~A" *result*)
-      (fail "after the panel's return the windows are ~A" *result*)))
+      (fail "after the panel's return the windows are ~A" *result*))
+  ;; The MAIN window's close button while another window is up (it
+  ;; closed the editor, 2026-11-06): the other window -- 5, the active
+  ;; document shown separately once more -- takes over the role, the
+  ;; main window's tabs move into it, its page stops saying it is
+  ;; detached, and the editor runs on, the legs after this one against
+  ;; that window.  The hook's function is called as the button calls it.
+  (cmd "EVAL (clamacs::hdoc-id (clamacs::editor-active-document clamacs::*editor*))")
+  (let ((id (string-trim "\"" *result*)))
+    (cmd "EVAL clamacs-detach-window")
+    (if (string/= (window-state (format nil " 5 (~A)" id)) "")
+        (ok "~A shown separately in window 5 before the main window's close" id)
+        (fail "the detach before the main window's close left the windows at ~A" *result*))
+    (cmd "EVAL (clamacs::window-close-requested (clamacs::host-editor-main clamacs::*editor*))")
+    ;; (the error list, a panel of the old main, is closed as a detached
+    ;; window's panels are)
+    (let ((state (window-state "windows 1: 5 (")))
+      (if (and (string/= state "") (search id state) (not (search "diagnostics" state)))
+          (ok "the main window's close button handed the role to window 5, its tabs with it: ~A" state)
+          (fail "after the main window's close button the windows are ~A" *result*)))
+    (check-panels '(:diagnostics "after the main window's close") "closed rows" "\"diagnostics\":{\"open\":false")
+    (cmd "EVAL (clamacs::host-window-number (clamacs::host-editor-main clamacs::*editor*))")
+    (if (string= *result* "5")
+        (ok "window 5 is the main window")
+        (fail "the main window is ~A" *result*))
+    (let ((page (wait-eval "(clamacs::host-page-panels clamacs::*editor* 5)"
+                           (escape-quotes "\"detached\":false") 20)))
+      (if (and (string/= page "") (search (escape-quotes (format nil "\"~A\"" id)) page))
+          (ok "window 5's page says it is the main window now and holds ~A" id)
+          (fail "window 5's page reports ~A" *result*)))
+    (cmd "EVAL (clamacs::editor-quitting clamacs::*editor*)")
+    (if (string= *result* "NIL")
+        (ok "the editor was not asked to quit")
+        (fail "the main window's close asked the editor to quit: ~A" *result*))))
 
 ;;; Projects (specs/clamacs-perspectives.md): a project opened at the
 ;;; prompt -- the folder of the drive's own .asd, so the project is named
@@ -2322,6 +2355,8 @@ go."
   ;; Leave the errors file active, as the Amiga run does.
   (cmd (format nil "OPEN FILE ~A" (fixture "errors.lisp")))
   (pause 25)
+  (cmd "EVAL (mapcar (lambda (w) (list (clamacs::host-window-number w) (clamacs::main-window-p w) (multiple-value-list (clamacs::window-frame w)))) (clamacs::host-editor-windows clamacs::*editor*))")
+  (info "the windows and their frames at the end: ~A" *result*)
   (say "DRIVE-DONE")
   (quit-editor))
 

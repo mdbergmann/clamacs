@@ -137,20 +137,69 @@ belonged to the old text."
 ;;; Reading and writing
 ;;; ------------------------------------------------------------------
 
-(defun read-file-text (path)
-  "The contents of PATH as a string, or NIL when it cannot be read."
-  (handler-case
-      (with-open-file (in path :external-format :latin-1)
-        (let* ((text (make-string (file-length in)))
-               (n (read-sequence text in)))
-          (if (= n (length text)) text (subseq text 0 n))))
-    (error () nil)))
+;;; A file's bytes are the system's character set: Latin-1 on an Amiga
+;;; (what TextEditor.mcc draws and the system's fonts hold -- the editor's
+;;; text is 8-bit there), UTF-8 on the host, where a German umlaut in a
+;;; file read as Latin-1 came out as two characters (2026-11-06).  The
+;;; choice is made when this file LOADS, never with #+amigaos: the
+;;; release compiles the FASL with the host binary.  A file on the host
+;;; that is not valid UTF-8 is a Latin-1 file and is read as one -- and
+;;; written back as one, since the document remembers what it was read
+;;; with (DOC-CODING): a source shared with an Amiga is not turned into
+;;; UTF-8 by a save on the Mac.
 
-(defun write-file-text (path text)
-  "Write TEXT to PATH.  True when it was written."
+(defvar *text-external-format*
+  (if (member :amigaos *features*) :latin-1 :utf-8)
+  "The external format files are read and written with: :LATIN-1 on an
+Amiga, :UTF-8 elsewhere.  READ-FILE-TEXT falls back to Latin-1 for a file
+that is not valid UTF-8 and says so in its second value.")
+
+(defun count-fffd-bytes (latin)
+  "How often the bytes EF BF BD (UTF-8 for U+FFFD) occur in LATIN, a
+file's text read as Latin-1."
+  (let ((n 0) (e (code-char #xEF)) (b (code-char #xBF)) (d (code-char #xBD)))
+    (loop for i from 0 to (- (length latin) 3)
+          when (and (char= (char latin i) e)
+                    (char= (char latin (+ i 1)) b)
+                    (char= (char latin (+ i 2)) d))
+            do (incf n))
+    n))
+
+(defun read-file-text (path)
+  "The contents of PATH as a string, or NIL when it cannot be read; the
+second value is the external format the file was read with -- the
+default, or :LATIN-1 for a file that is not valid UTF-8 (the runtime's
+decoder puts U+FFFD where a byte starts no sequence, and a Latin-1 file
+has such a byte wherever it has an umlaut)."
+  (flet ((read-with (format)
+           (with-open-file (in path :external-format format)
+             ;; A general CHARACTER string: the runtime's plain MAKE-STRING
+             ;; is 8-bit and a code point above 255 stored into it keeps
+             ;; its low byte only.
+             (let* ((text (make-string (file-length in) :element-type 'character))
+                    (n (read-sequence text in)))
+               (if (= n (length text)) text (subseq text 0 n))))))
+    (handler-case
+        (let* ((format *text-external-format*)
+               (text (read-with format)))
+          (if (and (eq format :utf-8) (find (code-char #xFFFD) text))
+              ;; A U+FFFD is a decode error unless the file really holds
+              ;; the character (bytes EF BF BD): compare the count of
+              ;; U+FFFD with the count of that byte triple in the Latin-1
+              ;; reading; a stray byte makes the first count the larger.
+              (let ((latin (read-with :latin-1)))
+                (if (= (count (code-char #xFFFD) text)
+                       (count-fffd-bytes latin))
+                    (values text format)
+                    (values latin :latin-1)))
+              (values text format)))
+      (error () nil))))
+
+(defun write-file-text (path text &optional (format *text-external-format*))
+  "Write TEXT to PATH in the external FORMAT.  True when it was written."
   (handler-case
       (with-open-file (out path :direction :output :if-exists :supersede
-                                :external-format :latin-1)
+                                :external-format format)
         (write-string text out)
         t)
     (error () nil)))
@@ -267,8 +316,9 @@ without one)."
                    (format nil "The TextEditor MUI component did not open, though ~A is installed~@[ (~A)~].  Either it is a build for another system, a library it needs is missing (locale, layers, keymap, rexxsyslib, diskfont, iffparse), or an older copy is still in memory: try `Avail flush' and start Clamacs again.~%~A"
                            *texteditor-file* file-cookie need))))))))
 
-(defun show-file-text (doc path text)
+(defun show-file-text (doc path text &optional coding)
   (doc-set-text doc text)
+  (setf (doc-coding doc) coding)
   (visit-path doc path)
   ;; The arglist shown belonged to the old text (introspect.lisp).
   (forget-arglist doc)
@@ -278,8 +328,8 @@ without one)."
 (defun load-file (doc path)
   "Show the file PATH in DOC.  NIL, with DOC untouched, when it cannot be
 read."
-  (let ((text (read-file-text path)))
-    (and text (show-file-text doc path text))))
+  (multiple-value-bind (text coding) (read-file-text path)
+    (and text (show-file-text doc path text coding))))
 
 (defun ensure-file-directory (doc path)
   "The directory PATH is in, made when it is not there yet -- after asking,
@@ -303,9 +353,11 @@ directory's, which exists."
            nil))))
 
 (defun save-file (doc path)
-  "Write DOC's text to PATH, which becomes its file.  Says what happened."
+  "Write DOC's text to PATH, which becomes its file, in the format the
+file was read with.  Says what happened."
   (cond ((not (ensure-file-directory doc path)) nil)
-        ((write-file-text path (doc-text doc 0 (doc-end doc)))
+        ((write-file-text path (doc-text doc 0 (doc-end doc))
+                          (or (doc-coding doc) *text-external-format*))
          (unless (equal path (doc-path doc))
            (let ((point (doc-point doc)) (mark (doc-mark doc))
                  (shown (doc-paren-shown doc)))
@@ -390,7 +442,7 @@ has yet: a new buffer with that name, exactly as in Emacs).  NIL when the
 file is there but cannot be read."
   (if (null path)
       (editor-make-document editor :name *unnamed* :lisp-mode t)
-      (let ((text (read-file-text path)))
+      (multiple-value-bind (text coding) (read-file-text path)
         (when (or text (not (probe-file path)))
           ;; PATH goes in at creation: the window's role (snapshot.lisp)
           ;; is a file window's from the start.
@@ -398,7 +450,7 @@ file is there but cannot be read."
                                            :path path
                                            :name (path-basename path)
                                            :lisp-mode (lisp-path-p path))))
-            (cond (text (show-file-text doc path text))
+            (cond (text (show-file-text doc path text coding))
                   (t (visit-path doc path)
                      (new-file-note doc path)))
             doc)))))

@@ -158,7 +158,8 @@ a window a tab was shown in separately (see \"Detached windows\")."
   ;; a window was placed
   (stub-frame (list 0 0 800 600))
   ;; :ATTACH when the close button was pressed, :EMPTY when the last tab
-  ;; left: HOUSEKEEPING takes the window down (the main window never)
+  ;; left: HOUSEKEEPING takes the window down -- the main window once
+  ;; another window has taken over its role (PROMOTE-WINDOW)
   (closing nil))
 
 (defstruct (host-editor (:include editor)
@@ -173,6 +174,17 @@ a window a tab was shown in separately (see \"Detached windows\")."
   (windows '())
   (next-window 0)
   (panel-windows '())            ; panel name -> window
+  ;; The callbacks that belong to the application, not to a window -- the
+  ;; Finder's open hook, the native menu's pick -- freed by HOST-CLOSE
+  ;; after the last window: the main window's list held them once, and a
+  ;; main window closed while another took over its role freed the open
+  ;; hook under the shim's feet.
+  (app-callbacks '())
+  ;; The Finder's open hook (its callback), while it is installed: put
+  ;; back after every webview_destroy, since destroying webview's FIRST
+  ;; instance -- the original main window's -- takes the application's
+  ;; delegate down with it, and the hook wraps that delegate.
+  (open-hook nil)
   ;; Files the Finder handed over before START had made its first
   ;; documents (a Finder start's own files arrive on the loop's first
   ;; step, inside HOST-OPEN), and whether it has: see "Files dropped on a
@@ -1559,20 +1571,25 @@ that has a menu bar of its own."
     (not (and env (string-equal env "page")))))
 
 (defun native-menu-callback (editor which n)
-  "The shim's pick callback: WHICH 0 is the table's item N; any other
-WHICH is the table index of a dynamic group's entry, and N the position
-of the line picked in that group (the bar counts).  It runs inside an
-entry, as a binding does (CALL-WITH-ENTRY: the WITH-ENTRY macro is
-defined further down), and is dropped while a requester runs its own
-loop."
+  "The shim's pick callback: WHICH 0 is the table's item N; WHICH -1 is
+the application menu's Quit (Cmd-Q), `save-buffers-kill-emacs' -- the
+quit itself, not the main window's close button, which hands the role
+on while another window is up (WINDOW-CLOSE-REQUESTED); any other WHICH
+is the table index of a dynamic group's entry, and N the position of the
+line picked in that group (the bar counts).  It runs inside an entry, as
+a binding does (CALL-WITH-ENTRY: the WITH-ENTRY macro is defined further
+down), and is dropped while a requester runs its own loop."
   (unless (host-editor-in-modal editor)
     (call-with-entry editor
                      (lambda ()
-                       (if (eql which 0)
-                           (host-menu-pick editor n)
-                           (let ((group (dynamic-group-at which)))
-                             (when group
-                               (host-dynamic-pick editor group n))))))))
+                       (cond ((eql which -1)
+                              (setf (editor-quitting editor) t))
+                             ((eql which 0)
+                              (host-menu-pick editor n))
+                             (t
+                              (let ((group (dynamic-group-at which)))
+                                (when group
+                                  (host-dynamic-pick editor group n)))))))))
 
 (defun native-menu-install (editor)
   "The table onto the host's own menu bar through the shim, when it has
@@ -1583,7 +1600,7 @@ one: true then.  Picks come back through NATIVE-MENU-CALLBACK."
                (lambda (which n arg)
                  (declare (ignore arg))
                  (native-menu-callback editor which n)))))
-      (push cb (host-window-callbacks (host-editor-main editor)))
+      (push cb (host-editor-app-callbacks editor))
       (/= 0 (ffi:with-foreign-string (table (menu-table-text editor))
               (shim editor "clamacs_host_menu_set" :int32 '(:pointer :pointer :pointer :pointer)
                     (host-window-win (host-editor-main editor)) table cb (ffi:make-foreign-pointer 0)))))))
@@ -2204,12 +2221,14 @@ panel shown in a window of its own says `window N' at the end."
                  (inspector-object insp)
                  (panel-window-suffix editor "inspector")))))))
 
-(defun host-page-panels (&optional (editor *editor*) (number 1))
-  "The last report of the page of window NUMBER (the main window's)
-about what its menu bar, its dock and its panels show (clamacsPanels), as
-the JSON text it sent; \"no report\" before the first, \"no window\" for a
-number no window has."
-  (let ((window (and editor (host-window editor number))))
+(defun host-page-panels (&optional (editor *editor*) number)
+  "The last report of the page of window NUMBER (the main window's,
+whichever that is now, without one) about what its menu bar, its dock
+and its panels show (clamacsPanels), as the JSON text it sent; \"no
+report\" before the first, \"no window\" for a number no window has."
+  (let ((window (and editor (if number
+                                (host-window editor number)
+                                (host-editor-main editor)))))
     (cond ((null window) (if editor "no window" "no report"))
           ((host-window-page-panels window))
           (t "no report"))))
@@ -2249,6 +2268,15 @@ number no window has."
 ;;; document's `docN', a panel's MUI window role), so a debugger shown
 ;;; separately comes up where the Amiga's debugger window was; without an
 ;;; entry it cascades off the main window.
+;;;
+;;; The MAIN window's close button is the quit only while no other
+;;; window holds anything (2026-11-06: with a folder's window beside it,
+;;; closing the first window closed the editor).  Otherwise the oldest
+;;; other window that holds a tab, a panel or something on its way in
+;;; takes over the role (PROMOTE-WINDOW: where the Finder's files, a new
+;;; document beside none and the panels go by default), and the old main
+;;; goes down as a detached window does -- its tabs move over, its panels
+;;; close, no buffer is lost.  Cmd-Q and the Quit item stay the quit.
 
 (defun note-window-emptied (window)
   "A detached window whose page holds no tab any more is closed by
@@ -2276,7 +2304,7 @@ Without a page (the tests) it is ready at once."
         (install-bindings window)
         ;; The close button: the documents back into the main window, the
         ;; panels closed (ATTACH-ALL).
-        (install-close-hook window (lambda () (setf (host-window-closing window) :attach)))
+        (install-close-hook window (lambda () (window-close-requested window)))
         (install-drop-hook window)
         (wv-str window "webview_set_html" (host-editor-page-html editor))))
     (setf (host-window-dock-height window) (host-window-dock-height (host-editor-main editor)))
@@ -2294,7 +2322,8 @@ detached mark to it, then what was waiting to move in."
   (send-minimap-to window)
   (send-cursor-style-to window)
   (ck window "setDock" (host-window-dock-height window))
-  (ck window "setDetached" t)
+  ;; A window promoted to main before its page came up is not detached
+  (ck window "setDetached" (not (main-window-p window)))
   (let ((pending (reverse (host-window-pending window))))
     (setf (host-window-pending window) '())
     (dolist (item pending)
@@ -2434,16 +2463,66 @@ says the REPL is still parked).  Every tab moves quietly (ACTIVATE NIL):
 a moved tab's own activation would raise main as a side effect whenever
 the true focus is a third window, stealing it before the final
 activation below puts it back.  So the true focus is activated, and the
-right window raised, exactly once, after all tabs have moved."
+right window raised, exactly once, after all tabs have moved.  A main
+window whose page is not up yet (promoted while its folder was still on
+its way in) takes the tabs on its pending list, as MOVE-INTO does."
   (let* ((editor (host-window-editor window))
          (main (host-editor-main editor))
          (active (active-document editor)))
     (dolist (doc (window-documents window))
-      (move-document doc main :activate nil))
+      (if (host-window-settled main)
+          (move-document doc main :activate nil)
+          (move-into main doc)))
     (dolist (name (window-panels window))
       (host-panel-close editor name))
     (when (and active (not (doc-closing active)))
       (doc-activate active))))
+
+(defun successor-window (editor)
+  "The window the main role goes to when the main window closes: the
+oldest other window that is up and holds a tab, a panel or something on
+its way in; NIL when there is none -- then the close is the quit."
+  (find-if (lambda (window)
+             (and (not (main-window-p window))
+                  (not (host-window-closing window))
+                  (or (window-documents window)
+                      (window-panels window)
+                      (host-window-pending window))))
+           (host-editor-windows editor)))
+
+(defun promote-window (editor window)
+  "WINDOW is the main window from now on.  The panel records name the
+windows other than main, so they are rewritten: a panel in WINDOW needs
+none, and one that was in the old main -- recorded nowhere -- is
+recorded there, so the old main's close finds its panels to close.  The
+old main is a window like any other now, taken down by its mark."
+  (let ((old (host-editor-main editor)))
+    (unless (eq old window)
+      (let ((records (host-editor-panel-windows editor)))
+        (setf (host-editor-main editor) window
+              (host-editor-panel-windows editor)
+              (append (remove window records :key #'cdr)
+                      (loop for name in *panel-names*
+                            unless (assoc name records :test #'string=)
+                              collect (cons name old)))))
+      ;; Its page offers no way "back to the main window" any more;
+      ;; a page not up yet is told at SETTLE-WINDOW.
+      (when (host-window-settled window)
+        (ck window "setDetached" nil)))))
+
+(defun window-close-requested (window)
+  "WINDOW's close button, the shim's hook: a detached window is marked
+to go down with its tabs moved back (:ATTACH).  The main window is
+marked the same when another window can take over its role -- the
+promotion is HOUSEKEEPING's, inside an entry -- and asks the editor to
+quit otherwise: `save-buffers-kill-emacs', which the loop carries out."
+  (let ((editor (host-window-editor window)))
+    (cond ((not (main-window-p window))
+           (setf (host-window-closing window) :attach))
+          ((successor-window editor)
+           (setf (host-window-closing window) :attach))
+          (t
+           (setf (editor-quitting editor) t)))))
 
 (defun destroy-window (window)
   "WINDOW's webview instance and callbacks released; the window
@@ -2469,7 +2548,13 @@ frees its engine, and the page's next message runs on freed memory
       (shim editor "clamacs_host_on_drop" :int32 '(:pointer :pointer :pointer)
             win (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0)))
     (when w
-      (wv editor "webview_destroy" :int32 '(:pointer) w))
+      (wv editor "webview_destroy" :int32 '(:pointer) w)
+      ;; webview's first instance owned the application's delegate and
+      ;; nils it as it goes: the Finder's open hook wrapped that delegate,
+      ;; so it is wrapped again (the shim re-wraps whatever is there now)
+      (when (and (host-editor-open-hook editor) (host-editor-shim editor))
+        (shim editor "clamacs_host_on_open" :void '(:pointer :pointer)
+              (host-editor-open-hook editor) (ffi:make-foreign-pointer 0))))
     (dolist (cb (host-window-callbacks window))
       (ffi:free-callback cb))
     (setf (host-window-callbacks window) '())))
@@ -2489,10 +2574,19 @@ their way down are closed -- in this turn, whichever pass emptied them.
 An :EMPTY mark is stale once something is routed back into the window
 before this pass runs (a panel reopened, a document made there while its
 window was still the active one) -- re-checked here rather than trusted,
-or the window would be destroyed out from under what it is now showing."
+or the window would be destroyed out from under what it is now showing.
+A main window marked by its close button hands its role to the oldest
+other window first (PROMOTE-WINDOW), and is closed below as a detached
+one is; when no window can take the role any more (the other one
+emptied meanwhile), the close is the quit after all."
+  (let ((main (host-editor-main editor)))
+    (when (host-window-closing main)
+      (let ((next (successor-window editor)))
+        (cond (next (promote-window editor next))
+              (t (setf (host-window-closing main) nil
+                       (editor-quitting editor) t))))))
   (dolist (window (copy-list (host-editor-windows editor)))
-    (when (and (not (main-window-p window))
-               (host-window-ready window)
+    (when (and (host-window-ready window)
                (not (host-window-settled window))
                (not (host-window-closing window)))
       (settle-window window)))
@@ -2754,17 +2848,21 @@ Finder start was given are delivered during it."
                                  (declare (ignore arg))
                                  (host-files-hook editor (host-editor-main editor)
                                                   (ffi:foreign-to-string paths))))))
-    (push cb (host-window-callbacks (host-editor-main editor)))
+    (push cb (host-editor-app-callbacks editor))
+    (setf (host-editor-open-hook editor) cb)
     (shim editor "clamacs_host_on_open" :void '(:pointer :pointer)
           cb (ffi:make-foreign-pointer 0))))
 
-(defun host-drop-test (paths &optional (window-number 1) (editor *editor*))
+(defun host-drop-test (paths &optional window-number (editor *editor*))
   "For a script: PATHS (a list, or one path) dropped on the window numbered
-WINDOW-NUMBER as the Finder drops them, through the shim -- the hook on
-the native window, the callback, the entry; short of the pasteboard.
-Answers \"dropped\", \"no such window\", or \"no drop hook on this host\"
-where the shim takes no drops (GTK, Win32)."
-  (let ((window (and editor (host-window editor window-number)))
+WINDOW-NUMBER (the main window, whichever that is now, without one) as
+the Finder drops them, through the shim -- the hook on the native
+window, the callback, the entry; short of the pasteboard.  Answers
+\"dropped\", \"no such window\", or \"no drop hook on this host\" where
+the shim takes no drops (GTK, Win32)."
+  (let ((window (and editor (if window-number
+                                (host-window editor window-number)
+                                (host-editor-main editor))))
         (text (format nil "~{~A~^~%~}" (if (listp paths) paths (list paths)))))
     (cond ((or (null window) (null (host-window-win window)))
            "no such window")
@@ -2834,9 +2932,10 @@ height, the report -- goes to the window."
           (lambda (doc-id)
             (let ((doc (host-document-by-id editor doc-id)))
               (when doc (close-document doc)))))
-    ;; One timer serves the editor: the main window's page's.
+    ;; One timer serves the editor: the main window's page's -- asked at
+    ;; every tick, since the role moves (PROMOTE-WINDOW).
     (bind window "clamacsTick"
-          (if (main-window-p window) (lambda () (host-tick editor)) (lambda () nil)))
+          (lambda () (when (main-window-p window) (host-tick editor))))
     ;; The menu bar (phase H4)
     (bind window "clamacsMenu" (lambda (index) (host-menu-pick editor index)))
     (bind window "clamacsDynamic"
@@ -2962,8 +3061,9 @@ the page has reported ready."
     (place-window main "doc1")
     (install-bindings main)
     ;; The close button asks the editor: `save-buffers-kill-emacs', which
-    ;; the loop carries out.
-    (install-close-hook main (lambda () (setf (editor-quitting editor) t)))
+    ;; the loop carries out -- or hands the role on while another window
+    ;; is up (WINDOW-CLOSE-REQUESTED).
+    (install-close-hook main (lambda () (window-close-requested main)))
     ;; Files from the Finder dropped on the window
     (install-drop-hook main)
     (wv-str main "webview_set_html" (host-editor-page-html editor))
@@ -2981,11 +3081,17 @@ callbacks, the libraries: nothing OS-owned outlives START."
     (setf (host-editor-native-menu editor) nil))
   ;; The application's open hook off before the main window goes: its
   ;; callback is among that window's.
+  (setf (host-editor-open-hook editor) nil)
   (when (host-editor-shim editor)
     (shim editor "clamacs_host_on_open" :void '(:pointer :pointer)
           (ffi:make-foreign-pointer 0) (ffi:make-foreign-pointer 0)))
-  (dolist (window (reverse (host-editor-windows editor)))
-    (destroy-window window))
+  (let ((main (host-editor-main editor)))
+    (dolist (window (reverse (remove main (host-editor-windows editor))))
+      (destroy-window window))
+    (destroy-window main))
+  (dolist (cb (host-editor-app-callbacks editor))
+    (ffi:free-callback cb))
+  (setf (host-editor-app-callbacks editor) '())
   (when (host-editor-shim editor)
     (ffi:close-library (host-editor-shim editor))
     (setf (host-editor-shim editor) nil))

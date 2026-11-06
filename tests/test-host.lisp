@@ -952,6 +952,30 @@ each, with the KeyboardEvent fields a real key would carry."
     (is-equal (live-documents editor) '())
     (delete-file path)))
 
+(deftest host-a-utf-8-file-shows-its-umlauts-and-saves-them-back
+  ;; The complaint of 2026-11-06: a German umlaut in a file -- UTF-8 on
+  ;; the host -- showed as two characters.  Read as UTF-8 it is one, the
+  ;; page gets it as one escape, a euro sign (above 255) is kept and
+  ;; escaped as one UTF-16 unit, and the save writes the bytes back.
+  (let* ((editor (host-test-editor))
+         (text (coerce (list #\G #\r (code-char 252) (code-char 223) #\e #\Space
+                             (code-char 8364) #\Newline)
+                       'string))
+         (path (temp-file "host-umlauts.txt" text))
+         (doc (host-test-document editor "" path)))
+    (is-equal (host-text doc) text)
+    (is-equal (doc-coding doc) :utf-8)
+    (let ((js (host-take-evals editor)))
+      (is (search "Gr\\u00FC\\u00DFe \\u20AC\\n" js)))
+    ;; Typed after the text: an umlaut of the keyboard's, then the save
+    (host-type editor "M->")
+    (host-type editor (string (code-char 228)))
+    (host-type editor "C-x C-s")
+    (is-equal (read-file-text path) (concatenate 'string text (string (code-char 228))))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (is-equal (file-length in) 14))
+    (delete-file path)))
+
 (deftest host-batch-is-ascii-and-the-beep-and-clipboard-are-recorded
   (let* ((editor (host-test-editor))
          (doc (host-test-document editor "hello world")))
@@ -1991,6 +2015,13 @@ loading it here would also replace the wire starter the other tests use."
       (native-menu-callback editor :null 0)
       (native-menu-callback editor (menu-count) 0)
       (is (eq (editor-active-document editor) d2))
+      ;; `which' -1: the application menu's Quit (Cmd-Q), the quit itself
+      ;; -- not the main window's close button, which hands the role on
+      ;; while another window is up
+      (is (not (editor-quitting editor)))
+      (native-menu-callback editor -1 0)
+      (is (eq (editor-quitting editor) t))
+      (setf (editor-quitting editor) nil)
       ;; The View group's line picks a theme
       (with-host-theme-state
         (setq *editor* editor)
@@ -2268,6 +2299,154 @@ settled and the tab moved.  The message HOST-DETACH answered."
         (is-equal (host-editor-raised editor) '())
         (is (eq (editor-active-document editor) d3))
         (is (eq (hdoc-window d3) w3))))))
+
+(deftest host-the-main-windows-close-button-hands-the-role-on-while-another-window-is-up
+  ;; Closing the first window with a second one up closed the editor
+  ;; (2026-11-06).  Now the other window becomes the main window and the
+  ;; first goes down as a detached window does: its tabs move over, no
+  ;; buffer is lost, the keyboard stays where it was.
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (w1 (host-editor-main editor)))
+    (host-detach-now editor "doc2")
+    (let ((w2 (host-window editor 2)))
+      (is (eq (editor-active-document editor) d2))
+      (host-take-evals editor)
+      (host-take-evals w2)
+      ;; The close button's hook: a mark for the loop, never the quit
+      (window-close-requested w1)
+      (is (eq (host-window-closing w1) :attach))
+      (is (not (editor-quitting editor)))
+      (with-entry (editor) (housekeeping editor))
+      (is (eq (host-editor-main editor) w2))
+      (is (main-window-p w2))
+      (is (null (host-window editor 1)))
+      (is (eq (hdoc-window d1) w2))
+      (is (eq (hdoc-window d2) w2))
+      (is (not (doc-closing d1)))
+      (is (eq (editor-active-document editor) d2))
+      ;; (the words list the documents oldest first, not the tabs' order)
+      (is-equal (host-panel-state :windows editor) "windows 1: 2 (doc1 doc2) active doc2")
+      (let ((js (host-take-evals w2)))
+        ;; Its page offers no way back to a main window any more, and
+        ;; holds the moved tab
+        (is (search "CK.setDetached(false);" js))
+        (is (search "CK.makeDoc(\"doc1\",\"(unnamed)\",\"source\");" js)))
+      ;; A new document opens in it, as in any main window, and a file
+      ;; the Finder hands over lands there
+      (let ((d3 (host-test-document editor "three")))
+        (is (eq (hdoc-window d3) w2)))
+      (host-files-hook editor (host-editor-main editor) (temp-file "host-promoted.txt" "p"))
+      (is (eq (hdoc-window (editor-active-document editor)) w2))
+      ;; The last window's close button is the quit, as before
+      (window-close-requested w2)
+      (is (null (host-window-closing w2)))
+      (is (editor-quitting editor))
+      (is (housekeeping editor))
+      (is-equal (live-documents editor) '()))))
+
+(deftest host-the-main-window-closes-into-the-quit-when-no-window-can-take-over
+  ;; A second window that holds nothing -- or that emptied between the
+  ;; click and the loop's turn -- cannot take the role: the close is the
+  ;; quit after all.
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "one"))
+         (d2 (host-test-document editor "two"))
+         (w1 (host-editor-main editor)))
+    (declare (ignore d1))
+    (host-detach-now editor "doc2")
+    (let ((w2 (host-window editor 2)))
+      ;; The mark set, then window 2's only tab closed before the turn
+      (window-close-requested w1)
+      (is (eq (host-window-closing w1) :attach))
+      (with-entry (editor) (run-command d2 'kill-buffer))
+      (is (eq (host-window-closing w2) :empty))
+      (is (null (successor-window editor)))
+      (with-entry (editor) (housekeeping editor))
+      (is (eq (host-editor-main editor) w1))
+      (is (null (host-window-closing w1)))
+      (is (editor-quitting editor))
+      (is (null (host-window editor 2))))
+    ;; An empty window made and never filled is no successor either
+    (setf (editor-quitting editor) nil)
+    (let ((w3 (open-window editor "doc3")))
+      (with-entry (editor) (housekeeping editor))
+      (is (host-window-settled w3))
+      (window-close-requested w1)
+      (is (null (host-window-closing w1)))
+      (is (editor-quitting editor)))))
+
+(deftest host-the-main-windows-close-closes-its-panels-and-the-new-main-keeps-its-own
+  ;; The panel records name the windows other than main: rewritten at
+  ;; the promotion, so the old main's panels are found and closed (as a
+  ;; detached window's are) and a panel in the new main is recorded
+  ;; nowhere, which is what "in the main window" means.
+  (multiple-value-bind (editor doc tr) (host-wired-editor "(x)")
+    (declare (ignore doc tr))
+    (with-entry (editor)
+      (editor-show-diagnostics editor '("a:1: ERROR: x") :open t))
+    (let ((dbg (editor-debugger-state editor)))
+      (setf (debugger-level dbg) 1
+            (debugger-condition dbg) "SIMPLE-ERROR: bad"
+            (debugger-restarts dbg) '("0: ABORT")
+            (debugger-frames dbg) '("0: f")
+            (debugger-frame dbg) 0
+            (debugger-locals dbg) '())
+      (with-entry (editor) (editor-debugger-open editor dbg)))
+    (host-take-evals editor)
+    (host-detach-now editor "debugger")
+    (let ((w1 (host-editor-main editor))
+          (w2 (host-window editor 2))
+          (d2 (host-test-document editor "two")))
+      (with-entry (editor) (move-document d2 w2))
+      (is-equal (host-panel-state :windows editor) "windows 2: 1 (doc1 diagnostics) 2 (doc2 debugger) active doc2")
+      (window-close-requested w1)
+      (with-entry (editor) (housekeeping editor))
+      (is (eq (host-editor-main editor) w2))
+      (is (null (host-window editor 1)))
+      ;; The diagnostics panel was the old main's: closed.  The debugger
+      ;; is the new main's: open, in the main window, recorded nowhere
+      (is (not (host-editor-diag-open editor)))
+      (is (host-editor-dbg-open editor))
+      (is (eq (panel-window editor "debugger") w2))
+      (is (eq (panel-window editor "diagnostics") w2))
+      (is-equal (host-editor-panel-windows editor) '())
+      (is (not (search "window" (host-panel-state :debugger editor))))
+      (is-equal (host-panel-state :windows editor) "windows 1: 2 (doc1 doc2 debugger) active doc2")
+      ;; The snapshot's dock and panel entries read the new main
+      (is (assoc "debugger" (editor-aux-windows editor) :test #'string=)))))
+
+(deftest host-the-main-window-closed-while-a-folders-window-is-still-coming-up
+  ;; The successor's page is not up: it takes the role at once, is told
+  ;; it is the main window when it settles (not "detached"), opens its
+  ;; folder, and the old main's tabs follow in the same turn.
+  (let* ((editor (host-test-editor))
+         (d1 (host-test-document editor "scratch"))
+         (w1 (host-editor-main editor))
+         (dir (folder-fixture "host-folder-promote")))
+    (host-files-hook editor w1 (string-right-trim "/" dir))
+    (let ((w2 (host-window editor 2)))
+      (is (not (host-window-settled w2)))
+      (is (host-window-pending w2))
+      (is (eq (successor-window editor) w2))
+      (window-close-requested w1)
+      (is (eq (host-window-closing w1) :attach))
+      (with-entry (editor) (housekeeping editor))
+      (is (eq (host-editor-main editor) w2))
+      (is (host-window-settled w2))
+      (is (null (host-window editor 1)))
+      (let ((docs (live-documents editor))
+            (js (host-take-evals w2)))
+        (is (= 3 (length docs)))
+        (is (every (lambda (doc) (eq (hdoc-window doc) w2)) docs))
+        (is (eq (first docs) d1))
+        (is (search "CK.setDetached(false);" js))
+        (is (not (search "CK.setDetached(true);" js)))
+        (is (search "CK.makeDoc(\"doc1\"" js))
+        (is (search "CK.makeDoc(\"doc2\"" js))
+        (is (search "CK.makeDoc(\"doc3\"" js)))
+      (is-equal (host-panel-state :windows editor) "windows 1: 2 (doc1 doc2 doc3) active doc2"))))
 
 (deftest host-a-tool-buffer-shown-separately-is-its-windows-dock
   (multiple-value-bind (editor doc repl tr) (host-repl-fixture)

@@ -376,6 +376,26 @@ Finder activates the application before it hands the file over, and the
 old tab's report arrived after the new tab was active.  `host-drop-test`
 is the script's drop; the drive's FINDER leg runs it and, under `APP=1`,
 `open -a` against the running bundle.  GTK and Win32 take no drops yet.
+Two fixes of 2026-11-06, both found with a folder's window beside the
+first one: **the main window's close button** is the quit only while no
+other window holds anything -- otherwise `window-close-requested` (the
+one close hook every window has) marks it `:attach` and
+`windows-housekeeping` hands the role to the oldest other window
+(`successor-window`, `promote-window`: the panel records rewritten, the
+page told `setDetached(false)`) before closing the old main as a
+detached window; what depends on the main window asks at call time (the
+tick binding, `host-drop-test`'s default), the application's callbacks
+(the open hook, the native menu's pick) live on
+`host-editor-app-callbacks` rather than the main window's list, and
+Cmd-Q is `fn(-1, 0)` to the pick callback, no longer `performClose:`
+on a window.  And **files are UTF-8 on the host**
+(`*text-external-format*` in `files.lisp`, Latin-1 on an Amiga, decided
+when the file loads): a file that is not valid UTF-8 is read as Latin-1
+and the document remembers it (`doc-coding`) for the save, the string
+is made with `:element-type 'character` (the runtime's plain
+`make-string` is 8-bit and a store above 255 keeps the low byte), and
+`json-code-char` keeps every BMP character, since the host's text holds
+them now.  The drive's DETACH leg ends with the main window's close.
 
 **Projects** (`specs/clamacs-perspectives.md`; 2026-10-14 as
 perspectives, the project UI 2026-10-20): `lisp/perspective.lisp` -- a

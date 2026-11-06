@@ -461,6 +461,12 @@ than opened twice.
 another name, which the buffer takes from then on.  Closing a changed
 buffer or quitting asks what to do with it: Save, Discard or Cancel.
 
+**Encoding.** On the Amiga files are Latin-1, the system's character
+set.  On macOS and Linux they are UTF-8, and a file that is not valid
+UTF-8 is read as Latin-1 and saved as Latin-1 again, so a source shared
+with an Amiga keeps its bytes.  Characters beyond the Basic Multilingual
+Plane (an emoji) are not displayed.
+
 **Lisp mode** (colouring, paren matching, indentation, the Lisp keys)
 follows the file name: `.lisp`, `.lsp`, `.cl` and `.asd` files and
 every unnamed buffer are in Lisp mode; anything else is a plain text
@@ -1073,8 +1079,8 @@ is `M-{`, and right-Option-N then a space is a `~`.
 ### Menu bar
 
 On macOS the menus are on the screen's menu bar, with the usual
-application menu (Cmd-Q asks the editor to quit, as the close button
-does); `CLAMACS_HOST_MENU=page` in the environment keeps them in the
+application menu (Cmd-Q asks the editor to quit, as File > Quit does);
+`CLAMACS_HOST_MENU=page` in the environment keeps them in the
 window instead.  On Linux a bar at the top of the window draws the same
 menus.  About shows the version, the licence, the toolkit (webview,
 WebKit) and the amilisp connected; Help > Common Lisp HyperSpec opens
@@ -1093,7 +1099,10 @@ Any tab, a buffer, a tool buffer or a panel, can be shown in a window of
 its own: the tab's context menu, or `M-x clamacs-detach-window`.
 **Move to main window** (`M-x clamacs-attach-window`) brings it back, and
 so does the window's close button for a buffer; closing a panel's window
-closes the panel.
+closes the panel.  Closing the main window while another window is up
+makes that window the main one and moves the tabs over -- a window's
+close button never loses a buffer; only the last window's close button,
+File > Quit and Cmd-Q quit the editor.
 
 ### Linux and Windows
 

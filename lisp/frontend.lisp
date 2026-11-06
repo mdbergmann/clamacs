@@ -74,6 +74,10 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    ;; What the title shows: the file's name, "(unnamed)", or a scratch
    ;; window's own name ("*errors*").
    (name :initarg :name :initform "(unnamed)" :accessor doc-name)
+   ;; The external format the file was read with (files.lisp,
+   ;; READ-FILE-TEXT's second value), which a save writes it back in; NIL
+   ;; -- a new buffer -- is the system's.
+   (coding :initform nil :accessor doc-coding)
    ;; Retired: off the screen, waiting for the frontend to dispose of it.
    (closing :initform nil :accessor doc-closing)
    (lisp-mode :initarg :lisp-mode :initform t :accessor doc-lisp-mode)

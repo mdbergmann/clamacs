@@ -9,6 +9,11 @@ the UTF-8 bytes of a C string as FFI:FOREIGN-TO-STRING hands them over."
   (coerce (mapcar (lambda (c) (if (characterp c) c (code-char c))) codes)
           'simple-string))
 
+(defun bmp-string (code)
+  "What JSON-CODE-CHAR makes of CODE, a character above 255 in the Basic
+Multilingual Plane: itself where CHAR-CODE-LIMIT allows, else `?'."
+  (if (< code char-code-limit) (string (code-char code)) "?"))
+
 (defun json-fails-p (text)
   (handler-case (progn (json-parse text) nil)
     (json-error () t)))
@@ -37,9 +42,10 @@ the UTF-8 bytes of a C string as FFI:FOREIGN-TO-STRING hands them over."
             (format nil "x~%y~Cz~C" #\Tab #\Return))
   (is-equal (json-parse "\"\\b\\f\"") (coerce (list (code-char 8) (code-char 12)) 'string))
   (is-equal (json-parse "\"\\u0041\\u00e9\"") (bytes-string 65 #xE9))
-  ;; Above 255: the editor's text is 8-bit, so `?'
-  (is-equal (json-parse "\"\\u20ac\"") "?")
-  ;; A surrogate pair is ONE character above 255
+  ;; Above 255 but one UTF-16 unit: the character itself where the text
+  ;; can hold it (the host; files are UTF-8 there), `?' on an Amiga
+  (is-equal (json-parse "\"\\u20ac\"") (bmp-string #x20AC))
+  ;; A surrogate pair is ONE character here, two units on the page: `?'
   (is-equal (json-parse "\"a\\ud83d\\ude00b\"") "a?b")
   ;; A lone surrogate is a `?' of its own
   (is-equal (json-parse "\"\\ud83dx\"") "?x"))
@@ -48,8 +54,8 @@ the UTF-8 bytes of a C string as FFI:FOREIGN-TO-STRING hands them over."
   ;; e-acute is C3 A9 in UTF-8 and #xE9 in the editor's text
   (is-equal (json-parse (bytes-string #\" #xC3 #xA9 #\")) (bytes-string #xE9))
   (is-equal (json-parse (bytes-string #\" #\a #xC3 #xA9 #\b #\")) (bytes-string #\a #xE9 #\b))
-  ;; The euro sign (E2 82 AC) and an emoji (F0 9F 98 80) are one `?' each
-  (is-equal (json-parse (bytes-string #\" #xE2 #x82 #xAC #\")) "?")
+  ;; The euro sign (E2 82 AC) is one character, an emoji (F0 9F 98 80) one `?'
+  (is-equal (json-parse (bytes-string #\" #xE2 #x82 #xAC #\")) (bmp-string #x20AC))
   (is-equal (json-parse (bytes-string #\" #xF0 #x9F #x98 #x80 #\x #\")) "?x")
   ;; A byte that is not part of a well-formed sequence is a `?' of its
   ;; own, and decoding goes on with the next byte

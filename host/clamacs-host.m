@@ -782,7 +782,6 @@ const char *clamacs_host_toolkit(void)
 @interface ClamacsMenuTarget : NSObject
 @property (nonatomic, assign) void (*fn)(int32_t, int32_t, void *);
 @property (nonatomic, assign) void *arg;
-@property (nonatomic, weak) NSWindow *window;
 @property (nonatomic, strong) NSMenu *previous;
 @property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSMenuItem *> *items;
 /* The dynamic groups by name: the menu, its entry's table index, the
@@ -813,10 +812,14 @@ const char *clamacs_host_toolkit(void)
         self.fn((int32_t)[(NSNumber *)sender.representedObject intValue],
                 (int32_t)sender.tag, self.arg);
 }
+/* Cmd-Q: the editor's quit, as WHICH -1 to the pick callback.  It was the
+ * main window's close button (performClose:) until 2026-11-06, when that
+ * button stopped being the quit while another window is up. */
 - (void)quit:(id)sender
 {
     (void)sender;
-    [self.window performClose:nil];
+    if (self.fn)
+        self.fn(-1, 0, self.arg);
 }
 @end
 
@@ -871,9 +874,9 @@ int clamacs_host_menu_set(void *win, const char *table,
             menu_target = [[ClamacsMenuTarget alloc] init];
             menu_target.previous = NSApp.mainMenu;
         }
+        (void)win;
         menu_target.fn = fn;
         menu_target.arg = arg;
-        menu_target.window = (__bridge NSWindow *)win;
         menu_target.items = [NSMutableDictionary dictionary];
         menu_target.dynamic = [NSMutableDictionary dictionary];
         menu_target.dynamicIndex = [NSMutableDictionary dictionary];

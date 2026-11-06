@@ -44,16 +44,118 @@
 
 ;;; --- reading and writing ------------------------------------------------------
 
-(deftest file-text-round-trips-byte-for-character
-  ;; ISO-8859-1 whatever the host's default encoding is, CR kept.
-  (let* ((text (coerce (list #\a (code-char 228) (code-char 255) #\Return
+(deftest file-text-is-utf-8-on-the-host-and-latin-1-on-an-amiga
+  (is-equal *text-external-format*
+            (if (member :amigaos *features*) :latin-1 :utf-8)))
+
+(deftest file-text-round-trips-byte-for-character-as-latin-1
+  ;; The Amiga's format: ISO-8859-1 whatever the host's default encoding
+  ;; is, one byte per character, CR kept.
+  (let* ((*text-external-format* :latin-1)
+         (text (coerce (list #\a (code-char 228) (code-char 255) #\Return
                              #\Newline #\z)
                        'string))
          (path (temp-file "latin1.txt" text)))
-    (is-equal (read-file-text path) text)
+    (multiple-value-bind (got format) (read-file-text path)
+      (is-equal got text)
+      (is-equal format :latin-1))
     (with-open-file (in path :element-type '(unsigned-byte 8))
       (is-equal (file-length in) 6))
     (delete-file path)))
+
+(deftest file-text-round-trips-utf-8-and-reads-a-latin-1-file-as-one
+  ;; The host's format: a German umlaut is two bytes in the file and one
+  ;; character in the text (the complaint of 2026-11-06: read as Latin-1
+  ;; it was two), a euro sign three bytes and one character above 255 --
+  ;; which the text holds, so the string must be a general CHARACTER one.
+  (let* ((*text-external-format* :utf-8)
+         (umlauts (coerce (list #\G #\r (code-char 252) (code-char 223) #\e) 'string))
+         (text (concatenate 'string umlauts " " (string (code-char 8364))
+                            (string #\Newline)))
+         (path (temp-file "utf8.txt" text)))
+    (multiple-value-bind (got format) (read-file-text path)
+      (is-equal got text)
+      (is-equal format :utf-8)
+      (is-equal (char-code (char got 6)) 8364))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (is-equal (file-length in) 12))
+    (delete-file path)
+    ;; The same umlauts as Latin-1 bytes -- a file from an Amiga -- are
+    ;; not valid UTF-8: read as Latin-1, whole, and said so
+    (let ((latin (temp-path "latin1-on-host.txt")))
+      (is (write-file-text latin umlauts :latin-1))
+      (with-open-file (in latin :element-type '(unsigned-byte 8))
+        (is-equal (file-length in) 5))
+      (multiple-value-bind (got format) (read-file-text latin)
+        (is-equal got umlauts)
+        (is-equal format :latin-1))
+      (delete-file latin))))
+
+(deftest a-literal-replacement-character-is-not-a-latin-1-file
+  ;; Valid UTF-8 that holds U+FFFD itself stays UTF-8; the same character
+  ;; next to a stray Latin-1 byte is still a Latin-1 file.
+  (let* ((*text-external-format* :utf-8)
+         (fffd (string (code-char #xFFFD)))
+         (text (concatenate 'string "a" fffd "b" (string (code-char 252)) "c"))
+         (path (temp-file "fffd.txt" text)))
+    (multiple-value-bind (got format) (read-file-text path)
+      (is-equal got text)
+      (is-equal format :utf-8))
+    (delete-file path)
+    (let ((mixed (temp-path "fffd-mixed.txt")))
+      (is (write-file-text mixed (concatenate 'string "a" fffd) :utf-8))
+      (with-open-file (out mixed :direction :output :if-exists :append
+                                 :element-type '(unsigned-byte 8))
+        (write-byte 252 out))
+      (multiple-value-bind (got format) (read-file-text mixed)
+        (declare (ignore got))
+        (is-equal format :latin-1))
+      (delete-file mixed))))
+
+(deftest a-file-is-saved-in-the-format-it-was-read-with
+  ;; A Latin-1 file opened on the host stays Latin-1 when saved there; a
+  ;; new buffer and a UTF-8 file are written in the system's format.
+  (let* ((*text-external-format* :utf-8)
+         (umlauts (coerce (list #\G #\r (code-char 252) (code-char 223) #\e) 'string))
+         (latin (temp-path "coding-latin.txt"))
+         (utf (temp-file "coding-utf.txt" umlauts))
+         (fresh (temp-file "coding-new.txt")))
+    (is (write-file-text latin umlauts :latin-1))
+    (let ((doc (make-fake "|")))
+      (type-keys doc "C-x C-f")
+      (answer-prompt doc latin)
+      (is-equal (doc-coding doc) :latin-1)
+      (is-equal (fake-text doc) umlauts)
+      (type-keys doc "C-e ! C-x C-s")
+      (is (not (doc-modified-p doc)))
+      (with-open-file (in latin :element-type '(unsigned-byte 8))
+        (is-equal (file-length in) 6))
+      (is-equal (read-file-text latin) (concatenate 'string umlauts "!"))
+      ;; Save As keeps the format too: it is the text's, not the path's
+      (is (save-file doc fresh))
+      (is-equal (doc-path doc) fresh)
+      (with-open-file (in fresh :element-type '(unsigned-byte 8))
+        (is-equal (file-length in) 6)))
+    (let ((doc (make-fake "|")))
+      (type-keys doc "C-x C-f")
+      (answer-prompt doc utf)
+      (is-equal (doc-coding doc) :utf-8)
+      (type-keys doc "C-e ! C-x C-s")
+      (with-open-file (in utf :element-type '(unsigned-byte 8))
+        (is-equal (file-length in) 8)))
+    (let ((doc (make-fake "|")))
+      (is-equal (doc-coding doc) nil)
+      (type-keys doc "C-x C-f")
+      (answer-prompt doc (temp-file "coding-none.txt"))
+      (is-equal (doc-coding doc) nil)
+      (type-text doc umlauts)
+      (type-keys doc "C-x C-s")
+      (with-open-file (in (doc-path doc) :element-type '(unsigned-byte 8))
+        (is-equal (file-length in) 7))
+      (delete-file (doc-path doc)))
+    (delete-file latin)
+    (delete-file utf)
+    (delete-file fresh)))
 
 (deftest unreadable-and-unwritable-files-are-nil-not-errors
   (is-equal (read-file-text (temp-file "missing.txt")) nil)
