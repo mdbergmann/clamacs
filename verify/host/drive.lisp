@@ -2122,8 +2122,15 @@ and, when it is the active one, the window), without EVAL's quotes."
         (if (and (equal (projects-lines) '("  (no project)" "> drivesys")) (null (recent-lines)))
             (ok "drivesys is open again, Recent Projects empty")
             (fail "after the reopen PROJECTS gave ~{~A~^|~}, RECENT ~{~A~^|~}" (projects-lines) (recent-lines)))
-        ;; sample2.lisp into the project for the second editor to find
-        ;; waiting on it, then back outside: the quit's write records it
+        ;; warm.lisp and sample2.lisp into the project for the second
+        ;; editor to find waiting on it, then back outside: the quit's
+        ;; write records them.  The second editor is started on
+        ;; sample2.lisp, so its switch MOVES that one and OPENS warm.lisp
+        ;; from the path the projects file holds -- a general CHARACTER
+        ;; string on the host, where the file is read as UTF-8, which the
+        ;; runtime's ffi:foreign-string refused as "not a string" until
+        ;; 2026-11-08 when the window took the path as its title.
+        (cmd (format nil "OPEN FILE ~A" (fixture "warm.lisp")))
         (cmd (format nil "OPEN FILE ~A" (fixture "sample2.lisp")))
         (cmd "PROJECTS (no project)")
         (cmd "GETNAME")
@@ -2445,16 +2452,31 @@ wrote: it must come up where the file said, then quit."
         (fail "the page's tabs at the start: source ~A hidden ~A" (page-tabs "source") (page-tabs "hidden")))
     ;; Into drivesys from Recent: sample2.lisp, the file it was started
     ;; on, is the project's -- brought over from outside, which has
-    ;; nothing left to hide and leaves the menu
+    ;; nothing left to hide and leaves the menu -- and warm.lisp is
+    ;; OPENED from the path the projects file holds (an error there,
+    ;; the FFI refusing the path as a window title, took the echo area
+    ;; instead of the switch's message)
     (cmd "RECENT drivesys")
     (cmd "STATUS")
-    (if (and (result-has "Project: drivesys (") (result-has "drivesys/), 1 file(s) opened"))
-        (ok "the first switch into drivesys opened its file and names its folder: ~A" *result*)
+    (if (and (result-has "Project: drivesys (") (result-has "drivesys/), 2 file(s) opened"))
+        (ok "the first switch into drivesys opened its files and names its folder: ~A" *result*)
         (fail "RECENT drivesys said ~A" *result*))
     (cmd "GETNAME")
     (if (result-has "sample2.lisp")
         (ok "sample2.lisp moved into drivesys and has the keyboard")
         (fail "in drivesys the active buffer is ~A" *result*))
+    ;; warm.lisp, opened from the file's path: its window's title bar is
+    ;; that path, through the FFI
+    (cmd "BUFFERS warm.lisp")
+    (cmd "GETNAME")
+    (if (result-has "warm.lisp")
+        (ok "warm.lisp was opened from the projects file into drivesys")
+        (fail "BUFFERS warm.lisp activated ~A" *result*))
+    (cmd "EVAL (clamacs::host-window-shown-title (clamacs::host-editor-main clamacs::*editor*))")
+    (if (equal (string-trim "\"" *result*) (fixture "warm.lisp"))
+        (ok "the window's title is warm.lisp's path from the projects file: ~A" *result*)
+        (fail "with warm.lisp active the window's title is ~A" *result*))
+    (cmd "BUFFERS sample2.lisp")
     (let ((state (panel-state :projects "current drivesys of (scratch|drivesys) hidden ()")))
       (if (string/= state "")
           (ok "drivesys in front, nothing hidden: ~A" state)
@@ -2481,9 +2503,10 @@ wrote: it must come up where the file said, then quit."
     (if (equal (string-trim "\"" *result*) "*clamacs-repl*")
         (ok "the REPL's name stays ~A" *result*)
         (fail "the REPL's name is ~A" *result*))
-    ;; Close Project: sample2.lisp, untouched here, closes without a
-    ;; question; the editor is outside any project with an unnamed
-    ;; buffer, the title plain again, drivesys recent with its file
+    ;; Close Project: sample2.lisp and warm.lisp, untouched here, close
+    ;; without a question; the editor is outside any project with an
+    ;; unnamed buffer, the title plain again, drivesys recent with its
+    ;; files
     (cmd "EVAL clamacs-project-close")
     (if (string/= (wait-echo "Closed project drivesys" 20) "")
         (ok "the second editor closed drivesys")
