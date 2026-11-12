@@ -2224,6 +2224,10 @@ with ACCEPT a double click, which takes it."
            t)
           (t nil))))
 
+(defmethod doc-search-marks-match-p ((doc mui-document))
+  ;; MUIM_TextEditor_Search marks what it found as the block.
+  t)
+
 (defmethod doc-search ((doc mui-document) pattern backwards again)
   (ffi:with-foreign-string (p pattern)
     (/= 0 (mui:do-method (mdoc-text doc) +tem-search+ p

@@ -490,12 +490,17 @@ each, with the KeyboardEvent fields a real key would carry."
     (is (search "CK.openMini(\"I-search: \",\"\");" (host-take-evals editor)))
     (with-entry (editor) (host-mini-input editor "def"))
     (is-equal (doc-point doc) 7)
-    (is (search "CK.setPoint(\"doc1\",7,7);" (host-take-evals editor)))
-    ;; A failing search leaves the point at the anchor
+    ;; The match is painted: the page's search of its own there is none.
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.setPoint(\"doc1\",7,7);" js))
+      (is (search "4,7,\"occurrence-current\"]" js)))
+    ;; A failing search leaves the point at the anchor, and no mark
     (with-entry (editor) (host-mini-input editor "defx"))
     (is-equal (doc-point doc) 0)
     (is-equal (doc-message-text doc) "Failing I-search: ")
-    (is (search "CK.setMiniLabel(\"Failing I-search: \");" (host-take-evals editor)))
+    (let ((js (host-take-evals editor)))
+      (is (search "CK.setMiniLabel(\"Failing I-search: \");" js))
+      (is (not (search "occurrence-current" js))))
     (with-entry (editor) (host-mini-input editor "def"))
     (host-type editor "RET" :target "mini")
     (is (not (minibuffer-open-p doc)))

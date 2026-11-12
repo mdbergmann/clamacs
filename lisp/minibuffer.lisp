@@ -41,6 +41,14 @@ gets to Emacs's minibuffer-message."))
 not; AGAIN asks for the next match rather than one at the cursor.  Moves the
 cursor and returns true when PATTERN was found."))
 
+(defgeneric doc-search-marks-match-p (doc)
+  (:documentation "Whether DOC-SEARCH itself shows what it found (the MUI
+class marks the match as a block).  Where it does not -- the default --
+the search paints the match through DOC-STYLE, as iedit paints the
+occurrence under the cursor.")
+  (:method ((doc document))
+    nil))
+
 (defgeneric doc-show-completions (doc names index)
   (:documentation "Show NAMES, what TAB has to offer, as a list the user
 moves a cursor through: INDEX is the entry the cursor is on, -1 for none
@@ -78,6 +86,7 @@ look at.")
   (anchor 0)                 ; where the search started
   (backwards nil)
   (failing nil)              ; the last step found nothing
+  (match nil)                ; the match painted, as (START . END), or NIL
   (wrapped nil))             ; the match is past the text's end, or start
 
 (defun minibuffer-open-p (doc)
@@ -109,7 +118,9 @@ name, so no completion, and the command history keeps it."
 (defun minibuffer-finish (doc)
   (let ((mini (doc-minibuffer doc)))
     (when (and mini (minibuffer-candidates mini))
-      (doc-show-completions doc nil -1)))
+      (doc-show-completions doc nil -1))
+    (when (and mini (eq (minibuffer-kind mini) :isearch))
+      (isearch-unmark doc mini)))
   (setf (doc-minibuffer doc) nil)
   (doc-close-minibuffer doc))
 
@@ -338,6 +349,29 @@ reach the input line."
         ((minibuffer-backwards mini) "Reverse I-search: ")
         (t "I-search: ")))
 
+(defun isearch-unmark (doc mini)
+  "Take the painted match down and give its line the token colours back."
+  (let ((match (minibuffer-match mini)))
+    (when match
+      (setf (minibuffer-match mini) nil)
+      (multiple-value-bind (y x) (doc-index-line doc (car match))
+        (doc-style doc y x (+ x (- (cdr match) (car match))) nil)
+        (if (doc-lisp-mode doc)
+            (colour-lines doc y y)
+            ;; No colours to restore, but an iedit session's marks.
+            (iedit-after-recolour doc y y))))))
+
+(defun isearch-mark (doc mini length)
+  "Paint the match the search just found: LENGTH characters ending at the
+cursor forwards, starting there backwards (DOC-SEARCH).  A frontend whose
+search shows the match itself is left to it."
+  (unless (doc-search-marks-match-p doc)
+    (let* ((point (doc-point doc))
+           (start (if (minibuffer-backwards mini) point (- point length))))
+      (multiple-value-bind (y x) (doc-index-line doc start)
+        (doc-style doc y x (+ x length) :occurrence-current)
+        (setf (minibuffer-match mini) (cons start (+ start length)))))))
+
 (defun isearch-wrap (doc mini pattern)
   "Search for PATTERN from the other end of the text: its start forwards,
 its end backwards.  True when found; the cursor stays where it was
@@ -354,6 +388,7 @@ otherwise."
 already there.  As in Emacs a search that found nothing says so, and the
 same key once more goes on from the other end of the text."
   (let ((pattern (doc-minibuffer-text doc)))
+    (isearch-unmark doc mini)
     (when (string/= pattern "")
       (let ((found (if (and again (minibuffer-failing mini))
                        (and (isearch-wrap doc mini pattern)
@@ -361,6 +396,8 @@ same key once more goes on from the other end of the text."
                        (doc-search doc pattern
                                    (minibuffer-backwards mini) again))))
         (setf (minibuffer-failing mini) (not found))
+        (when found
+          (isearch-mark doc mini (length pattern)))
         (doc-set-minibuffer-label doc (isearch-label mini (not found)))))))
 
 (defun printable-key-p (key)

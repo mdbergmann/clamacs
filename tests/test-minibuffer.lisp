@@ -481,6 +481,53 @@
     ;; A failing search leaves the cursor at the anchor.
     (is-equal (fake-state doc) "needle hay needle|")))
 
+(defun isearch-marks (doc y)
+  "The painted match on line Y, as FAKE-LINE-COLOURS shows it."
+  (remove-if-not (lambda (run) (eq (third run) :occurrence-current))
+                 (fake-line-colours doc y)))
+
+(deftest isearch-paints-the-match
+  ;; A plain-text buffer: no token colours beside the mark.
+  (let ((doc (make-fake (lines "|foo bar" "bar foo"))))
+    (set-lisp-mode doc nil)
+    (type-keys doc "C-s b")
+    (is-equal (isearch-marks doc 0) '((4 5 :occurrence-current)))
+    (type-keys doc "a r")
+    (is-equal (isearch-marks doc 0) '((4 7 :occurrence-current)))
+    ;; The next match: the mark moves with it.
+    (type-keys doc "C-s")
+    (is-equal (isearch-marks doc 0) '())
+    (is-equal (isearch-marks doc 1) '((0 3 :occurrence-current)))
+    ;; Failing: nothing is painted.
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (is-equal (isearch-marks doc 1) '())
+    ;; Wrapped, then backwards: the match starts at the cursor there.
+    (type-keys doc "C-s")
+    (is-equal (isearch-marks doc 0) '((4 7 :occurrence-current)))
+    (type-keys doc "C-r C-r")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (type-keys doc "C-r")
+    (is-equal (isearch-marks doc 1) '((0 3 :occurrence-current)))
+    ;; RET leaves the cursor and takes the mark down.
+    (type-keys doc "RET")
+    (is-equal (isearch-marks doc 0) '())
+    (is-equal (isearch-marks doc 1) '())))
+
+(deftest isearch-takes-the-mark-down-on-quit-and-restores-the-colours
+  (let ((doc (make-fake "|(defun foo ())")))
+    (colour-all doc)
+    (let ((before (fake-line-colours doc 0)))
+      (type-keys doc "C-s f o o")
+      (is-equal (isearch-marks doc 0) '((7 10 :occurrence-current)))
+      ;; An emptied pattern paints nothing.
+      (type-keys doc "BS BS BS")
+      (is-equal (fake-line-colours doc 0) before)
+      (type-keys doc "d e f")
+      (is-equal (isearch-marks doc 0) '((1 4 :occurrence-current)))
+      (type-keys doc "C-g")
+      (is-equal (fake-line-colours doc 0) before))))
+
 (deftest isearch-wraps-after-failing
   (let ((doc (make-fake "foo bar |baz bar")))
     (type-keys doc "C-s b a r")
