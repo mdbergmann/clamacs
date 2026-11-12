@@ -76,7 +76,9 @@ look at.")
   (candidates-text nil)
   ;; isearch
   (anchor 0)                 ; where the search started
-  (backwards nil))
+  (backwards nil)
+  (failing nil)              ; the last step found nothing
+  (wrapped nil))             ; the match is past the text's end, or start
 
 (defun minibuffer-open-p (doc)
   (and (doc-minibuffer doc) t))
@@ -298,9 +300,13 @@ reach the input line."
                  (eql key +key-esc+))
              (minibuffer-abort doc))
             ((eq (minibuffer-kind mini) :isearch)
-             ;; C-s or C-r: search again, in that direction.
-             (setf (minibuffer-backwards mini)
-                   (eql key (make-key 114 +mod-ctrl+)))
+             ;; C-s or C-r: search again, in that direction.  Turning
+             ;; round after a failure searches from the cursor first: only
+             ;; the same key again wraps.
+             (let ((backwards (eql key (make-key 114 +mod-ctrl+))))
+               (unless (eq backwards (minibuffer-backwards mini))
+                 (setf (minibuffer-failing mini) nil))
+               (setf (minibuffer-backwards mini) backwards))
              (isearch-step doc mini t))
             ((eql key +key-tab+)
              (minibuffer-complete doc mini))
@@ -325,17 +331,37 @@ reach the input line."
 
 (defun isearch-label (mini failing)
   (cond (failing "Failing I-search: ")
+        ((minibuffer-wrapped mini)
+         (if (minibuffer-backwards mini)
+             "Wrapped Reverse I-search: "
+             "Wrapped I-search: "))
         ((minibuffer-backwards mini) "Reverse I-search: ")
         (t "I-search: ")))
 
+(defun isearch-wrap (doc mini pattern)
+  "Search for PATTERN from the other end of the text: its start forwards,
+its end backwards.  True when found; the cursor stays where it was
+otherwise."
+  (let ((point (doc-point doc))
+        (backwards (minibuffer-backwards mini)))
+    (doc-set-point doc (if backwards (doc-end doc) 0))
+    (or (doc-search doc pattern backwards nil)
+        (progn (doc-set-point doc point)
+               nil))))
+
 (defun isearch-step (doc mini again)
+  "Search for what the input line holds, AGAIN for C-s / C-r on a pattern
+already there.  As in Emacs a search that found nothing says so, and the
+same key once more goes on from the other end of the text."
   (let ((pattern (doc-minibuffer-text doc)))
     (when (string/= pattern "")
-      (doc-set-minibuffer-label
-       doc
-       (isearch-label mini
-                      (not (doc-search doc pattern
-                                       (minibuffer-backwards mini) again)))))))
+      (let ((found (if (and again (minibuffer-failing mini))
+                       (and (isearch-wrap doc mini pattern)
+                            (setf (minibuffer-wrapped mini) t))
+                       (doc-search doc pattern
+                                   (minibuffer-backwards mini) again))))
+        (setf (minibuffer-failing mini) (not found))
+        (doc-set-minibuffer-label doc (isearch-label mini (not found)))))))
 
 (defun printable-key-p (key)
   "A key that types itself: no modifier, a Latin-1 character, not DEL."
@@ -375,6 +401,8 @@ TAB completes what is typed now."
     (cond ((null mini))
           ((eq (minibuffer-kind mini) :isearch)
            (doc-set-point doc (minibuffer-anchor mini))
+           (setf (minibuffer-failing mini) nil
+                 (minibuffer-wrapped mini) nil)
            (isearch-step doc mini nil))
           ((and (minibuffer-candidates mini)
                 (not (minibuffer-offering-p doc mini)))

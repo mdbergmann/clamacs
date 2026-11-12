@@ -480,3 +480,71 @@
     (is-equal (fake-prompt doc) "Failing I-search: neex")
     ;; A failing search leaves the cursor at the anchor.
     (is-equal (fake-state doc) "needle hay needle|")))
+
+(deftest isearch-wraps-after-failing
+  (let ((doc (make-fake "foo bar |baz bar")))
+    (type-keys doc "C-s b a r")
+    (is-equal (fake-state doc) "foo bar baz bar|")
+    ;; Nothing further: failing first, as in Emacs ...
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (is-equal (fake-state doc) "foo bar baz bar|")
+    ;; ... and the same key again goes on from the top.
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Wrapped I-search: bar")
+    (is-equal (fake-state doc) "foo bar| baz bar")
+    ;; Wrapped, the search goes on as before, and round once more.
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Wrapped I-search: bar")
+    (is-equal (fake-state doc) "foo bar baz bar|")
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (type-keys doc "C-s")
+    (is-equal (fake-state doc) "foo bar| baz bar")
+    ;; C-g still returns to where the search began.
+    (type-keys doc "C-g")
+    (is-equal (fake-state doc) "foo bar |baz bar")))
+
+(deftest isearch-backward-wraps-from-the-end
+  (let ((doc (make-fake "foo |bar baz bar")))
+    ;; Typed with nothing before the cursor: failing, and C-r wraps.
+    (type-keys doc "C-r b a r")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (type-keys doc "C-r")
+    (is-equal (fake-prompt doc) "Wrapped Reverse I-search: bar")
+    (is-equal (fake-state doc) "foo bar baz |bar")
+    (type-keys doc "C-r")
+    (is-equal (fake-state doc) "foo |bar baz bar")
+    (type-keys doc "C-r")
+    (is-equal (fake-prompt doc) "Failing I-search: bar")
+    (type-keys doc "C-r")
+    (is-equal (fake-state doc) "foo bar baz |bar")
+    ;; RET keeps the wrapped match; the mark is the anchor.
+    (type-keys doc "RET")
+    (is-equal (doc-mark doc) 4)))
+
+(deftest isearch-wrap-finds-nothing-and-turning-round-does-not-wrap
+  (let ((doc (make-fake "ab|c abc")))
+    ;; No match anywhere: the wrap fails too and the cursor stays.
+    (type-keys doc "C-s x")
+    (is-equal (fake-prompt doc) "Failing I-search: x")
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Failing I-search: x")
+    (is-equal (fake-state doc) "ab|c abc")
+    (type-keys doc "C-g")
+    ;; A failure forwards, then C-r: backwards from the cursor, no wrap.
+    (type-keys doc "C-s a b c")
+    (is-equal (fake-state doc) "abc abc|")
+    (type-keys doc "C-s")
+    (is-equal (fake-prompt doc) "Failing I-search: abc")
+    (type-keys doc "C-r")
+    (is-equal (fake-prompt doc) "Reverse I-search: abc")
+    (is-equal (fake-state doc) "abc |abc")
+    ;; An edit of the pattern starts over from the anchor, unwrapped.
+    (type-keys doc "C-r C-r")
+    (is-equal (fake-prompt doc) "Failing I-search: abc")
+    (type-keys doc "C-r")
+    (is-equal (fake-prompt doc) "Wrapped Reverse I-search: abc")
+    (type-keys doc "BS")
+    (is-equal (fake-prompt doc) "Reverse I-search: ab")
+    (is-equal (fake-state doc) "|abc abc")))

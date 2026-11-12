@@ -324,7 +324,7 @@ your init file included.  The tables below are that listing, grouped.
 | `C-v`, `M-v` | scroll-up, scroll-down | One page down, up |
 | `C-l` | recenter | Repaint the window and recolour the whole buffer |
 | `M-g g` | goto-line | Go to a line by its number |
-| `C-s`, `C-r` | isearch-forward, isearch-backward | Incremental search forward, backward |
+| `C-s`, `C-r` | isearch-forward, isearch-backward | Incremental search forward, backward; after `Failing`, the same key again wraps round |
 
 ### Editing text
 
