@@ -569,6 +569,154 @@ separator."
     (is-equal (fake-state doc) "new |old")
     (delete-file path)))
 
+;;; --- the file changed by someone else ---------------------------------------------
+
+(defun visiting-fake (path)
+  "A fake document visiting PATH through `C-x C-f'."
+  (let ((doc (make-fake "|")))
+    (type-keys doc "C-x C-f")
+    (answer-prompt doc path)
+    doc))
+
+(deftest a-file-stamp-tells-a-changed-file
+  (let ((path (temp-file "stamp.txt" "one")))
+    (let ((stamp (file-stamp path)))
+      (is (consp stamp))
+      (is-equal (cdr stamp) 3)
+      (is-equal (file-stamp path) stamp)
+      (is (write-file-text path "longer"))
+      (is (not (equal (file-stamp path) stamp))))
+    (delete-file path)
+    (is-equal (file-stamp path) nil)))
+
+(deftest an-unmodified-buffer-follows-its-changed-file
+  (let* ((path (temp-file "follow.txt" "one two"))
+         (doc (visiting-fake path)))
+    (type-keys doc "C-f C-f C-f C-f")
+    ;; Nothing changed: nothing happens.
+    (is (not (check-file-on-disk doc)))
+    (is-equal (fake-state doc) "one |two")
+    ;; Someone else writes the file; the window gets the keyboard back.
+    (is (write-file-text path "ONE TWO THREE"))
+    (is (doc-file-changed-p doc))
+    (is (check-file-on-disk doc))
+    (is-equal (fake-state doc) "ONE |TWO THREE")
+    (is (not (doc-modified-p doc)))
+    (is-equal (fake-last-message doc)
+              "clamacs-test-follow.txt changed on disk: read again")
+    (is-equal (fake-asked doc) '())
+    ;; In step again.
+    (is (not (doc-file-changed-p doc)))
+    ;; A shorter file: the cursor is clamped.
+    (is (write-file-text path "ab"))
+    (is (check-file-on-disk doc))
+    (is-equal (fake-state doc) "ab|")
+    ;; A file that went away is not a change.
+    (delete-file path)
+    (is (not (check-file-on-disk doc)))
+    (is-equal (fake-state doc) "ab|")))
+
+(deftest a-modified-buffer-is-warned-once-and-the-save-asks
+  (let* ((path (temp-file "clash.txt" "mine"))
+         (doc (visiting-fake path)))
+    (type-keys doc "x")
+    (is (write-file-text path "somebody else's"))
+    ;; The warning: the text stays, and it is said once per change.
+    (is (check-file-on-disk doc))
+    (is-equal (fake-state doc) "x|mine")
+    (is (doc-modified-p doc))
+    (is-equal (fake-last-message doc)
+              "clamacs-test-clash.txt changed on disk; M-x revert-buffer reads it again")
+    (is-equal (fake-beeps doc) 1)
+    (doc-message doc "something else")
+    (is (check-file-on-disk doc))
+    (is-equal (fake-last-message doc) "something else")
+    (is-equal (fake-beeps doc) 1)
+    (is (write-file-text path "somebody else's, again"))
+    (is (check-file-on-disk doc))
+    (is-equal (fake-beeps doc) 2)
+    ;; Save asks; Cancel writes nothing.
+    (setf (fake-answers doc) '(:cancel))
+    (type-keys doc "C-x C-s")
+    (is-equal (first (fake-asked doc))
+              '("clamacs-test-clash.txt changed on disk since it was read."
+                (:overwrite :revert :cancel)))
+    (is-equal (read-file-text path) "somebody else's, again")
+    (is (doc-modified-p doc))
+    (is-equal (fake-last-message doc)
+              "Not saved: clamacs-test-clash.txt changed on disk")
+    ;; Overwrite writes, and the two agree again: the next save asks nothing
+    ;; (the fake signals on a requester nobody scripted).
+    (setf (fake-answers doc) '(:overwrite))
+    (type-keys doc "C-x C-s")
+    (is-equal (read-file-text path) "xmine")
+    (is (not (doc-modified-p doc)))
+    (is (not (doc-file-changed-p doc)))
+    (type-keys doc "y C-x C-s")
+    (is-equal (read-file-text path) "xymine")
+    (is-equal (length (fake-asked doc)) 2)
+    ;; Revert, from the save's requester: the file's text, nothing written.
+    (type-keys doc "z")
+    (is (write-file-text path "theirs now"))
+    (setf (fake-answers doc) '(:revert))
+    (type-keys doc "C-x C-s")
+    (is-equal (read-file-text path) "theirs now")
+    (is-equal (fake-state doc) "the|irs now")
+    (is (not (doc-modified-p doc)))
+    (delete-file path)))
+
+(deftest a-new-files-buffer-asks-when-someone-made-the-file
+  (let* ((path (temp-file "made-meanwhile.txt"))
+         (doc (visiting-fake path)))
+    (is-equal (doc-file-stamp doc) nil)
+    (type-keys doc "x")
+    (is (write-file-text path "first"))
+    (setf (fake-answers doc) '(:cancel))
+    (type-keys doc "C-x C-s")
+    (is-equal (read-file-text path) "first")
+    ;; Save As to ANOTHER file asks nothing about this one.
+    (let ((other (temp-file "made-other.txt")))
+      (type-keys doc "C-x C-w")
+      (doc-set-minibuffer-text doc other)
+      (type-keys doc "RET")
+      (is-equal (read-file-text other) "x")
+      (is-equal (doc-path doc) other)
+      (is (not (doc-file-changed-p doc)))
+      (delete-file other))
+    (delete-file path)))
+
+(deftest revert-buffer-reads-the-file-again
+  (let* ((path (temp-file "revert.txt" "on disk"))
+         (doc (visiting-fake path)))
+    ;; Unmodified: no question.
+    (is (write-file-text path "on disk, newer"))
+    (run-command doc 'revert-buffer)
+    (is-equal (fake-state doc) "|on disk, newer")
+    (is-equal (fake-last-message doc) "Reverted clamacs-test-revert.txt")
+    ;; Modified: Cancel keeps the text, Discard drops it.
+    (type-keys doc "x C-SPC")
+    (setf (fake-answers doc) '(:cancel))
+    (run-command doc 'revert-buffer)
+    (is-equal (first (fake-asked doc))
+              '("Discard the changes to clamacs-test-revert.txt and read its file again?"
+                (:discard :cancel)))
+    (is-equal (fake-state doc) "x|on disk, newer")
+    (setf (fake-answers doc) '(:discard))
+    (run-command doc 'revert-buffer)
+    (is-equal (fake-state doc) "o|n disk, newer")
+    (is (not (doc-modified-p doc)))
+    (is-equal (doc-mark doc) nil)
+    ;; A file that cannot be read leaves the buffer alone.
+    (delete-file path)
+    (run-command doc 'revert-buffer)
+    (is-equal (fake-state doc) "o|n disk, newer")
+    (is-equal (fake-last-message doc) (concatenate 'string "Cannot read " path))
+    ;; No file, nothing to read.
+    (let ((plain (make-fake "text|")))
+      (run-command plain 'revert-buffer)
+      (is-equal (fake-last-message plain) "(unnamed) has no file")
+      (is-equal (fake-state plain) "text|"))))
+
 (deftest saving-an-unnamed-buffer-asks-for-a-name
   (let ((path (temp-file "named.lisp"))
         (doc (make-fake "(text)|")))

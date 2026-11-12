@@ -78,6 +78,13 @@ at hand (LOAD-THEME from the init file, a form in the REPL).")
    ;; READ-FILE-TEXT's second value), which a save writes it back in; NIL
    ;; -- a new buffer -- is the system's.
    (coding :initform nil :accessor doc-coding)
+   ;; What the file looked like when the text was last read from it or
+   ;; written to it (files.lisp, FILE-STAMP), NIL for a file not there
+   ;; yet: a file that looks different now was changed by someone else.
+   ;; And the stamp a modified buffer was last warned about, so that the
+   ;; warning is said once per change.
+   (file-stamp :initform nil :accessor doc-file-stamp)
+   (file-warned :initform nil :accessor doc-file-warned)
    ;; Retired: off the screen, waiting for the frontend to dispose of it.
    (closing :initform nil :accessor doc-closing)
    (lisp-mode :initarg :lisp-mode :initform t :accessor doc-lisp-mode)

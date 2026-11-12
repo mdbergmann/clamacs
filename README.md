@@ -461,6 +461,13 @@ than opened twice.
 another name, which the buffer takes from then on.  Closing a changed
 buffer or quitting asks what to do with it: Save, Discard or Cancel.
 
+**Files changed by another program.** When a window gets the keyboard
+back the editor looks at its file.  A buffer without changes of its own
+is read again and the echo area says so; a buffer with changes keeps
+them and you are told that the file differs.  Saving such a buffer asks
+first: Overwrite the file, Revert to what is on disk, or Cancel.
+`M-x revert-buffer` reads the file again at any time.
+
 **Encoding.** On the Amiga files are Latin-1, the system's character
 set.  On macOS and Linux they are UTF-8, and a file that is not valid
 UTF-8 is read as Latin-1 and saved as Latin-1 again, so a source shared
@@ -504,7 +511,9 @@ file.
 
 `C-s` starts an incremental search: the minibuffer shows `I-search:`
 and the cursor moves to the first match as you type; `C-s` again finds
-the next, `C-r` the previous (`C-r` starts a backward search).  `RET`
+the next, `C-r` the previous (`C-r` starts a backward search).  When
+there is no further match the label says `Failing I-search:`, and the
+same key once more goes on from the other end of the text.  `RET`
 leaves the cursor at the match; `C-g` or `ESC` goes back to where the
 search started.  Edit > Go to Line... (`M-g g`) asks for a line
 number.

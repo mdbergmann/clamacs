@@ -58,6 +58,33 @@ disposes of it later, from its event loop."))
 NAME; the caller loads PATH into it."))
 
 ;;; ------------------------------------------------------------------
+;;; The file as it was when the text and the file last agreed
+;;; ------------------------------------------------------------------
+
+(defun file-stamp (path)
+  "What tells one state of the file PATH from another: its write date and
+its length (the date alone has a second's resolution).  NIL when there is
+no such file, or it cannot be looked at."
+  (handler-case
+      (and (probe-file path)
+           (cons (file-write-date path)
+                 (with-open-file (in path :element-type '(unsigned-byte 8))
+                   (file-length in))))
+    (error () nil)))
+
+(defun doc-note-file (doc)
+  "DOC's text and its file agree now: it was just read or written."
+  (setf (doc-file-stamp doc) (and (doc-path doc) (file-stamp (doc-path doc)))
+        (doc-file-warned doc) nil))
+
+(defun doc-file-changed-p (doc)
+  "Whether DOC's file is there and is not as DOC last read or wrote it:
+someone else wrote it.  A file that went away has not changed -- the next
+save simply writes it again."
+  (let ((stamp (and (doc-path doc) (file-stamp (doc-path doc)))))
+    (and stamp (not (equal stamp (doc-file-stamp doc))))))
+
+;;; ------------------------------------------------------------------
 ;;; Names and modes
 ;;; ------------------------------------------------------------------
 
@@ -128,6 +155,7 @@ belonged to the old text."
         (doc-mark doc) nil
         (doc-paren-shown doc) nil)
   (doc-set-title doc (doc-name doc))
+  (doc-note-file doc)
   (set-lisp-mode doc (lisp-path-p path))
   ;; A tool buffer that became a file is a source now: it joins the
   ;; perspective in front (perspective.lisp).
@@ -352,10 +380,72 @@ directory's, which exists."
            (message doc "Cannot create ~A" dir)
            nil))))
 
+(defun revert-file (doc)
+  "Read DOC's file again, dropping the text DOC has; the cursor stays at
+its index as far as the new text reaches.  True when it was read."
+  (multiple-value-bind (text coding) (read-file-text (doc-path doc))
+    (cond ((null text)
+           (message doc "Cannot read ~A" (doc-path doc))
+           nil)
+          (t
+           (let ((point (doc-point doc)))
+             ;; The occurrences and the highlight belonged to the old text.
+             (iedit-end doc)
+             (doc-set-text doc text)
+             (setf (doc-coding doc) coding
+                   (doc-mark doc) nil
+                   (doc-mark-active doc) nil
+                   (doc-paren-shown doc) nil)
+             (doc-note-file doc)
+             (forget-arglist doc)
+             (colour-all doc)
+             (doc-set-point doc (min point (doc-end doc))))
+           t))))
+
+(defun check-file-on-disk (doc)
+  "DOC has the user's attention again (its window got the keyboard): see
+whether someone else wrote its file meanwhile.  A buffer without changes
+of its own is read again, and says so; one with changes keeps them and
+says, once per change of the file, that the two differ -- the save will
+ask (SAVE-FILE).  Never a requester: this runs from a window's activation.
+True when the file had changed."
+  (when (and (doc-path doc)
+             (not (doc-closing doc))
+             (not (doc-minibuffer doc))
+             (doc-file-changed-p doc))
+    (cond ((not (doc-modified-p doc))
+           (when (revert-file doc)
+             (message doc "~A changed on disk: read again" (doc-name doc))))
+          (t
+           (let ((stamp (file-stamp (doc-path doc))))
+             (unless (equal stamp (doc-file-warned doc))
+               (setf (doc-file-warned doc) stamp)
+               (message doc "~A changed on disk; M-x revert-buffer reads it again"
+                        (doc-name doc))
+               (doc-beep doc)))))
+    t))
+
+(defun overwrite-changed-file-p (doc path)
+  "Before DOC is saved to PATH: when that is its own file and someone else
+wrote it since DOC read it, ask.  True when the save may go on; Revert
+reads the file again instead, and neither that nor Cancel saves."
+  (or (not (equal path (doc-path doc)))
+      (not (doc-file-changed-p doc))
+      (case (doc-ask doc (format nil "~A changed on disk since it was read."
+                                 (doc-name doc))
+                     '(:overwrite :revert :cancel))
+        (:overwrite t)
+        (:revert (revert-file doc)
+                 nil)
+        (t (message doc "Not saved: ~A changed on disk" (doc-name doc))
+           nil))))
+
 (defun save-file (doc path)
   "Write DOC's text to PATH, which becomes its file, in the format the
-file was read with.  Says what happened."
+file was read with -- after asking, when the file was changed by someone
+else since DOC read it.  Says what happened."
   (cond ((not (ensure-file-directory doc path)) nil)
+        ((not (overwrite-changed-file-p doc path)) nil)
         ((write-file-text path (doc-text doc 0 (doc-end doc))
                           (or (doc-coding doc) *text-external-format*))
          (unless (equal path (doc-path doc))
@@ -372,6 +462,7 @@ file was read with.  Says what happened."
              ;; Recolour: harmless when the mode did not change, needed when
              ;; it did (LOAD-FILE's SHOW-FILE-TEXT does the same).
              (colour-all doc)))
+         (doc-note-file doc)
          (doc-set-modified doc nil)
          (message doc "Wrote ~A" path)
          t)
@@ -662,6 +753,20 @@ cancelled."
 current one."
   (declare (ignore arg))
   (ask-file-then doc "Save As" t (or (doc-path doc) "") #'save-file))
+
+(define-command revert-buffer (doc arg)
+  "Read the buffer's file again, dropping the buffer's text -- after
+asking, when the buffer has changes of its own."
+  (declare (ignore arg))
+  (cond ((null (doc-path doc))
+         (message doc "~A has no file" (doc-name doc)))
+        ((or (not (doc-modified-p doc))
+             (eq (doc-ask doc (format nil "Discard the changes to ~A and read its file again?"
+                                      (doc-name doc))
+                          '(:discard :cancel))
+                 :discard))
+         (when (revert-file doc)
+           (message doc "Reverted ~A" (doc-name doc))))))
 
 (define-command save-buffer (doc arg)
   "Save the buffer to its file, asking for a name when it has none."

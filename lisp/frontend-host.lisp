@@ -2889,7 +2889,11 @@ page's report of the old tab arrived after the new one was active
                (or (null active)
                    (eq doc active)
                    (not (eq (hdoc-window doc) (hdoc-window active)))))
-      (doc-activate doc))))
+      (doc-activate doc))
+    ;; Back from another application, perhaps: was the file written there?
+    (let ((active (editor-active-document editor)))
+      (when active
+        (check-file-on-disk active)))))
 
 (defun host-log (editor text)
   "The clamacsLog binding: the page reports a JavaScript error."
@@ -2926,7 +2930,9 @@ height, the report -- goes to the window."
     (bind window "clamacsActivate"
           (lambda (doc-id)
             (let ((doc (host-document-by-id editor doc-id)))
-              (when doc (doc-activate doc)))))
+              (when doc
+                (doc-activate doc)
+                (check-file-on-disk doc)))))
     (bind window "clamacsWindowFocus" (lambda (doc-id) (host-window-focus editor doc-id)))
     (bind window "clamacsCloseTab"
           (lambda (doc-id)

@@ -3141,3 +3141,18 @@ settled and the tab moved.  The message HOST-DETACH answered."
     (is (eq (editor-active-document editor) d3))
     (with-entry (editor) (host-window-focus editor "doc2"))
     (is (eq (editor-active-document editor) d2))))
+
+(deftest host-a-window-s-focus-looks-at-the-file-on-disk
+  (let* ((path (temp-file "host-focus.txt" "before"))
+         (editor (host-test-editor))
+         (doc (host-test-document editor "" path)))
+    (is-equal (doc-text doc 0 (doc-end doc)) "before")
+    (is (write-file-text path "after, by someone else"))
+    (host-take-evals editor)
+    (with-entry (editor) (host-window-focus editor "doc1"))
+    (is-equal (doc-text doc 0 (doc-end doc)) "after, by someone else")
+    (is (not (doc-modified-p doc)))
+    (is-equal (doc-message-text doc) "clamacs-test-host-focus.txt changed on disk: read again")
+    ;; The page is told the one replacement (the texts share their last `e').
+    (is (search "after, by someone els" (host-take-evals editor)))
+    (delete-file path)))

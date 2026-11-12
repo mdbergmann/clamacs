@@ -2296,6 +2296,7 @@ is shown as a `-'."
       (substitute #\- #\_ choice)
       (case choice
         (:save "_Save") (:discard "_Discard") (:cancel "_Cancel")
+        (:overwrite "_Overwrite") (:revert "_Revert")
         (:yes "_Yes") (:no "_No") (:ok "_OK") (:start "_Start")
         (t (string-capitalize (symbol-name choice))))))
 
@@ -3224,7 +3225,10 @@ on MUI 3.8)."
                                                             #xFFFFFFFF)
                                                     +activate-pending-ticks+))
                                       (setf (mui-editor-activate-pending editor) nil
-                                            (mui-editor-active-doc editor) doc)))))
+                                            (mui-editor-active-doc editor) doc)))
+                                  ;; Back from another program, perhaps:
+                                  ;; was the file written there?
+                                  (check-file-on-disk doc)))
                 :comp-pick (hook (lambda (doc) (completion-picked doc nil)))
                 :comp-accept (hook (lambda (doc) (completion-picked doc t)))
                 :mini-ack (hook (lambda (doc) (minibuffer-done doc)))

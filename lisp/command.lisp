@@ -99,7 +99,7 @@ Emacs's names has not learnt yet."
  isearch-forward isearch-backward
  ;; files, buffers, windows
  find-file find-file-other-window clamacs-new-buffer save-buffer
- write-file switch-to-buffer kill-buffer other-window
+ write-file revert-buffer switch-to-buffer kill-buffer other-window
  save-buffers-kill-emacs kill-emacs
  ;; the command loop itself.  `C-u' is deliberately absent: the numeric
  ;; argument is read by the key state machine before dispatch, so it never
