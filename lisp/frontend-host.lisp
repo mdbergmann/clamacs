@@ -3146,6 +3146,13 @@ last tab closes."
                       (handler-case (funcall *wire-starter* editor)
                         (error (e) (report-error editor e))))
                     (with-entry (editor)
+                      ;; An amilisp of the editor's own, unless one is
+                      ;; running or the setting says no: set going here
+                      ;; and found by the wire's client thread, the
+                      ;; editor never waiting for it.
+                      (when (editor-wire editor)
+                        (handler-case (wire-auto-start (editor-wire editor))
+                          (error (e) (report-error editor e))))
                       (dolist (hook *after-start-hooks*)
                         (funcall hook editor)))
                     (run-loop editor)))

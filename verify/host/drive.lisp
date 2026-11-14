@@ -1722,6 +1722,41 @@ runs on, the token in the child's environment, and connects to it."
       (ok "the started amilisp logs to ~Aclamacs-amilisp.log" *dir*)
       (fail "no clamacs-amilisp.log under ~A" *dir*)))
 
+(defun leg-auto-start ()
+  "The second editor was started with CLAMACS_AMILISP_AUTOSTART=1, the
+host's default: it comes up with an amilisp of its own, started unasked
+and found without anybody asking for it."
+  (cmd "EVAL (clamacs::auto-start-amilisp-p)")
+  (if (result-is "T")
+      (ok "this editor starts an amilisp of its own as it comes up")
+      (fail "auto-start-amilisp-p is ~A" *result*))
+  (let ((up nil))
+    (dotimes (i 120)
+      (cmd "EVAL (clamacs::wire-connected (clamacs::editor-wire clamacs::*editor*))")
+      (when (result-is "T")
+        (setq up t)
+        (return))
+      (sleep 0.25))
+    (if up
+        (ok "the editor found the amilisp it started, nothing asked of it")
+        (fail "no amilisp was connected within 30 s of the editor's start")))
+  (cmd "EVAL (list (clamacs::tcp-transport-launched (clamacs::wire-home (clamacs::editor-wire clamacs::*editor*))) (clamacs::wire-launching (clamacs::editor-wire clamacs::*editor*)))")
+  (if (result-is "(T NIL)")
+      (ok "the wire's home transport knows it started that amilisp, and the launch is settled")
+      (fail "the transport's launched flag and the wire's launch are ~A" *result*))
+  (cmd "MENU run-lisp STATE")
+  (if (string= *result* "disabled")
+      (ok "Start amilisp is dimmed: there is nothing left to start")
+      (fail "Start amilisp in an editor that started one is ~A" *result*))
+  (cmd "MENU clamacs-eval-defun STATE")
+  (if (string= *result* "enabled")
+      (ok "the AmiLisp menu is live from the start")
+      (fail "Eval Defun in an editor that started an amilisp is ~A" *result*))
+  (if (and (null (probe-file (concatenate 'string *dir* "clamacs-amilisp.lisp")))
+           (null (probe-file (concatenate 'string *dir* "clamacs-amilisp-port"))))
+      (ok "the launch left no preamble and no port file behind")
+      (fail "the launch's files are still under ~A" *dir*)))
+
 (defun leg-own-lisp ()
   ;; The editor's own Lisp (drive.rexx's phase 5): Talk to the Editor
   ;; Itself switches the wire over -- the REPL window is detached from
@@ -2375,6 +2410,7 @@ wrote: it must come up where the file said, then quit."
          (fail "no second editor port appeared under ~A" *dir*)
          (return-from second nil))
         (t (ok "a second editor is at 127.0.0.1:~A" (file-line (concatenate 'string *dir* "clamacs-port")))))
+  (leg-auto-start)
   ;; The layout file is the first editor's quit's, not the drive's: the
   ;; projects file it wrote opted the layout in, and its window was
   ;; moved to *WANT-FRAME* before the quit (QUIT-EDITOR).  The drive's

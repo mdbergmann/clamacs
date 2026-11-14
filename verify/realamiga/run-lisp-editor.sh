@@ -50,6 +50,14 @@
 # then goes into the reopened window, and the exit must be as clean as
 # ever (the hidden buffer's window reaped).
 #
+# AUTOSTART=1 is the amilisp an editor starts unasked as it comes up
+# (*AUTO-START-AMILISP*, MorphOS's default, set here for AmigaOS 3):
+# the window must be open before that amilisp's port is, the client
+# thread must tell the wire when it is (`autostart connected AMILISP
+# launched AMILISP'), its console must put no window on the screen while
+# it prints nothing (CON: ... AUTO: no screenshot of one), and the
+# editor's exit must take it down (`autostart port gone').
+#
 # Result: build/amiga/lisp-editor-run.log (with the exit log copied in),
 # build/amiga/lisp-editor-out.lisp (what the editor saved),
 # build/amiga/lisp-editor-expected.lisp (the host's),
@@ -67,6 +75,7 @@ FONT_SIZE="${FONT_SIZE:-}"
 FONT_STEP="${FONT_STEP:-}"
 ABOUT="${ABOUT:-}"
 PERSPECTIVE="${PERSPECTIVE:-}"
+AUTOSTART="${AUTOSTART:-}"
 CONFIG="$ROOT/spike/spike-$LEG.fs-uae"
 OUT="$ROOT/build/amiga"
 SHOTS="$OUT/shots-$LEG"
@@ -175,9 +184,51 @@ if [ -n "$PERSPECTIVE" ]; then
 else
 	PERSP_FORM=""
 fi
+# AUTOSTART=1: the setting made as an init file would, and a thread that
+# asks the editor's task once a second whether the wire found the amilisp
+# -- nothing on that task asks for it -- and writes what it saw.  After
+# the exit the driver looks for the port once more: the farewell must
+# have taken the amilisp down.
+if [ -n "$AUTOSTART" ]; then
+	AUTO_SET='(setq clamacs::*auto-start-amilisp* t)'
+	AUTO_FORM='(mp:make-thread
+         (lambda ()
+           (let ((said "autostart no amilisp connected within 90 s"))
+             (dotimes (i 90)
+               (sleep 1)
+               (let ((state (clamacs::call-in-editor
+                             editor
+                             (lambda ()
+                               (let ((wire (clamacs::editor-wire editor)))
+                                 (list (clamacs::wire-connected wire)
+                                       (clamacs::wire-port-name wire)
+                                       (clamacs::arexx-transport-launched (clamacs::wire-home wire))
+                                       (clamacs::wire-launching wire))))
+                             :wait t)))
+                 (when (and (first state) (null (fourth state)))
+                   (setq said (format nil "autostart connected ~A launched ~A after ~D s"
+                                      (second state) (third state) (1+ i)))
+                   (return))))
+             (with-open-file (s "Clamacs:build/amiga/lisp-editor-autostart"
+                                :direction :output :if-exists :supersede)
+               (write-line said s))))
+         :name "autostart-check" :stack-size 65536)'
+	AUTO_AFTER='(with-open-file (s "Clamacs:build/amiga/lisp-editor-autostart-exit"
+                   :direction :output :if-exists :supersede)
+  (format s "autostart port ~A~%"
+          (dotimes (i 40 "still there")
+            (unless (clamacs::transport-find-port (clamacs::%make-arexx-transport nil))
+              (return "gone"))
+            (sleep 0.5))))'
+else
+	AUTO_SET=""
+	AUTO_FORM=""
+	AUTO_AFTER=""
+fi
 cat > "$OUT/lisp-editor-driver.lisp" <<PRE
 (load "Clamacs:lisp/load.lisp")
 (setf clamacs::*exit-trace* t)
+$AUTO_SET
 (defvar cl-user::*persp* "none")
 (defvar cl-user::*about* "none")
 $THEME_FORM
@@ -188,6 +239,7 @@ $FONT_FORM
         $STEP_FORM
         (clamacs::theme-repaint editor)
         $ABOUT_FORM
+        $AUTO_FORM
         (with-open-file (s "Clamacs:build/amiga/lisp-editor-ready"
                            :direction :output :if-exists :supersede)
           (format s "ready theme ~A depth ~A text-pen ~A bg ~A font ~A default ~A shown ~A persp ~A about ~A~%"
@@ -202,11 +254,30 @@ $FONT_FORM
                   cl-user::*about*)))
       clamacs::*after-start-hooks*)
 (clamacs::start :files ext:*command-line-args*)
+$AUTO_AFTER
 (with-open-file (s "Clamacs:build/amiga/lisp-editor-done"
                    :direction :output :if-exists :supersede)
   (write-line "done" s))
 PRE
 
+# AUTOSTART=1: the typing waits for the check thread's line, so the
+# amilisp is up (or given up on) before the keys and the exit.
+if [ -n "$AUTOSTART" ]; then
+	AUTO_WAIT='set m 0
+LAB waitauto
+IF NOT EXISTS Clamacs:build/amiga/lisp-editor-autostart
+  IF $m EQ 60
+    echo "FAIL the autostart check never reported" >>build/amiga/lisp-editor-run.log
+    SKIP collect
+  ENDIF
+  set m `eval $m + 1`
+  C:Wait 2
+  SKIP waitauto BACK
+ENDIF
+type Clamacs:build/amiga/lisp-editor-autostart >>build/amiga/lisp-editor-run.log'
+else
+	AUTO_WAIT=""
+fi
 cat > "$SUPER/build/amiga/boot-override" <<BOOT
 ; lisp-editor boot-override -- consumed by AmiLisp:verify/realamiga/call-on-ustartup
 failat 21
@@ -242,6 +313,7 @@ ENDIF
 echo "OK editor window open after about \$n x 2 s" >>build/amiga/lisp-editor-run.log
 type Clamacs:build/amiga/lisp-editor-ready >>build/amiga/lisp-editor-run.log
 C:Wait 3
+$AUTO_WAIT
 echo "=== typing ===" >>build/amiga/lisp-editor-run.log
 date >>build/amiga/lisp-editor-run.log
 $TYPING
@@ -270,6 +342,9 @@ echo done >T:examples-done
 echo "=== screen-grab.log ===" >>build/amiga/lisp-editor-run.log
 IF EXISTS build/amiga/screen-grab.log
   type build/amiga/screen-grab.log >>build/amiga/lisp-editor-run.log
+ENDIF
+IF EXISTS build/amiga/lisp-editor-autostart-exit
+  type build/amiga/lisp-editor-autostart-exit >>build/amiga/lisp-editor-run.log
 ENDIF
 echo "=== clamacs-exit.log ===" >>build/amiga/lisp-editor-run.log
 IF EXISTS T:clamacs-exit.log
@@ -383,6 +458,22 @@ if [ -n "$ABOUT" ]; then
 	*) echo "=== FAIL: ABOUT=1, but the marker says: $ready ==="; exit 1 ;;
 	esac
 	ls "$SHOTS" | grep -qi about || { echo "=== FAIL: no screenshot of the About window under $SHOTS ==="; exit 1; }
+fi
+if [ -n "$AUTOSTART" ]; then
+	up=$(grep '^autostart connected ' "$RUNLOG" | head -1)
+	case "$up" in
+	"autostart connected "*" launched "[AC]*) ;;
+	*) echo "=== FAIL: AUTOSTART=1, but the editor found no amilisp of its own: $(grep '^autostart ' "$RUNLOG" | head -1) ==="; exit 1 ;;
+	esac
+	if ! grep -q '^autostart port gone' "$RUNLOG"; then
+		echo "=== FAIL: the amilisp the editor started was not stopped at its exit: $(grep '^autostart port' "$RUNLOG") ==="
+		exit 1
+	fi
+	if ls "$SHOTS" | grep -qi amilisp; then
+		echo "=== FAIL: the started amilisp's console put a window on the screen ($(ls "$SHOTS" | grep -i amilisp)) ==="
+		exit 1
+	fi
+	echo "=== PASS: the editor came up with an amilisp of its own ($up), no console window, stopped at the exit ==="
 fi
 if [ -n "$PERSPECTIVE" ]; then
 	ready=$(grep '^ready ' "$RUNLOG" | head -1)

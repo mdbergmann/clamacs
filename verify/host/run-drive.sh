@@ -133,7 +133,12 @@ check_leaks() {
 }
 
 start_editor() {
-    # $1 tmpdir, $2 log, $3 file
+    # $1 tmpdir, $2 log, $3 file, $4 whether the editor starts an amilisp
+    # of its own as it comes up (CLAMACS_AMILISP_AUTOSTART: the first
+    # editor does not -- the drive's legs before `Start amilisp' are about
+    # an editor without one, and that leg starts it -- the second does).
+    CLAMACS_AMILISP_AUTOSTART=$4
+    export CLAMACS_AMILISP_AUTOSTART
     if [ "${APP:-0}" = 1 ]; then
         # The launcher's own line (no --no-userinit: the bundle is what a
         # user starts; the private HOME has no .amilisprc anyway).
@@ -195,7 +200,7 @@ run_drive() {
 echo "=== run start ===" >"$log"
 
 # --- the editor, and its port files ------------------------------------
-pid_a=$(start_editor "$out/tmp-a" "$out/editor-a.log" "$root/verify/realamiga/sample.lisp")
+pid_a=$(start_editor "$out/tmp-a" "$out/editor-a.log" "$root/verify/realamiga/sample.lisp" 0)
 if ! wait_for_file "$out/tmp-a/clamacs-port" $((60 * factor)); then
     echo "FAIL the editor wrote no port file within $((60 * factor)) s" >>"$log"
     kill "$pid_a" 2>/dev/null
@@ -233,34 +238,39 @@ fi
 check_leaks "$out/editor-a.log" "the editor"
 
 # --- the amilisp the editor started, stopped again at its exit ---------
-started_log="$out/tmp-a/clamacs-amilisp.log"
-if [ -f "$started_log" ]; then
-    n=0
-    while ! grep -q '^; amilisp stopped' "$started_log"; do
-        if [ "$n" -ge 15 ]; then break; fi
-        sleep 1
-        n=$((n + 1))
-    done
-    if grep -q '^; amilisp stopped' "$started_log"; then
-        echo "OK the amilisp the editor started stopped with the editor" >>"$log"
+check_started() {
+    # $1 the started amilisp's log, $2 whose it is
+    if [ -f "$1" ]; then
+        n=0
+        while ! grep -q '^; amilisp stopped' "$1"; do
+            if [ "$n" -ge 15 ]; then break; fi
+            sleep 1
+            n=$((n + 1))
+        done
+        if grep -q '^; amilisp stopped' "$1"; then
+            echo "OK the amilisp $2 started stopped with it" >>"$log"
+        else
+            echo "FAIL the amilisp $2 started did not stop within 15 s ($1)" >>"$log"
+        fi
+        if grep -q '^ERROR' "$1"; then
+            echo "FAIL the amilisp $2 started reported an error ($1):" >>"$log"
+            grep '^ERROR' "$1" >>"$log"
+        fi
+        check_leaks "$1" "the amilisp $2 started"
     else
-        echo "FAIL the amilisp the editor started did not stop within 15 s (clamacs-amilisp.log)" >>"$log"
+        echo "FAIL $2 started no amilisp (no $1)" >>"$log"
     fi
-    if grep -q '^ERROR' "$started_log"; then
-        echo "FAIL the started amilisp reported an error (clamacs-amilisp.log):" >>"$log"
-        grep '^ERROR' "$started_log" >>"$log"
-    fi
-    check_leaks "$started_log" "the started amilisp"
-else
-    echo "FAIL the editor started no amilisp (no $started_log)" >>"$log"
-fi
+}
+check_started "$out/tmp-a/clamacs-amilisp.log" "the editor"
 
 # --- the second editor, against the layout file the drive wrote --------
 if [ -f "$cfg" ]; then
-    pid_b=$(start_editor "$out/tmp-b" "$out/editor-b.log" "$root/verify/realamiga/sample2.lisp")
+    pid_b=$(start_editor "$out/tmp-b" "$out/editor-b.log" "$root/verify/realamiga/sample2.lisp" 1)
     run_drive "$out/tmp-b" second "$pid_b" "$out/editor-b.log"
     wait_for_exit "$pid_b" $((60 * factor)) "the second editor"
     check_leaks "$out/editor-b.log" "the second editor"
+    # The one it started unasked as it came up (drive.lisp, SECOND).
+    check_started "$out/tmp-b/clamacs-amilisp.log" "the second editor"
     rm -f "$cfg"
     if [ -f "$cfg" ]; then
         echo "FAIL the layout file could not be deleted" >>"$log"

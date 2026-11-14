@@ -14,6 +14,10 @@
   (sent '())               ; (port . command), newest first
   (launched 0)             ; how often LAUNCH was asked
   (launch-port nil)        ; the port a launch brings up, or NIL: it fails
+  (begun 0)                ; how often LAUNCH-BEGIN was asked
+  (begin-fails nil)        ; LAUNCH-BEGIN cannot start anything
+  (starting nil)           ; a begun launch is not settled yet
+  (auto-start t)           ; what TRANSPORT-AUTO-START-P answers
   wire)
 
 (defmethod transport-find-port ((tr fake-transport))
@@ -27,6 +31,32 @@
   (when (fake-transport-launch-port tr)
     (setf (fake-transport-port tr) (fake-transport-launch-port tr))
     t))
+
+(defmethod transport-launch-begin ((tr fake-transport))
+  (incf (fake-transport-begun tr))
+  (unless (fake-transport-begin-fails tr)
+    (setf (fake-transport-starting tr) t)))
+
+(defmethod transport-launch-poll ((tr fake-transport))
+  "Pending until the test settles it with FAKE-LAUNCH-SETTLES."
+  (cond ((null (fake-transport-starting tr)) :failed)
+        ((eq (fake-transport-starting tr) :up)
+         (setf (fake-transport-starting tr) nil
+               (fake-transport-port tr) (fake-transport-launch-port tr))
+         :up)
+        ((eq (fake-transport-starting tr) :failed)
+         (setf (fake-transport-starting tr) nil)
+         :failed)
+        (t :pending)))
+
+(defun fake-launch-settles (tr port)
+  "The amilisp LAUNCH-BEGIN set going brought PORT up -- or, PORT NIL, never
+will: what the next poll finds."
+  (setf (fake-transport-launch-port tr) port
+        (fake-transport-starting tr) (if port :up :failed)))
+
+(defmethod transport-auto-start-p ((tr fake-transport))
+  (fake-transport-auto-start tr))
 
 (defmethod transport-own-port ((tr fake-transport))
   "The Lisp editor's first instance owns CLAMACS."

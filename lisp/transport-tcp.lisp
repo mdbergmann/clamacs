@@ -34,7 +34,12 @@
 ;;;;     serves until it is told to stop -- which the editor does at its own
 ;;;;     exit for an amilisp IT started (`EVAL (ext.dev.tcp:stop)' over the
 ;;;;     connection), and never for one the user started.  Its output goes
-;;;;     to `clamacs-amilisp.log' beside the port files.
+;;;;     to `clamacs-amilisp.log' beside the port files.  The start is in
+;;;;     two halves: TRANSPORT-LAUNCH-BEGIN runs the command and returns,
+;;;;     TRANSPORT-LAUNCH-POLL reads the port file once it is there.  An
+;;;;     editor coming up (WIRE-AUTO-START) runs the first and goes on:
+;;;;     the client thread watches for the file and tells the wire on the
+;;;;     editor's task.  `Start amilisp' runs both and waits in between.
 ;;;;
 ;;;; The REPL's way back: TRANSPORT-OWN-PORT names the editor's own port as
 ;;;; `tcp:HOST:PORT/TOKEN' (transport-host.lisp), handed to amilisp on the
@@ -112,7 +117,15 @@ is set.  An empty new spelling counts as unset, as it does for the callers."
   (launched nil)            ; HOST:PORT is an amilisp this editor started
   (log nil)                 ; that amilisp's log file
   (dir nil)                 ; where the launch's files go (the private dir)
-  (problem nil))            ; why the last launch failed
+  (problem nil)             ; why the last launch failed
+  ;; The launch under way (TRANSPORT-LAUNCH-BEGIN), a TCP-START, or NIL;
+  ;; and whether the client thread has told the wire it is settled.
+  (starting nil)
+  (start-told nil))
+
+(defstruct (tcp-start (:constructor make-tcp-start (port-file preamble log token deadline)))
+  port-file preamble log token
+  deadline)                 ; internal time after which no port is waited for
 
 (defun tcp-transport-name (tr)
   "What the wire shows as the port: HOST:PORT, never the token."
@@ -239,6 +252,11 @@ thread posts a WIRE-FIND-PORT), and the next find answers with the name."
 (defmethod transport-log ((tr tcp-transport))
   (and (tcp-transport-launched tr) (tcp-transport-log tr)))
 
+(defmethod transport-auto-start-p ((tr tcp-transport))
+  "Not beside an amilisp on another machine the environment names: the
+connect to it is still out when the editor comes up."
+  (not (tcp-transport-background tr)))
+
 (defun tcp-background-connect (tr)
   "The connect a find asked for (TCP-REQUEST-CONNECT), on the client thread.
 An amilisp found is announced: the wire looks for it again on the editor's
@@ -255,9 +273,26 @@ task, where it now finds the connection."
                             (wire-find-port wire))))
                       :wait nil))))
 
+(defun tcp-watch-launch (tr)
+  "The client thread's look at a launch under way: once it is settled --
+the port file there, an error in the log, the time over -- the wire is
+told, once, on the editor's task, where TRANSPORT-LAUNCH-POLL acts on it."
+  (when (and (tcp-transport-starting tr)
+             (not (tcp-transport-start-told tr))
+             (not (eq (tcp-launch-status tr) :pending)))
+    (setf (tcp-transport-start-told tr) t)
+    (let ((editor (tcp-transport-editor tr)))
+      (call-in-editor editor
+                      (lambda ()
+                        (let ((wire (editor-wire editor)))
+                          (when wire (wire-launch-poll wire)))
+                        ;; Still under way after all: look again.
+                        (setf (tcp-transport-start-told tr) nil))
+                      :wait nil))))
+
 (defun tcp-client-loop (tr)
   "The client thread: send what is pending, post the reply, connect when a
-find asked for it, repeat."
+find asked for it, watch a launch under way, repeat."
   (let ((lock (tcp-transport-lock tr))
         (cv (tcp-transport-cv tr))
         (editor (tcp-transport-editor tr)))
@@ -267,7 +302,10 @@ find asked for it, repeat."
             (loop until (or (tcp-transport-quit tr)
                             (tcp-transport-pending tr)
                             (tcp-transport-connecting tr))
-                  do (mp:condition-wait cv lock 1))
+                  do (mp:condition-wait cv lock (if (tcp-transport-starting tr) 0.2 1))
+                     ;; A launch is looked at five times a second.
+                     (when (tcp-transport-starting tr)
+                       (return)))
             (values (prog1 (tcp-transport-pending tr)
                       (setf (tcp-transport-pending tr) nil))
                     (and (tcp-transport-connecting tr)
@@ -276,6 +314,8 @@ find asked for it, repeat."
         ;; the closing REPL window queued.
         (when (and (tcp-transport-quit tr) (null job))
           (return))
+        (unless (tcp-transport-quit tr)
+          (tcp-watch-launch tr))
         (when connect
           (tcp-background-connect tr))
         (when job
@@ -379,68 +419,99 @@ output in LOG."
           (mapcar #'shell-quote (amilisp-launch-options (launch-heap)))
           (shell-quote preamble) (shell-quote log)))
 
-(defmethod transport-launch ((tr tcp-transport))
+(defmethod transport-launch-begin ((tr tcp-transport))
   (let ((bin (amilisp-binary))
         (dir (tcp-transport-dir tr))
         (token (random-hex)))
     (setf (tcp-transport-problem tr) nil)
-    (cond ((null bin)
+    (cond ((tcp-transport-starting tr)
+           ;; One is coming up: that is the launch.
+           (return-from transport-launch-begin t))
+          ((null bin)
            (setf (tcp-transport-problem tr)
                  "no amilisp binary is known (set CLAMACS_AMILISP_BIN)")
-           (return-from transport-launch nil))
+           (return-from transport-launch-begin nil))
           ((null dir)
            (setf (tcp-transport-problem tr)
                  "no private directory for its files (set XDG_RUNTIME_DIR, or a TMPDIR of your own)")
-           (return-from transport-launch nil))
+           (return-from transport-launch-begin nil))
           ((null token)
            (setf (tcp-transport-problem tr)
                  (format nil "no entropy source for its token (~A)" *entropy-source*))
-           (return-from transport-launch nil)))
+           (return-from transport-launch-begin nil)))
     (let ((port-file (concatenate 'string dir *launch-port-file-name*))
           (preamble (concatenate 'string dir *launch-preamble-name*))
           (log (concatenate 'string dir *launch-log-name*)))
       (delete-quietly port-file)
+      ;; A log left by an earlier launch must not speak for this one.
+      (delete-quietly log)
       (unless (write-launch-preamble preamble port-file)
         (setf (tcp-transport-problem tr) (format nil "cannot write ~A" preamble))
-        (return-from transport-launch nil))
+        (return-from transport-launch-begin nil))
       ;; The token travels in the child's environment.
       (setenv "AMILISP_TCP_TOKEN" token)
       (unwind-protect
            (ext:system-command (launch-command bin preamble log))
         (unsetenv "AMILISP_TCP_TOKEN"))
-      ;; The port file appears once the preamble has run.  This is the one
-      ;; place the editor waits, and it waits before there is anything to
-      ;; be responsive about.
-      (let ((port nil)
-            (deadline (+ (get-internal-real-time)
-                         (* *launch-wait-seconds* internal-time-units-per-second))))
-        (loop
-          (let ((text (read-file-text port-file)))
-            (when text
-              (setq port (parse-integer text :junk-allowed t))
-              (when port (return))))
-          (let ((problem (log-first-error log)))
-            (when problem
-              (setf (tcp-transport-problem tr) (format nil "~A (see ~A)" problem log))
-              (return)))
-          (when (> (get-internal-real-time) deadline)
-            (setf (tcp-transport-problem tr)
-                  (format nil "no port within ~D seconds (see ~A)" *launch-wait-seconds* log))
-            (return))
-          (sleep 0.2))
-        (delete-quietly preamble)
-        (delete-quietly port-file)
-        (when port
-          (tcp-drop-stream tr)
-          (mp:with-lock-held ((tcp-transport-lock tr))
-            (setf (tcp-transport-host tr) "127.0.0.1"
-                  (tcp-transport-port tr) port
-                  (tcp-transport-token tr) token
-                  (tcp-transport-background tr) nil ; this machine now
-                  (tcp-transport-launched tr) t
-                  (tcp-transport-log tr) log
-                  (tcp-transport-next-try tr) 0))
-          (and (tcp-try-connect tr :seconds 5) t))))))
+      ;; The port file appears once the preamble has run: the client
+      ;; thread watches for it, and TRANSPORT-LAUNCH-POLL reads it.
+      (mp:with-lock-held ((tcp-transport-lock tr))
+        (setf (tcp-transport-start-told tr) nil
+              (tcp-transport-starting tr)
+              (make-tcp-start port-file preamble log token
+                              (+ (get-internal-real-time)
+                                 (* *launch-wait-seconds* internal-time-units-per-second))))
+        (mp:condition-notify (tcp-transport-cv tr)))
+      t)))
+
+(defun tcp-launch-status (tr)
+  "How the launch under way stands, changing nothing: (values :UP PORT),
+(values :FAILED PROBLEM) or :PENDING.  The client thread asks too."
+  (let ((start (tcp-transport-starting tr)))
+    (if (null start)
+        (values :failed nil)
+        (let* ((text (read-file-text (tcp-start-port-file start)))
+               (port (and text (parse-integer text :junk-allowed t)))
+               (log (tcp-start-log start)))
+          (cond (port (values :up port))
+                (t
+                 (let ((problem (log-first-error log)))
+                   (cond (problem
+                          (values :failed (format nil "~A (see ~A)" problem log)))
+                         ((> (get-internal-real-time) (tcp-start-deadline start))
+                          (values :failed
+                                  (format nil "no port within ~D seconds (see ~A)"
+                                          *launch-wait-seconds* log)))
+                         (t :pending)))))))))
+
+(defmethod transport-launch-poll ((tr tcp-transport))
+  (let ((start (tcp-transport-starting tr)))
+    (multiple-value-bind (status what) (tcp-launch-status tr)
+      (case status
+        (:pending :pending)
+        (t
+         (when start
+           (setf (tcp-transport-starting tr) nil)
+           (delete-quietly (tcp-start-preamble start))
+           (delete-quietly (tcp-start-port-file start)))
+         (cond ((and start (eq status :up))
+                (tcp-drop-stream tr)
+                (mp:with-lock-held ((tcp-transport-lock tr))
+                  (setf (tcp-transport-host tr) "127.0.0.1"
+                        (tcp-transport-port tr) what
+                        (tcp-transport-token tr) (tcp-start-token start)
+                        (tcp-transport-background tr) nil ; this machine now
+                        (tcp-transport-launched tr) t
+                        (tcp-transport-log tr) (tcp-start-log start)
+                        (tcp-transport-next-try tr) 0))
+                (cond ((tcp-try-connect tr :seconds 5) :up)
+                      (t (setf (tcp-transport-problem tr)
+                               (format nil "its port ~D does not answer (see ~A)"
+                                       what (tcp-start-log start)))
+                         :failed)))
+               (t
+                (when what (setf (tcp-transport-problem tr) what))
+                :failed)))))))
 
 (defun stop-launched-amilisp (tr)
   "Ask the amilisp this editor started to stop, over the connection (or a
@@ -469,6 +540,10 @@ editor started, the connection."
   (let ((thread (tcp-transport-thread tr)))
     (when thread
       (wait-for-threads (list thread) 5)))
+  ;; An amilisp still coming up is waited for: it is told to stop over its
+  ;; port, and one left behind would serve for good.
+  (when (tcp-transport-starting tr)
+    (transport-launch-wait tr))
   (stop-launched-amilisp tr)
   (tcp-drop-stream tr))
 

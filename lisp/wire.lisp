@@ -41,9 +41,42 @@ reply arrives later as a call of WIRE-REPLY on the transport's wire, from
 the frontend's event loop; a port that is gone by then is reported with
 :LOST."))
 
+(defgeneric transport-launch-begin (transport)
+  (:documentation "Set an amilisp with its development port going and
+return at once: true when it was started, NIL when it could not be
+(TRANSPORT-LAUNCH-PROBLEM says why).  Whether its port came up is
+TRANSPORT-LAUNCH-POLL's to say.")
+  (:method (transport) (declare (ignore transport)) nil))
+
+(defgeneric transport-launch-poll (transport)
+  (:documentation "How the launch TRANSPORT-LAUNCH-BEGIN set going stands:
+:UP once the port is there (the transport knows it as its own to stop from
+then on), :FAILED when it will not come (an error in its log, the bounded
+time over, or no launch under way), :PENDING until then.  Never waits.  A
+transport with a launch under way tells the wire when the answer is no
+longer :PENDING, by a WIRE-LAUNCH-POLL on the editor's task.")
+  (:method (transport) (declare (ignore transport)) :failed))
+
+(defun transport-launch-wait (transport)
+  "Wait out the launch under way: true when the port came up."
+  (loop
+    (case (transport-launch-poll transport)
+      (:up (return t))
+      (:failed (return nil)))
+    (sleep 0.2)))
+
 (defgeneric transport-launch (transport)
   (:documentation "Start an amilisp with its development port, and wait a
-bounded time for the port to appear.  True when it did."))
+bounded time for the port to appear.  True when it did.")
+  (:method (transport)
+    (and (transport-launch-begin transport)
+         (transport-launch-wait transport))))
+
+(defgeneric transport-auto-start-p (transport)
+  (:documentation "Whether an editor that finds no amilisp on TRANSPORT as
+it comes up may start one unasked.  NIL for a transport pointed at an
+amilisp elsewhere, whose answer is still out.")
+  (:method (transport) (declare (ignore transport)) t))
 
 (defgeneric transport-own-port (transport)
   (:documentation "The name of the editor's OWN port -- what amilisp's REPL
@@ -74,6 +107,35 @@ own default everywhere.")
 strings: (\"--no-userinit\"), (\"--no-jit\").")
 
 (defparameter *host-amilisp-heap* "256M")
+
+(defvar *auto-start-amilisp* :default
+  "Whether the editor starts an amilisp of its own as it comes up, when it
+finds none running: T, NIL, or :DEFAULT -- yes on macOS, Linux, Windows and
+MorphOS, no on AmigaOS 3, where the memory a second amilisp takes is the
+machine's and an editor may be started to edit a file and nothing else.
+There `Start amilisp' and the first evaluation still offer it.")
+
+(defun auto-start-setting (text)
+  "What CLAMACS_AMILISP_AUTOSTART says: T, NIL, or :UNSET for no value or
+one that is neither a yes nor a no."
+  (cond ((member text '("1" "yes" "true" "on") :test #'equalp) t)
+        ((member text '("0" "no" "false" "off") :test #'equalp) nil)
+        (t :unset)))
+
+(defun auto-start-amilisp-p (&optional (env (ext:getenv "CLAMACS_AMILISP_AUTOSTART")))
+  "Whether this editor starts an amilisp unasked: the environment's
+CLAMACS_AMILISP_AUTOSTART (1 or 0) before the init file's
+*AUTO-START-AMILISP*."
+  (let ((env (auto-start-setting env))
+        (setting *auto-start-amilisp*))
+    (cond ((not (eq env :unset)) env)
+          ((eq setting :default)
+           ;; Asked at run time: the FASLs are compiled on the host.  A
+           ;; MorphOS amilisp has both features.
+           (and (or (member :morphos *features*)
+                    (not (member :amigaos *features*)))
+                t))
+          (t (and setting t)))))
 
 ;;; The names before 0.12, so an init file's (setq *clamiga-heap* ...)
 ;;; still takes effect: a symbol macro makes SETQ and SETF of the old name
@@ -112,9 +174,9 @@ strings: the heap, then *AMILISP-OPTIONS*."
   (append (and heap (list "--heap" heap))
           (remove-if-not #'stringp *amilisp-options*)))
 
-(defun launch-failure-text (wire)
+(defun launch-failure-text (wire &optional (transport (wire-transport wire)))
   (format nil "Cannot start amilisp~@[: ~A~]"
-          (transport-launch-problem (wire-transport wire))))
+          (transport-launch-problem transport)))
 
 ;;; ------------------------------------------------------------------
 ;;; Requests and the wire
@@ -163,7 +225,10 @@ LASTRESULT; else the command itself."
   ;; SWITCH-TO the one WIRE-SWITCH is waiting to change to.
   (home nil)
   (self nil)
-  (switch-to nil))
+  (switch-to nil)
+  ;; The transport an amilisp was set going on whose port is not up yet
+  ;; (WIRE-AUTO-START), or NIL.
+  (launching nil))
 
 (defun make-wire (editor transport)
   (let ((wire (%make-wire editor transport)))
@@ -211,12 +276,64 @@ gone -- it is announced, and the package is forgotten."
   "Whether a request can go out without asking the user anything."
   (or (wire-connected wire) (wire-find-port wire)))
 
+(defun wire-launching-p (wire)
+  "Whether an amilisp set going on the transport in use is still coming up."
+  (and (wire-launching wire)
+       (eq (wire-launching wire) (wire-transport wire))))
+
+(defun wire-launch-poll (wire)
+  "Look at the launch under way, without waiting.  Its port up, the wire
+finds it (and says so); given up, the reason is reported.  True when the
+port came up now.  From the editor's task: a transport calls it there when
+its launch is settled, and WIRE-LAUNCH-FINISH until it is."
+  (let ((tr (wire-launching wire)))
+    (when tr
+      (case (transport-launch-poll tr)
+        (:up
+         (setf (wire-launching wire) nil)
+         (and (eq tr (wire-transport wire))
+              (wire-find-port wire)))
+        (:failed
+         (setf (wire-launching wire) nil)
+         (wire-message wire nil "~A" (launch-failure-text wire tr))
+         nil)
+        (t nil)))))
+
+(defun wire-launch-finish (wire)
+  "Wait for the launch under way to settle: a command that needs amilisp
+was given before its port came up.  True when a port is known."
+  (loop while (wire-launching wire)
+        do (unless (wire-launch-poll wire)
+             (when (wire-launching wire)
+               (sleep 0.2))))
+  (wire-find-port wire))
+
+(defun wire-auto-start (wire)
+  "The editor came up: unless the setting says no, or an amilisp is
+running already, set one going -- and return at once.  The editor is not
+kept waiting for it; the transport tells the wire when its port is up
+(WIRE-LAUNCH-POLL).  True when one was set going."
+  (when (and (auto-start-amilisp-p)
+             (null (wire-launching wire))
+             (transport-auto-start-p (wire-transport wire))
+             (not (wire-find-port wire)))
+    (let ((tr (wire-transport wire)))
+      (cond ((transport-launch-begin tr)
+             (setf (wire-launching wire) tr)
+             (wire-message wire nil "Starting amilisp...")
+             t)
+            (t
+             (wire-message wire nil "~A" (launch-failure-text wire tr))
+             nil)))))
+
 (defun wire-launch (wire)
   "A port is known afterwards: it was there, or an amilisp was started and
-its port came up."
+its port came up -- the one already coming up, when there is one."
   (or (wire-find-port wire)
-      (and (transport-launch (wire-transport wire))
-           (wire-find-port wire))))
+      (if (wire-launching-p wire)
+          (wire-launch-finish wire)
+          (and (transport-launch (wire-transport wire))
+               (wire-find-port wire)))))
 
 (defun wire-connect (wire doc)
   "Make sure a port is known before queuing.  Without one, DOC is asked
@@ -225,6 +342,9 @@ refusal answers :CANCELLED as second value; a launch that failed was
 reported to DOC."
   (cond ((wire-ready-p wire) t)
         ((null doc) nil)
+        ;; One is coming up already: nothing to ask, and its failure is
+        ;; reported by the poll.
+        ((wire-launching-p wire) (wire-launch-finish wire))
         ((not (eq (doc-ask doc
                            "No running amilisp was found. Start one?"
                            '(:start :cancel))

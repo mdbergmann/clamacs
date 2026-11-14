@@ -147,6 +147,159 @@
     (is-equal (fake-transport-launched tr) 1)
     (is-equal (fake-last-message doc) "Cannot start amilisp")))
 
+;;; --- an amilisp of the editor's own, started as it comes up
+
+(deftest auto-start-setting-and-its-default
+  ;; The default follows the machine: this suite runs on a host, where it
+  ;; is yes; AmigaOS 3 alone says no, MorphOS (both features) yes.
+  (let ((*auto-start-amilisp* :default))
+    (let ((*features* (remove :morphos (remove :amigaos *features*))))
+      (is (eq (auto-start-amilisp-p nil) t)))
+    (let ((*features* (list* :amigaos (remove :morphos *features*))))
+      (is (eq (auto-start-amilisp-p nil) nil)))
+    (let ((*features* (list* :amigaos :morphos *features*)))
+      (is (eq (auto-start-amilisp-p nil) t))))
+  ;; The init file's word stands on every machine ...
+  (let ((*features* (list* :amigaos (remove :morphos *features*)))
+        (*auto-start-amilisp* t))
+    (is (eq (auto-start-amilisp-p nil) t)))
+  (let ((*auto-start-amilisp* nil))
+    (is (eq (auto-start-amilisp-p nil) nil))
+    ;; ... and the environment's before it; a value that is neither a yes
+    ;; nor a no says nothing
+    (is (eq (auto-start-amilisp-p "1") t))
+    (is (eq (auto-start-amilisp-p "yes") t))
+    (is (eq (auto-start-amilisp-p "") nil))
+    (is (eq (auto-start-amilisp-p "maybe") nil)))
+  (let ((*auto-start-amilisp* t))
+    (is (eq (auto-start-amilisp-p "0") nil))
+    (is (eq (auto-start-amilisp-p "NO") nil))
+    (is (eq (auto-start-amilisp-p "") t))))
+
+(deftest auto-start-sets-an-amilisp-going-without-waiting
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (is (wire-auto-start wire))
+      ;; set going, not waited for: nothing asked, no port yet
+      (is-equal (fake-transport-begun tr) 1)
+      (is-equal (fake-transport-launched tr) 0)
+      (is (null (fake-asked doc)))
+      (is (wire-launching-p wire))
+      (is (not (wire-connected wire)))
+      (is-equal (fake-last-message doc) "Starting amilisp...")
+      ;; a look while it is still coming up changes nothing, and a quiet
+      ;; request (the arglist's) neither waits nor asks
+      (is (null (wire-launch-poll wire)))
+      (is (wire-launching-p wire))
+      (is (null (wire-request wire nil :ping "PING")))
+      (is (null (fake-asked doc)))
+      ;; a second start while one is under way starts nothing
+      (is (null (wire-auto-start wire)))
+      (is-equal (fake-transport-begun tr) 1)
+      ;; its port is up: the transport tells the wire, which finds it
+      (fake-launch-settles tr "AMILISP")
+      (is (wire-launch-poll wire))
+      (is (not (wire-launching-p wire)))
+      (is (wire-connected wire))
+      (is-equal (wire-port-name wire) "AMILISP")
+      (is-equal (fake-last-message doc) "amilisp found on AMILISP")
+      ;; settled: nothing more to look at
+      (is (null (wire-launch-poll wire)))
+      (is (null (fake-transport-sent tr))))))
+
+(deftest auto-start-leaves-a-running-amilisp-alone
+  ;; one the user started is connected to, and said so
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port "AMILISP.1")
+    (let ((*auto-start-amilisp* t))
+      (is (null (wire-auto-start wire)))
+      (is-equal (fake-transport-begun tr) 0)
+      (is (wire-connected wire))
+      (is-equal (fake-last-message doc) "amilisp found on AMILISP.1")))
+  ;; the setting says no: nothing is started, nothing is said
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* nil))
+      (is (null (wire-auto-start wire)))
+      (is-equal (fake-transport-begun tr) 0)
+      (is (null (fake-last-message doc)))
+      (is (not (wire-launching-p wire)))))
+  ;; a transport waiting for an amilisp elsewhere starts none beside it
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (declare (ignore doc))
+    (let ((*auto-start-amilisp* t))
+      (setf (fake-transport-auto-start tr) nil)
+      (is (null (wire-auto-start wire)))
+      (is-equal (fake-transport-begun tr) 0))))
+
+(deftest auto-start-that-fails-is-reported
+  ;; it could not be started at all
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (setf (fake-transport-begin-fails tr) t)
+      (is (null (wire-auto-start wire)))
+      (is (not (wire-launching-p wire)))
+      (is-equal (fake-last-message doc) "Cannot start amilisp")))
+  ;; it was started and its port never came
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (is (wire-auto-start wire))
+      (fake-launch-settles tr nil)
+      (is (null (wire-launch-poll wire)))
+      (is (not (wire-launching-p wire)))
+      (is (not (wire-connected wire)))
+      (is-equal (fake-last-message doc) "Cannot start amilisp")
+      ;; the user is asked again from here on, as without the setting
+      (push :cancel (fake-answers doc))
+      (is (null (wire-request wire doc :ping "PING")))
+      (is-equal (length (fake-asked doc)) 1))))
+
+(deftest a-command-given-while-amilisp-comes-up-waits-for-it
+  ;; C-c C-c before the port is up: no requester -- one is coming -- and
+  ;; the request goes out to it
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (is (wire-auto-start wire))
+      (fake-launch-settles tr "AMILISP")
+      (is (wire-request wire doc :ping "PING"))
+      (is (null (fake-asked doc)))
+      (is-equal (fake-transport-begun tr) 1)
+      (is-equal (fake-transport-launched tr) 0)
+      (is-equal (fake-last-sent tr) "PING")
+      (is (not (wire-launching-p wire)))))
+  ;; ... `Start amilisp' picked meanwhile takes the one coming up
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (is (wire-auto-start wire))
+      (fake-launch-settles tr "AMILISP")
+      (run-command doc 'run-lisp)
+      (is-equal (fake-transport-begun tr) 1)
+      (is-equal (fake-transport-launched tr) 0)
+      (is (wire-connected wire))
+      (is-equal (fake-last-message doc) "Started amilisp")))
+  ;; ... and one that does not come is reported instead of asked about
+  (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
+    (let ((*auto-start-amilisp* t))
+      (is (wire-auto-start wire))
+      (fake-launch-settles tr nil)
+      (is (null (wire-request wire doc :ping "PING")))
+      (is (null (fake-asked doc)))
+      (is-equal (fake-last-message doc) "Cannot start amilisp")
+      (is (null (fake-transport-sent tr))))))
+
+(deftest the-blocking-launch-is-the-start-and-its-wait
+  ;; TRANSPORT-LAUNCH's default: what `Start amilisp' and the requester's
+  ;; Start run on a transport that only knows how to begin and to poll.
+  (let ((tr (make-fake-transport)))
+    (setf (fake-transport-begin-fails tr) t)
+    (is (null (transport-launch-wait tr)))
+    (setf (fake-transport-begin-fails tr) nil)
+    (is (transport-launch-begin tr))
+    (fake-launch-settles tr "AMILISP")
+    (is (transport-launch-wait tr))
+    (is-equal (fake-transport-port tr) "AMILISP")
+    (is (transport-launch-begin tr))
+    (fake-launch-settles tr nil)
+    (is (null (transport-launch-wait tr)))))
+
 (deftest a-quiet-request-never-asks
   (multiple-value-bind (doc tr wire) (make-wired-fake "|" :port nil)
     (is (null (wire-request wire nil :ping "PING")))

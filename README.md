@@ -568,6 +568,15 @@ and debug is a separate one.  The **AmiLisp** menu manages it.
 
 ### Connecting
 
+On macOS, Linux, Windows and MorphOS the editor comes up with an amilisp
+of its own: it looks for a running one first and attaches to that, and
+starts one otherwise.  The window is there at once and the editor is
+yours while amilisp comes up; the echo area says when it was found.  On
+AmigaOS 3, where an editor is as often started to edit a file as to run
+it and the memory is the machine's, none is started until you ask.
+`*auto-start-amilisp*` in the init file changes either default, see
+[The amilisp the editor starts](#the-amilisp-the-editor-starts).
+
 **Connect** (`M-x clamacs-connect`) looks for a running amilisp's port
 and attaches to it, and offers to start one when there is none.
 **Start amilisp** (`M-x run-lisp`) starts one on the binary the editor
@@ -576,11 +585,12 @@ When amilisp was restarted, the next evaluation finds the new one and
 attaches the REPL again by itself; the echo area says where it was
 found.
 
-An amilisp the editor starts runs headless, with its own console window
-for what it prints (on the Amiga) or a log file (on the host), and is
-stopped when the editor quits.  An amilisp you started yourself is left
-running.  Its heap and command line options come from the init file,
-see [The amilisp the editor starts](#the-amilisp-the-editor-starts).
+An amilisp the editor starts runs headless and is stopped when the
+editor quits.  What it prints goes to a console window of its own on
+the Amiga, which opens with the first line printed, or to a log file on
+the host.  An amilisp you started yourself is left running.  Its heap
+and command line options come from the init file, see
+[The amilisp the editor starts](#the-amilisp-the-editor-starts).
 
 **To use an amilisp you start yourself** on the Amiga, have it open its
 ARexx port:
@@ -977,9 +987,16 @@ with the built-in ones.
 ### The amilisp the editor starts
 
 ```lisp
+(setq *auto-start-amilisp* nil)            ; T, NIL, or :default
 (setq *amilisp-heap* "512M")               ; as amilisp's --heap takes it
 (setq *amilisp-options* '("--no-userinit"))
 ```
+
+`*auto-start-amilisp*` says whether the editor starts an amilisp as it
+comes up when it finds none running: `:default` is yes on macOS, Linux,
+Windows and MorphOS and no on AmigaOS 3; `t` and `nil` say it for every
+machine.  `CLAMACS_AMILISP_AUTOSTART` (`1` or `0`) in the editor's
+environment goes before the init file.
 
 The heap is what a loaded system and everything it depends on has to fit
 in.  Without a setting it is 256M on macOS, Linux and Windows, and
@@ -1133,7 +1150,8 @@ a Windows machine.
   `S:.amilisprc`.  Or let the editor start one: AmiLisp > Start amilisp.
 - **The arglist and completion stay empty** while the status line
   works otherwise: no amilisp is connected.  Evaluate something, or
-  pick Connect.
+  pick Connect -- or have the editor start one as it comes up, with
+  `(setq *auto-start-amilisp* t)` in the init file.
 - **A form says the package does not exist.**  The buffer's
   `in-package` names a package amilisp has not defined yet: load the
   system first (`C-c C-k` on its files, or ASDF > Load System).

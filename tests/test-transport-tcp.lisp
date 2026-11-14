@@ -418,6 +418,119 @@ while a reply is being delivered."
                     (is (tcp-wait (lambda () (search "; amilisp stopped" (or (read-file-text log) ""))) 15)))
                (stop-tcp-transport tr)))))))
 
+(defmacro with-launchable ((f editor doc dir tr wire log) &body body)
+  "A fixture whose transport can start a second amilisp on this binary --
+or a note, where that is not run."
+  `(cond ((equal (ext:getenv "AMILISP_GC_STRESS") "1")
+          (format t "  note  the launch of a second amilisp is not run under GC stress (the child would inherit it)~%"))
+         ((null (amilisp-binary))
+          (format t "  note  no amilisp binary is known here: the launch is not run~%"))
+         (t
+          (with-port (,f)
+            (let* ((,editor (port-fixture-editor ,f))
+                   (,doc (fixture-doc ,f))
+                   (,dir (port-fixture-dir ,f))
+                   ;; No amilisp named: nothing to find, this machine.
+                   (,tr (tcp-fixture-transport ,f nil nil))
+                   (,wire (editor-wire ,editor))
+                   (,log (concatenate 'string ,dir *launch-log-name*)))
+              (declare (ignorable ,doc))
+              (unwind-protect (progn ,@body)
+                (stop-tcp-transport ,tr)))))))
+
+(deftest tcp-auto-start-brings-an-amilisp-up-while-the-editor-goes-on
+  (with-launchable (f editor doc dir tr wire log)
+    ;; The editor came up: an amilisp is set going and the call returns
+    ;; before its port is there ...
+    (is (on-editor editor (lambda ()
+                            (let ((*auto-start-amilisp* t))
+                              (wire-auto-start wire)))))
+    (is (tcp-transport-starting tr))
+    (is (null (tcp-transport-launched tr)))
+    ;; ... its token is not left in the editor's environment ...
+    (is (null (ext:getenv "AMILISP_TCP_TOKEN")))
+    ;; ... and the client thread tells the wire when the port is up:
+    ;; nobody asked for it on the editor's task.
+    (is (tcp-wait (lambda () (wire-connected wire)) 30))
+    (is (tcp-wait (lambda () (null (wire-launching wire)))))
+    (is (null (tcp-transport-starting tr)))
+    (is (tcp-transport-launched tr))
+    (is (tcp-transport-stream tr))
+    (is-equal (fake-last-message doc)
+              (format nil "amilisp found on 127.0.0.1:~D" (tcp-transport-port tr)))
+    (is (null (probe-file (concatenate 'string dir *launch-preamble-name*))))
+    (is (null (probe-file (concatenate 'string dir *launch-port-file-name*))))
+    ;; It answers, and the editor's exit stops it as one started by hand.
+    (on-editor editor (lambda () (wire-request wire doc :version "VERSION")))
+    (is (tcp-wait (lambda () (search "AmiLisp" (fake-last-message doc)))))
+    (stop-tcp-transport tr)
+    (is (tcp-wait (lambda () (search "; amilisp stopped" (or (read-file-text log) ""))) 15))))
+
+(deftest tcp-an-editor-quit-while-its-amilisp-comes-up-still-stops-it
+  ;; The quit comes before the port: the amilisp is waited for and told to
+  ;; stop, never left behind serving nobody.
+  (with-launchable (f editor doc dir tr wire log)
+    (is (on-editor editor (lambda ()
+                            (let ((*auto-start-amilisp* t))
+                              (wire-auto-start wire)))))
+    (stop-tcp-transport tr)
+    (is (null (tcp-transport-starting tr)))
+    (is (null (tcp-transport-launched tr)))
+    (is (tcp-wait (lambda () (search "; amilisp stopped" (or (read-file-text log) ""))) 15))
+    (is (null (probe-file (concatenate 'string dir *launch-preamble-name*))))
+    (is (null (probe-file (concatenate 'string dir *launch-port-file-name*))))))
+
+(deftest tcp-auto-start-is-not-for-an-amilisp-named-elsewhere
+  (with-port (f)
+    (let* ((tr (tcp-fixture-transport f nil nil :background t))
+           (editor (port-fixture-editor f))
+           (wire (editor-wire editor)))
+      (unwind-protect
+           (progn
+             (is (null (transport-auto-start-p tr)))
+             (is (null (on-editor editor (lambda ()
+                                           (let ((*auto-start-amilisp* t))
+                                             (wire-auto-start wire))))))
+             (is (null (tcp-transport-starting tr))))
+        (stop-tcp-transport tr)))))
+
+(deftest tcp-a-launch-that-is-not-under-way-has-failed
+  (with-port (f)
+    (let ((tr (tcp-fixture-transport f nil nil)))
+      (unwind-protect
+           (progn
+             (is (eq (transport-launch-poll tr) :failed))
+             (is (eq (tcp-launch-status tr) :failed))
+             ;; an error in the started amilisp's log ends the wait, named
+             (let* ((dir (port-fixture-dir f))
+                    (log (concatenate 'string dir "a.log")))
+               (write-file-text log (format nil "; Loading~%ERROR: no such file~%"))
+               (setf (tcp-transport-starting tr)
+                     (make-tcp-start (concatenate 'string dir "no-port") (concatenate 'string dir "no-pre")
+                                     log "token"
+                                     (+ (get-internal-real-time)
+                                        (* 60 internal-time-units-per-second))))
+               (is (eq (transport-launch-poll tr) :failed))
+               (is (search "ERROR: no such file (see " (transport-launch-problem tr)))
+               (is (null (tcp-transport-starting tr)))
+               ;; and so does the time running out
+               (setf (tcp-transport-starting tr)
+                     (make-tcp-start (concatenate 'string dir "no-port") (concatenate 'string dir "no-pre")
+                                     (concatenate 'string dir "no-log") "token"
+                                     (1- (get-internal-real-time))))
+               (is (eq (transport-launch-poll tr) :failed))
+               (is (search "no port within" (transport-launch-problem tr)))
+               ;; until then it is pending, and stays under way
+               (setf (tcp-transport-starting tr)
+                     (make-tcp-start (concatenate 'string dir "no-port") (concatenate 'string dir "no-pre")
+                                     (concatenate 'string dir "no-log") "token"
+                                     (+ (get-internal-real-time)
+                                        (* 60 internal-time-units-per-second))))
+               (is (eq (transport-launch-poll tr) :pending))
+               (is (tcp-transport-starting tr))
+               (setf (tcp-transport-starting tr) nil)))
+        (stop-tcp-transport tr)))))
+
 ;;; --- the wire ------------------------------------------------------------------
 
 (deftest host-wire-starts-on-tcp-with-the-editor-itself-on-demand

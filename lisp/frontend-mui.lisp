@@ -3768,6 +3768,14 @@ function: an image is saved before it runs and restores into it."
                     (when *wire-starter*
                       (handler-case (funcall *wire-starter* editor)
                         (error (e) (report-error editor e))))
+                    ;; An amilisp of the editor's own where the setting
+                    ;; says so (MorphOS by default, never AmigaOS 3
+                    ;; unasked) and none is running: set going here and
+                    ;; found by the wire's client thread, the editor never
+                    ;; waiting for it.
+                    (when (editor-wire editor)
+                      (handler-case (wire-auto-start (editor-wire editor))
+                        (error (e) (report-error editor e))))
                     (dolist (hook *after-start-hooks*)
                       (funcall hook editor))
                     (menu-update editor)

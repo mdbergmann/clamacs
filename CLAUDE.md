@@ -397,6 +397,42 @@ is made with `:element-type 'character` (the runtime's plain
 `json-code-char` keeps every BMP character, since the host's text holds
 them now.  The drive's DETACH leg ends with the main window's close.
 
+**An amilisp of the editor's own, unasked** (2026-11-14): on the host
+and on MorphOS the editor comes up with one -- found if one is running,
+started otherwise -- and on AmigaOS 3 it does not (an editor there is as
+often for editing a file as for running it, and the memory is the
+machine's).  `*auto-start-amilisp*` in `wire.lisp` (`:default`, `t`,
+`nil`; `auto-start-amilisp-p` asks at RUN time, MorphOS having both
+`:amigaos` and `:morphos`) with `CLAMACS_AMILISP_AUTOSTART=0|1` in the
+environment before it.  Both frontends' `start` call `wire-auto-start`
+once the wire is up, and **the editor never waits for that amilisp**: a
+transport's launch is two halves, `transport-launch-begin` (run the
+command, return) and `transport-launch-poll` (`:up` / `:failed` /
+`:pending`, never waiting), the old blocking `transport-launch` being
+the two with `transport-launch-wait` between; the transport's own client
+thread watches a launch under way (the port file on the host, the port
+on the Amiga) and posts one `wire-launch-poll` to the editor's task when
+it is settled -- so neither event loop polls, and the MUI idle timer is
+not kept up for it.  Three rules: a command given while it comes up
+waits for it and never asks (`wire-connect`, `wire-launch` ->
+`wire-launch-finish`; the quiet callers -- the arglist -- neither wait
+nor ask); an editor quit meanwhile waits for it too, in the stopper,
+since the farewell needs its port and one left behind would serve for
+good; and nothing is started beside an amilisp the environment names on
+another machine (`transport-auto-start-p`).  The Amiga console of a
+started amilisp is `CON:.../AUTO/CLOSE/INACTIVE` (`*launch-console*`)
+and its preamble loads the port's library under `*load-verbose*` NIL:
+the first FS-UAE run had the console open for two `; Loading` lines, in
+front of the editor and WITH the keyboard, and the typing went into it.
+Now one that prints nothing puts no window up, and one that prints
+never takes the keys.  `run-drive.sh` starts its first
+editor with the variable at 0 (the legs before `Start amilisp` are about
+an editor without one) and its second at 1 (`leg-auto-start`, and the
+script checks that amilisp stopped with it); `host-keys.sh` and
+`shots.sh` say 0; `AUTOSTART=1 verify/realamiga/run-lisp-editor.sh` is
+the MUI leg.  A script or test that calls `start` on a host gets an
+amilisp unless it says otherwise.
+
 **Projects** (`specs/clamacs-perspectives.md`; 2026-10-14 as
 perspectives, the project UI 2026-10-20): `lisp/perspective.lisp` -- a
 project is a folder, and underneath a PERSPECTIVE (perspective.el's

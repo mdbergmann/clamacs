@@ -28,6 +28,12 @@
 ;;;;     with the editor.  A console REPL could not be stopped from
 ;;;;     outside -- its read of the console blocks, nothing interrupts
 ;;;;     it -- and stayed open on the MorphOS box after every quit.
+;;;;     The start is in two halves: TRANSPORT-LAUNCH-BEGIN runs the
+;;;;     script and returns, TRANSPORT-LAUNCH-POLL takes the port as ours
+;;;;     once it exists.  An editor coming up with *AUTO-START-AMILISP*
+;;;;     (MorphOS's default; WIRE-AUTO-START) runs the first and goes on:
+;;;;     the client thread watches for the port and tells the wire on the
+;;;;     MUI task.  `Start amilisp' runs both and waits in between.
 ;;;;
 ;;;; Amiga only: loaded after frontend-mui.lisp.
 
@@ -61,7 +67,15 @@
   (pending nil)             ; (port . command) for the client thread
   (quit nil)
   (launched nil)            ; the port of an amilisp this editor started
+  ;; The launch under way (TRANSPORT-LAUNCH-BEGIN), an AREXX-START, or
+  ;; NIL; and whether the client thread has told the wire it is settled.
+  (starting nil)
+  (start-told nil)
   thread)
+
+(defstruct (arexx-start (:constructor make-arexx-start (script preamble deadline)))
+  script preamble
+  deadline)                 ; internal time after which no port is waited for
 
 (defmethod transport-find-port ((tr arexx-transport))
   (find-if #'port-exists-p *amilisp-port-names*))
@@ -77,8 +91,37 @@ one opened its own."
     (setf (arexx-transport-pending tr) (cons port command))
     (mp:condition-notify (arexx-transport-cv tr))))
 
+(defun arexx-launch-status (tr)
+  "How the launch under way stands, changing nothing: (values :UP PORT),
+:FAILED or :PENDING.  The client thread asks too."
+  (let ((start (arexx-transport-starting tr)))
+    (if (null start)
+        :failed
+        (let ((port (transport-find-port tr)))
+          (cond (port (values :up port))
+                ((> (get-internal-real-time) (arexx-start-deadline start)) :failed)
+                (t :pending))))))
+
+(defun watch-launch (tr)
+  "The client thread's look at a launch under way: once it is settled --
+the port there, or the time over -- the wire is told, once, on the MUI
+task, where TRANSPORT-LAUNCH-POLL acts on it."
+  (when (and (arexx-transport-starting tr)
+             (not (arexx-transport-start-told tr))
+             (not (eq (arexx-launch-status tr) :pending)))
+    (setf (arexx-transport-start-told tr) t)
+    (let ((editor (arexx-transport-editor tr)))
+      (call-in-editor editor
+                      (lambda ()
+                        (let ((wire (editor-wire editor)))
+                          (when wire (wire-launch-poll wire)))
+                        ;; Still under way after all: look again.
+                        (setf (arexx-transport-start-told tr) nil))
+                      :wait nil))))
+
 (defun client-loop (tr)
-  "The client thread: send what is pending, post the reply, repeat."
+  "The client thread: send what is pending, post the reply, watch a launch
+under way, repeat."
   (let ((lock (arexx-transport-lock tr))
         (cv (arexx-transport-cv tr))
         (editor (arexx-transport-editor tr)))
@@ -86,9 +129,14 @@ one opened its own."
       (let ((job (mp:with-lock-held (lock)
                    (loop until (or (arexx-transport-quit tr)
                                    (arexx-transport-pending tr))
-                         do (mp:condition-wait cv lock 1))
+                         do (mp:condition-wait cv lock (if (arexx-transport-starting tr) 0.5 1))
+                            ;; A launch is looked at twice a second.
+                            (when (arexx-transport-starting tr)
+                              (return)))
                    (prog1 (arexx-transport-pending tr)
                      (setf (arexx-transport-pending tr) nil)))))
+        (unless (arexx-transport-quit tr)
+          (watch-launch tr))
         ;; A job pending at the quit still goes out: it is the REPL-DETACH
         ;; the closing REPL window queued, and amilisp's REPL thread must be
         ;; stopped rather than left sending to a port about to vanish.
@@ -127,6 +175,12 @@ one opened its own."
 (defconstant +launch-stack-size+ 131072)
 (defconstant +launch-wait-seconds+ 20)
 
+(defparameter *launch-console* "CON:0/40/640/220/amilisp/AUTO/CLOSE/INACTIVE"
+  "The console of an amilisp the editor starts: opened with the first line
+printed (AUTO), and never taking the keyboard from the editor (INACTIVE)
+-- the keys typed into an editor that had just come up went to this
+window otherwise.")
+
 ;;; The started amilisp runs the preamble's wait loop on its main thread
 ;;; (SLEEP a half second at a time) until this variable is set -- which
 ;;; the editor's farewell does over the port; the EVAL is answered first,
@@ -137,8 +191,11 @@ one opened its own."
   (format nil "EVAL (setq ~A t)" *launched-stop-variable*))
 
 (defun launch-preamble-text ()
-  "What the started amilisp loads: the port, then the wait."
-  (format nil "(require \"amiga/arexx\")~%~
+  "What the started amilisp loads: the port, then the wait.  The port's
+library is loaded without LOAD's `; Loading' lines: they were the only
+thing a fresh amilisp printed, and enough to open its console window in
+front of an editor that had just come up."
+  (format nil "(let ((*load-verbose* nil)) (require \"amiga/arexx\"))~%~
                (unless (amiga.arexx:running-p) (amiga.arexx:start))~%~
                (defvar ~A nil)~%~
                (loop until ~A do (sleep 0.5))~%"
@@ -173,7 +230,10 @@ two rapid launches) never share a file."
     (values (format nil "T:clamacs-start-amilisp-~A" tag)
             (format nil "T:clamacs-port-~A.lisp" tag))))
 
-(defmethod transport-launch ((tr arexx-transport))
+(defmethod transport-launch-begin ((tr arexx-transport))
+  (when (arexx-transport-starting tr)
+    ;; One is coming up: that is the launch.
+    (return-from transport-launch-begin t))
   (multiple-value-bind (script preamble) (launch-file-names)
     (let ((command (own-amilisp-command)))
       (unless (and (write-file-text preamble (launch-preamble-text))
@@ -184,17 +244,20 @@ two rapid launches) never share a file."
                             +launch-stack-size+ command (amilisp-launch-options) preamble)))
         (delete-quietly preamble)
         (delete-quietly script)
-        (return-from transport-launch nil))
+        (return-from transport-launch-begin nil))
       ;; amilisp gets a console of its own for what it prints -- it reads
       ;; nothing from it -- which closes with it (no WAIT: the farewell
       ;; at the editor's exit ends it, and a window left behind was the
-      ;; complaint).
-      (let ((console (ffi:with-foreign-string (s "CON:0/40/640/220/amilisp/CLOSE")
+      ;; complaint).  *LAUNCH-CONSOLE* says how it opens: with the first
+      ;; line printed, so an amilisp that says nothing -- the one an
+      ;; editor starts as it comes up, most days -- puts no window on the
+      ;; screen, and without the keyboard.
+      (let ((console (ffi:with-foreign-string (s *launch-console*)
                        (dos:open s dos:+mode-oldfile+))))
         (when (zerop console)
           (delete-quietly preamble)
           (delete-quietly script)
-          (return-from transport-launch nil))
+          (return-from transport-launch-begin nil))
         (let ((rc (ffi:with-foreign-string (cmd (format nil "Execute ~A" script))
                     (mui:with-tags (tags dos:+sys-input+ console
                                          dos:+sys-output+ 0
@@ -207,23 +270,36 @@ two rapid launches) never share a file."
             (dos:close console)
             (delete-quietly preamble)
             (delete-quietly script)
-            (return-from transport-launch nil))
-          ;; The port appears once the preamble has run.  This is the one
-          ;; place the editor waits, and it waits before there is anything
-          ;; to be responsive about.  By then Execute has read the script
-          ;; and amilisp the preamble, so both can go.
-          (let ((found nil))
-            (dotimes (i (* 5 +launch-wait-seconds+))
-              (sleep 0.2)
-              (let ((port (transport-find-port tr)))
-                (when port
-                  ;; Ours to stop at the exit (STOP-WIRE's client thread).
-                  (setf (arexx-transport-launched tr) port
-                        found t)
-                  (return))))
-            (delete-quietly script)
-            (delete-quietly preamble)
-            found))))))
+            (return-from transport-launch-begin nil))
+          ;; The port appears once the preamble has run: the client thread
+          ;; watches for it, and TRANSPORT-LAUNCH-POLL takes it as ours.
+          (mp:with-lock-held ((arexx-transport-lock tr))
+            (setf (arexx-transport-start-told tr) nil
+                  (arexx-transport-starting tr)
+                  (make-arexx-start script preamble
+                                    (+ (get-internal-real-time)
+                                       (* +launch-wait-seconds+
+                                          internal-time-units-per-second))))
+            (mp:condition-notify (arexx-transport-cv tr)))
+          t)))))
+
+(defmethod transport-launch-poll ((tr arexx-transport))
+  (let ((start (arexx-transport-starting tr)))
+    (multiple-value-bind (status port) (arexx-launch-status tr)
+      (case status
+        (:pending :pending)
+        (t
+         (when start
+           (setf (arexx-transport-starting tr) nil)
+           ;; By now Execute has read the script and amilisp the preamble
+           ;; (or neither ever will), so both can go.
+           (delete-quietly (arexx-start-script start))
+           (delete-quietly (arexx-start-preamble start)))
+         (cond ((and start (eq status :up))
+                ;; Ours to stop at the exit (STOP-WIRE's client thread).
+                (setf (arexx-transport-launched tr) port)
+                :up)
+               (t :failed)))))))
 
 ;;; ------------------------------------------------------------------
 ;;; The editor's port
@@ -278,6 +354,10 @@ that is the ARexx rule, and the editor does not wait for it forever."
     (when self
       (self-transport-stop self)))
   (let ((tr (wire-home (editor-wire editor))))
+    ;; An amilisp still coming up is waited for: the farewell needs its
+    ;; port, and one left behind would wait on its flag for good.
+    (when (arexx-transport-starting tr)
+      (transport-launch-wait tr))
     (mp:with-lock-held ((arexx-transport-lock tr))
       (setf (arexx-transport-quit tr) t)
       (mp:condition-notify (arexx-transport-cv tr)))

@@ -76,6 +76,8 @@ cat > "$out/keys-driver.lisp" <<EOF
   (write-line "done" s))
 EOF
 
+# No amilisp of the editor's own: this run is about keys and the text.
+CLAMACS_AMILISP_AUTOSTART=0 \
 "$amilisp" --no-userinit --heap 32M --non-interactive --load "$out/keys-driver.lisp" \
     </dev/null >"$out/keys-editor.log" 2>&1 &
 pid=$!

@@ -37,7 +37,8 @@ ledger=$(mktemp -d /tmp/ledger.XXXX) || exit 1
 trap 'rm -rf "$ledger"' EXIT
 cp "$here/shots/accounts.lisp" "$here/shots/report.lisp" "$ledger/" || exit 1
 
-HOME="$run/home" TMPDIR="$run/tmp" \
+# shots.lisp picks `Start amilisp' itself, so the editor starts none unasked.
+HOME="$run/home" TMPDIR="$run/tmp" CLAMACS_AMILISP_AUTOSTART=0 \
     "$amilisp" --no-userinit --heap 32M --non-interactive \
     --load "$root/lisp/clamacs.lisp" -- "$ledger/accounts.lisp" \
     </dev/null >"$run/editor.log" 2>&1 &
